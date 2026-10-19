@@ -12,7 +12,7 @@ return [
     'interval' => env('HELLOWIN_FLYER_INTERVAL', '3000-8000'),
 
     // Per depth, from the farthest (0) to the nearest: milliseconds across the screen and points for a hit
-    'duration' => env('HELLOWIN_FLYER_DURATION', '9000,6500,4000'),
+    'duration' => env('HELLOWIN_FLYER_DURATION', '16000,6500,4000'),
     'points' => env('HELLOWIN_FLYER_POINTS', '3,2,1'),
 
     // Probability to take off from a bush instead of coming from behind the screen edge

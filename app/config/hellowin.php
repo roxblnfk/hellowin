@@ -18,6 +18,9 @@ return [
     // Clicks on a pumpkin that move it to its next stage
     'clicks_per_stage' => env('HELLOWIN_CLICKS_PER_STAGE', 5),
 
+    // RPC `reset` behind the "Заново" button: open to everyone in the demo, turn off for a public event
+    'reset_rpc' => env('HELLOWIN_RESET_RPC', true),
+
     // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene
     'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8'),
 

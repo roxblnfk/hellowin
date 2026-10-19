@@ -169,11 +169,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Переменная | По умолчанию | Смысл |
 |---|---|---|
 | `HELLOWIN_CLICKS_PER_STAGE` | 5 | кликов по тыкве для перехода в следующую стадию |
+| `HELLOWIN_RESET_RPC` | `true` | разрешить RPC `reset` (кнопка «Заново»); для публичного мероприятия — `false` |
 | `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены |
 | `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
 | `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
-| `HELLOWIN_FLYER_DURATION` | `9000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |
+| `HELLOWIN_FLYER_DURATION` | `16000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |

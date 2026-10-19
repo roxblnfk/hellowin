@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Endpoint\Centrifugo;
 
+use App\Application\Config\HellowinConfig;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Endpoint\Centrifugo\RPCService;
 use Psr\Log\NullLogger;
@@ -234,15 +235,51 @@ final class RPCServiceTest
         Assert::same($this->call(new RitualHarness(), 'shoot', $params, self::PLAYER), ['ok' => true, 'hit' => false]);
     }
 
+    public function resetStartsTheNextRoundOnce(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->click('pumpkin-1', 2);
+
+        Assert::same($this->call($ritual, 'reset', ['round' => 1]), ['ok' => true, 'round' => 2]);
+        Assert::same($this->call($ritual, 'reset', ['round' => 1]), ['ok' => true, 'round' => 2]);
+        Assert::count($ritual->broadcast->ofType('reset'), 1);
+        Assert::same($this->call($ritual, 'state', [])['state']['elements'][0]['clicks'], 0);
+    }
+
+    #[DataSet([[]], 'no round')]
+    #[DataSet([['round' => '1']], 'string')]
+    #[DataSet([['round' => 0]], 'zero')]
+    public function resetNeedsTheRound(array $params): void
+    {
+        Assert::same($this->call(new RitualHarness(), 'reset', $params), ['ok' => false, 'error' => 'invalid round']);
+    }
+
+    public function resetCanBeDisabled(): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'reset', ['round' => 1], resetRpc: false), ['ok' => false, 'error' => 'reset disabled']);
+        Assert::blank($ritual->broadcast->ofType('reset'));
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
         $this->worker = new SpyWorker();
     }
 
-    private function call(RitualHarness $ritual, string $method, array $params, string $user = ''): array
+    private function call(RitualHarness $ritual, string $method, array $params, string $user = '', bool $resetRpc = true): array
     {
-        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, $ritual->leaderboard, $ritual->flyers, new NullLogger());
+        $service = new RPCService(
+            $ritual->clicks,
+            $ritual->snapshot,
+            $ritual->players,
+            $ritual->leaderboard,
+            $ritual->flyers,
+            new NullLogger(),
+            $ritual->reset,
+            new HellowinConfig(['reset_rpc' => $resetRpc]),
+        );
         $service->handle(new RPC(
             worker: $this->worker,
             client: 'client-1',

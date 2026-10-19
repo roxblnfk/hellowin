@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
+use App\Application\Config\HellowinConfig;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
+use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
 use App\Application\Player\InvalidNameException;
@@ -35,6 +37,8 @@ final readonly class RPCService implements ServiceInterface
         private LeaderboardService $leaderboard,
         private FlyerService $flyers,
         private LoggerInterface $logger,
+        private ResetService $reset,
+        private HellowinConfig $config,
     ) {}
 
     #[\Override]
@@ -49,6 +53,7 @@ final readonly class RPCService implements ServiceInterface
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             'register' => $this->register($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),
+            'reset' => $this->reset($request->getData()),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -116,6 +121,24 @@ final readonly class RPCService implements ServiceInterface
         $points = \is_string($flyer) ? $this->flyers->shoot($flyer, $player) : null;
 
         return $points === null ? ['ok' => true, 'hit' => false] : ['ok' => true, 'hit' => true, 'points' => $points];
+    }
+
+    /**
+     * The client names the round it sees, so two people pressing "Заново" at once restart the ritual only once:
+     * the second call finds that round over and gets the current one.
+     */
+    private function reset(array $params): array
+    {
+        if (!$this->config->isResetRpcEnabled()) {
+            return self::fail('reset disabled');
+        }
+
+        $round = $params['round'] ?? null;
+        if (!\is_int($round) || $round < 1) {
+            return self::fail('invalid round');
+        }
+
+        return ['ok' => true, 'round' => $this->reset->reset($round) ?? $this->snapshot->create()['round']];
     }
 
     /**

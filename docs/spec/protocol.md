@@ -28,7 +28,7 @@
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
 | `register` | `{name}` | `{ok:true, player: <Player>}` | реализовано |
 | `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>]}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий | реализовано |
-| `reset` | `{round}` — раунд, который клиент видит сейчас | `{ok:true, round}` — новый раунд; повторный вызов с тем же `round` сброс не повторяет (ключ `reset:{round}`), а возвращает текущий раунд | запланировано |
+| `reset` | `{round}` — раунд, который клиент видит сейчас | `{ok:true, round}` — новый раунд; повторный вызов с тем же `round` сброс не повторяет (сравнение раунда под локами), а возвращает текущий раунд. Ошибки: `invalid round`, `reset disabled` (`HELLOWIN_RESET_RPC=false`) | реализовано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит, улетел или такого нет) | реализовано |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —

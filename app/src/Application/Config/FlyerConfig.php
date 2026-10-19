@@ -18,7 +18,7 @@ final class FlyerConfig extends InjectableConfig
 
     protected array $config = [
         'interval' => '3000-8000',
-        'duration' => '9000,6500,4000',
+        'duration' => '16000,6500,4000',
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,

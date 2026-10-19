@@ -20,7 +20,7 @@ final class FlyerConfigTest
     {
         $config = new FlyerConfig();
 
-        Assert::equals($config->getDepths(), [new FlyerDepth(9000, 3), new FlyerDepth(6500, 2), new FlyerDepth(4000, 1)]);
+        Assert::equals($config->getDepths(), [new FlyerDepth(16000, 3), new FlyerDepth(6500, 2), new FlyerDepth(4000, 1)]);
         Assert::same($config->getInterval(), [3000, 8000]);
         Assert::same($config->getBushChance(), 0.4);
         Assert::same($config->getArcChance(), 0.5);

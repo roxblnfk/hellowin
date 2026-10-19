@@ -21,6 +21,7 @@ final class HellowinConfig extends InjectableConfig
         'storage' => 'hellowin',
         'centrifugo_url' => '/connection/websocket',
         'clicks_per_stage' => 5,
+        'reset_rpc' => true,
         'scene_stage_max' => '4,6,8',
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
@@ -98,6 +99,20 @@ final class HellowinConfig extends InjectableConfig
     public function getValkeyDsn(): string
     {
         return self::nonEmptyString($this->config['valkey_dsn'] ?? null, 'valkey_dsn');
+    }
+
+    /**
+     * Whether clients may restart the ritual with RPC `reset`.
+     */
+    public function isResetRpcEnabled(): bool
+    {
+        /** @var mixed $value */
+        $value = $this->config['reset_rpc'] ?? null;
+        \is_string($value) and $value = \filter_var(\trim($value), \FILTER_VALIDATE_BOOLEAN, \FILTER_NULL_ON_FAILURE);
+
+        return \is_bool($value)
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.reset_rpc" (env HELLOWIN_RESET_RPC) must be true or false.');
     }
 
     /**
