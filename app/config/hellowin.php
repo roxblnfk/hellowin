@@ -16,7 +16,7 @@ return [
     'centrifugo_url' => env('CENTRIFUGO_WS_URL', '/connection/websocket'),
 
     // Click counts that switch the stage, ascending, comma-separated
-    'thresholds' => env('HELLOWIN_THRESHOLDS', '100,500,2000'),
+    'thresholds' => env('HELLOWIN_THRESHOLDS', '5,10,15'),
 
     // x/y are percents of the viewport
     'elements' => [

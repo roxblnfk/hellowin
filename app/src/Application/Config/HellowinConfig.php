@@ -19,7 +19,7 @@ final class HellowinConfig extends InjectableConfig
         'channel' => 'hellowin',
         'storage' => 'hellowin',
         'centrifugo_url' => '/connection/websocket',
-        'thresholds' => [100, 500, 2000],
+        'thresholds' => [5, 10, 15],
         'elements' => [],
     ];
 

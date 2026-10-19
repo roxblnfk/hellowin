@@ -35,7 +35,7 @@ final class HomeControllerTest extends TestCase
             ->assertOk()
             ->assertBodyContains('<body data-stage="0">')
             ->assertBodyContains('data-clicks="0"')
-            ->assertBodyContains('data-threshold="100"');
+            ->assertBodyContains('data-threshold="5"');
     }
 
     #[Env('HELLOWIN_THRESHOLDS', '5,10')]

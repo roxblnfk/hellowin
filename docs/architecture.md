@@ -22,8 +22,8 @@
 ## Сообщения в канале `hellowin` (JSON)
 
 ```json
-{"type":"emoji","element":"pumpkin-3","emoji":"🎃","clicks":1234,"threshold":5000}
-{"type":"state","stage":1,"clicks":5000,"threshold":5000}
+{"type":"emoji","element":"pumpkin-3","emoji":"🎃","clicks":3,"threshold":5}
+{"type":"state","stage":1,"clicks":5,"threshold":10}
 ```
 
 - emoji выбирает сервер случайно из набора emoji этого элемента (конфиг).
