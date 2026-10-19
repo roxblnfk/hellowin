@@ -1,22 +1,42 @@
 version: '3'
+
 rpc:
-    listen: 'tcp://127.0.0.1:6001'
-http:
-    address: '0.0.0.0:8080'
-    middleware:
-        - static
-        - gzip
-    static:
-        dir: public
-        forbid:
-            - .php
-            - .htaccess
-    pool:
-        num_workers: 1
-        supervisor:
-            max_worker_memory: 100
+  listen: 'tcp://127.0.0.1:6001'
+
 server:
-    command: 'php app.php'
-    relay: pipes
+  command: 'php app.php'
+  relay: pipes
+
+http:
+  address: '0.0.0.0:8080'
+  middleware:
+    - http_metrics
+    - static
+    - gzip
+  static:
+    dir: public
+    forbid:
+      - .php
+      - .htaccess
+  pool:
+    num_workers: 2
+    supervisor:
+      max_worker_memory: 100
+
+# Centrifugo proxies connect/subscribe/rpc requests here; the app publishes back through its gRPC API.
+centrifuge:
+  proxy_address: 'tcp://0.0.0.0:10001'
+  grpc_api_address: '${CENTRIFUGO_GRPC_API:-centrifugo:10000}'
+  pool:
+    num_workers: 2
+
 metrics:
-    address: '127.0.0.1:2112'
+  address: '0.0.0.0:2112'
+
+# Game state; lives as long as the RoadRunner process.
+kv:
+  hellowin:
+    driver: memory
+    config: {}
+
+# The lock plugin needs no configuration: it is served over rpc.
