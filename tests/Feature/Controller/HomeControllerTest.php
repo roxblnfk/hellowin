@@ -38,7 +38,7 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-threshold="5"');
     }
 
-    #[Env('HELLOWIN_THRESHOLDS', '5,10')]
+    #[Env('HELLOWIN_CLICKS_PER_STAGE', '4')]
     public function homePageShowsStoredStage(): void
     {
         $storage = $this->getContainer()->get(CacheStorageProviderInterface::class)->storage('hellowin');
@@ -49,7 +49,7 @@ final class HomeControllerTest extends TestCase
             ->assertOk()
             ->assertBodyContains('<body data-stage="1">')
             ->assertBodyContains('data-clicks="7"')
-            ->assertBodyContains('data-threshold="10"');
+            ->assertBodyContains('data-threshold="4"');
     }
 
     public function centrifugoUrlDefaultsToRelativePath(): void
@@ -82,12 +82,13 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('href="/"');
     }
 
-    #[Env('HELLOWIN_THRESHOLDS', '3,7')]
-    public function howItWorksPageListsConfiguredThresholds(): void
+    #[Env('HELLOWIN_CLICKS_PER_STAGE', '3')]
+    public function howItWorksPageShowsConfiguredThreshold(): void
     {
         $this->fakeHttp()->get('/how-it-works')
             ->assertOk()
-            ->assertBodyContains('<b>2</b>с 7 кликов');
+            ->assertBodyContains('Сейчас порог — 3')
+            ->assertBodyContains('<b>1</b>с 3 кликов');
     }
 
     #[Env('DEBUG', 'false')]

@@ -15,8 +15,8 @@ return [
     // WebSocket endpoint for centrifuge-js; a path is resolved against the page host
     'centrifugo_url' => env('CENTRIFUGO_WS_URL', '/connection/websocket'),
 
-    // Click counts that switch the stage, ascending, comma-separated
-    'thresholds' => env('HELLOWIN_THRESHOLDS', '5,10,15'),
+    // Clicks after which the page switches from the initial stage to the next one, once
+    'clicks_per_stage' => env('HELLOWIN_CLICKS_PER_STAGE', 5),
 
     // x/y are percents of the viewport
     'elements' => [

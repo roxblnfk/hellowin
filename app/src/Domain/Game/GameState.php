@@ -9,6 +9,7 @@ use RoadRunner\Lock\LockInterface;
 
 /**
  * Shared click counter and stage, kept in a key-value store.
+ * The stage switches from 0 to 1 once, on the threshold click, and stays there.
  *
  * Every worker increments the same counter, so the read-modify-write runs under an exclusive lock.
  */
@@ -18,17 +19,24 @@ final readonly class GameState
     private const KEY_STAGE = 'stage';
     private const LOCK_RESOURCE = 'hellowin:state';
 
+    /** @var positive-int */
+    private int $threshold;
+
     /**
+     * @param int $threshold Clicks that switch the stage.
      * @param float $lockTtl Seconds the lock outlives a crashed worker.
      * @param float $lockWait Seconds to wait for a busy lock before giving up.
      */
     public function __construct(
         private CacheInterface $storage,
         private LockInterface $lock,
-        private Thresholds $thresholds,
+        int $threshold,
         private float $lockTtl = 5.0,
         private float $lockWait = 5.0,
-    ) {}
+    ) {
+        $threshold > 0 or throw new \InvalidArgumentException('Threshold must be positive.');
+        $this->threshold = $threshold;
+    }
 
     /**
      * @throws GameBusyException
@@ -41,7 +49,7 @@ final readonly class GameState
         try {
             $clicks = $this->readInt(self::KEY_CLICKS) + 1;
             $previousStage = $this->readInt(self::KEY_STAGE);
-            $stage = $this->thresholds->stageFor($clicks);
+            $stage = $clicks >= $this->threshold ? 1 : 0;
 
             $this->storage->set(self::KEY_CLICKS, $clicks);
             $stage === $previousStage or $this->storage->set(self::KEY_STAGE, $stage);
@@ -50,7 +58,7 @@ final readonly class GameState
                 clicks: $clicks,
                 stage: $stage,
                 stageChanged: $stage !== $previousStage,
-                threshold: $this->thresholds->nextFor($stage),
+                threshold: $this->threshold,
             );
         } finally {
             $this->lock->release(self::LOCK_RESOURCE, $lockId);
@@ -67,7 +75,7 @@ final readonly class GameState
         return new GameSnapshot(
             clicks: $this->readInt(self::KEY_CLICKS),
             stage: $stage,
-            threshold: $this->thresholds->nextFor($stage),
+            threshold: $this->threshold,
         );
     }
 

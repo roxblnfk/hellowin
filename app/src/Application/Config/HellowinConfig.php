@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Application\Config;
 
 use App\Domain\Element\Element;
-use App\Domain\Game\Thresholds;
 use Spiral\Core\InjectableConfig;
 
 /**
@@ -19,7 +18,7 @@ final class HellowinConfig extends InjectableConfig
         'channel' => 'hellowin',
         'storage' => 'hellowin',
         'centrifugo_url' => '/connection/websocket',
-        'thresholds' => [5, 10, 15],
+        'clicks_per_stage' => 5,
         'elements' => [],
     ];
 
@@ -47,11 +46,13 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Accepts a list or a comma-separated string, so the value can come straight from an env variable.
+     * Clicks that switch the stage. A digit string is accepted too: env variables arrive as strings.
+     *
+     * @return positive-int
      */
-    public function getThresholds(): Thresholds
+    public function getClicksPerStage(): int
     {
-        return self::thresholds($this->config['thresholds'] ?? null);
+        return self::positiveInt($this->config['clicks_per_stage'] ?? null, 'clicks_per_stage', 'HELLOWIN_CLICKS_PER_STAGE');
     }
 
     /**
@@ -63,23 +64,6 @@ final class HellowinConfig extends InjectableConfig
         \is_array($elements) or throw new \InvalidArgumentException('Config "hellowin.elements" must be a list.');
 
         return \array_values(\array_map(self::element(...), $elements));
-    }
-
-    private static function thresholds(mixed $value): Thresholds
-    {
-        $values = match (true) {
-            \is_array($value) => $value,
-            \is_int($value) => [$value],
-            \is_string($value) => \explode(',', $value),
-            default => throw new \InvalidArgumentException('Config "hellowin.thresholds" must be a list or a string.'),
-        };
-
-        return new Thresholds(\array_values(\array_map(
-            static fn(mixed $v): int => \is_numeric($v) ? (int) $v : throw new \InvalidArgumentException(
-                'Config "hellowin.thresholds" must contain integers.',
-            ),
-            $values,
-        )));
     }
 
     private static function element(mixed $spec): Element
@@ -109,6 +93,23 @@ final class HellowinConfig extends InjectableConfig
         return \is_string($value) && $value !== ''
             ? $value
             : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be a non-empty string.', $key));
+    }
+
+    /**
+     * @return positive-int
+     */
+    private static function positiveInt(mixed $value, string $key, string $env): int
+    {
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value > 0
+            ? $value
+            : throw new \InvalidArgumentException(\sprintf(
+                'Config "hellowin.%s" (env %s) must be a positive integer, got %s.',
+                $key,
+                $env,
+                \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),
+            ));
     }
 
     private static function float(mixed $value, string $key): float

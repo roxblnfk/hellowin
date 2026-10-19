@@ -28,8 +28,9 @@
 
 Остановить: `docker compose down`. Данные Prometheus и Grafana остаются в volumes; `docker compose down -v` удалит и их.
 
-Счётчик кликов и стадия живут в памяти RoadRunner и сбрасываются при перезапуске `app`. Стадия меняется каждые 5
-кликов (пороги `5,10,15`); другие пороги задаёт `HELLOWIN_THRESHOLDS`.
+Счётчик кликов и стадия живут в памяти RoadRunner и сбрасываются при перезапуске `app`. Стадия переключается один
+раз, когда набирается N кликов (`HELLOWIN_CLICKS_PER_STAGE`). Чтобы быстро проверить смену стадии, перезапустите
+`app` с маленьким порогом: `HELLOWIN_CLICKS_PER_STAGE=2 docker compose up -d app`.
 
 ### Переменные окружения
 
@@ -40,7 +41,7 @@
 | `HTTP_PORT` | `8080` | внешний порт nginx |
 | `PUBLIC_URL` | `http://localhost:8080` | внешний адрес сайта; от него Grafana строит `root_url` |
 | `CENTRIFUGO_ALLOWED_ORIGINS` | `http://localhost:8080 http://127.0.0.1:8080` | Origin через пробел, с которых браузер может подключаться к WebSocket |
-| `HELLOWIN_THRESHOLDS` | `5,10,15` | пороги кликов для смены стадии, по возрастанию через запятую |
+| `HELLOWIN_CLICKS_PER_STAGE` | `5` | сколько кликов нужно, чтобы переключить стадию, целое > 0 |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |

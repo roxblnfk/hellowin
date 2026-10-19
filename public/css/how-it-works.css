@@ -327,7 +327,7 @@ html {
     border-top: 2px solid var(--swatch);
 }
 
-/* Stages strip: one cell per stage, generated from HELLOWIN_THRESHOLDS. */
+/* Stages strip: the initial stage and the one after HELLOWIN_CLICKS_PER_STAGE clicks. */
 
 .stages {
     display: flex;

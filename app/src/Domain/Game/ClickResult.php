@@ -10,7 +10,7 @@ final readonly class ClickResult
      * @param int<1, max> $clicks Total clicks including this one.
      * @param int<0, max> $stage
      * @param bool $stageChanged This click moved the game to a new stage.
-     * @param positive-int $threshold Next threshold, or the last one once all are passed.
+     * @param positive-int $threshold Clicks that switch the stage.
      */
     public function __construct(
         public int $clicks,

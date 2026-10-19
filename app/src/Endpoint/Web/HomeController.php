@@ -35,7 +35,7 @@ final readonly class HomeController
     {
         return $this->views->render('how-it-works', [
             'channel' => $this->config->getChannel(),
-            'thresholds' => $this->config->getThresholds()->values,
+            'clicksPerStage' => $this->config->getClicksPerStage(),
         ]);
     }
 }

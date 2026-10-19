@@ -30,7 +30,7 @@ final class HellowinBootloader extends Bootloader
             ): GameState => new GameState(
                 $cache->storage($config->getStorage()),
                 $lock,
-                $config->getThresholds(),
+                $config->getClicksPerStage(),
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,

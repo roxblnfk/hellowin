@@ -9,7 +9,7 @@ final readonly class GameSnapshot
     /**
      * @param int<0, max> $clicks
      * @param int<0, max> $stage
-     * @param positive-int $threshold Next threshold, or the last one once all are passed.
+     * @param positive-int $threshold Clicks that switch the stage.
      */
     public function __construct(
         public int $clicks,

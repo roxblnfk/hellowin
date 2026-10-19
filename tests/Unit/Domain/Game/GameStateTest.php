@@ -7,10 +7,10 @@ namespace Tests\Unit\Domain\Game;
 use App\Domain\Game\ClickResult;
 use App\Domain\Game\GameBusyException;
 use App\Domain\Game\GameState;
-use App\Domain\Game\Thresholds;
 use Spiral\Cache\Storage\ArrayStorage;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataSet;
 use Testo\Expect;
 use Testo\Test;
 use Tests\Fake\FakeLock;
@@ -21,7 +21,7 @@ final class GameStateTest
 {
     public function countsClicks(): void
     {
-        $state = self::state([10]);
+        $state = self::state(10);
 
         $state->registerClick();
         $result = $state->registerClick();
@@ -34,7 +34,7 @@ final class GameStateTest
 
     public function switchesStageOnTheThresholdClick(): void
     {
-        $state = self::state([3]);
+        $state = self::state(3);
 
         $results = self::click($state, 4);
 
@@ -44,39 +44,48 @@ final class GameStateTest
         Assert::same($results[3]->threshold, 3);
     }
 
-    public function walksThroughSeveralThresholds(): void
+    public function stageSwitchesOnlyOnce(): void
     {
-        $state = self::state([2, 4, 5]);
+        $state = self::state(2);
 
         $results = self::click($state, 6);
 
-        Assert::same(\array_map(static fn(ClickResult $r): int => $r->stage, $results), [0, 1, 1, 2, 3, 3]);
-        Assert::same(\array_map(static fn(ClickResult $r): int => $r->threshold, $results), [2, 4, 4, 5, 5, 5]);
+        Assert::same(\array_map(static fn(ClickResult $r): int => $r->stage, $results), [0, 1, 1, 1, 1, 1]);
+        Assert::same(\array_map(static fn(ClickResult $r): int => $r->threshold, $results), [2, 2, 2, 2, 2, 2]);
         Assert::same(
             \array_keys(\array_filter(\array_map(static fn(ClickResult $r): bool => $r->stageChanged, $results))),
-            [1, 3, 4],
+            [1],
         );
     }
 
     public function snapshotReflectsStoredState(): void
     {
-        $state = self::state([2, 4]);
+        $state = self::state(2);
         self::click($state, 3);
 
         $snapshot = $state->snapshot();
 
-        Assert::same($snapshot->toArray(), ['stage' => 1, 'clicks' => 3, 'threshold' => 4]);
+        Assert::same($snapshot->toArray(), ['stage' => 1, 'clicks' => 3, 'threshold' => 2]);
+    }
+
+    #[DataSet([0])]
+    #[DataSet([-3])]
+    public function rejectsNonPositiveThreshold(int $threshold): never
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        self::state($threshold);
     }
 
     public function snapshotOfAFreshGame(): void
     {
-        Assert::same(self::state([7])->snapshot()->toArray(), ['stage' => 0, 'clicks' => 0, 'threshold' => 7]);
+        Assert::same(self::state(7)->snapshot()->toArray(), ['stage' => 0, 'clicks' => 0, 'threshold' => 7]);
     }
 
     public function releasesTheLockAfterEachClick(): void
     {
         $lock = new FakeLock();
-        $state = self::state([10], $lock);
+        $state = self::state(10, lock: $lock);
 
         self::click($state, 3);
 
@@ -87,19 +96,16 @@ final class GameStateTest
 
     public function failsWhenTheLockIsBusy(): never
     {
-        $state = self::state([10], new FakeLock(available: false));
+        $state = self::state(10, lock: new FakeLock(available: false));
 
         Expect::exception(GameBusyException::class);
 
         $state->registerClick();
     }
 
-    /**
-     * @param list<int> $thresholds
-     */
-    private static function state(array $thresholds, FakeLock $lock = new FakeLock()): GameState
+    private static function state(int $threshold, FakeLock $lock = new FakeLock()): GameState
     {
-        return new GameState(new ArrayStorage(), $lock, new Thresholds($thresholds));
+        return new GameState(new ArrayStorage(), $lock, $threshold);
     }
 
     /**

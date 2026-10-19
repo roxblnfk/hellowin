@@ -296,7 +296,7 @@
 <path class="d-e d-e--ret" d="M938 362 L568 362" marker-end="url(#c-ln)"/>
 <text class="d-l d-halo" x="753" y="356" text-anchor="middle">N, stage</text>
 <path class="d-e " d="M566 384 L590 384 L590 396 L568 396" marker-end="url(#c-ln)"/>
-<text class="d-l d-halo" x="596" y="393" text-anchor="start">N+1 · Thresholds::stageFor()</text>
+<text class="d-l d-halo" x="596" y="393" text-anchor="start">N+1 · сравнить с порогом</text>
 <path class="d-e " d="M568 422 L938 422" marker-end="url(#c-ln)"/>
 <text class="d-l d-halo" x="753" y="416" text-anchor="middle">kv.Set clicks (+ stage)</text>
 <path class="d-e " d="M568 452 L820 452" marker-end="url(#c-ln)"/>
@@ -356,9 +356,9 @@
                     Метрики и публикация — вне лока.
                 </figcaption>
             </figure>
-            <p>Сообщения в канале — JSON-строки:</p>
-            <pre><code>{"type":"emoji","element":"pumpkin-3","emoji":"🎃","clicks":3,"threshold":5}
-{"type":"state","stage":1,"clicks":5,"threshold":10}</code></pre>
+            <p>Сообщения в канале — JSON-строки. Пример — клик, которым набрали порог (здесь <code>HELLOWIN_CLICKS_PER_STAGE=20</code>) и сменили стадию:</p>
+            <pre><code>{"type":"emoji","element":"pumpkin-3","emoji":"🎃","clicks":20,"threshold":20}
+{"type":"state","stage":1,"clicks":20,"threshold":20}</code></pre>
         </section>
 
         <section class="how__section" id="stages">
@@ -455,17 +455,16 @@
                 </figcaption>
             </figure>
             <p>
-                Стадия — это число пройденных порогов из <code>HELLOWIN_THRESHOLDS</code>
-                (<code>Thresholds::stageFor()</code>). Сейчас пороги такие:
+                Стадий две, порог один: когда счётчик доходит до <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов (env
+                контейнера <code>app</code>), <code>GameState</code> переключает стадию с 0 на 1. Дальше стадия не
+                меняется, а клики продолжают считаться. Сейчас порог — {{ $clicksPerStage }}:
             </p>
             <ol class="stages" start="0">
                 <li class="stages__item"><b>0</b>с 0 кликов</li>
-                @foreach($thresholds as $i => $threshold)
-                <li class="stages__item"><b>{{ $i + 1 }}</b>с {{ $threshold }} кликов</li>
-                @endforeach
+                <li class="stages__item"><b>1</b>с {{ $clicksPerStage }} кликов</li>
             </ol>
             <p>
-                Когда клик переводит игру на новую стадию, <code>ClickResult::$stageChanged</code> равно true и
+                Когда клик переводит игру на стадию 1, <code>ClickResult::$stageChanged</code> равно true и
                 <code>ChannelPublisher</code> вслед за <code>emoji</code> шлёт событие <code>state</code>.
                 <code>app.js</code> записывает стадию в <code>document.body.dataset.stage</code>, а CSS по селектору
                 <code>body[data-stage="1"]</code> перекрашивает небо и луну.
