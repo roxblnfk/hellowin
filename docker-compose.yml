@@ -27,9 +27,11 @@ services:
       target: app
     image: hellowin-app:latest
     environment:
-      APP_ENV: ${APP_ENV:-prod}
-      DEBUG: ${DEBUG:-false}
+      # Not taken from .env: it is shared with a local (non-Docker) setup that usually runs APP_ENV=local, DEBUG=true.
+      APP_ENV: prod
+      DEBUG: "false"
       ENCRYPTER_KEY: ${ENCRYPTER_KEY:-}
+      HELLOWIN_THRESHOLDS: ${HELLOWIN_THRESHOLDS:-100,500,2000}
       BROADCAST_CONNECTION: centrifugo
       CENTRIFUGO_GRPC_API: centrifugo:10000
       CENTRIFUGO_WS_URL: ${CENTRIFUGO_WS_URL:-/connection/websocket}

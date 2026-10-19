@@ -9,3 +9,4 @@
 /rr
 /rr.exe
 /protoc-gen-php-grpc*
+/.env.docker

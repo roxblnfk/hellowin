@@ -13,16 +13,17 @@ Prometheus, Centrifugo (gRPC API, admin UI, `/metrics`) и порты RoadRunner
 
 ## Быстрый старт
 
-1. Создайте `.env` в корне репозитория (его читает Compose; в контейнер `app` попадают только переменные, явно
-   перечисленные в `docker-compose.yml`):
+1. Создайте `.env` в корне репозитория из примера и задайте в нём `GF_SECURITY_ADMIN_PASSWORD` (Compose читает
+   `.env` для подстановки переменных; в контейнер `app` попадают только переменные, явно перечисленные в
+   `docker-compose.yml`):
 
-   ```dotenv
-   GF_SECURITY_ADMIN_PASSWORD=change-me      # обязателен: пароль администратора Grafana
-   ENCRYPTER_KEY=                            # ключ шифрования Spiral, см. ниже
-   # HTTP_PORT=8080                          # внешний порт nginx
-   # PUBLIC_URL=http://localhost:8080        # внешний адрес, для ссылок Grafana
-   # CENTRIFUGO_ALLOWED_ORIGINS="http://localhost:8080 http://127.0.0.1:8080"
+   ```bash
+   cp .env.docker.example .env
    ```
+
+   Если `.env` уже занят под локальный запуск без Docker (`.env.sample`), держите переменные Compose в отдельном
+   файле и передавайте его в каждую команду: `docker compose --env-file .env.docker up -d --build`. Режим
+   приложения в контейнере от `.env` не зависит: `docker-compose.yml` всегда задаёт `APP_ENV=prod`, `DEBUG=false`.
 
    Ключ шифрования можно сгенерировать собранным образом:
 
@@ -52,7 +53,7 @@ Prometheus, Centrifugo (gRPC API, admin UI, `/metrics`) и порты RoadRunner
 | `CENTRIFUGO_ALLOWED_ORIGINS` | `http://localhost:8080 http://127.0.0.1:8080` | список Origin через пробел, с которых браузер может подключаться к WebSocket. При смене порта/домена поменяйте |
 | `GF_SECURITY_ADMIN_PASSWORD` | — (обязательна) | пароль `admin` в Grafana |
 | `GF_SECURITY_ADMIN_USER` | `admin` | логин администратора Grafana |
-| `APP_ENV`, `DEBUG` | `prod`, `false` | режим приложения |
+| `HELLOWIN_THRESHOLDS` | `100,500,2000` | пороги кликов для смены стадии, по возрастанию через запятую. Счётчик живёт в памяти RoadRunner и сбрасывается при перезапуске `app` |
 | `ENCRYPTER_KEY` | пусто | ключ шифрования Spiral |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь (или полный URL) WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | включить admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
