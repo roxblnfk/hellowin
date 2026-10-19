@@ -14,5 +14,7 @@ use Spiral\Interceptors\HandlerInterface;
 final class AppBootloader extends DomainBootloader
 {
     protected const SINGLETONS = [HandlerInterface::class => [self::class, 'domainCore']];
+
+    /** @psalm-suppress InvalidClassConstantType DomainBootloader::INTERCEPTORS has no type, so Psalm infers it from the empty default */
     protected const INTERCEPTORS = [GuardInterceptor::class];
 }
