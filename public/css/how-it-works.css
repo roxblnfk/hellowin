@@ -23,6 +23,7 @@ body:has(.how) {
     --d-cf: #b98cff;
     --d-obs: var(--ok);
     --d-php: #7cc4ff;
+    --d-kv: #ff7a8a;
     --d-edge: rgba(246, 231, 208, 0.6);
     --d-bad: var(--bad);
     --d-ok: var(--ok);
@@ -48,6 +49,12 @@ body:has(.how) {
 .how h2 {
     margin: 0 0 12px;
     font-size: 24px;
+    line-height: 1.3;
+}
+
+.how h3 {
+    margin: 28px 0 10px;
+    font-size: 19px;
     line-height: 1.3;
 }
 
@@ -285,6 +292,10 @@ html {
     stroke: var(--d-php);
 }
 
+.d-box.g-kv {
+    stroke: var(--d-kv);
+}
+
 .d-group {
     fill: rgba(255, 138, 31, 0.05);
     stroke: var(--d-rr);
@@ -310,6 +321,10 @@ html {
     stroke: var(--d-obs);
 }
 
+.d-e--kv {
+    stroke: var(--d-kv);
+}
+
 .d-mk path {
     fill: var(--d-line);
 }
@@ -320,6 +335,10 @@ html {
 
 .d-mk--ok path {
     fill: var(--d-obs);
+}
+
+.d-mk--kv path {
+    fill: var(--d-kv);
 }
 
 .d-life,
@@ -345,6 +364,33 @@ html {
     stroke: var(--d-muted);
     stroke-width: 1;
     stroke-dasharray: 3 3;
+}
+
+/* The window between the idempotency marker and the effect: a crash there loses the transition. */
+.d-risk {
+    stroke: var(--d-bad);
+}
+
+/* Scenes diagram: stage axis, the stageMax staircase and pumpkins. */
+.d-axis {
+    fill: none;
+    stroke: var(--d-muted);
+    stroke-width: 1;
+}
+
+.d-cap {
+    fill: none;
+    stroke: var(--d-rr);
+    stroke-width: 2.5;
+}
+
+.d-pk {
+    fill: var(--d-rr);
+    fill-opacity: 0.75;
+}
+
+.d-pk--done {
+    fill-opacity: 1;
 }
 
 .d-note {
@@ -380,10 +426,11 @@ html {
     border-top: 2px solid var(--swatch);
 }
 
-/* Stages strip: the initial stage and the one after HELLOWIN_CLICKS_PER_STAGE clicks. */
+/* Stages strip: how a pumpkin climbs inside a scene, HELLOWIN_CLICKS_PER_STAGE clicks per stage. */
 
 .stages {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin: 0 0 16px;
     padding: 0;
@@ -392,7 +439,7 @@ html {
 }
 
 .stages__item {
-    flex: 1 1 0;
+    flex: 1 1 96px;
     padding: 8px 10px;
     border-radius: 6px;
     background: var(--d-panel);
@@ -405,15 +452,15 @@ html {
     font-size: 18px;
 }
 
-.metrics-table {
+.data-table {
     width: 100%;
     margin: 0 0 16px;
     border-collapse: collapse;
     font-size: 14px;
 }
 
-.metrics-table th,
-.metrics-table td {
+.data-table th,
+.data-table td {
     padding: 6px 8px;
     border-bottom: 1px solid var(--d-faint);
     text-align: left;
