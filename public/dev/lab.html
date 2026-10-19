@@ -9,56 +9,29 @@
         .show-hits .pumpkin {
             outline: 1px solid #f0f;
         }
-        .lab[hidden] {
-            display: none;
-        }
-        .lab {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 1003;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-            gap: 6px;
-            max-width: 60%;
-            font: 700 12px/1 var(--pixel-font);
-        }
-        .lab button, .lab select {
-            padding: 6px 8px;
-            border: 0;
-            font: inherit;
-            color: var(--cream);
-            background: var(--outline);
-            box-shadow: 0 0 0 2px var(--soil);
-            cursor: pointer;
-        }
-        .lab button[aria-pressed="true"] {
-            color: var(--outline);
-            background: var(--gold);
-        }
     </style>
 </head>
 <!--
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5">
     <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
     </a>
-    <div class="lab" data-lab>
-        <button type="button" data-lab-click>клик</button>
-        <button type="button" data-lab-auto aria-pressed="false">авто</button>
+    <aside class="debug" data-debug-panel hidden aria-label="Отладка">
+        <button type="button" class="debug__button" data-action="reset">Заново</button>
+        <button type="button" class="debug__button" data-action="click-all">Клик по всем</button>
+        <button type="button" class="debug__button" data-lab-click>клик</button>
+        <button type="button" class="debug__button" data-lab-auto aria-pressed="false">авто</button>
         <select data-lab-stage aria-label="стадия">
             <option value="">стадия…</option>
             <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
         </select>
-        <button type="button" data-lab-reset>reset</button>
-    </div>
+    </aside>
     <footer class="hud">
         <span class="hud__item hud__status" data-status="connected">лаборатория</span>
         <span class="hud__item">Раунд <b data-hud-round>1</b></span>
@@ -68,6 +41,7 @@
 </main>
 <script type="module">
     import { createClient, readSnapshot } from '/js/client.js';
+    import { initDebugPanel } from '/js/debug.js';
     import { createScene } from '/js/pixel/scene.js';
 
     const params = new URLSearchParams(location.search);
@@ -99,7 +73,6 @@
         root.insertBefore(b, root.querySelector('.hud'));
     });
     if (params.has('hits')) root.classList.add('show-hits');
-    if (params.get('ui') === '0') root.querySelector('[data-lab]').hidden = true;
 
     // With ?freeze the lab runs on its own clock: headless screenshots get no animation frames, so time is stepped
     // by hand and every timer below goes through this queue.
@@ -168,7 +141,12 @@
         if (el) engineClick(el.dataset.element);
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
-    root.querySelector('[data-lab-reset]').addEventListener('click', engineReset);
+    // The lab shows the panel unless ?ui=0; the fake engine answers like the server would.
+    initDebugPanel(root.querySelector('[data-debug-panel]'), {
+        visible: params.get('ui') !== '0',
+        reset: async () => engineReset(),
+        clickAll: () => engine.elements.forEach((e, i) => later(() => engineClick(e.id), i * 30)),
+    });
     root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
         if (event.target.value !== '') engineJump(Number(event.target.value));
         event.target.value = '';
@@ -189,6 +167,7 @@
     if (params.get('auto') === '1' && !simulated) toggleAuto();
 
     const initial = engineSnapshot();
+    const resetAt = Number.parseInt(params.get('reset') ?? '-1', 10);
     function simulate() {
         Object.assign(engine, structuredClone(initial));
         queue.length = 0;
@@ -200,6 +179,7 @@
                 engineClick(randomId());
                 nextClick += 70;
             }
+            if (simTime === resetAt) engineReset();
             queue.sort((a, b) => a.at - b.at);
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);

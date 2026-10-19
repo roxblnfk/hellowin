@@ -249,3 +249,65 @@ body {
 .error a {
     color: var(--accent);
 }
+
+/* Debug panel (public/js/debug.js): top right, clear of the "?" link on the left. */
+.debug {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1003;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    max-width: calc(100% - 88px);
+    font: 700 12px/1 var(--pixel-font);
+}
+
+.debug[hidden] {
+    display: none;
+}
+
+.debug__button,
+.debug select {
+    padding: 7px 9px;
+    border: 0;
+    font: inherit;
+    color: var(--cream);
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--soil), 0 2px 0 2px var(--outline);
+    cursor: pointer;
+}
+
+.debug__button:hover {
+    background: var(--soil-dark);
+}
+
+.debug__button:focus-visible,
+.debug select:focus-visible {
+    outline: 2px dashed var(--gold);
+    outline-offset: 4px;
+}
+
+.debug__button[data-armed],
+.debug__button[aria-pressed="true"] {
+    color: var(--outline);
+    background: var(--gold);
+}
+
+.debug__button:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+@container patch (max-width: 600px) {
+    .debug {
+        gap: 4px;
+        font-size: 11px;
+    }
+
+    .debug__button,
+    .debug select {
+        padding: 6px 7px;
+    }
+}

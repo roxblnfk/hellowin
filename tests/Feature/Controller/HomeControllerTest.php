@@ -30,6 +30,7 @@ final class HomeControllerTest extends TestCase
     }
 
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8')]
+    #[Env('HELLOWIN_CLICKS_PER_STAGE', '5')]
     public function homePageStartsAtSceneZero(): void
     {
         $this->fakeHttp()->get('/')

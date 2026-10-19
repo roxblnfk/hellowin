@@ -124,7 +124,10 @@ export async function createScene(rootEl, snapshot) {
     const pumpkinLayer = new Container();
     const particleLayer = new Container();
     const flashLayer = new Container();
-    world.addChild(skyLayer, cloudLayer, baseLayer, treeLayer, plantLayer, bugLayer, pumpkinLayer, particleLayer, flashLayer);
+    // Full-screen veil for the new-round dim-and-flash.
+    const veil = new Sprite(Texture.WHITE);
+    veil.visible = false;
+    world.addChild(skyLayer, cloudLayer, baseLayer, treeLayer, plantLayer, bugLayer, pumpkinLayer, particleLayer, flashLayer, veil);
 
     let target = null;
     const display = new Sprite();
@@ -162,6 +165,7 @@ export async function createScene(rootEl, snapshot) {
     const particleArt = (kind) => artTexture(`particle:${kind}`, () => PARTICLES[kind].map((p) => texture(bake(p))));
 
     let state = {
+        round: snapshot.round,
         scene: snapshot.scene ?? 0,
         stageMax: snapshot.stageMax ?? DRAWN_STAGES,
         threshold: snapshot.threshold ?? 1,
@@ -170,6 +174,8 @@ export async function createScene(rootEl, snapshot) {
     const pumpkins = new Map();
     const particles = [];
     let clouds = [];
+    let veilStart = -1e9;
+    const VEIL = [['outline', 0.6], ['outline', 0.6], ['outline', 0.45], ['white', 0.55], ['white', 0.3]];
     let bugs = [];
     let perch = { x: 0, y: 0 };
     let clock = 0;
@@ -702,6 +708,8 @@ export async function createScene(rootEl, snapshot) {
         buildPumpkins();
         for (const particle of particles.splice(0)) particle.sprite.destroy();
         publishHitZones();
+        veil.width = layout.artW;
+        veil.height = layout.artH;
         tick({ deltaMS: 0 });
         app.render();
     }
@@ -792,6 +800,15 @@ export async function createScene(rootEl, snapshot) {
         }
 
         pumpkins.forEach(animatePumpkin);
+        // A new round: the patch dims for a moment, then a short white flash. Stepped alpha, no smooth fade.
+        const since = clock - veilStart;
+        veil.visible = since < VEIL.length * 60;
+        if (veil.visible) {
+            const [color, alpha] = VEIL[Math.floor(since / 60)];
+            veil.tint = PALETTE[color];
+            veil.alpha = alpha;
+        }
+
         for (const bug of bugs) {
             bug.sprite.visible = !reduced;
             const t = clock / 1000 + bug.phase;
@@ -845,7 +862,11 @@ export async function createScene(rootEl, snapshot) {
 
     return {
         render(next) {
+            if (!reduced && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
+                veilStart = clock;
+            }
             state = {
+                round: next.round ?? state.round,
                 scene: next.scene ?? 0,
                 stageMax: next.stageMax ?? state.stageMax,
                 threshold: next.threshold ?? state.threshold,

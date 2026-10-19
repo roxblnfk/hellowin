@@ -27,6 +27,11 @@
                     aria-label="Тыква {{ $element['id'] }}"><span class="pumpkin__emoji" aria-hidden="true">🎃</span></button>
         @endforeach
 
+        <aside class="debug" data-debug-panel hidden aria-label="Отладка">
+            <button type="button" class="debug__button" data-action="reset">Заново</button>
+            <button type="button" class="debug__button" data-action="click-all">Клик по всем</button>
+        </aside>
+
         <footer class="hud">
             <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
             <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>

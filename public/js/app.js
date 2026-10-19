@@ -1,4 +1,5 @@
 import { createClient, readSnapshot } from './client.js';
+import { initDebugPanel } from './debug.js';
 
 const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
 
@@ -62,14 +63,23 @@ async function main() {
     centrifuge.on('publication', (ctx) => client.apply(ctx.data));
 
     // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event.
+    const click = (id) => centrifuge.rpc('click', { element: id })
+        .then(({ data }) => {
+            if (data?.ok === false) console.warn('click rejected', data.error);
+        })
+        .catch((error) => console.warn('click rpc failed', error));
     root.addEventListener('click', (event) => {
         const element = event.target.closest('[data-element]');
-        if (!element) return;
-        centrifuge.rpc('click', { element: element.dataset.element })
-            .then(({ data }) => {
-                if (data?.ok === false) console.warn('click rejected', data.error);
-            })
-            .catch((error) => console.warn('click rpc failed', error));
+        if (element) click(element.dataset.element);
+    });
+
+    // Restart and "click every pumpkin" draw nothing either: the channel's `reset` / `click` events do.
+    initDebugPanel(root.querySelector('[data-debug-panel]'), {
+        reset: () => centrifuge.rpc('reset', { round: client.model.round }).then(({ data }) => {
+            if (!data?.ok) throw new Error(data?.error ?? 'bad reset response');
+        }),
+        // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
+        clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
     });
 
     centrifuge.connect();
