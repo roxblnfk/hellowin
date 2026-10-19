@@ -26,11 +26,14 @@
 
 3. Откройте `http://localhost:8080/` и `http://localhost:8080/grafana/`.
 
-Остановить: `docker compose down`. Данные Prometheus и Grafana остаются в volumes; `docker compose down -v` удалит и их.
+Остановить: `docker compose down`. Данные Valkey, Prometheus и Grafana остаются в volumes; `docker compose down -v`
+удалит и их.
 
-Счётчик кликов и стадия живут в памяти RoadRunner и сбрасываются при перезапуске `app`. Стадия переключается один
-раз, когда набирается N кликов (`HELLOWIN_CLICKS_PER_STAGE`). Чтобы быстро проверить смену стадии, перезапустите
-`app` с маленьким порогом: `HELLOWIN_CLICKS_PER_STAGE=2 docker compose up -d app`.
+Ритуал (раунд, сцена, стадии и клики тыкв) хранится в Valkey (сервис `valkey`, AOF на volume) и переживает рестарт `app`
+и `valkey`. Правила — [`docs/spec/scenario.md`](docs/spec/scenario.md). Начать ритуал заново:
+`docker compose exec app php app.php hellowin:reset`. Чтобы быстро пройти ритуал, перезапустите `app` с маленькими
+числами: `HELLOWIN_CLICKS_PER_STAGE=2 HELLOWIN_SCENE_STAGE_MAX=1,2 docker compose up -d app`, после проверки —
+`docker compose up -d app`. Ключи в Valkey: `docker compose exec valkey valkey-cli --scan`.
 
 ### Переменные окружения
 
@@ -41,10 +44,14 @@
 | `HTTP_PORT` | `8080` | внешний порт nginx |
 | `PUBLIC_URL` | `http://localhost:8080` | внешний адрес сайта; от него Grafana строит `root_url` |
 | `CENTRIFUGO_ALLOWED_ORIGINS` | `http://localhost:8080 http://127.0.0.1:8080` | Origin через пробел, с которых браузер может подключаться к WebSocket |
-| `HELLOWIN_CLICKS_PER_STAGE` | `5` | сколько кликов нужно, чтобы переключить стадию, целое > 0 |
+| `HELLOWIN_CLICKS_PER_STAGE` | `5` | сколько кликов по тыкве переводят её в следующую стадию, целое > 0 |
+| `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам через запятую, накопительно и по возрастанию; длина списка — номер финальной сцены |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |
+
+Адрес Valkey приложение берёт из `VALKEY_ADDR` (RoadRunner KV, `host:port`) и `VALKEY_DSN` (хранилище
+идемпотентности, по умолчанию `tcp://valkey:6379`); в `docker-compose.yml` они указывают на сервис `valkey`.
 
 Чтобы открыть демо в интернет, опубликуйте порт `proxy` (или поставьте перед ним TLS-терминатор) и выставьте
 `PUBLIC_URL=https://your.domain`, `CENTRIFUGO_ALLOWED_ORIGINS=https://your.domain` и свой `GF_SECURITY_ADMIN_PASSWORD`.
