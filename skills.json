@@ -5,5 +5,39 @@
         ".cursor/skills"
     ],
     "discovery": true,
-    "auto-sync": true
+    "auto-sync": true,
+    "sources": [
+        {
+            "from": "github",
+            "package": "pixijs/pixijs-skills",
+            "ref": "83760c6f53462ca9cecd68055041f5a8c94758ce",
+            "skills": [
+                "pixijs",
+                "pixijs-application",
+                "pixijs-core-concepts",
+                "pixijs-scene-core-concepts",
+                "pixijs-scene-container",
+                "pixijs-scene-sprite",
+                "pixijs-scene-graphics",
+                "pixijs-scene-text",
+                "pixijs-scene-particle-container",
+                "pixijs-assets",
+                "pixijs-events",
+                "pixijs-ticker",
+                "pixijs-filters",
+                "pixijs-color",
+                "pixijs-accessibility",
+                "pixijs-performance"
+            ]
+        },
+        {
+            "from": "github",
+            "package": "omer-metin/skills-for-antigravity",
+            "ref": "e8dcf4e8737921a10088bd5c9eb65e81f74c051f",
+            "skills": [
+                "pixel-art",
+                "pixel-art-sprites"
+            ]
+        }
+    ]
 }
