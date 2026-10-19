@@ -12,6 +12,10 @@
           data-threshold="{{ $state['threshold'] }}">
         <div class="moon" aria-hidden="true"></div>
 
+        <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
+            <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
+        </a>
+
         @foreach($elements as $element)
             <button type="button" class="element element--{{ $element['type'] }}"
                     data-element="{{ $element['id'] }}"

@@ -29,4 +29,13 @@ final readonly class HomeController
             'centrifugoUrl' => $this->config->getCentrifugoUrl(),
         ]);
     }
+
+    #[Route(route: '/how-it-works', name: 'how-it-works', methods: ['GET'])]
+    public function howItWorks(): string
+    {
+        return $this->views->render('how-it-works', [
+            'channel' => $this->config->getChannel(),
+            'thresholds' => $this->config->getThresholds()->values,
+        ]);
+    }
 }

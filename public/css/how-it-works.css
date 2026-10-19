@@ -1,0 +1,376 @@
+/* "How it works" page. Builds on the tokens of app.css; diagrams are inline SVG styled from here. */
+
+body:has(.how) {
+    height: auto;
+    min-height: 100%;
+    overflow: auto;
+}
+
+.how {
+    --d-bg: #130b27;
+    --d-ink: var(--text);
+    --d-muted: rgba(246, 231, 208, 0.66);
+    --d-line: rgba(246, 231, 208, 0.72);
+    --d-faint: rgba(246, 231, 208, 0.22);
+    --d-panel: rgba(255, 255, 255, 0.035);
+    --d-rr: var(--accent);
+    --d-cf: #b98cff;
+    --d-obs: var(--ok);
+    --d-php: #7cc4ff;
+    --d-edge: rgba(246, 231, 208, 0.6);
+    --d-bad: var(--bad);
+    --d-ok: var(--ok);
+    --code-bg: rgba(0, 0, 0, 0.32);
+
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+.how a {
+    color: var(--accent);
+}
+
+.how h1 {
+    margin: 8px 0 12px;
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.2;
+}
+
+.how h2 {
+    margin: 0 0 12px;
+    font-size: 24px;
+    line-height: 1.3;
+}
+
+.how p,
+.how ul,
+.how ol {
+    margin: 0 0 12px;
+    max-width: 72ch;
+}
+
+.how code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--code-bg);
+    font: 0.88em/1.4 ui-monospace, 'Cascadia Code', Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+.how pre {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    border-radius: 8px;
+    background: var(--code-bg);
+}
+
+.how pre code {
+    padding: 0;
+    background: none;
+    overflow-wrap: normal;
+}
+
+.how__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+}
+
+.how__lead {
+    color: var(--d-muted);
+}
+
+.how__toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.how__section {
+    margin-top: 48px;
+    scroll-margin-top: 16px;
+}
+
+.how__terms {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 0 0 12px;
+}
+
+.how__terms dt {
+    font-weight: 600;
+}
+
+.how__terms dd {
+    margin: 0;
+    color: var(--d-muted);
+}
+
+@media (max-width: 560px) {
+    .how__terms {
+        grid-template-columns: 1fr;
+    }
+
+    .how__terms dd {
+        margin-bottom: 8px;
+    }
+}
+
+.callout {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    max-width: 72ch;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    background: var(--d-panel);
+}
+
+/* Diagrams */
+
+.diagram {
+    margin: 16px 0 20px;
+    padding: 12px;
+    border: 1px solid var(--d-faint);
+    border-radius: 10px;
+    background: var(--d-bg);
+}
+
+/* On narrow screens the drawing keeps a readable size and scrolls inside its frame, not the page. */
+.diagram__scroll {
+    overflow-x: auto;
+}
+
+.diagram__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.diagram figcaption {
+    margin-top: 8px;
+    color: var(--d-muted);
+    font-size: 14px;
+}
+
+.diagram__svg text {
+    fill: var(--d-ink);
+    font-size: 11px;
+}
+
+.diagram__svg .d-t {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.diagram__svg .d-h {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.diagram__svg .d-s,
+.diagram__svg .d-n {
+    fill: var(--d-muted);
+}
+
+.diagram__svg .d-m,
+.diagram__svg .d-l {
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+.diagram__svg .d-halo {
+    paint-order: stroke;
+    stroke: var(--d-bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.diagram__svg .d-l {
+    paint-order: stroke;
+    stroke: var(--d-bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.diagram__svg .d-phase {
+    fill: var(--accent);
+}
+
+.diagram__svg .d-bad {
+    fill: var(--d-bad);
+}
+
+.diagram__svg .d-ok {
+    fill: var(--d-ok);
+}
+
+.d-box {
+    fill: var(--d-panel);
+    stroke: var(--d-edge);
+    stroke-width: 1.2;
+}
+
+.d-box.g-rr {
+    stroke: var(--d-rr);
+}
+
+.d-box.g-cf {
+    stroke: var(--d-cf);
+}
+
+.d-box.g-obs {
+    stroke: var(--d-obs);
+}
+
+.d-box.g-php {
+    stroke: var(--d-php);
+}
+
+.d-group {
+    fill: rgba(255, 138, 31, 0.05);
+    stroke: var(--d-rr);
+    stroke-width: 1;
+    stroke-dasharray: 6 4;
+}
+
+.d-e {
+    fill: none;
+    stroke: var(--d-line);
+    stroke-width: 1.4;
+}
+
+.d-e--ret {
+    stroke-dasharray: 5 4;
+}
+
+.d-e--acc {
+    stroke: var(--d-cf);
+}
+
+.d-e--ok {
+    stroke: var(--d-obs);
+}
+
+.d-mk path {
+    fill: var(--d-line);
+}
+
+.d-mk--acc path {
+    fill: var(--d-cf);
+}
+
+.d-mk--ok path {
+    fill: var(--d-obs);
+}
+
+.d-life,
+.d-sep {
+    fill: none;
+    stroke: var(--d-faint);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+}
+
+.d-sep {
+    stroke-dasharray: none;
+}
+
+.d-crit {
+    fill: rgba(255, 138, 31, 0.35);
+    stroke: var(--d-rr);
+    stroke-width: 1;
+}
+
+.d-wait {
+    fill: rgba(246, 231, 208, 0.08);
+    stroke: var(--d-muted);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+.d-note {
+    fill: var(--d-panel);
+    stroke: var(--d-faint);
+}
+
+.d-note--bad {
+    stroke: var(--d-bad);
+}
+
+.d-note--ok {
+    stroke: var(--d-ok);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14px;
+    color: var(--d-muted);
+}
+
+.legend__swatch {
+    display: inline-block;
+    width: 18px;
+    height: 0;
+    margin-right: 6px;
+    vertical-align: middle;
+    border-top: 2px solid var(--swatch);
+}
+
+/* Stages strip: one cell per stage, generated from HELLOWIN_THRESHOLDS. */
+
+.stages {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+    max-width: 72ch;
+}
+
+.stages__item {
+    flex: 1 1 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--d-panel);
+    border-top: 3px solid var(--accent);
+    font-size: 14px;
+}
+
+.stages__item b {
+    display: block;
+    font-size: 18px;
+}
+
+.metrics-table {
+    width: 100%;
+    margin: 0 0 16px;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.metrics-table th,
+.metrics-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--d-faint);
+    text-align: left;
+    vertical-align: top;
+}
+
+.table-scroll {
+    overflow-x: auto;
+}

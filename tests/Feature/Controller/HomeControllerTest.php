@@ -67,6 +67,29 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-centrifugo-url="wss://ws.example.com/connection/websocket"');
     }
 
+    public function homePageLinksToHowItWorks(): void
+    {
+        $this->fakeHttp()->get('/')
+            ->assertOk()
+            ->assertBodyContains('href="/how-it-works"');
+    }
+
+    public function howItWorksPageRendersDiagrams(): void
+    {
+        $this->fakeHttp()->get('/how-it-works')
+            ->assertOk()
+            ->assertBodyContains('<svg class="diagram__svg"')
+            ->assertBodyContains('href="/"');
+    }
+
+    #[Env('HELLOWIN_THRESHOLDS', '3,7')]
+    public function howItWorksPageListsConfiguredThresholds(): void
+    {
+        $this->fakeHttp()->get('/how-it-works')
+            ->assertOk()
+            ->assertBodyContains('<b>2</b>с 7 кликов');
+    }
+
     #[Env('DEBUG', 'false')]
     public function unknownPageRendersErrorView(): void
     {
