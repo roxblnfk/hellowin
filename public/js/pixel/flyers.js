@@ -107,7 +107,37 @@ const CHICKEN = {
     wingColors: ['w', 'W', 'W'],
 };
 
-const DEPTH_W = [12, 17, 26];
+// Depth 0 is hand-drawn below: at 8 px a rasterised shape loses the head.
+const DEPTH_W = [8, 14, 26];
+
+// Far flyers are just readable specks: a duck is a dark head on a light body, a hen a white blob with a red comb.
+const FAR = {
+    duck: {
+        anchor: { x: 4, y: 2 },
+        up: ['..g.....', '..gg..KH', 'gGGGGBKY', '.gGGGG..', '........'],
+        mid: ['........', '.ggg..KH', 'gGGGGBKY', '.gGGGG..', '........'],
+        down: ['........', '......KH', 'gGGGGBKY', '.gGgGG..', '...gg...'],
+        hit: ['.g..g...', '..gg..KH', 'gGGGGBKY', '.gGGGG..', 'G....g..'],
+    },
+    chicken: {
+        anchor: { x: 4, y: 3 },
+        up: ['..W...R.', '.WWW.ww.', 'wwwwwwwY', '.wwwwww.', '..WWWW..', '...o.o..'],
+        mid: ['......R.', 'WWW..ww.', 'wwwwwwwY', '.wwwwww.', '..WWWW..', '...o.o..'],
+        down: ['......R.', '.....ww.', 'wwwwwwwY', '.wwWWWw.', '..WWWW..', '...o.o..'],
+        hit: ['.W..W.R.', '..WW.ww.', 'wwwwwwwY', '.wwwwww.', 'w.WWWW.W', '...o.o..'],
+    },
+};
+
+function farSet(kind) {
+    const far = FAR[kind];
+    const make = (rows) => ({ w: rows[0].length, h: rows.length, rows, legend: LEGEND, anchor: { ...far.anchor } });
+    const hit = make(far.hit);
+    return {
+        fly: ['up', 'mid', 'down', 'mid'].map((wing) => make(far[wing])),
+        hit,
+        fall: [rotate90(hit), rotate180(hit)],
+    };
+}
 
 function rasterise(def, w, wing, { extra = [] } = {}) {
     const k = w / 24;
@@ -206,7 +236,8 @@ function hitFrame(def, w) {
 }
 
 function flyerSet(def) {
-    return DEPTH_W.map((w) => {
+    return DEPTH_W.map((w, depth) => {
+        if (depth === 0) return farSet(def === DUCK ? 'duck' : 'chicken');
         const hit = hitFrame(def, w);
         return {
             fly: ['up', 'mid', 'down', 'mid'].map((wing) => rasterise(def, w, wing)),
