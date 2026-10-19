@@ -22,6 +22,7 @@ final class FlyerConfig extends InjectableConfig
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
+        'kinds' => 'duck,chicken',
     ];
 
     /**
@@ -87,6 +88,32 @@ final class FlyerConfig extends InjectableConfig
     public function getArcChance(): float
     {
         return self::chance($this->config['arc_chance'] ?? null, 'arc_chance', 'HELLOWIN_FLYER_ARC_CHANCE');
+    }
+
+    /**
+     * Flyer kinds, picked at random for every launch.
+     *
+     * @return non-empty-list<non-empty-string>
+     */
+    public function getKinds(): array
+    {
+        /** @var mixed $value */
+        $value = $this->config['kinds'] ?? null;
+        $error = self::invalid('kinds', 'HELLOWIN_FLYER_KINDS', 'a comma-separated list of lowercase words', $value);
+        $list = \is_string($value) ? \explode(',', $value) : $value;
+        \is_array($list) && $list !== [] or throw $error;
+
+        $kinds = [];
+        /** @var mixed $item */
+        foreach ($list as $item) {
+            $kind = \is_string($item) ? \trim($item) : '';
+            if ($kind === '' || \preg_match('/^[a-z]+$/', $kind) !== 1) {
+                throw $error;
+            }
+            $kinds[$kind] = $kind;
+        }
+
+        return \array_values($kinds);
     }
 
     /**

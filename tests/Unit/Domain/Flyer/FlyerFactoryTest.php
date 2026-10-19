@@ -72,6 +72,15 @@ final class FlyerFactoryTest
         Assert::null($factory->launch(0)->bush);
     }
 
+    public function everyKindIsLaunched(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), ['duck', 'chicken']);
+        $kinds = \array_unique(\array_map(static fn(Flyer $f): string => $f->kind, self::flyers($factory, 50)));
+        \sort($kinds);
+
+        Assert::same($kinds, ['chicken', 'duck']);
+    }
+
     public function flyerCarriesItsLaunchTimeAndAnId(): void
     {
         $flyer = self::factory(0.5, 0.5)->launch(123_456);

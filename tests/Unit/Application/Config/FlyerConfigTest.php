@@ -61,6 +61,22 @@ final class FlyerConfigTest
         (new FlyerConfig(['arc_chance' => $value]))->getArcChance();
     }
 
+    public function kindsDefaultToDucksAndChickens(): void
+    {
+        Assert::same((new FlyerConfig())->getKinds(), ['duck', 'chicken']);
+        Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), ['duck', 'bat']);
+    }
+
+    #[DataSet([''], 'empty')]
+    #[DataSet(['duck,'], 'trailing comma')]
+    #[DataSet(['Duck'], 'uppercase')]
+    public function kindsRejectGarbage(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_KINDS');
+
+        (new FlyerConfig(['kinds' => $value]))->getKinds();
+    }
+
     public function chanceFromEnvString(): void
     {
         Assert::same((new FlyerConfig(['bush_chance' => ' 0.25']))->getBushChance(), 0.25);

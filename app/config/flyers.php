@@ -20,4 +20,7 @@ return [
 
     // Probability of a curved flight
     'arc_chance' => env('HELLOWIN_FLYER_ARC_CHANCE', 0.5),
+
+    // Kinds picked at random for every launch; how each kind looks is up to the frontend
+    'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken'),
 ];

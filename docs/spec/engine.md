@@ -177,6 +177,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
+| `HELLOWIN_FLYER_KINDS` | `duck,chicken` | виды летунов через запятую (`[a-z]+`), выбираются равновероятно |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
 | `VALKEY_DSN` | `tcp://valkey:6379` | Valkey для idempotency (predis) |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | URL WebSocket для фронта |

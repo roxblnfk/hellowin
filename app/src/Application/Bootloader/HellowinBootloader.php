@@ -120,6 +120,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getBushes(),
                 $flyers->getBushChance(),
                 $flyers->getArcChance(),
+                kinds: $flyers->getKinds(),
             ),
             FlyerStore::class => static fn(
                 HellowinConfig $config,

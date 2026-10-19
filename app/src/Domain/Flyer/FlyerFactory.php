@@ -32,6 +32,7 @@ final readonly class FlyerFactory
      * @param list<Bush> $bushes
      * @param float $bushChance Probability to take off from a bush, when there are bushes.
      * @param float $arcChance Probability of a curved flight.
+     * @param non-empty-list<non-empty-string> $kinds Picked with equal chance.
      */
     public function __construct(
         array $depths,
@@ -39,6 +40,7 @@ final readonly class FlyerFactory
         private float $bushChance,
         private float $arcChance,
         private Randomizer $random = new Randomizer(),
+        private array $kinds = [Flyer::KIND_DUCK],
     ) {
         $this->depths = $depths;
         $this->bushes = $bushes;
@@ -70,6 +72,7 @@ final readonly class FlyerFactory
             duration: $settings->duration,
             points: $settings->points,
             launchedAt: $now,
+            kind: $this->kinds[$this->random->getInt(0, \count($this->kinds) - 1)],
         );
     }
 
