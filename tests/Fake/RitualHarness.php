@@ -89,7 +89,8 @@ final class RitualHarness
         $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->clock = new FrozenClock();
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, clock: $this->clock);
+        $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
@@ -97,7 +98,7 @@ final class RitualHarness
         $this->flyers = new FlyerService(
             new FlyerFactory(
                 [new FlyerDepth(9000, 3), new FlyerDepth(6500, 2), new FlyerDepth(4000, 1)],
-                [new Bush('bush-1', new Point(4, 86))],
+                $bushes,
                 0.5,
                 0.5,
                 new Randomizer(new Mt19937(42)),

@@ -7,12 +7,12 @@ namespace App\Domain\Flyer;
 use Random\Randomizer;
 
 /**
- * Picks a random flyer: depth, where it comes from and how it flies. The server sends a finished trajectory, so
+ * Picks a random flyer: where it comes from, its depth and how it flies. The server sends a finished trajectory, so
  * every client sees the same flight.
  *
  * - From the edge: in from behind the left or right edge (sometimes from a top corner) and out behind the
- *   opposite one, high in the sky.
- * - From a bush: up from the bush and out across the screen through the top or a side edge.
+ *   opposite one, high in the sky, at a random depth.
+ * - From a bush: up from the bush and out across the screen through the top or a side edge, at the bush depth.
  *
  * Either way the flight is straight or, with the arc chance, a quadratic curve through `via`.
  */
@@ -29,7 +29,7 @@ final readonly class FlyerFactory
 
     /**
      * @param non-empty-list<FlyerDepth> $depths Index is the depth: 0 is the farthest.
-     * @param list<Bush> $bushes
+     * @param list<Bush> $bushes Each at one of the depths.
      * @param float $bushChance Probability to take off from a bush, when there are bushes.
      * @param float $arcChance Probability of a curved flight.
      * @param non-empty-list<non-empty-string> $kinds Picked with equal chance.
@@ -42,6 +42,15 @@ final readonly class FlyerFactory
         private Randomizer $random = new Randomizer(),
         private array $kinds = [Flyer::KIND_DUCK],
     ) {
+        foreach ($bushes as $bush) {
+            $bush->depth < \count($depths) or throw new \InvalidArgumentException(\sprintf(
+                'Bush "%s" has depth %d, but flyers have only %d depths.',
+                $bush->id,
+                $bush->depth,
+                \count($depths),
+            ));
+        }
+
         $this->depths = $depths;
         $this->bushes = $bushes;
     }
@@ -51,14 +60,15 @@ final readonly class FlyerFactory
      */
     public function launch(int $now): Flyer
     {
-        /** @var int<0, max> $depth */
-        $depth = $this->random->getInt(0, \count($this->depths) - 1);
-        $settings = $this->depths[$depth];
         $arc = $this->chance($this->arcChance);
 
         $bush = $this->bushes !== [] && $this->chance($this->bushChance)
             ? $this->bushes[$this->random->getInt(0, \count($this->bushes) - 1)]
             : null;
+
+        /** @var int<0, max> $depth */
+        $depth = $bush?->depth ?? $this->random->getInt(0, \count($this->depths) - 1);
+        $settings = $this->depths[$depth];
 
         [$from, $via, $to] = $bush === null ? $this->fromEdge($arc) : $this->fromBush($bush->at, $arc);
 

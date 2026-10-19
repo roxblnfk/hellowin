@@ -30,7 +30,8 @@ final class HellowinConfigTest extends TestCase
 
     public function shippedBushesAreOnTheGround(): void
     {
-        $bushes = $this->getContainer()->get(HellowinConfig::class)->getBushes();
+        $depths = \count($this->getContainer()->get(FlyerConfig::class)->getDepths());
+        $bushes = $this->getContainer()->get(HellowinConfig::class)->getBushes($depths);
 
         Assert::notBlank($bushes);
         foreach ($bushes as $bush) {

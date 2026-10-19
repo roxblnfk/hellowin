@@ -82,6 +82,7 @@ final class HellowinBootloader extends Bootloader
             ),
             SnapshotFactory::class => static fn(
                 HellowinConfig $config,
+                FlyerConfig $flyers,
                 ElementRegistry $elements,
                 RitualStore $store,
                 RitualPolicy $policy,
@@ -91,7 +92,7 @@ final class HellowinBootloader extends Bootloader
                 $store,
                 $policy,
                 $config->getClicksPerStage(),
-                $config->getBushes(),
+                $config->getBushes(\count($flyers->getDepths())),
                 $clock,
             ),
             ChannelPublisher::class => static fn(
@@ -117,7 +118,7 @@ final class HellowinBootloader extends Bootloader
             ),
             FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(
                 $flyers->getDepths(),
-                $config->getBushes(),
+                $config->getBushes(\count($flyers->getDepths())),
                 $flyers->getBushChance(),
                 $flyers->getArcChance(),
                 kinds: $flyers->getKinds(),

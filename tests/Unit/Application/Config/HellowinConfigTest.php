@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Unit\Application\Config;
 
 use App\Application\Config\HellowinConfig;
+use App\Domain\Flyer\Bush;
+use App\Domain\Flyer\Point;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
@@ -82,5 +84,33 @@ final class HellowinConfigTest
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('size');
 
         $config->getElements();
+    }
+
+    public function bushDepthComesFromTheConfig(): void
+    {
+        $config = new HellowinConfig(['bushes' => [['id' => 'bush-1', 'x' => 4, 'y' => 86, 'depth' => 1]]]);
+
+        Assert::equals($config->getBushes(3), [new Bush('bush-1', new Point(4, 86), 1)]);
+    }
+
+    public function bushWithoutDepthLaunchesTheNearestFlyers(): void
+    {
+        $config = new HellowinConfig(['bushes' => [['id' => 'bush-1', 'x' => 4, 'y' => 86]]]);
+
+        Assert::same($config->getBushes(3)[0]->depth, 2);
+    }
+
+    #[DataSet([3], 'beyond the depths')]
+    #[DataSet([-1], 'negative')]
+    #[DataSet(['1'], 'string')]
+    public function rejectsABushDepthOutsideTheFlyerDepths(mixed $depth): never
+    {
+        $config = new HellowinConfig(['bushes' => [['id' => 'bush-7', 'x' => 4, 'y' => 86, 'depth' => $depth]]]);
+
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('bush "bush-7" has depth')
+            ->withMessageContaining('HELLOWIN_FLYER_DURATION');
+
+        $config->getBushes(3);
     }
 }

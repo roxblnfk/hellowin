@@ -20,7 +20,7 @@ use App\Domain\Ritual\RitualStore;
  *     sceneStages: positive-int,
  *     stageMax: int<0, max>,
  *     threshold: positive-int,
- *     bushes: list<array{id: non-empty-string, x: float, y: float}>,
+ *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
  *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>,
  *     now: int
  * }

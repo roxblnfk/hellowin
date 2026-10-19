@@ -89,7 +89,7 @@ final class RPCServiceTest
             'sceneStages' => 3,
             'stageMax' => 4,
             'threshold' => 4,
-            'bushes' => [],
+            'bushes' => [['id' => 'bush-1', 'x' => 4.0, 'y' => 86.0, 'depth' => 2]],
             'elements' => [
                 ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 0],
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 2],

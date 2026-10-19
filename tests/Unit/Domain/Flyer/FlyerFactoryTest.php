@@ -13,6 +13,7 @@ use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
@@ -59,6 +60,24 @@ final class FlyerFactoryTest
         }
     }
 
+    public function bushFlyerFliesAtTheBushDepth(): void
+    {
+        $flyers = self::flyers(self::factory(1.0, 0.5), 300);
+
+        foreach ($flyers as $flyer) {
+            Assert::same($flyer->depth, $flyer->bush === 'bush-left' ? 2 : 1);
+            Assert::same([$flyer->duration, $flyer->points], self::DEPTHS[$flyer->depth]);
+        }
+        Assert::count(\array_unique(\array_map(static fn(Flyer $f): ?string => $f->bush, $flyers)), 2);
+    }
+
+    public function bushBeyondTheDepthsIsRejected(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('Bush "bush-far" has depth 3');
+
+        new FlyerFactory([new FlyerDepth(9000, 3), new FlyerDepth(4000, 1), new FlyerDepth(1000, 1)], [new Bush('bush-far', new Point(4, 86), 3)], 1.0, 0.0);
+    }
+
     public function arcChanceDecidesTheCurve(): void
     {
         Assert::blank(\array_filter(self::flyers(self::factory(0.5, 0.0), 100), static fn(Flyer $f): bool => $f->via !== null));
@@ -95,7 +114,7 @@ final class FlyerFactoryTest
     {
         return new FlyerFactory(
             \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
-            [new Bush('bush-left', new Point(4, 86)), new Bush('bush-right', new Point(96, 66))],
+            [new Bush('bush-left', new Point(4, 86), 2), new Bush('bush-right', new Point(96, 66), 1)],
             $bushChance,
             $arcChance,
             new Randomizer(new Mt19937(42)),

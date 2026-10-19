@@ -127,19 +127,36 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
+     * A bush without `depth` launches the nearest flyers.
+     *
+     * @param positive-int $depths Number of flyer depths: the length of `HELLOWIN_FLYER_DURATION`.
+     *
      * @return list<Bush>
      */
-    public function getBushes(): array
+    public function getBushes(int $depths): array
     {
         $bushes = $this->config['bushes'] ?? [];
         \is_array($bushes) or throw new \InvalidArgumentException('Config "hellowin.bushes" must be a list.');
 
-        return \array_values(\array_map(static function (mixed $spec): Bush {
+        return \array_values(\array_map(static function (mixed $spec) use ($depths): Bush {
             \is_array($spec) or throw new \InvalidArgumentException('Each bush of "hellowin.bushes" must be an array.');
+            $id = self::nonEmptyString($spec['id'] ?? null, 'bushes.*.id');
+            /** @var mixed $depth */
+            $depth = $spec['depth'] ?? $depths - 1;
+
+            \is_int($depth) && $depth >= 0 && $depth < $depths or throw new \InvalidArgumentException(\sprintf(
+                'Config "hellowin.bushes" bush "%s" has depth %s, but flyers have %d depths: use an integer from 0 to %d '
+                . 'or list more depths in env HELLOWIN_FLYER_DURATION.',
+                $id,
+                \is_int($depth) ? (string) $depth : \get_debug_type($depth),
+                $depths,
+                $depths - 1,
+            ));
 
             return new Bush(
-                self::nonEmptyString($spec['id'] ?? null, 'bushes.*.id'),
+                $id,
                 new Point(self::float($spec['x'] ?? null, 'bushes.*.x'), self::float($spec['y'] ?? null, 'bushes.*.y')),
+                $depth,
             );
         }, $bushes));
     }
