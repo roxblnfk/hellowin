@@ -137,16 +137,19 @@ body:has(.how) {
 
 /* Diagrams */
 
-/* The page keeps a readable text column; diagrams break out of it to the full viewport width. */
+/* The page keeps a readable text column; diagrams break out of it, but only up to a size where labels stay ~1.3x of the viewBox. */
 html {
     overflow-x: clip;
 }
 
 .diagram {
-    width: 100vw;
-    margin: 16px 0 20px calc(50% - 50vw);
+    --diagram-width: min(100vw - 32px, 1360px);
+
+    width: var(--diagram-width);
+    margin: 16px 0 20px calc(50% - var(--diagram-width) / 2);
     padding: 16px;
-    border-block: 1px solid var(--d-faint);
+    border: 1px solid var(--d-faint);
+    border-radius: 10px;
     background: var(--d-bg);
     box-sizing: border-box;
 }
