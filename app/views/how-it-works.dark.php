@@ -4,6 +4,10 @@
     <link rel="stylesheet" href="/css/how-it-works.css">
 </stack:push>
 
+<stack:push name="scripts">
+    <script src="/js/how-it-works.js"></script>
+</stack:push>
+
 <define:body>
     <main class="how">
         <header>
@@ -29,18 +33,19 @@
                 <dt>Prometheus, Grafana</dt>
                 <dd>Prometheus сам забирает метрики с сервисов и хранит их; Grafana рисует по ним дашборд.</dd>
             </dl>
-            <nav aria-label="Разделы">
-                <ol class="how__toc">
-                    <li><a href="#modules">Модули</a></li>
-                    <li><a href="#page-load">Загрузка страницы</a></li>
-                    <li><a href="#click">Клик</a></li>
-                    <li><a href="#stages">Стадии и лок</a></li>
-                    <li><a href="#metrics">Метрики</a></li>
-                </ol>
-            </nav>
         </header>
 
-        <section class="how__section" id="modules">
+        <nav class="tabs" aria-label="Разделы">
+            <ol class="tabs__list" role="tablist">
+                <li role="presentation"><a role="tab" id="tab-modules" href="#modules" aria-controls="modules" aria-selected="true">Модули</a></li>
+                <li role="presentation"><a role="tab" id="tab-page-load" href="#page-load" aria-controls="page-load" aria-selected="false">Загрузка страницы</a></li>
+                <li role="presentation"><a role="tab" id="tab-click" href="#click" aria-controls="click" aria-selected="false">Клик</a></li>
+                <li role="presentation"><a role="tab" id="tab-stages" href="#stages" aria-controls="stages" aria-selected="false">Стадии и лок</a></li>
+                <li role="presentation"><a role="tab" id="tab-metrics" href="#metrics" aria-controls="metrics" aria-selected="false">Метрики</a></li>
+            </ol>
+        </nav>
+
+        <section class="how__section" id="modules" role="tabpanel" aria-labelledby="tab-modules">
             <h2>1. Кто с кем разговаривает</h2>
             <p>
                 Наружу открыт только nginx (<code>localhost:8080</code>). Он разводит запросы по путям:
@@ -147,7 +152,7 @@
             </figure>
         </section>
 
-        <section class="how__section" id="page-load">
+        <section class="how__section" id="page-load" role="tabpanel" aria-labelledby="tab-page-load">
             <h2>2. Загрузка страницы и подключение</h2>
             <p>
                 <code>GET /</code> — обычный HTTP. <code>HomeController::index()</code> берёт снимок состояния
@@ -242,7 +247,7 @@
             </figure>
         </section>
 
-        <section class="how__section" id="click">
+        <section class="how__section" id="click" role="tabpanel" aria-labelledby="tab-click">
             <h2>3. Что происходит при клике</h2>
             <p>
                 Клик — не HTTP-запрос, а RPC поверх того же WebSocket:
@@ -361,7 +366,7 @@
 {"type":"state","stage":1,"clicks":20,"threshold":20}</code></pre>
         </section>
 
-        <section class="how__section" id="stages">
+        <section class="how__section" id="stages" role="tabpanel" aria-labelledby="tab-stages">
             <h2>4. Стадии и зачем нужен лок</h2>
             <p>
                 Счётчик кликов один на всех, а клики обрабатывают несколько воркеров параллельно (в пуле
@@ -471,7 +476,7 @@
             </p>
         </section>
 
-        <section class="how__section" id="metrics">
+        <section class="how__section" id="metrics" role="tabpanel" aria-labelledby="tab-metrics">
             <h2>5. Метрики</h2>
             <p>
                 При старте воркера <code>ClickMetrics</code> объявляет коллекторы в плагине <code>metrics</code>, а на

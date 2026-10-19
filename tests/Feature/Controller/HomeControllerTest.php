@@ -82,6 +82,24 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('href="/"');
     }
 
+    public function howItWorksPageSplitsSectionsIntoTabs(): void
+    {
+        $body = (string) $this->fakeHttp()->get('/how-it-works')
+            ->assertOk()
+            ->assertBodyContains('role="tablist"')
+            ->assertBodyContains('<script src="/js/how-it-works.js"></script>')
+            ->getOriginalResponse()
+            ->getBody();
+
+        \preg_match_all('/<a role="tab"[^>]*\baria-controls="([^"]+)"/', $body, $tabs);
+        \preg_match_all('/<section [^>]*\bid="([^"]+)" role="tabpanel"/', $body, $panels);
+        $sections = \substr_count($body, '<section class="how__section"');
+
+        Assert::notBlank($panels[1]);
+        Assert::count($panels[1], $sections);
+        Assert::same($tabs[1], $panels[1]);
+    }
+
     #[Env('HELLOWIN_CLICKS_PER_STAGE', '3')]
     public function howItWorksPageShowsConfiguredThreshold(): void
     {
