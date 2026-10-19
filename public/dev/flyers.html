@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — летуны</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px; }
+        .sky { background: #8ccff0; }
+        .grass { background: #2e7a34; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cell span { font-size: 11px; color: #123; }
+        .grass .cell span { color: #eee; }
+    </style>
+</head>
+<body>
+<h2>Живая сцена 3× (параметр ?t=мс — стоп-кадр)</h2>
+<div id="live"></div>
+<div id="out"></div>
+<script type="module">
+    import { FLYERS, BUSH, DIGITS, digitsSprite, feathersOf, bake } from '../js/pixel/flyers.js';
+    import { PALETTE } from '../js/pixel/palette.js';
+
+    const out = document.getElementById('out');
+    const css = (key) => `#${PALETTE[key].toString(16).padStart(6, '0')}`;
+    const baked = new Map();
+    const tex = (s) => baked.get(s) ?? baked.set(s, bake(s)).get(s);
+
+    function view(sprite, scale, label) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const c = bake(sprite);
+        c.style.width = `${sprite.w * scale}px`;
+        c.style.height = `${sprite.h * scale}px`;
+        cell.append(c);
+        if (label) {
+            const s = document.createElement('span');
+            s.textContent = label;
+            cell.append(s);
+        }
+        return cell;
+    }
+
+    function section(title, bg, items) {
+        const h = document.createElement('h2');
+        h.textContent = title;
+        const row = document.createElement('div');
+        row.className = `row ${bg}`;
+        row.append(...items);
+        out.append(h, row);
+    }
+
+    for (const kind of ['duck', 'chicken']) {
+        for (const bg of ['sky', 'grass']) {
+            section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, 3× (${bg})`, bg, FLYERS[kind].flatMap((set, depth) => [
+                ...set.fly.map((s, i) => view(s, 3, `d${depth} fly${i}`)),
+                view(set.hit, 3, `d${depth} hit`),
+                ...set.fall.map((s, i) => view(s, 3, `d${depth} fall${i}`)),
+            ]));
+        }
+    }
+    section('перья 6×, куст idle ×2 и rustle ×3 3×, цифры 4×', 'grass', [
+        ...FLYERS.feathers.map((s, i) => view(s, 6, `${s.kind}${i}`)),
+        ...BUSH.idle.map((s, i) => view(s, 3, `idle${i}`)),
+        ...BUSH.rustle.map((s, i) => view(s, 3, `rustle${i}`)),
+        ...Object.entries(DIGITS).map(([ch, s]) => view(s, 4, ch)),
+        view(digitsSprite('+1'), 4), view(digitsSprite('+2'), 4), view(digitsSprite('+3'), 4),
+    ]);
+
+    // Live: positions in % of the art canvas, as the `flyer` events send them.
+    const W = 320;
+    const H = 180;
+    const HORIZON = 70;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    canvas.style.width = `${W * 3}px`;
+    canvas.style.height = `${H * 3}px`;
+    document.getElementById('live').append(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const PERIOD = 3000 * 4;
+    const BUSH_AT = { x: 14, y: 88 };
+    const flights = [
+        { kind: 'duck', depth: 0, from: { x: -8, y: 18.4 }, to: { x: 108, y: 10.2 }, start: 0, duration: 9000 },
+        { kind: 'chicken', depth: 1, from: { x: 108, y: 30 }, to: { x: -8, y: 14 }, start: 500, duration: 6000 },
+        { kind: 'duck', depth: 2, bush: true, from: BUSH_AT, via: { x: 30, y: 18 }, to: { x: 75, y: -8 }, start: 1500, duration: 4000, shotAt: 2600, points: 1 },
+        { kind: 'chicken', depth: 2, from: { x: -8, y: 40 }, via: { x: 50, y: 5 }, to: { x: 108, y: 30 }, start: 3000, duration: 5000, shotAt: 5200, points: 2 },
+        { kind: 'duck', depth: 1, from: { x: 108, y: 22 }, to: { x: -8, y: 30 }, start: 6000, duration: 6000, shotAt: 8000, points: 3 },
+    ];
+    const FLAP = [180, 130, 90];
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+    function pointAt(f, t) {
+        if (!f.via) return { x: lerp(f.from.x, f.to.x, t), y: lerp(f.from.y, f.to.y, t) };
+        const u = 1 - t;
+        return {
+            x: u * u * f.from.x + 2 * u * t * f.via.x + t * t * f.to.x,
+            y: u * u * f.from.y + 2 * u * t * f.via.y + t * t * f.to.y,
+        };
+    }
+    const toArt = (p) => ({ x: (p.x / 100) * W, y: (p.y / 100) * H });
+
+    function draw(sprite, x, y, flip = false, alpha = 1) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(Math.round(x), Math.round(y));
+        if (flip) ctx.scale(-1, 1);
+        ctx.drawImage(tex(sprite), -sprite.anchor.x, -sprite.anchor.y);
+        ctx.restore();
+    }
+
+    function frame(now) {
+        const t = now % PERIOD;
+        ctx.fillStyle = css('sky');
+        ctx.fillRect(0, 0, W, HORIZON);
+        ctx.fillStyle = css('leaf');
+        ctx.fillRect(0, HORIZON, W, H - HORIZON);
+        ctx.fillStyle = css('soil');
+        ctx.fillRect(0, HORIZON + 30, W, H - HORIZON - 30);
+
+        const bushFlyer = flights.find((f) => f.bush);
+        const rustling = t >= bushFlyer.start - 600 && t < bushFlyer.start + 300;
+        const bushSprite = rustling ? BUSH.rustle[Math.floor(t / 90) % 3] : BUSH.idle[0];
+        const bp = toArt(BUSH_AT);
+        draw(BUSH.idle[1], bp.x + 220, bp.y + 4);
+
+        for (const f of [...flights].sort((a, b) => a.depth - b.depth)) {
+            const set = FLYERS[f.kind][f.depth];
+            const local = t - f.start;
+            if (local < 0) continue;
+            if (f.shotAt && t >= f.shotAt) {
+                const fall = t - f.shotAt;
+                const p0 = toArt(pointAt(f, (f.shotAt - f.start) / f.duration));
+                const flip = f.to.x < f.from.x;
+                const y = p0.y + 0.00012 * fall * fall;
+                if (y < H + 20) {
+                    const sprite = fall < 160 ? set.hit : set.fall[Math.floor(fall / 120) % 2];
+                    draw(sprite, p0.x, y, flip);
+                }
+                feathersOf(f.kind).concat(feathersOf(f.kind)).forEach((feather, i) => {
+                    if (fall > 1400) return;
+                    const a = (i / 4) * Math.PI * 2 + 0.6;
+                    const s = fall / 1000;
+                    draw(feather, p0.x + Math.cos(a) * 26 * s, p0.y + Math.sin(a) * 14 * s + 22 * s * s, false, 1 - fall / 1400);
+                });
+                if (fall < 1200) {
+                    draw(digitsSprite(`+${f.points}`), p0.x, p0.y - set.hit.h / 2 - 6 - fall * 0.012, false, Math.min(1, 2 - fall / 600));
+                }
+                continue;
+            }
+            if (local > f.duration) continue;
+            const p = toArt(pointAt(f, local / f.duration));
+            draw(set.fly[Math.floor(local / FLAP[f.depth]) % 4], p.x, p.y, f.to.x < f.from.x);
+        }
+        draw(bushSprite, bp.x, bp.y);
+    }
+
+    const fixed = new URLSearchParams(location.search).get('t');
+    if (fixed !== null) {
+        frame(Number(fixed));
+    } else {
+        const loop = (now) => {
+            frame(now);
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+</script>
+</body>
+</html>

@@ -54,4 +54,17 @@ export const PALETTE = {
 
     grayLight: 0xc4c4cc,
     gray: 0x84848f,
+
+    // Flyers: mallard and hen, plus the gold of the score popups.
+    mallard: 0x1e7a50,
+    mallardLight: 0x46b070,
+    duckBrown: 0x8c4626,
+    duckBrownLight: 0xb86a3a,
+    duckGray: 0xbcb8b0,
+    duckGrayDark: 0x7c7872,
+    speculum: 0x4058c8,
+    beak: 0xf4c22e,
+    comb: 0xd8342c,
+    chickenShade: 0xd6ccbc,
+    gold: 0xffd040,
 };
