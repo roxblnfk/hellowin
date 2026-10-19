@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Domain\Element\ElementRegistry;
+use App\Domain\Flyer\Bush;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 
@@ -17,6 +18,7 @@ use App\Domain\Ritual\RitualStore;
  *     sceneStages: positive-int,
  *     stageMax: int<0, max>,
  *     threshold: positive-int,
+ *     bushes: list<array{id: non-empty-string, x: float, y: float}>,
  *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>
  * }
  */
@@ -24,12 +26,14 @@ final readonly class SnapshotFactory
 {
     /**
      * @param positive-int $threshold
+     * @param list<Bush> $bushes
      */
     public function __construct(
         private ElementRegistry $elements,
         private RitualStore $store,
         private RitualPolicy $policy,
         private int $threshold,
+        private array $bushes = [],
     ) {}
 
     /**
@@ -54,6 +58,7 @@ final readonly class SnapshotFactory
             'sceneStages' => $this->policy->finalScene(),
             'stageMax' => $this->policy->stageMax($ritual->scene),
             'threshold' => $this->threshold,
+            'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
         ];
     }

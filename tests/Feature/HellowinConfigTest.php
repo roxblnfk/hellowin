@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
+use App\Domain\Flyer\FlyerDepth;
 use Spiral\Testing\Attribute\Env;
 use Testo\Assert;
 use Testo\Expect;
@@ -24,6 +26,28 @@ final class HellowinConfigTest extends TestCase
             Assert::numeric($element->y)->between(0, 100);
             Assert::notBlank($element->emojis);
         }
+    }
+
+    public function shippedBushesAreOnTheGround(): void
+    {
+        $bushes = $this->getContainer()->get(HellowinConfig::class)->getBushes();
+
+        Assert::notBlank($bushes);
+        foreach ($bushes as $bush) {
+            Assert::numeric($bush->at->x)->between(0, 100);
+            Assert::numeric($bush->at->y)->between(30, 100);
+        }
+    }
+
+    #[Env('HELLOWIN_FLYER_INTERVAL', '100-200')]
+    #[Env('HELLOWIN_FLYER_POINTS', '5,1')]
+    #[Env('HELLOWIN_FLYER_DURATION', '3000,1000')]
+    public function flyersComeFromEnv(): void
+    {
+        $config = $this->getContainer()->get(FlyerConfig::class);
+
+        Assert::same($config->getInterval(), [100, 200]);
+        Assert::equals($config->getDepths(), [new FlyerDepth(3000, 5), new FlyerDepth(1000, 1)]);
     }
 
     #[Env('HELLOWIN_CLICKS_PER_STAGE', '2')]

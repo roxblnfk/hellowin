@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fake;
 
+use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\Job\TransitionPumpkin;
@@ -18,11 +19,18 @@ use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
+use App\Domain\Flyer\Bush;
+use App\Domain\Flyer\FlyerDepth;
+use App\Domain\Flyer\FlyerFactory;
+use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\Point;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use Psr\Log\NullLogger;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 use Spiral\Cache\Storage\ArrayStorage;
 
 /**
@@ -45,6 +53,9 @@ final class RitualHarness
     public readonly ChannelPublisher $publisher;
     public readonly PlayMetrics $playMetrics;
     public readonly LeaderboardService $leaderboard;
+    public readonly FrozenClock $clock;
+    public readonly FlyerStore $flyerStore;
+    public readonly FlyerService $flyers;
 
     /**
      * @param positive-int $threshold
@@ -81,6 +92,23 @@ final class RitualHarness
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
+        $this->clock = new FrozenClock();
+        $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
+        $this->flyers = new FlyerService(
+            new FlyerFactory(
+                [new FlyerDepth(9000, 3), new FlyerDepth(6500, 2), new FlyerDepth(4000, 1)],
+                [new Bush('bush-1', new Point(4, 86))],
+                0.5,
+                0.5,
+                new Randomizer(new Mt19937(42)),
+            ),
+            $this->flyerStore,
+            $this->store,
+            $publisher,
+            $this->playMetrics,
+            $this->players,
+            $this->clock,
+        );
     }
 
     public function click(string $pumpkin, int $times = 1, ?string $player = null): void

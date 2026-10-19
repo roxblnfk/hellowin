@@ -2,7 +2,8 @@
 
 Статус: подключение, RPC `click` и `state`, события `click`, `pumpkin`, `scene`, `reset`, снимок состояния
 (со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
-**реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) — тоже; летуны — **запланировано**.
+**реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) и летуны (RPC `shoot`, события `flyer`, `shot`,
+`bushes` в снимке) — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -27,7 +28,7 @@
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
 | `register` | `{name}` | `{ok:true, player: <Player>}` | реализовано |
 | `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>]}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий | реализовано |
-| `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит или улетел) | запланировано |
+| `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит, улетел или такого нет) | реализовано |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
 `invalid name` и `anonymous` (подключение без секрета).
@@ -49,13 +50,18 @@
 | `pumpkin` | `element`, `stage`, `player?` | тыква перешла в новую стадию (ровно одно событие на переход) |
 | `scene` | `scene`, `stageMax` | сцена сменилась (ровно одно событие на смену) |
 | `reset` | — | сброс; новый `round` в самом событии |
-| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points` | запущен летун (запланировано) |
-| `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна (запланировано) |
+| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points` | запущен летун |
+| `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
 `player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
 `emoji` сервер выбирает из набора emoji элемента — фронтенд
 может использовать его или игнорировать.
+
+Летун: `flyer` — id вида `f-` + 8 hex, его же клиент шлёт в `shoot`; `depth` — от 0 (дальний) до N−1, где N — длина
+`HELLOWIN_FLYER_DURATION` (по умолчанию 3); `duration` — мс от `from` до `to`, отсчёт — с получения события; `kind` —
+сейчас всегда `duck`. Сервер принимает выстрел до `duration` + 500 мс после запуска. Летун без попадания исчезает сам:
+отдельного события «улетел» нет. Промах мимо летуна на сервер не шлётся.
 
 Примеры:
 
@@ -67,9 +73,9 @@
 {"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
 {"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":2,"points":5}]}
-{"type":"flyer","round":1,"flyer":"f-812","kind":"duck","depth":0,"from":{"x":-5,"y":18},"to":{"x":105,"y":10},"duration":9000,"points":3}
-{"type":"flyer","round":1,"flyer":"f-813","kind":"duck","depth":2,"bush":"bush-2","from":{"x":12,"y":70},"via":{"x":30,"y":20},"to":{"x":70,"y":-10},"duration":3500,"points":1}
-{"type":"shot","round":1,"flyer":"f-812","points":3}
+{"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3}
+{"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1}
+{"type":"shot","round":1,"flyer":"f-3a9c01d2","points":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 ```
 
 ## Снимок состояния (Snapshot)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
 use Spiral\Broadcasting\BroadcastInterface;
@@ -53,6 +54,19 @@ final readonly class ChannelPublisher
     public function reset(int $round): void
     {
         $this->publish(['type' => 'reset', 'round' => $round]);
+    }
+
+    public function flyer(int $round, Flyer $flyer): void
+    {
+        $this->publish(['type' => 'flyer', 'round' => $round] + $flyer->toEvent());
+    }
+
+    public function shot(int $round, Flyer $flyer, ?Player $player = null): void
+    {
+        $this->publish(self::withPlayer(
+            ['type' => 'shot', 'round' => $round, 'flyer' => $flyer->id, 'points' => $flyer->points],
+            $player,
+        ));
     }
 
     /**

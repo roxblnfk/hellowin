@@ -88,6 +88,7 @@ final class RPCServiceTest
             'sceneStages' => 3,
             'stageMax' => 4,
             'threshold' => 4,
+            'bushes' => [],
             'elements' => [
                 ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 0],
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 2],
@@ -178,6 +179,60 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'top' => []]);
     }
 
+    public function firstShotHitsAndTheSecondMisses(): void
+    {
+        $ritual = new RitualHarness();
+        $flyer = $ritual->flyers->launch($ritual->clock->now);
+
+        $first = $this->call($ritual, 'shoot', ['flyer' => $flyer->id], self::PLAYER);
+        $second = $this->call($ritual, 'shoot', ['flyer' => $flyer->id], 'bbbbbbbbbbbbbbbb');
+
+        Assert::same($first, ['ok' => true, 'hit' => true, 'points' => $flyer->points]);
+        Assert::same($second, ['ok' => true, 'hit' => false]);
+        Assert::same($ritual->broadcast->ofType('shot'), [[
+            'type' => 'shot',
+            'round' => 1,
+            'flyer' => $flyer->id,
+            'points' => $flyer->points,
+            'player' => ['id' => self::PLAYER, 'name' => null],
+        ]]);
+        Assert::same($ritual->playerStore->find(self::PLAYER)?->points, $flyer->points);
+        Assert::same($ritual->playerStore->find(self::PLAYER)?->flyers, 1);
+        Assert::null($ritual->playerStore->find('bbbbbbbbbbbbbbbb'));
+    }
+
+    public function anonymousHitCarriesNoPlayer(): void
+    {
+        $ritual = new RitualHarness();
+        $flyer = $ritual->flyers->launch($ritual->clock->now);
+
+        $response = $this->call($ritual, 'shoot', ['flyer' => $flyer->id]);
+
+        Assert::true($response['hit']);
+        Assert::false(\array_key_exists('player', $ritual->broadcast->ofType('shot')[0]));
+    }
+
+    public function shotAfterTheFlightMisses(): void
+    {
+        $ritual = new RitualHarness();
+        $flyer = $ritual->flyers->launch($ritual->clock->now);
+        $ritual->clock->now = $flyer->expiresAt() + 1_000;
+
+        $response = $this->call($ritual, 'shoot', ['flyer' => $flyer->id], self::PLAYER);
+
+        Assert::same($response, ['ok' => true, 'hit' => false]);
+        Assert::blank($ritual->broadcast->ofType('shot'));
+    }
+
+    #[DataSet([['flyer' => 'f-00000000']], 'unknown')]
+    #[DataSet([['flyer' => '../etc']], 'malformed')]
+    #[DataSet([['flyer' => 42]], 'number')]
+    #[DataSet([[]], 'missing')]
+    public function shotAtNothingMisses(array $params): void
+    {
+        Assert::same($this->call(new RitualHarness(), 'shoot', $params, self::PLAYER), ['ok' => true, 'hit' => false]);
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
@@ -186,7 +241,7 @@ final class RPCServiceTest
 
     private function call(RitualHarness $ritual, string $method, array $params, string $user = ''): array
     {
-        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, $ritual->leaderboard, new NullLogger());
+        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, $ritual->leaderboard, $ritual->flyers, new NullLogger());
         $service->handle(new RPC(
             worker: $this->worker,
             client: 'client-1',

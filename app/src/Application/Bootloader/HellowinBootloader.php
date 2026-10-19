@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Application\Bootloader;
 
+use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
 use App\Application\Config\PlayerConfig;
+use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\PlayMetrics;
@@ -19,6 +21,8 @@ use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
+use App\Domain\Flyer\FlyerFactory;
+use App\Domain\Flyer\FlyerStore;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
@@ -86,6 +90,7 @@ final class HellowinBootloader extends Bootloader
                 $store,
                 $policy,
                 $config->getClicksPerStage(),
+                $config->getBushes(),
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,
@@ -108,11 +113,30 @@ final class HellowinBootloader extends Bootloader
                 $metrics,
                 $players->getLeaderboardSize(),
             ),
+            FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(
+                $flyers->getDepths(),
+                $config->getBushes(),
+                $flyers->getBushChance(),
+                $flyers->getArcChance(),
+            ),
+            FlyerStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): FlyerStore => new FlyerStore($cache->storage($config->getStorage()), new Locks($lock)),
             Ticker::class => static fn(
                 PlayerConfig $players,
+                FlyerConfig $flyerConfig,
                 LeaderboardService $leaderboard,
+                FlyerService $flyers,
                 LoggerInterface $logger,
-            ): Ticker => new Ticker($leaderboard, $players->getLeaderboardInterval(), $logger),
+            ): Ticker => new Ticker(
+                $leaderboard,
+                $players->getLeaderboardInterval(),
+                $flyers,
+                $flyerConfig->getInterval(),
+                $logger,
+            ),
         ];
     }
 

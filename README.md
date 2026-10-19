@@ -48,6 +48,11 @@
 | `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам через запятую, накопительно и по возрастанию; длина списка — номер финальной сцены |
 | `HELLOWIN_LEADERBOARD_INTERVAL` | `5000` | раз во сколько миллисекунд тикер собирает и рассылает таблицу лидеров |
 | `HELLOWIN_LEADERBOARD_SIZE` | `10` | сколько игроков в таблице лидеров |
+| `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | пауза между запусками летунов, мс: диапазон (случайно внутри) или число |
+| `HELLOWIN_FLYER_DURATION` | `9000,6500,4000` | время полёта по глубинам от дальней (0) к ближней, мс; длина списка — число глубин |
+| `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по тем же глубинам; длина как у `HELLOWIN_FLYER_DURATION` |
+| `HELLOWIN_FLYER_BUSH_CHANCE` | `0.4` | вероятность, что летун взлетает из куста, а не влетает из-за края |
+| `HELLOWIN_FLYER_ARC_CHANCE` | `0.5` | вероятность полёта дугой |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |

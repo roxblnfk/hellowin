@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Application\Ticker;
 
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Ticker\Ticker;
 use Psr\Log\NullLogger;
 use Testo\Assert;
@@ -15,20 +16,20 @@ use Tests\Fake\RitualHarness;
 #[Covers(Ticker::class)]
 final class TickerTest
 {
-    public function firstTickBuildsTheLeaderboard(): void
+    public function firstTickBuildsTheLeaderboardAndLaunchesNothing(): void
     {
         $ritual = new RitualHarness();
-        $ticker = new Ticker($ritual->leaderboard, 5000, new NullLogger());
 
-        $ticker->tick(1_000);
+        self::ticker($ritual)->tick(1_000);
 
         Assert::count($ritual->broadcast->ofType('leaderboard'), 1);
+        Assert::blank($ritual->broadcast->ofType('flyer'));
     }
 
     public function leaderboardWaitsForItsInterval(): void
     {
         $ritual = new RitualHarness();
-        $ticker = new Ticker($ritual->leaderboard, 5000, new NullLogger());
+        $ticker = self::ticker($ritual);
 
         $ticker->tick(1_000);
         $ticker->tick(3_000);
@@ -36,5 +37,70 @@ final class TickerTest
         $ticker->tick(6_000);
 
         Assert::count($ritual->broadcast->ofType('leaderboard'), 2);
+    }
+
+    public function flyerIsLaunchedOncePerInterval(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::ticker($ritual);
+
+        $ticker->tick(0);
+        $ticker->tick(1_999);
+        $ticker->tick(2_000);
+        $ticker->tick(2_100);
+        $ticker->tick(4_000);
+
+        Assert::count($ritual->broadcast->ofType('flyer'), 2);
+        Assert::count(
+            \array_filter($ritual->metrics->calls, static fn(array $call): bool => $call[1] === PlayMetrics::FLYERS_LAUNCHED),
+            2,
+        );
+    }
+
+    public function escapedFlyerIsCountedOnceAfterItsFlight(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+        $flyer = $ritual->broadcast->ofType('flyer')[0];
+        $gone = 2_000 + $flyer['duration'] + 500;
+
+        $ticker->tick($gone - 1);
+        $before = self::escaped($ritual);
+        $ticker->tick($gone);
+        $ticker->tick($gone + 100);
+
+        Assert::same($before, 0.0);
+        Assert::same(self::escaped($ritual), 1.0);
+    }
+
+    public function shotFlyerNeverEscapes(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+        $ritual->clock->now = 2_000;
+        $ritual->flyers->shoot($ritual->broadcast->ofType('flyer')[0]['flyer'], null);
+
+        $ticker->tick(60_000);
+
+        Assert::same(self::escaped($ritual), 0.0);
+    }
+
+    private static function ticker(RitualHarness $ritual): Ticker
+    {
+        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], new NullLogger());
+    }
+
+    private static function escaped(RitualHarness $ritual): float
+    {
+        $total = 0.0;
+        foreach ($ritual->counters() as $key => $value) {
+            \str_starts_with($key, PlayMetrics::FLYERS_ESCAPED . '{') and $total += $value;
+        }
+
+        return $total;
     }
 }

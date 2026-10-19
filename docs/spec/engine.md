@@ -1,7 +1,7 @@
 # Движок (backend)
 
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
-игроки и их статистика, периодический процесс (тикер) и таблица лидеров. Кто запускает сброс и летуны —
+игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны. Кто запускает сброс —
 **запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
 
 ## Классы
@@ -20,10 +20,12 @@
 | Локи нескольких ресурсов | `Domain/Lock/Locks` |
 | Таблица лидеров | `Domain/Player/Leaderboard` (ранжирование), `Application/Player/LeaderboardService` |
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
+| Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
+| Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
 
 ## Периодический процесс (тикер)
 
-Таблицу лидеров (и летунов, когда они появятся) двигает время, а не запросы игроков, — нужен процесс с расписанием.
+Летунов и таблицу лидеров двигает время, а не запросы игроков, — нужен процесс с расписанием.
 Это плагин RoadRunner `service` (`.rr.yaml`, `service.ticker`): RoadRunner держит один долгоживущий процесс
 `php app.php hellowin:ticker` и перезапускает его при падении (`restart_sec`). Процесс — то же приложение Spiral
 в консольном режиме: KV, локи, метрики и публикация в Centrifugo идут по goridge RPC к плагинам, как из воркеров.
@@ -46,11 +48,37 @@
 
 | Работа | Когда | Что |
 |---|---|---|
+| Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс; первый — через интервал после старта | `FlyerFactory` → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
+| Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
 публикуется на каждой сборке, даже без изменений: новый клиент получает таблицу в пределах интервала, а сразу —
 из RPC `me` (последняя сборка из ключа).
+
+## Летуны
+
+Правила — [`scenario.md`](scenario.md), «Летуны»; события и RPC — [`protocol.md`](protocol.md).
+
+- **Запуск** (тикер): глубина — равновероятно из `0..N-1`, N — длина `HELLOWIN_FLYER_DURATION`; время полёта и очки
+  берутся по глубине (`HELLOWIN_FLYER_DURATION`, `HELLOWIN_FLYER_POINTS`: дальше — медленнее и дороже). С вероятностью
+  `HELLOWIN_FLYER_BUSH_CHANCE` летун взлетает из случайного куста (`bushes` в `app/config/hellowin.php`; нет кустов —
+  только край): из точки куста вверх и за верхний или боковой край через экран. Иначе — из-за левого или правого края
+  (четверть — из верхнего угла) за противоположный, в небе. С вероятностью `HELLOWIN_FLYER_ARC_CHANCE` полёт — дуга
+  через `via` (квадратичная кривая), иначе прямая. Точки за краем — `-8` / `108`. Генератор — `FlyerFactory`
+  с инъекцией `Randomizer`: в тестах траектории детерминированы.
+- **Хранение**: `hellowin:flyer:{id}` — летун со временем запуска, TTL = полёт + 10 с; индекс `hellowin:flyers`
+  (id → момент окончания полёта) пишет только тикер, поэтому без лока.
+- **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть и полёт не кончился → удалить ключ → попадание:
+  `flyers + 1`, `points + очки` игроку, одно событие `shot`, `hellowin_flyers_shot_total{depth}`. Иначе промах.
+  Выстрел принимается до 500 мс после конца полёта: клиент начинает рисовать летуна, когда событие дошло.
+- **Улетевшие** (тикер, каждый тик): летуны из индекса, чей полёт кончился больше 500 мс назад, — под тем же локом:
+  ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}`; ключа нет — его сбили. Из индекса — в любом случае.
+  Ключ удаляет ровно один из двоих (выстрел или учёт), поэтому летун не бывает и сбит, и улетел, и не считается дважды.
+  Если тикер лежал дольше запаса TTL, ключи истекают сами и такие летуны не попадут ни в одну метрику.
+- Летуны не зависят от ритуала: летают в любой сцене, включая финальную; `round` в событиях — только потому, что его
+  несёт каждое событие. Есть ли подключённые клиенты, тикер не проверяет: presence в Centrifugo выключен, а запуск без
+  зрителей стоит одного ключа в KV и одной публикации.
 
 ## Поток клика
 
@@ -102,8 +130,9 @@
 |---|---|---|
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks}`) | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
+| Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, `flyer:{id}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -125,6 +154,9 @@
 | `hellowin_pumpkin_stage{element}` | gauge | стадия каждой тыквы |
 | `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер при сборке таблицы лидеров |
 | `hellowin_players_registered` | gauge | игроки с именем; там же |
+| `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
+| `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
+| `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.
@@ -138,6 +170,11 @@
 | `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены |
 | `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
 | `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
+| `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
+| `HELLOWIN_FLYER_DURATION` | `9000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |
+| `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
+| `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
+| `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
 | `VALKEY_DSN` | `tcp://valkey:6379` | Valkey для idempotency (predis) |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | URL WebSocket для фронта |

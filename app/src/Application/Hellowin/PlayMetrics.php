@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Domain\Flyer\Flyer;
 use Psr\Log\LoggerInterface;
 use Spiral\RoadRunner\Metrics\Collector;
 use Spiral\RoadRunner\Metrics\MetricsInterface;
@@ -16,6 +17,9 @@ final readonly class PlayMetrics
 {
     public const PLAYERS = 'hellowin_players';
     public const PLAYERS_REGISTERED = 'hellowin_players_registered';
+    public const FLYERS_LAUNCHED = 'hellowin_flyers_launched_total';
+    public const FLYERS_SHOT = 'hellowin_flyers_shot_total';
+    public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
 
     public function __construct(
         private MetricsInterface $metrics,
@@ -30,6 +34,9 @@ final readonly class PlayMetrics
         $collectors = [
             self::PLAYERS => Collector::gauge()->withHelp('Players known by their secret, named or not.'),
             self::PLAYERS_REGISTERED => Collector::gauge()->withHelp('Players who registered a name.'),
+            self::FLYERS_LAUNCHED => Collector::counter()->withHelp('Flyers launched.')->withLabels('depth'),
+            self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
+            self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -45,6 +52,21 @@ final readonly class PlayMetrics
     {
         $this->safely(fn() => $this->metrics->set(self::PLAYERS, $known));
         $this->safely(fn() => $this->metrics->set(self::PLAYERS_REGISTERED, $registered));
+    }
+
+    public function flyerLaunched(Flyer $flyer): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::FLYERS_LAUNCHED, 1, [(string) $flyer->depth]));
+    }
+
+    public function flyerShot(Flyer $flyer): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::FLYERS_SHOT, 1, [(string) $flyer->depth]));
+    }
+
+    public function flyerEscaped(Flyer $flyer): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::FLYERS_ESCAPED, 1, [(string) $flyer->depth]));
     }
 
     /**

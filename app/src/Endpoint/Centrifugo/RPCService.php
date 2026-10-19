@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
+use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
@@ -32,6 +33,7 @@ final readonly class RPCService implements ServiceInterface
         private SnapshotFactory $snapshot,
         private PlayerService $players,
         private LeaderboardService $leaderboard,
+        private FlyerService $flyers,
         private LoggerInterface $logger,
     ) {}
 
@@ -46,6 +48,7 @@ final readonly class RPCService implements ServiceInterface
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             'register' => $this->register($request->getData(), $player),
+            'shoot' => $this->shoot($request->getData(), $player),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -99,6 +102,20 @@ final readonly class RPCService implements ServiceInterface
         } catch (UnknownElementException) {
             return self::fail('unknown element');
         }
+    }
+
+    /**
+     * A miss is not an error: the flyer was already shot down, has flown away or never existed.
+     *
+     * @param non-empty-string|null $player
+     */
+    private function shoot(array $params, ?string $player): array
+    {
+        /** @var mixed $flyer */
+        $flyer = $params['flyer'] ?? null;
+        $points = \is_string($flyer) ? $this->flyers->shoot($flyer, $player) : null;
+
+        return $points === null ? ['ok' => true, 'hit' => false] : ['ok' => true, 'hit' => true, 'points' => $points];
     }
 
     /**

@@ -17,6 +17,7 @@ final class TickerLease
 
     /** @var non-empty-string|null */
     private ?string $id = null;
+
     private int $renewedAt = 0;
 
     /**

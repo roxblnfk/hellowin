@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Application\Config;
 
 use App\Domain\Element\Element;
+use App\Domain\Flyer\Bush;
+use App\Domain\Flyer\Point;
 use Spiral\Core\InjectableConfig;
 
 /**
@@ -22,6 +24,7 @@ final class HellowinConfig extends InjectableConfig
         'scene_stage_max' => '4,6,8',
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
+        'bushes' => [],
     ];
 
     /**
@@ -106,6 +109,24 @@ final class HellowinConfig extends InjectableConfig
         \is_array($elements) or throw new \InvalidArgumentException('Config "hellowin.elements" must be a list.');
 
         return \array_values(\array_map(self::element(...), $elements));
+    }
+
+    /**
+     * @return list<Bush>
+     */
+    public function getBushes(): array
+    {
+        $bushes = $this->config['bushes'] ?? [];
+        \is_array($bushes) or throw new \InvalidArgumentException('Config "hellowin.bushes" must be a list.');
+
+        return \array_values(\array_map(static function (mixed $spec): Bush {
+            \is_array($spec) or throw new \InvalidArgumentException('Each bush of "hellowin.bushes" must be an array.');
+
+            return new Bush(
+                self::nonEmptyString($spec['id'] ?? null, 'bushes.*.id'),
+                new Point(self::float($spec['x'] ?? null, 'bushes.*.x'), self::float($spec['y'] ?? null, 'bushes.*.y')),
+            );
+        }, $bushes));
     }
 
     private static function element(mixed $spec): Element
