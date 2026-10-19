@@ -7,6 +7,7 @@ import {
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
 import { ROOT, spreadLeft, spreadX } from '../layout.js';
+import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -74,7 +75,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, perch: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, flyer: Function, shot: Function, flyerAt: Function, perch: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -121,13 +122,17 @@ export async function createScene(rootEl, snapshot) {
     const treeLayer = new Container();
     const plantLayer = new Container();
     const bugLayer = new Container();
+    const bushLayer = new Container();
+    // Far flyers pass behind the tree and the fence; near ones fly in front of the patch.
+    const farFlyerLayer = new Container();
+    const nearFlyerLayer = new Container();
     const pumpkinLayer = new Container();
     const particleLayer = new Container();
     const flashLayer = new Container();
     // Full-screen veil for the new-round dim-and-flash.
     const veil = new Sprite(Texture.WHITE);
     veil.visible = false;
-    world.addChild(skyLayer, cloudLayer, baseLayer, treeLayer, plantLayer, bugLayer, pumpkinLayer, particleLayer, flashLayer, veil);
+    world.addChild(skyLayer, cloudLayer, farFlyerLayer, baseLayer, treeLayer, plantLayer, bugLayer, bushLayer, pumpkinLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
 
     let target = null;
     const display = new Sprite();
@@ -170,10 +175,14 @@ export async function createScene(rootEl, snapshot) {
         stageMax: snapshot.stageMax ?? DRAWN_STAGES,
         threshold: snapshot.threshold ?? 1,
         elements: snapshot.elements ?? [],
+        bushes: snapshot.bushes ?? [],
     };
     const pumpkins = new Map();
     const particles = [];
     let clouds = [];
+    const flyers = new Map();
+    const bushes = new Map();
+    const flyerTextures = new Map();
     let veilStart = -1e9;
     const VEIL = [['outline', 0.6], ['outline', 0.6], ['outline', 0.45], ['white', 0.55], ['white', 0.3]];
     let bugs = [];
@@ -705,6 +714,7 @@ export async function createScene(rootEl, snapshot) {
         drawTree();
         drawPlants();
         placeBugs();
+        placeBushes();
         buildPumpkins();
         for (const particle of particles.splice(0)) particle.sprite.destroy();
         publishHitZones();
@@ -714,8 +724,144 @@ export async function createScene(rootEl, snapshot) {
         app.render();
     }
 
+    // Bushes and flyers use plain screen percents, without the patch spread of layout.js: they live at the screen
+    // edges, and a spread would push them off a phone screen.
+    const toScreenArt = (p) => ({
+        x: (p.x / 100) * layout.width / layout.cssPx,
+        y: (p.y / 100) * layout.height / layout.cssPx,
+    });
+
+    function placeBushes() {
+        bushLayer.removeChildren().forEach((c) => c.destroy());
+        bushes.clear();
+        for (const b of [...(state.bushes ?? [])].sort((a, c) => a.y - c.y)) {
+            const idle = flyerArt(BUSH.idle[seedOf(b.id) % BUSH.idle.length]);
+            const sprite = new Sprite(idle.texture);
+            sprite.anchor.set(idle.ax, idle.ay);
+            const at = toScreenArt(b);
+            sprite.position.set(Math.round(at.x), Math.round(at.y));
+            bushLayer.addChild(sprite);
+            bushes.set(b.id, { sprite, idle, rustleUntil: -1e9 });
+        }
+    }
+
+    /** Texture plus anchor fractions of a flyers.js sprite, cached per sprite object. */
+    function flyerArt(def) {
+        if (!flyerTextures.has(def)) {
+            flyerTextures.set(def, { texture: texture(flyerBake(def)), ax: def.anchor.x / def.w, ay: def.anchor.y / def.h, def });
+        }
+        return flyerTextures.get(def);
+    }
+
+    function pathAt(f, t) {
+        const u = 1 - t;
+        const p = f.via
+            ? {
+                x: u * u * f.from.x + 2 * u * t * f.via.x + t * t * f.to.x,
+                y: u * u * f.from.y + 2 * u * t * f.via.y + t * t * f.to.y,
+            }
+            : { x: f.from.x + (f.to.x - f.from.x) * t, y: f.from.y + (f.to.y - f.from.y) * t };
+        return toScreenArt(p);
+    }
+
+    // Wingbeat period per depth, far to near (public/dev/flyers.html).
+    const FLAP = [180, 130, 90];
+    const RUSTLE_MS = 600;
+
+    function animateFlyers() {
+        for (const [id, f] of flyers) {
+            const set = FLYERS[f.kind]?.[f.depth] ?? FLYERS.duck[0];
+            let art;
+            if (f.shotAt === null) {
+                const local = clock - f.born;
+                if (local > f.duration + 200) {
+                    f.sprite.destroy();
+                    flyers.delete(id);
+                    continue;
+                }
+                f.pos = pathAt(f, Math.min(1, local / f.duration));
+                art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length]);
+            } else {
+                // Hit frame, then a tumble that falls off the bottom of the screen.
+                const fall = (clock - f.shotAt) / 1000;
+                f.pos = { x: f.shotPos.x + f.drift * fall, y: f.shotPos.y + 130 * fall * fall };
+                if (f.pos.y > layout.artH + 30) {
+                    f.sprite.destroy();
+                    flyers.delete(id);
+                    continue;
+                }
+                art = flyerArt(fall < 0.16 ? set.hit : set.fall[Math.floor(fall / 0.12) % set.fall.length]);
+            }
+            f.sprite.texture = art.texture;
+            f.sprite.anchor.set(art.ax, art.ay);
+            f.sprite.scale.x = f.flip ? -1 : 1;
+            f.sprite.position.set(Math.round(f.pos.x), Math.round(f.pos.y));
+            f.art = art;
+        }
+        for (const bush of bushes.values()) {
+            const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length]) : bush.idle;
+            bush.sprite.texture = art.texture;
+        }
+    }
+
+    function launch(event) {
+        if (flyers.has(event.flyer)) return;
+        const sprite = new Sprite();
+        (event.depth >= 2 ? nearFlyerLayer : farFlyerLayer).addChild(sprite);
+        flyers.set(event.flyer, {
+            kind: event.kind,
+            depth: event.depth ?? 0,
+            from: event.from,
+            via: event.via ?? null,
+            to: event.to,
+            duration: Math.max(1, event.duration),
+            born: clock,
+            flip: event.to.x < event.from.x,
+            sprite,
+            shotAt: null,
+            pos: toScreenArt(event.from),
+        });
+        const bush = event.bush && bushes.get(event.bush);
+        if (bush) bush.rustleUntil = clock + RUSTLE_MS;
+        animateFlyers();
+    }
+
+    function down(event) {
+        const f = flyers.get(event.flyer);
+        if (!f || f.shotAt !== null) return;
+        f.shotAt = clock;
+        f.shotPos = { ...f.pos };
+        f.drift = (f.flip ? -1 : 1) * 12;
+        if (!reduced) {
+            const feathers = feathersOf(f.kind).map((def) => flyerArt(def).texture);
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2 + 0.4;
+                spawn(feathers, f.pos.x, f.pos.y, Math.cos(a) * 24, Math.sin(a) * 14 - 10, 30, 1.2 + Math.random() * 0.3);
+            }
+        }
+        const score = flyerArt(digitsSprite(`+${event.points}`));
+        spawn([score.texture], f.pos.x - score.def.w / 2, f.pos.y - 14, 0, -10, 0, 1.2);
+    }
+
+    /** Id of the flyer under the pointer, nearest depth first, with a few art pixels of slack; null when none. */
+    function flyerAt(clientX, clientY) {
+        const rect = app.canvas.getBoundingClientRect();
+        const x = (clientX - rect.left) / layout.cssPx;
+        const y = (clientY - rect.top) / layout.cssPx;
+        const SLACK = 3;
+        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.art).sort(([, a], [, b]) => b.depth - a.depth);
+        for (const [id, f] of live) {
+            const { def } = f.art;
+            const left = f.pos.x - (f.flip ? def.w - def.anchor.x : def.anchor.x);
+            const top = f.pos.y - def.anchor.y;
+            if (x >= left - SLACK && x <= left + def.w + SLACK && y >= top - SLACK && y <= top + def.h + SLACK) return id;
+        }
+        return null;
+    }
+
+    /** One particle; `kind` names a PARTICLES set or is a list of textures to pick from. */
     function spawn(kind, x, y, vx, vy, gravity, life) {
-        const textures = particleArt(kind);
+        const textures = Array.isArray(kind) ? kind : particleArt(kind);
         const sprite = new Sprite(textures[Math.floor(Math.random() * textures.length)]);
         particleLayer.addChild(sprite);
         particles.push({ sprite, x, y, vx, vy, gravity, life, age: 0 });
@@ -818,6 +964,8 @@ export async function createScene(rootEl, snapshot) {
             bug.sprite.position.set(Math.round(x), Math.round(y));
         }
 
+        animateFlyers();
+
         for (let i = particles.length - 1; i >= 0; i--) {
             const particle = particles[i];
             particle.age += seconds;
@@ -862,6 +1010,9 @@ export async function createScene(rootEl, snapshot) {
 
     return {
         render(next) {
+            // Flyers live seconds and are not in the snapshot: a full render (state, reset) starts without them.
+            for (const f of flyers.values()) f.sprite.destroy();
+            flyers.clear();
             if (!reduced && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
                 veilStart = clock;
             }
@@ -871,6 +1022,7 @@ export async function createScene(rootEl, snapshot) {
                 stageMax: next.stageMax ?? state.stageMax,
                 threshold: next.threshold ?? state.threshold,
                 elements: next.elements ?? [],
+                bushes: next.bushes ?? state.bushes,
             };
             rebuild();
         },
@@ -902,6 +1054,20 @@ export async function createScene(rootEl, snapshot) {
             flashLayer.addChild(sprite);
             p.flash = { sprite, born: clock };
             p.bounce = clock + 70;
+        },
+
+        /** Channel event `flyer`: the flight runs from now for `duration` ms. */
+        flyer(event) {
+            launch(event);
+        },
+
+        /** Channel event `shot`: hit frame, tumble, feathers and points; unknown or gone flyers are ignored. */
+        shot(event) {
+            down(event);
+        },
+
+        flyerAt(clientX, clientY) {
+            return flyerAt(clientX, clientY);
         },
 
         setScene(n, stageMax) {

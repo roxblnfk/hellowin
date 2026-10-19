@@ -11,6 +11,15 @@ const int = (value, fallback = 0) => {
     return Number.isNaN(n) ? fallback : n;
 };
 
+function parseBushes(json) {
+    try {
+        const list = JSON.parse(json || '[]');
+        return Array.isArray(list) ? list : [];
+    } catch {
+        return [];
+    }
+}
+
 /**
  * Snapshot as rendered by the home template: #app attributes plus one button per element.
  */
@@ -21,6 +30,7 @@ export function readSnapshot(root) {
         sceneStages: int(root.dataset.sceneStages, 1),
         stageMax: int(root.dataset.stageMax, DEFAULT_STAGE_MAX),
         threshold: int(root.dataset.threshold, 1),
+        bushes: parseBushes(root.dataset.bushes),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
             id: el.dataset.element,
             type: el.dataset.type,
@@ -87,6 +97,7 @@ export function createClient(root, scene, { requestState }) {
             sceneStages: snapshot.sceneStages,
             stageMax: snapshot.stageMax ?? stageMaxByScene.get(snapshot.scene) ?? DEFAULT_STAGE_MAX,
             threshold: snapshot.threshold,
+            bushes: snapshot.bushes ?? model.bushes,
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         const known = new Map(model.elements.map((e) => [e.id, e]));
@@ -123,6 +134,15 @@ export function createClient(root, scene, { requestState }) {
             paintElement(element);
             paintHud();
             scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: model.threshold });
+        },
+
+        // Flyers live a few seconds and are not part of the snapshot: they are only passed on to the scene.
+        flyer(event) {
+            scene?.flyer(event);
+        },
+
+        shot(event) {
+            scene?.shot(event);
         },
 
         pumpkin(event) {
@@ -180,4 +200,32 @@ export function createClient(root, scene, { requestState }) {
             paintAll();
         },
     };
+}
+
+/**
+ * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
+ * phase: a press on a flyer is a shot and the click that follows it is swallowed before it reaches a pumpkin
+ * button. A press anywhere else goes on as a normal click.
+ *
+ * @param {(flyer: string) => void} shoot  sends RPC `shoot`; the fall is drawn only on the channel's `shot` event
+ */
+export function bindShooting(root, scene, shoot) {
+    if (!scene) return;
+    let swallowClick = false;
+    root.addEventListener('pointerdown', (event) => {
+        swallowClick = false;
+        if (event.target.closest('[data-debug-panel], .help-link')) return;
+        const flyer = scene.flyerAt(event.clientX, event.clientY);
+        if (!flyer) return;
+        swallowClick = true;
+        event.preventDefault();
+        event.stopPropagation();
+        shoot(flyer);
+    }, { capture: true });
+    root.addEventListener('click', (event) => {
+        if (!swallowClick) return;
+        swallowClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+    }, { capture: true });
 }

@@ -15,16 +15,18 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one.
 -->
 <body data-scene="0">
-<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5">
+<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
+      data-bushes='[{"id":"bush-1","x":4,"y":86},{"id":"bush-2","x":96,"y":88},{"id":"bush-3","x":2,"y":62},{"id":"bush-4","x":98,"y":66},{"id":"bush-5","x":16,"y":44},{"id":"bush-6","x":88,"y":43}]'>
     <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
     </a>
     <aside class="debug" data-debug-panel hidden aria-label="Отладка">
         <button type="button" class="debug__button" data-action="reset">Заново</button>
         <button type="button" class="debug__button" data-action="click-all">Клик по всем</button>
+        <button type="button" class="debug__button" data-lab-duck>утка</button>
         <button type="button" class="debug__button" data-lab-click>клик</button>
         <button type="button" class="debug__button" data-lab-auto aria-pressed="false">авто</button>
         <select data-lab-stage aria-label="стадия">
@@ -40,7 +42,7 @@
     </footer>
 </main>
 <script type="module">
-    import { createClient, readSnapshot } from '/js/client.js';
+    import { bindShooting, createClient, readSnapshot } from '/js/client.js';
     import { initDebugPanel } from '/js/debug.js';
     import { createScene } from '/js/pixel/scene.js';
 
@@ -121,6 +123,45 @@
         deliver({ type: 'reset' });
     }
 
+    // Flyers as the server launches them: a depth picks duration and points, near ducks may start from a bush and
+    // arc through `via`; a shot counts until duration + 500 ms.
+    const DURATION = [9000, 6000, 4000];
+    const POINTS = [3, 2, 1];
+    const live = new Map();
+    let flyerSeq = 0;
+    const now = () => (simulated ? simTime : performance.now());
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+    function engineFlyer({ depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
+        const id = `f-${(++flyerSeq).toString(16).padStart(8, '0')}`;
+        let path;
+        if (bush) {
+            const b = typeof bush === 'string' ? engine.bushes.find((x) => x.id === bush) : pick(engine.bushes);
+            const left = b.x < 50;
+            path = {
+                bush: b.id,
+                from: { x: b.x, y: b.y },
+                via: { x: left ? 20 + Math.random() * 20 : 60 + Math.random() * 20, y: 8 + Math.random() * 14 },
+                to: { x: left ? 108 : -8, y: -8 + Math.random() * 16 },
+            };
+        } else {
+            const y = depth === 2 ? 22 + Math.random() * 20 : 6 + Math.random() * 20;
+            path = { from: { x: ltr ? -8 : 108, y }, to: { x: ltr ? 108 : -8, y: y + (Math.random() - 0.5) * 12 } };
+            if (Math.random() < 0.5) path.via = { x: 50, y: Math.max(2, y - 8 - Math.random() * 8) };
+        }
+        live.set(id, { until: now() + DURATION[depth] + 500, points: POINTS[depth], shot: false });
+        deliver({ type: 'flyer', flyer: id, kind: Math.random() < 0.25 ? 'chicken' : 'duck', depth, duration: DURATION[depth], points: POINTS[depth], ...path });
+        return id;
+    }
+
+    function engineShoot(id) {
+        const f = live.get(id);
+        if (!f || f.shot || now() > f.until) return { ok: true, hit: false };
+        f.shot = true;
+        deliver({ type: 'shot', flyer: id, points: f.points });
+        return { ok: true, hit: true, points: f.points };
+    }
+
     // Stages past 4 belong to later scenes: the jump moves the scene along with them.
     function engineJump(stage) {
         engine.scene = SCENE_STAGE_MAX.findIndex((max) => max >= stage);
@@ -141,6 +182,14 @@
         if (el) engineClick(el.dataset.element);
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
+    root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
+    bindShooting(root, scene, engineShoot);
+    // A flyer every 3–8 s, like the server's launcher.
+    const launchLater = () => setTimeout(() => {
+        engineFlyer();
+        launchLater();
+    }, 3000 + Math.random() * 5000);
+    if (!simulated) launchLater();
     // The lab shows the panel unless ?ui=0; the fake engine answers like the server would.
     initDebugPanel(root.querySelector('[data-debug-panel]'), {
         visible: params.get('ui') !== '0',
@@ -168,18 +217,29 @@
 
     const initial = engineSnapshot();
     const resetAt = Number.parseInt(params.get('reset') ?? '-1', 10);
+    const flyersOn = params.get('flyers') === '1';
     function simulate() {
         Object.assign(engine, structuredClone(initial));
         queue.length = 0;
         pending.clear();
+        live.clear();
+        flyerSeq = 0;
         client.load(engineSnapshot());
         let nextClick = 0;
+        let target = null;
         for (simTime = 0; simTime < freeze; simTime += 16) {
             if (params.get('auto') === '1' && simTime >= nextClick) {
                 engineClick(randomId());
                 nextClick += 70;
             }
             if (simTime === resetAt) engineReset();
+            // ?flyers=1: one flyer per depth right away (the near one from a bush), the middle one is shot at 900 ms.
+            if (flyersOn && simTime === 0) {
+                engineFlyer({ depth: 0, bush: false, ltr: true });
+                target = engineFlyer({ depth: 1, bush: false, ltr: false });
+                engineFlyer({ depth: 2, bush: 'bush-1' });
+            }
+            if (flyersOn && simTime === 896) engineShoot(target);
             queue.sort((a, b) => a.at - b.at);
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);

@@ -1,4 +1,4 @@
-import { createClient, readSnapshot } from './client.js';
+import { bindShooting, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 
 const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
@@ -72,6 +72,13 @@ async function main() {
         const element = event.target.closest('[data-element]');
         if (element) click(element.dataset.element);
     });
+
+    // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back.
+    bindShooting(root, scene, (flyer) => centrifuge.rpc('shoot', { flyer })
+        .then(({ data }) => {
+            if (data?.ok === false) console.warn('shot rejected', data.error);
+        })
+        .catch((error) => console.warn('shoot rpc failed', error)));
 
     // Restart and "click every pumpkin" draw nothing either: the channel's `reset` / `click` events do.
     initDebugPanel(root.querySelector('[data-debug-panel]'), {
