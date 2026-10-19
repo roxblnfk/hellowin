@@ -19,6 +19,8 @@ final class HellowinConfig extends InjectableConfig
         'storage' => 'hellowin',
         'centrifugo_url' => '/connection/websocket',
         'clicks_per_stage' => 5,
+        'scene_stage_max' => '4,6,8',
+        'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
     ];
 
@@ -46,13 +48,53 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Clicks that switch the stage. A digit string is accepted too: env variables arrive as strings.
+     * Clicks on a pumpkin that move it to its next stage. A digit string is accepted too: env variables
+     * arrive as strings.
      *
      * @return positive-int
      */
     public function getClicksPerStage(): int
     {
         return self::positiveInt($this->config['clicks_per_stage'] ?? null, 'clicks_per_stage', 'HELLOWIN_CLICKS_PER_STAGE');
+    }
+
+    /**
+     * The last pumpkin stage of every scene where pumpkins move, cumulative: `[4, 6, 8]` takes pumpkins to stage 4
+     * in scene 0, to 6 in scene 1, to 8 in scene 2; scene 3 is the final one. A comma-separated string is accepted
+     * too: env variables arrive as strings.
+     *
+     * @return non-empty-list<positive-int> Strictly increasing.
+     */
+    public function getSceneStageMax(): array
+    {
+        $value = $this->config['scene_stage_max'] ?? null;
+        \is_string($value) and $value = \array_map(\trim(...), \explode(',', $value));
+
+        $error = static fn(): \InvalidArgumentException => new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.scene_stage_max" (env HELLOWIN_SCENE_STAGE_MAX) must be a strictly increasing list of '
+            . 'positive integers, like "4,6,8"; got %s.',
+            \is_array($value) ? (string) \json_encode($value, \JSON_UNESCAPED_UNICODE) : \get_debug_type($value),
+        ));
+
+        \is_array($value) && $value !== [] or throw $error();
+
+        $list = [];
+        foreach ($value as $stage) {
+            \is_string($stage) && \preg_match('/^\d+$/', $stage) === 1 and $stage = (int) $stage;
+            \is_int($stage) && $stage > ($list === [] ? 0 : $list[\count($list) - 1]) or throw $error();
+            $list[] = $stage;
+        }
+
+        /** @var non-empty-list<positive-int> $list */
+        return $list;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    public function getValkeyDsn(): string
+    {
+        return self::nonEmptyString($this->config['valkey_dsn'] ?? null, 'valkey_dsn');
     }
 
     /**
@@ -78,6 +120,7 @@ final class HellowinConfig extends InjectableConfig
             type: self::nonEmptyString($spec['type'] ?? null, 'elements.*.type'),
             x: self::float($spec['x'] ?? null, 'elements.*.x'),
             y: self::float($spec['y'] ?? null, 'elements.*.y'),
+            size: self::size($spec['size'] ?? null),
             emojis: \array_values(\array_map(
                 static fn(mixed $emoji): string => self::nonEmptyString($emoji, 'elements.*.emojis'),
                 $emojis,
@@ -110,6 +153,16 @@ final class HellowinConfig extends InjectableConfig
                 $env,
                 \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),
             ));
+    }
+
+    /**
+     * @return 's'|'m'|'l'
+     */
+    private static function size(mixed $value): string
+    {
+        return \in_array($value, ['s', 'm', 'l'], true)
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.elements.*.size" must be one of "s", "m", "l".');
     }
 
     private static function float(mixed $value, string $key): float

@@ -5,41 +5,50 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Domain\Element\ElementRegistry;
-use App\Domain\Game\ClickResult;
-use App\Domain\Game\GameBusyException;
-use App\Domain\Game\GameState;
+use App\Domain\Ritual\ClickOutcome;
+use App\Domain\Ritual\RitualBusyException;
+use App\Domain\Ritual\RitualPolicy;
+use App\Domain\Ritual\RitualStore;
 use Random\Randomizer;
 
 final readonly class ClickHandler
 {
+    /**
+     * @param positive-int $threshold Clicks a pumpkin needs to move, sent to clients for the progress bar.
+     */
     public function __construct(
         private ElementRegistry $elements,
-        private GameState $state,
-        private ClickMetrics $metrics,
+        private RitualStore $store,
+        private RitualPolicy $policy,
+        private TransitionQueue $transitions,
+        private RitualMetrics $metrics,
         private ChannelPublisher $publisher,
+        private int $threshold,
         private Randomizer $randomizer = new Randomizer(),
     ) {}
 
     /**
-     * Counts the click and tells every client: an emoji over the element, plus the new state when a threshold
-     * is crossed.
+     * Counts the click, tells every client about it and, when the policy lets the pumpkin move, queues
+     * its transition. Every click past the threshold queues one again until the transition is done:
+     * the job deduplicates by its idempotency key.
      *
      * @throws UnknownElementException
-     * @throws GameBusyException
+     * @throws RitualBusyException
      */
-    public function click(string $elementId): ClickResult
+    public function click(string $elementId): ClickOutcome
     {
         $element = $this->elements->find($elementId)
             ?? throw new UnknownElementException(\sprintf('Unknown element "%s".', $elementId));
 
         $this->metrics->click($element);
-        $result = $this->state->registerClick();
-        $this->metrics->stage($result->stage);
+        $outcome = $this->store->click($element->id);
 
         $emoji = $element->emojis[$this->randomizer->getInt(0, \count($element->emojis) - 1)];
-        $this->publisher->emoji($element, $emoji, $result);
-        $result->stageChanged and $this->publisher->state($result);
+        $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $this->threshold);
 
-        return $result;
+        $toStage = $this->policy->pumpkinTransition($outcome->pumpkin, $outcome->scene);
+        $toStage === null or $this->transitions->pumpkin($outcome->round, $element->id, $toStage);
+
+        return $outcome;
     }
 }

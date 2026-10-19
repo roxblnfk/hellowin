@@ -10,6 +10,8 @@ use Spiral\Bootloader\Http\HttpBootloader;
 use Spiral\Broadcasting\Bootloader\BroadcastingBootloader;
 use Spiral\Cache\Bootloader\CacheBootloader;
 use Spiral\DotEnv\Bootloader\DotenvBootloader;
+use Spiral\Idempotency\Bootloader\IdempotencyBootloader;
+use Spiral\Idempotency\Bootloader\QueueIdempotencyBootloader;
 use Spiral\Monolog\Bootloader\MonologBootloader;
 use Spiral\Nyholm\Bootloader\NyholmBootloader;
 use Spiral\RoadRunnerBridge\Bootloader as RoadRunnerBridge;
@@ -53,6 +55,12 @@ class Kernel extends \Spiral\Framework\Kernel
             RoadRunnerBridge\CacheBootloader::class,
             BroadcastingBootloader::class,
             RoadRunnerBridge\CentrifugoBootloader::class,
+            RoadRunnerBridge\QueueBootloader::class,
+
+            // Idempotent queue jobs; the Valkey client backs the idempotency storage
+            Bootloader\ValkeyBootloader::class,
+            IdempotencyBootloader::class,
+            QueueIdempotencyBootloader::class,
 
             // HTTP
             HttpBootloader::class,

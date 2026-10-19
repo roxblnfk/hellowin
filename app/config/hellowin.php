@@ -9,26 +9,32 @@ return [
     // Centrifugo channel every client is subscribed to on connect
     'channel' => 'hellowin',
 
-    // Cache storage (app/config/cache.php) that keeps the click counter and stage
+    // Cache storage (app/config/cache.php) that keeps the ritual: round, scene, pumpkin stages and clicks
     'storage' => 'hellowin',
 
     // WebSocket endpoint for centrifuge-js; a path is resolved against the page host
     'centrifugo_url' => env('CENTRIFUGO_WS_URL', '/connection/websocket'),
 
-    // Clicks after which the page switches from the initial stage to the next one, once
+    // Clicks on a pumpkin that move it to its next stage
     'clicks_per_stage' => env('HELLOWIN_CLICKS_PER_STAGE', 5),
 
-    // x/y are percents of the viewport
+    // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene
+    'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8'),
+
+    // Valkey of the idempotency storage (app/config/idempotency.php)
+    'valkey_dsn' => env('VALKEY_DSN', 'tcp://valkey:6379'),
+
+    // Around the root in the centre of the screen: x/y are percents of the viewport, size is s, m or l
     'elements' => [
-        ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 12, 'y' => 22, 'emojis' => ['🎃', '👻', '🦇']],
-        ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 31, 'y' => 12, 'emojis' => ['🎃', '🍬', '🍭']],
-        ['id' => 'pumpkin-3', 'type' => 'pumpkin', 'x' => 52, 'y' => 26, 'emojis' => ['🎃', '🕷️', '🕸️']],
-        ['id' => 'pumpkin-4', 'type' => 'pumpkin', 'x' => 74, 'y' => 15, 'emojis' => ['🎃', '💀', '☠️']],
-        ['id' => 'pumpkin-5', 'type' => 'pumpkin', 'x' => 88, 'y' => 38, 'emojis' => ['🎃', '🧙', '🔮']],
-        ['id' => 'pumpkin-6', 'type' => 'pumpkin', 'x' => 20, 'y' => 55, 'emojis' => ['🎃', '🧛', '🩸']],
-        ['id' => 'pumpkin-7', 'type' => 'pumpkin', 'x' => 42, 'y' => 68, 'emojis' => ['🎃', '🧟', '🪦']],
-        ['id' => 'pumpkin-8', 'type' => 'pumpkin', 'x' => 63, 'y' => 52, 'emojis' => ['🎃', '🐈‍⬛', '🌕']],
-        ['id' => 'pumpkin-9', 'type' => 'pumpkin', 'x' => 80, 'y' => 74, 'emojis' => ['🎃', '👻', '🍫']],
-        ['id' => 'pumpkin-10', 'type' => 'pumpkin', 'x' => 8, 'y' => 82, 'emojis' => ['🎃', '🦉', '🕯️']],
+        ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 50, 'y' => 16, 'size' => 'l', 'emojis' => ['🎃', '👻', '🦇']],
+        ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 68.8, 'y' => 22.5, 'size' => 's', 'emojis' => ['🎃', '🍬', '🍭']],
+        ['id' => 'pumpkin-3', 'type' => 'pumpkin', 'x' => 80.4, 'y' => 39.5, 'size' => 'm', 'emojis' => ['🎃', '🕷️', '🕸️']],
+        ['id' => 'pumpkin-4', 'type' => 'pumpkin', 'x' => 80.4, 'y' => 60.5, 'size' => 's', 'emojis' => ['🎃', '💀', '☠️']],
+        ['id' => 'pumpkin-5', 'type' => 'pumpkin', 'x' => 68.8, 'y' => 77.5, 'size' => 'l', 'emojis' => ['🎃', '🧙', '🔮']],
+        ['id' => 'pumpkin-6', 'type' => 'pumpkin', 'x' => 50, 'y' => 84, 'size' => 'm', 'emojis' => ['🎃', '🧛', '🩸']],
+        ['id' => 'pumpkin-7', 'type' => 'pumpkin', 'x' => 31.2, 'y' => 77.5, 'size' => 's', 'emojis' => ['🎃', '🧟', '🪦']],
+        ['id' => 'pumpkin-8', 'type' => 'pumpkin', 'x' => 19.6, 'y' => 60.5, 'size' => 'l', 'emojis' => ['🎃', '🐈‍⬛', '🌕']],
+        ['id' => 'pumpkin-9', 'type' => 'pumpkin', 'x' => 19.6, 'y' => 39.5, 'size' => 's', 'emojis' => ['🎃', '👻', '🍫']],
+        ['id' => 'pumpkin-10', 'type' => 'pumpkin', 'x' => 31.2, 'y' => 22.5, 'size' => 'm', 'emojis' => ['🎃', '🦉', '🕯️']],
     ],
 ];

@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Domain\Ritual;
+
+use App\Domain\Ritual\Pumpkin;
+use App\Domain\Ritual\RitualBusyException;
+use App\Domain\Ritual\RitualStore;
+use Spiral\Cache\Storage\ArrayStorage;
+use Testo\Assert;
+use Testo\Codecov\Covers;
+use Testo\Expect;
+use Testo\Test;
+use Tests\Fake\FakeLock;
+
+#[Test]
+#[Covers(RitualStore::class)]
+final class RitualStoreTest
+{
+    public function freshStoreIsRoundOneSceneZero(): void
+    {
+        $snapshot = self::store()->snapshot();
+
+        Assert::same($snapshot->round, 1);
+        Assert::same($snapshot->scene, 0);
+        Assert::equals($snapshot->pumpkins, [new Pumpkin('a'), new Pumpkin('b')]);
+    }
+
+    public function clickCountsPerPumpkin(): void
+    {
+        $store = self::store();
+
+        $store->click('a');
+        $outcome = $store->click('a');
+        $store->click('b');
+
+        Assert::equals($outcome->pumpkin, new Pumpkin('a', 0, 2));
+        Assert::same($outcome->round, 1);
+        Assert::same($outcome->scene, 0);
+        Assert::equals($store->snapshot()->pumpkin('b'), new Pumpkin('b', 0, 1));
+    }
+
+    public function advancingAPumpkinStartsItsClicksOver(): void
+    {
+        $store = self::store();
+        $store->click('a');
+        $store->click('a');
+
+        $moved = $store->advancePumpkin(1, 'a', 1);
+
+        Assert::equals($moved, new Pumpkin('a', 1, 0));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 0));
+    }
+
+    public function repeatedPumpkinTransitionIsRejected(): void
+    {
+        $store = self::store();
+        $store->advancePumpkin(1, 'a', 1);
+        $store->click('a');
+
+        Assert::null($store->advancePumpkin(1, 'a', 1));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 1));
+    }
+
+    public function pumpkinCannotSkipAStage(): void
+    {
+        Assert::null(self::store()->advancePumpkin(1, 'a', 2));
+    }
+
+    public function transitionOfAnotherRoundIsRejected(): void
+    {
+        $store = self::store();
+        $store->reset(1);
+
+        Assert::null($store->advancePumpkin(1, 'a', 1));
+        Assert::false($store->advanceScene(1, 1));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a'));
+    }
+
+    public function sceneMovesOneStepAtATime(): void
+    {
+        $store = self::store();
+
+        Assert::false($store->advanceScene(1, 2));
+        Assert::true($store->advanceScene(1, 1));
+        Assert::false($store->advanceScene(1, 1));
+        Assert::same($store->snapshot()->scene, 1);
+    }
+
+    public function resetStartsTheNextRoundFromScratch(): void
+    {
+        $store = self::store();
+        $store->click('a');
+        $store->advancePumpkin(1, 'b', 1);
+        $store->advanceScene(1, 1);
+
+        $round = $store->reset(1);
+
+        $snapshot = $store->snapshot();
+        Assert::same($round, 2);
+        Assert::same($snapshot->round, 2);
+        Assert::same($snapshot->scene, 0);
+        Assert::equals($snapshot->pumpkins, [new Pumpkin('a'), new Pumpkin('b')]);
+    }
+
+    public function resetRunsOncePerRound(): void
+    {
+        $store = self::store();
+
+        Assert::same($store->reset(1), 2);
+        Assert::null($store->reset(1));
+        Assert::same($store->snapshot()->round, 2);
+    }
+
+    public function resetHoldsTheSceneAndEveryPumpkinLock(): void
+    {
+        $lock = new FakeLock();
+        $store = self::store($lock);
+        $lock->held['pumpkin:b'] = 'someone-else';
+
+        try {
+            $store->reset(1);
+            Assert::fail('Reset must not run while a pumpkin is locked.');
+        } catch (RitualBusyException) {
+        }
+
+        Assert::same($lock->held, ['pumpkin:b' => 'someone-else']);
+        Assert::same($store->snapshot()->round, 1);
+    }
+
+    public function busyPumpkinLockFailsTheClick(): never
+    {
+        $store = self::store(new FakeLock(available: false));
+
+        Expect::exception(RitualBusyException::class);
+
+        $store->click('a');
+    }
+
+    public function locksAreReleased(): void
+    {
+        $lock = new FakeLock();
+        $store = self::store($lock);
+
+        $store->click('a');
+        $store->advancePumpkin(1, 'a', 1);
+        $store->advanceScene(1, 1);
+        $store->reset(1);
+
+        Assert::same($lock->acquired, 6);
+        Assert::same($lock->released, 6);
+        Assert::blank($lock->held);
+    }
+
+    public function unknownPumpkinIsRejected(): never
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        self::store()->click('ghost');
+    }
+
+    private static function store(FakeLock $lock = new FakeLock()): RitualStore
+    {
+        return new RitualStore(new ArrayStorage(), $lock, ['a', 'b']);
+    }
+}

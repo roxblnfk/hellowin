@@ -33,10 +33,25 @@ centrifuge:
 metrics:
   address: '0.0.0.0:2112'
 
-# Game state; lives as long as the RoadRunner process.
+# Game state: scene, round, pumpkins. Valkey keeps it across restarts of the app.
 kv:
   hellowin:
-    driver: memory
-    config: {}
+    driver: redis
+    config:
+      addrs:
+        - '${VALKEY_ADDR:-valkey:6379}'
 
-# The lock plugin needs no configuration: it is served over rpc.
+# Transition jobs. A memory pipeline loses queued jobs on restart; the next click over the threshold pushes again.
+jobs:
+  consume: [transitions]
+  pool:
+    num_workers: 2
+  pipelines:
+    transitions:
+      driver: memory
+      config:
+        priority: 10
+        prefetch: 100
+
+# The lock plugin needs no configuration: it is served over rpc. Locks live in this RoadRunner process,
+# which is enough while a single app instance runs.

@@ -15,6 +15,7 @@ final readonly class Element
      * @param float $x Horizontal position, percent of the viewport width.
      * @param float $y Vertical position, percent of the viewport height.
      * @param non-empty-list<non-empty-string> $emojis Pool to pick from on each click.
+     * @param 's'|'m'|'l' $size
      */
     public function __construct(
         public string $id,
@@ -22,12 +23,13 @@ final readonly class Element
         public float $x,
         public float $y,
         public array $emojis,
+        public string $size = 'm',
     ) {}
 
     /**
      * Shape exposed to the page; emojis stay on the server.
      *
-     * @return array{id: non-empty-string, type: non-empty-string, x: float, y: float}
+     * @return array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l'}
      */
     public function toArray(): array
     {
@@ -36,6 +38,7 @@ final readonly class Element
             'type' => $this->type,
             'x' => $this->x,
             'y' => $this->y,
+            'size' => $this->size,
         ];
     }
 }

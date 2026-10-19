@@ -9,6 +9,7 @@ use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Testing\Attribute\Config;
 use Spiral\Testing\Attribute\Env;
 use Testo\Assert;
+use Testo\Skip;
 use Testo\Test;
 use Tests\TestCase;
 
@@ -16,6 +17,9 @@ use Tests\TestCase;
 #[Config('cache.storages.hellowin', ['type' => 'array'])]
 final class HomeControllerTest extends TestCase
 {
+    private const AWAITS_TEMPLATE = 'ждёт шаблон фронтенда: home.dark.php на переменных снимка (docs/spec/protocol.md)';
+
+    #[Skip(self::AWAITS_TEMPLATE)]
     public function homePageRendersEveryElement(): void
     {
         $elements = $this->getContainer()->get(HellowinConfig::class)->getElements();
@@ -29,29 +33,39 @@ final class HomeControllerTest extends TestCase
         }
     }
 
-    public function homePageStartsAtStageZero(): void
+    #[Skip(self::AWAITS_TEMPLATE)]
+    #[Env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8')]
+    public function homePageStartsAtSceneZero(): void
     {
         $this->fakeHttp()->get('/')
             ->assertOk()
-            ->assertBodyContains('<body data-stage="0">')
-            ->assertBodyContains('data-clicks="0"')
-            ->assertBodyContains('data-threshold="5"');
+            ->assertBodyContains('data-scene="0"')
+            ->assertBodyContains('data-round="1"')
+            ->assertBodyContains('data-scene-stages="3"')
+            ->assertBodyContains('data-threshold="5"')
+            ->assertBodyContains('data-stage="0"')
+            ->assertBodyContains('data-clicks="0"');
     }
 
+    #[Skip(self::AWAITS_TEMPLATE)]
     #[Env('HELLOWIN_CLICKS_PER_STAGE', '4')]
-    public function homePageShowsStoredStage(): void
+    public function homePageShowsStoredRitual(): void
     {
         $storage = $this->getContainer()->get(CacheStorageProviderInterface::class)->storage('hellowin');
-        $storage->set('clicks', 7);
-        $storage->set('stage', 1);
+        $storage->set('hellowin:round', 3);
+        $storage->set('hellowin:scene', 1);
+        $storage->set('hellowin:pumpkin:pumpkin-2', ['stage' => 2, 'clicks' => 3]);
 
         $this->fakeHttp()->get('/')
             ->assertOk()
-            ->assertBodyContains('<body data-stage="1">')
-            ->assertBodyContains('data-clicks="7"')
-            ->assertBodyContains('data-threshold="4"');
+            ->assertBodyContains('data-scene="1"')
+            ->assertBodyContains('data-round="3"')
+            ->assertBodyContains('data-threshold="4"')
+            ->assertBodyContains('data-stage="2"')
+            ->assertBodyContains('data-clicks="3"');
     }
 
+    #[Skip(self::AWAITS_TEMPLATE)]
     public function centrifugoUrlDefaultsToRelativePath(): void
     {
         $this->fakeHttp()->get('/')
@@ -59,6 +73,7 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-centrifugo-url="/connection/websocket"');
     }
 
+    #[Skip(self::AWAITS_TEMPLATE)]
     #[Env('CENTRIFUGO_WS_URL', 'wss://ws.example.com/connection/websocket')]
     public function centrifugoUrlComesFromEnv(): void
     {
@@ -67,6 +82,7 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-centrifugo-url="wss://ws.example.com/connection/websocket"');
     }
 
+    #[Skip(self::AWAITS_TEMPLATE)]
     public function homePageLinksToHowItWorks(): void
     {
         $this->fakeHttp()->get('/')

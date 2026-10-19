@@ -34,6 +34,14 @@ final class HellowinConfigTest extends TestCase
         Assert::same($config->getClicksPerStage(), 2);
     }
 
+    #[Env('HELLOWIN_SCENE_STAGE_MAX', '2,3')]
+    public function sceneStageMaxComesFromEnv(): void
+    {
+        $config = $this->getContainer()->get(HellowinConfig::class);
+
+        Assert::same($config->getSceneStageMax(), [2, 3]);
+    }
+
     #[Env('HELLOWIN_CLICKS_PER_STAGE', 'five')]
     public function invalidEnvValueIsAConfigError(): never
     {
