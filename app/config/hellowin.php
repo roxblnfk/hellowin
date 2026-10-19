@@ -49,13 +49,14 @@ return [
         ['id' => 'pumpkin-18', 'type' => 'pumpkin', 'x' => 45.2, 'y' => 58.4, 'size' => 's', 'emojis' => ['🎃', '🍄', '🦔']],
     ],
 
-    // Bushes ducks fly out of, on the edges of the patch: x/y are percents of the viewport
+    // Bushes birds fly out of, on the edges of the patch: x/y are percents of the viewport; depth is the flyer depth
+    // they launch (front bushes the nearest birds, the ones by the horizon the middle ones)
     'bushes' => [
-        ['id' => 'bush-1', 'x' => 4, 'y' => 86],
-        ['id' => 'bush-2', 'x' => 96, 'y' => 88],
-        ['id' => 'bush-3', 'x' => 2, 'y' => 62],
-        ['id' => 'bush-4', 'x' => 98, 'y' => 66],
-        ['id' => 'bush-5', 'x' => 16, 'y' => 44],
-        ['id' => 'bush-6', 'x' => 88, 'y' => 43],
+        ['id' => 'bush-1', 'x' => 4, 'y' => 86, 'depth' => 2],
+        ['id' => 'bush-2', 'x' => 96, 'y' => 88, 'depth' => 2],
+        ['id' => 'bush-3', 'x' => 2, 'y' => 62, 'depth' => 2],
+        ['id' => 'bush-4', 'x' => 98, 'y' => 66, 'depth' => 2],
+        ['id' => 'bush-5', 'x' => 16, 'y' => 44, 'depth' => 1],
+        ['id' => 'bush-6', 'x' => 88, 'y' => 43, 'depth' => 1],
     ],
 ];
