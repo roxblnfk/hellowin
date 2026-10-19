@@ -16,7 +16,7 @@
             position: absolute;
             top: 12px;
             right: 12px;
-            z-index: 4;
+            z-index: 1003;
             display: flex;
             flex-wrap: wrap;
             justify-content: flex-end;
@@ -76,9 +76,9 @@
     if (params.has('w')) root.style.width = `${Number.parseInt(params.get('w'), 10)}px`;
     // Same set as the elements of app/config/hellowin.php: an uneven flat ring around the root at 50% / 63%.
     const ELEMENTS = [
-        [46.4, 48.8, 'm'], [56.6, 55.1, 's'], [78.3, 50, 's'], [71.8, 57.4, 's'], [91.7, 58, 'm'], [79.4, 63.8, 's'],
-        [89.5, 73.3, 'l'], [72.8, 71.7, 'm'], [65.3, 79.6, 'm'], [48.5, 77.4, 'l'], [31.7, 83.2, 'm'], [31.8, 72.5, 'm'],
-        [10.6, 73.2, 'l'], [25.1, 64.6, 's'], [7.8, 59.5, 'm'], [27.5, 56, 's'], [25.1, 47.4, 's'], [38.9, 55.1, 's'],
+        [48.7, 51.2, 'm'], [55.9, 56.6, 's'], [65.9, 48.3, 's'], [64.3, 55.9, 's'], [73.2, 59.5, 'm'], [64.6, 63.4, 's'],
+        [71, 72.4, 'l'], [59.6, 70.8, 'm'], [60.9, 80.4, 'm'], [50.6, 79.4, 'l'], [40.2, 84.8, 'm'], [39, 75.1, 'm'],
+        [27.1, 76.5, 'l'], [33.3, 67.7, 's'], [25.3, 60.3, 'm'], [38.6, 62.1, 's'], [34, 52.4, 's'], [43.3, 56.5, 's'],
     ];
     const startStage = Math.max(0, Math.min(8, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
 
@@ -91,8 +91,9 @@
         b.dataset.size = size;
         b.dataset.stage = String(Math.min(startStage, 4));
         b.dataset.clicks = String(startStage === 4 ? 0 : i % 6);
-        b.style.left = `${x}%`;
-        b.style.top = `${y}%`;
+        b.style.setProperty('--x', String(x));
+        b.style.setProperty('--y', String(y));
+        b.style.zIndex = String(Math.round(y * 10));
         b.setAttribute('aria-label', `Тыква ${b.dataset.element}`);
         b.innerHTML = '<span class="pumpkin__emoji" aria-hidden="true">🎃</span>';
         root.insertBefore(b, root.querySelector('.hud'));

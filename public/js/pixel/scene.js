@@ -6,13 +6,12 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
+import { ROOT, spreadLeft, spreadX } from '../layout.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
 // Artwork exists for the scene 0 stages; later stages reuse the last drawn one (docs/spec/scenario.md).
 const DRAWN_STAGES = 4;
-// The root every vine grows from, in percents of the viewport like element positions.
-const ROOT = { x: 50, y: 63 };
 const SIZES = ['s', 'm', 'l'];
 // Back to front; glow sits above back and under body and stays hidden by day.
 const LAYERS = ['back', 'glow', 'body', 'rim', 'stem'];
@@ -175,7 +174,7 @@ export async function createScene(rootEl, snapshot) {
 
     function toArt(element) {
         return {
-            x: Math.round((element.x / 100) * layout.width / layout.cssPx),
+            x: Math.round((spreadLeft(element.x, layout.width) / 100) * layout.width / layout.cssPx),
             y: Math.round((element.y / 100) * layout.height / layout.cssPx),
         };
     }
@@ -233,7 +232,14 @@ export async function createScene(rootEl, snapshot) {
     function patchShape() {
         const { artW, artH, horizon } = layout;
         const c = toArt(ROOT);
-        return { cx: c.x, cy: c.y, rx: artW * 0.47, ry: Math.min(artH * 0.25, c.y - horizon - 3) };
+        // A compact patch with lawn around it, widened on narrow screens together with the pumpkins (layout.js).
+        const spread = spreadX(layout.width);
+        return {
+            cx: c.x,
+            cy: c.y,
+            rx: artW * Math.min(0.47, 0.33 * spread),
+            ry: Math.min(artH * 0.24, c.y - horizon - 3),
+        };
     }
 
     const inPatch = (shape, x, y) => ((x - shape.cx) / shape.rx) ** 2 + ((y - shape.cy) / shape.ry) ** 2;
@@ -343,65 +349,126 @@ export async function createScene(rootEl, snapshot) {
         perch = { x: (foot.x - def.anchor.x + px) * layout.cssPx, y: (foot.y - def.anchor.y + py) * layout.cssPx };
     }
 
-    // A cubic curve whose last control point sits above and beside the stem: the vine hooks down onto the stem tip
-    // from above even for pumpkins above the root, and the stretch passing behind the body stays hidden. Leaves and
-    // tendrils are collected, not drawn, so all vines are covered by foliage drawn in depth order.
-    function drawVine(ctx, from, stem, reach, side, random, foliage) {
+    /**
+     * Samples a cubic curve with a sideways wave on top of it, about 3 points per art pixel. The wave fades out at
+     * both ends, so the vine still starts at `from` and lands exactly on `to`.
+     */
+    function wavyCurve(from, c1, c2, to, wave) {
+        const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+        const steps = Math.ceil(length * 3);
+        const raw = [];
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const u = 1 - t;
+            raw.push({
+                t,
+                x: u * u * u * from.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * to.x,
+                y: u * u * u * from.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * to.y,
+            });
+        }
+        const points = [];
+        let travelled = 0;
+        raw.forEach((p, i) => {
+            const a = raw[Math.max(0, i - 1)];
+            const b = raw[Math.min(raw.length - 1, i + 1)];
+            const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+            const nx = -(b.y - a.y) / tl;
+            const ny = (b.x - a.x) / tl;
+            const off = wave.amp * Math.sin(Math.PI * p.t) * Math.sin(2 * Math.PI * wave.turns * p.t + wave.phase);
+            const fx = p.x + nx * off;
+            const fy = p.y + ny * off;
+            const last = points[points.length - 1];
+            travelled += last ? Math.hypot(fx - last.fx, fy - last.fy) : 0;
+            points.push({ x: Math.round(fx), y: Math.round(fy), fx, fy, t: p.t, d: travelled, nx, ny });
+        });
+        return points;
+    }
+
+    // Shadow first, one pixel lower, then the body and a lit top edge: where vines cross, the upper one reads as
+    // lying on top. The body is a lighter green than the leaves, so the runners stay visible through the foliage.
+    function strokeVine(ctx, points, width) {
+        const pass = (key, grow, dy) => {
+            ctx.fillStyle = css(PALETTE[key]);
+            for (const p of points) {
+                const w = Math.max(1, Math.round(width(p.t)) + grow);
+                ctx.fillRect(p.x - (w >> 1), p.y - (w >> 1) + dy, w, w);
+            }
+        };
+        pass('leafDark', 0, 1);
+        pass('leafLight', -1, 0);
+        ctx.fillStyle = css(PALETTE.leafShine);
+        for (const p of points) {
+            if (width(p.t) >= 3) ctx.fillRect(p.x - 1, p.y - (Math.round(width(p.t)) >> 1), 1, 1);
+        }
+    }
+
+    function sprinkleLeaves(points, random, foliage, { gap, from = 0, until, sizeAt, offset }) {
+        const leaves = DECOR.leaf;
+        let flip = random() < 0.5 ? 1 : -1;
+        let next = from + gap[0] * random();
+        for (const p of points) {
+            if (p.d > until) break;
+            if (p.d < next) continue;
+            next = p.d + gap[0] + random() * (gap[1] - gap[0]);
+            const leaf = leaves[clamp(Math.floor(sizeAt(p.t) * leaves.length + (random() - 0.5) * 1.5), 0, leaves.length - 1)];
+            const off = offset + random() * 3;
+            foliage.push({ def: leaf, x: p.x + p.nx * flip * off, y: p.y + p.ny * flip * off + leaf.anchor.y - (leaf.h >> 1) });
+            flip = -flip;
+        }
+    }
+
+    /**
+     * One pumpkin vine: a winding S-shaped runner from the root to the stem tip, thinning from 4 to 2 art pixels,
+     * with 1–3 short side shoots that end in a tendril and a leaf. The last control point sits above and beside the
+     * stem, so the runner hooks down onto it from above even for pumpkins above the root. Shape comes from the
+     * pumpkin's seed: the same pumpkin grows the same vine on every screen. Leaves and tendrils are only collected,
+     * so foliage of all vines is drawn afterwards in depth order.
+     */
+    function drawVine(ctx, from, stem, reach, seed, foliage) {
+        const random = rng(seed);
+        const side = random() < 0.5 ? 1 : -1;
         const toward = Math.sign(from.x - stem.x) || side;
         const dx = stem.x - from.x;
         const dy = stem.y - from.y;
         const length = Math.hypot(dx, dy) || 1;
-        const bend = side * length * 0.18;
+        const bend = side * length * (0.1 + random() * 0.15);
         const c1 = { x: from.x + dx * 0.35 - (dy / length) * bend, y: from.y + dy * 0.35 + (dx / length) * bend };
         const c2 = { x: stem.x + toward * reach, y: stem.y - 12 };
-        const steps = Math.ceil(length * 3);
-        const points = [];
-        let travelled = 0;
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const u = 1 - t;
-            const x = u * u * u * from.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * stem.x;
-            const y = u * u * u * from.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * stem.y;
-            const last = points[points.length - 1];
-            travelled += last ? Math.hypot(x - last.fx, y - last.fy) : 0;
-            points.push({ x: Math.round(x), y: Math.round(y), fx: x, fy: y, t, d: travelled });
-        }
-        ctx.fillStyle = css(PALETTE.leafDark);
-        for (const p of points) {
-            const thick = p.t < 0.5 ? 3 : 2;
-            ctx.fillRect(p.x - 1, p.y - 1, thick, thick);
-        }
-        ctx.fillStyle = css(PALETTE.leaf);
-        for (const p of points) {
-            ctx.fillRect(p.x - (p.t < 0.5 ? 0 : 1), p.y - 1, 1, 1);
-        }
+        const wave = { amp: clamp(length * 0.06, 2, 7), turns: 1.5 + random(), phase: random() * Math.PI * 2 };
+        const points = wavyCurve(from, c1, c2, stem, wave);
+        const travelled = points[points.length - 1].d;
 
-        // DECOR.leaf goes from the largest to the smallest: big leaves near the root, small ones toward the pumpkin.
-        const leaves = DECOR.leaf;
-        const tendrils = DECOR.tendril;
-        let flip = side;
-        let nextLeaf = 3;
+        const shoots = 1 + Math.floor(random() * 2);
+        for (let i = 0; i < shoots; i++) {
+            const base = points[Math.floor((0.2 + random() * 0.55) * (points.length - 1))];
+            const out = random() < 0.5 ? 1 : -1;
+            const len = 10 + random() * 12;
+            const tip = { x: base.fx + base.nx * out * len, y: base.fy + base.ny * out * len * 0.7 };
+            const mid = { x: (base.fx + tip.x) / 2, y: (base.fy + tip.y) / 2 };
+            const shoot = wavyCurve(base, mid, mid, tip, { amp: 1.5, turns: 1, phase: random() * Math.PI });
+            strokeVine(ctx, shoot, (t) => 2 - t);
+            // Leaves gather at the fork and at the tip; the shoot itself stays bare so it reads as a branch.
+            const forkLeaf = DECOR.leaf[2];
+            if (random() < 0.5) foliage.push({ def: forkLeaf, x: base.fx - base.nx * out * 4, y: base.fy - base.ny * out * 4 + forkLeaf.anchor.y - (forkLeaf.h >> 1) });
+            const tendril = DECOR.tendril[Math.floor(random() * DECOR.tendril.length)];
+            foliage.push({ def: tendril, x: tip.x + out * 3, y: tip.y + tendril.anchor.y - (tendril.h >> 1) });
+            for (const [k, dx] of [[1, -out * 3]]) {
+                const leaf = DECOR.leaf[k];
+                foliage.push({ def: leaf, x: tip.x + dx, y: tip.y - k + leaf.anchor.y - (leaf.h >> 1) });
+            }
+        }
+        strokeVine(ctx, points, (t) => 4 - 2 * t);
+
+        // Leaves only on the outer half: the inner half shows bare runners fanning out of the root heap. None on
+        // the hook over the stem.
+        sprinkleLeaves(points, random, foliage, { gap: [14, 20], from: Math.max(22, travelled * 0.45), until: travelled - 12, sizeAt: (t) => 0.3 + t * 0.6, offset: 6 });
         let nextTendril = 10 + random() * 10;
-        for (let i = 4; i < points.length; i++) {
-            const p = points[i];
+        for (const p of points) {
             if (p.d > travelled - 10) break;
-            const prev = points[i - 4];
-            const tl = Math.hypot(p.fx - prev.fx, p.fy - prev.fy) || 1;
-            const nx = -(p.fy - prev.fy) / tl;
-            const ny = (p.fx - prev.fx) / tl;
-            if (p.d >= nextLeaf) {
-                nextLeaf += 6 + random() * 4;
-                const pick = clamp(Math.floor(p.t * leaves.length + (random() - 0.5) * 1.5), 0, leaves.length - 1);
-                const leaf = leaves[pick];
-                const off = 2 + random() * 3;
-                foliage.push({ def: leaf, x: p.x + nx * flip * off, y: p.y + ny * flip * off + leaf.anchor.y - (leaf.h >> 1) });
-                flip = -flip;
-            }
-            if (p.d >= nextTendril) {
-                nextTendril += 18 + random() * 14;
-                const t = tendrils[Math.floor(random() * tendrils.length)];
-                foliage.push({ def: t, x: p.x - nx * flip * 3, y: p.y - ny * flip * 3 + t.anchor.y - (t.h >> 1) });
-            }
+            if (p.d < nextTendril) continue;
+            nextTendril = p.d + 22 + random() * 14;
+            const t = DECOR.tendril[Math.floor(random() * DECOR.tendril.length)];
+            foliage.push({ def: t, x: p.x - p.nx * side * 3, y: p.y - p.ny * side * 3 + t.anchor.y - (t.h >> 1) });
         }
     }
 
@@ -425,20 +492,22 @@ export async function createScene(rootEl, snapshot) {
 
         const root = toArt(ROOT);
         const foliage = [];
-        state.elements.forEach((element, i) => {
-            const def = pumpkinSprite(0, element.size ?? 'm', seedOf(element.id));
+        for (const element of state.elements) {
+            const seed = seedOf(element.id);
+            const def = pumpkinSprite(0, element.size ?? 'm', seed);
             const p = toArt(element);
             const stem = { x: p.x - def.anchor.x + stemColumn(def), y: p.y - def.anchor.y + 1 };
-            drawVine(ctx, root, stem, (def.w >> 1) + 3, i % 2 === 0 ? 1 : -1, random, foliage);
-        });
+            drawVine(ctx, root, stem, (def.w >> 1) + 3, seed, foliage);
+        }
 
         // A heap of the largest leaves around the root; the root itself stays on top of it.
-        const heap = Math.round(clamp(artW / 16, 14, 26));
+        const heapLeaves = DECOR.bigLeaf ? [DECOR.bigLeaf].flat() : DECOR.leaf.slice(0, 2);
+        const heap = Math.round(clamp(artW / 30, 10, 16));
         for (let i = 0; i < heap; i++) {
             const a = random() * Math.PI * 2;
             const r = Math.sqrt(random());
-            const leaf = DECOR.leaf[Math.min(DECOR.leaf.length - 1, Math.floor(random() * 2))];
-            foliage.push({ def: leaf, x: root.x + Math.cos(a) * r * 15, y: root.y + Math.sin(a) * r * 7 });
+            const leaf = heapLeaves[Math.floor(random() * heapLeaves.length)];
+            foliage.push({ def: leaf, x: root.x + Math.cos(a) * r * 11, y: root.y + Math.sin(a) * r * 5 });
         }
         foliage.sort((a, b) => a.y - b.y).forEach((f) => stamp(ctx, f.def, f.x, f.y));
         stamp(ctx, DECOR.root, root.x, root.y);
@@ -502,14 +571,19 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    // Hit zones are the core of the body, not the whole sprite: in a tight patch near pumpkins overlap far ones,
+    // and only the cores have to stay apart (app/config/hellowin.php is laid out for that).
     function publishHitZones() {
         for (const size of SIZES) {
             const { def } = pumpkinArt(0, size);
             const px = layout.cssPx;
-            rootEl.style.setProperty(`--hit-w-${size}`, `${def.w * px}px`);
-            rootEl.style.setProperty(`--hit-h-${size}`, `${def.h * px}px`);
-            rootEl.style.setProperty(`--hit-x-${size}`, `${-def.anchor.x * px}px`);
-            rootEl.style.setProperty(`--hit-y-${size}`, `${-def.anchor.y * px}px`);
+            const w = Math.round(def.w * 0.72);
+            const h = Math.round(def.h * 0.72);
+            const lift = Math.round(def.h * 0.06);
+            rootEl.style.setProperty(`--hit-w-${size}`, `${w * px}px`);
+            rootEl.style.setProperty(`--hit-h-${size}`, `${h * px}px`);
+            rootEl.style.setProperty(`--hit-x-${size}`, `${-(w >> 1) * px}px`);
+            rootEl.style.setProperty(`--hit-y-${size}`, `${(def.h - def.anchor.y - lift - h) * px}px`);
         }
         rootEl.style.setProperty('--px', `${layout.cssPx}px`);
     }

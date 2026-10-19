@@ -23,7 +23,7 @@
                     data-size="{{ $element['size'] ?? 'm' }}"
                     data-stage="{{ $element['stage'] }}"
                     data-clicks="{{ $element['clicks'] }}"
-                    style="left: {{ $element['x'] }}%; top: {{ $element['y'] }}%"
+                    style="--x: {{ $element['x'] }}; --y: {{ $element['y'] }}; z-index: {{ (int) round($element['y'] * 10) }}"
                     aria-label="Тыква {{ $element['id'] }}"><span class="pumpkin__emoji" aria-hidden="true">🎃</span></button>
         @endforeach
 

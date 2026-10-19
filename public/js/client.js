@@ -1,6 +1,8 @@
 // Client model of docs/spec/frontend.md: applies channel events to the DOM hooks and to the pixel scene.
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
+import { spreadX } from './layout.js';
+
 const SCENE_NAMES = { 0: 'День: подготовка' };
 const DEFAULT_STAGE_MAX = 4;
 
@@ -22,8 +24,8 @@ export function readSnapshot(root) {
         elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
             id: el.dataset.element,
             type: el.dataset.type,
-            x: Number.parseFloat(el.style.left),
-            y: Number.parseFloat(el.style.top),
+            x: Number.parseFloat(el.style.getPropertyValue('--x')),
+            y: Number.parseFloat(el.style.getPropertyValue('--y')),
             size: el.dataset.size || 'm',
             stage: int(el.dataset.stage),
             clicks: int(el.dataset.clicks),
@@ -172,6 +174,9 @@ export function createClient(root, scene, { requestState }) {
         },
 
         start() {
+            const spread = () => root.style.setProperty('--spread', String(spreadX(root.clientWidth || window.innerWidth)));
+            spread();
+            new ResizeObserver(spread).observe(root);
             paintAll();
         },
     };

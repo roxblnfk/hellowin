@@ -199,15 +199,20 @@
 
     const foliage = (bg) => [
         ...DECOR.leaf.map((c, i) => view(c, 6, `leaf${i}`)),
+        ...DECOR.bigLeaf.map((c, i) => view(c, 6, `bigLeaf${i}`)),
         ...DECOR.tendril.map((c, i) => view(c, 6, `tendril${i}`)),
     ];
     section('foliage', 'листья и усы 6× (земля)', 'soil', foliage());
     section('foliage', 'листья и усы 6× (небо)', 'sky', foliage());
     // Dense overlap, as along a vine.
     section('foliage', 'листва вдоль побега 4×', 'soil', [
-        diorama(90, 30, 0, 4, Array.from({ length: 14 }, (_, i) => [
-            pick(DECOR.leaf, i * 7 + (i >> 1)), 6 + i * 6, 14 + ((i * 5) % 7) - 3,
-        ]).concat([[DECOR.tendril[0], 30, 26], [pick(DECOR.tendril, 1), 66, 8]])),
+        diorama(130, 44, 0, 4, Array.from({ length: 14 }, (_, i) => [
+            pick(DECOR.leaf, i * 7 + (i >> 1)), 8 + i * 8, 24 + ((i * 5) % 7) - 3,
+        ]).concat([[DECOR.tendril[0], 40, 40], [pick(DECOR.tendril, 1), 96, 12]])),
+        diorama(80, 44, 0, 4, [
+            [DECOR.bigLeaf[0], 26, 30], [DECOR.bigLeaf[1], 52, 32], [DECOR.leaf[0], 14, 40], [DECOR.leaf[1], 64, 42],
+            [DECOR.bigLeaf[1], 36, 42], [DECOR.root, 40, 30],
+        ]),
     ]);
 
     section('weeds', 'сорняки 4× (земля)', 'soil', DECOR.weed.map((c, i) => view(c, 4, `weed${i}`)));
