@@ -1,7 +1,7 @@
 # Протокол клиент ↔ сервер
 
 Статус: подключение и RPC `click` — **реализовано**; события новой модели (`click`, `pumpkin`, `scene`, `reset`),
-RPC `state` и начальное состояние со сценой и стадиями тыкв — **в работе**; всё про игроков — **запланировано**.
+RPC `state` и начальное состояние со сценой и стадиями тыкв — **в работе**; `stageMax` и `size` — **запланировано**; всё про игроков — **запланировано**.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -36,7 +36,7 @@ RPC `state` и начальное состояние со сценой и ста
 |---|---|---|
 | `click` | `element`, `emoji`, `clicks`, `threshold`, `stage`, `player?` | каждый принятый клик |
 | `pumpkin` | `element`, `stage`, `player?` | тыква перешла в новую стадию (ровно одно событие на переход) |
-| `scene` | `scene` | сцена сменилась (ровно одно событие на смену) |
+| `scene` | `scene`, `stageMax` | сцена сменилась (ровно одно событие на смену) |
 | `reset` | — | сброс; новый `round` в самом событии |
 | `leaderboard` | `top: [{id, name, clicks, finished}]` | периодически; запланировано |
 
@@ -48,7 +48,7 @@ RPC `state` и начальное состояние со сценой и ста
 ```json
 {"type":"click","round":1,"element":"pumpkin-3","emoji":"🕸️","clicks":4,"threshold":5,"stage":0}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":1}
-{"type":"scene","round":1,"scene":1}
+{"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
 ```
 
@@ -61,10 +61,12 @@ RPC `state` и начальное состояние со сценой и ста
   "round": 1,
   "scene": 0,
   "sceneStages": 3,
+  "stageMax": 4,
   "threshold": 5,
-  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":12,"y":22,"stage":0,"clicks":2}]
+  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}]
 }
 ```
 
-`x`/`y` — проценты экрана. Страница `GET /` отдаёт снимок в шаблон `home` (переменные — см.
+`x`/`y` — проценты экрана; `size` — `s` / `m` / `l`; `stageMax` — последняя стадия тыквы в текущей сцене
+(см. [`scenario.md`](scenario.md)). Страница `GET /` отдаёт снимок в шаблон `home` (переменные — см.
 [`frontend.md`](frontend.md)) вместе с `centrifugoUrl`.
