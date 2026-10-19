@@ -1,7 +1,8 @@
 # Движок (backend)
 
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
-игроки и их статистика. Кто запускает сброс, летуны и таблица лидеров — **запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
+игроки и их статистика, периодический процесс (тикер) и таблица лидеров. Кто запускает сброс и летуны —
+**запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
 
 ## Классы
 
@@ -17,6 +18,39 @@
 | События канала | `Application/Hellowin/ChannelPublisher` |
 | Игроки: id из секрета, имя, запись в KV | `Domain/Player/PlayerId`, `PlayerName`, `PlayerStore`, `Application/Player/PlayerService` |
 | Локи нескольких ресурсов | `Domain/Lock/Locks` |
+| Таблица лидеров | `Domain/Player/Leaderboard` (ранжирование), `Application/Player/LeaderboardService` |
+| Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
+
+## Периодический процесс (тикер)
+
+Таблицу лидеров (и летунов, когда они появятся) двигает время, а не запросы игроков, — нужен процесс с расписанием.
+Это плагин RoadRunner `service` (`.rr.yaml`, `service.ticker`): RoadRunner держит один долгоживущий процесс
+`php app.php hellowin:ticker` и перезапускает его при падении (`restart_sec`). Процесс — то же приложение Spiral
+в консольном режиме: KV, локи, метрики и публикация в Centrifugo идут по goridge RPC к плагинам, как из воркеров.
+
+Цикл: раз в 200 мс (`--step`) — удержать лизинг, выполнить всё, что пора (`Ticker::tick(now)`), уснуть. Расписание —
+в памяти процесса: после рестарта начинается заново, а не догоняет пропущенное. Сбой одной работы пишется в лог и не
+останавливает цикл.
+
+Почему не дублируется:
+
+- процесс вне пулов воркеров: `rr reset`, рестарт или увеличение пулов его не трогают и вторую копию не создают;
+- **лизинг** — RR-лок `ticker` с TTL 5 с, продлевается раз в секунду. Тикает только его владелец; вторая копия
+  (перекрытие при рестарте, ручной запуск `hellowin:ticker`) ждёт, пока первая перестанет продлевать.
+
+Альтернатива — самоперепланирующаяся задача RR jobs с задержкой: годится, но цепочка рвётся при потере задачи
+(memory-очередь теряет её на рестарте) и требует внешнего «запала» и ключа идемпотентности тика против двух цепочек.
+`service` проще объяснить и показывает ещё один плагин RoadRunner.
+
+Работы тикера:
+
+| Работа | Когда | Что |
+|---|---|---|
+| Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` → gauge `hellowin_players`, `hellowin_players_registered` |
+
+Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
+публикуется на каждой сборке, даже без изменений: новый клиент получает таблицу в пределах интервала, а сразу —
+из RPC `me` (последняя сборка из ключа).
 
 ## Поток клика
 
@@ -67,9 +101,9 @@
 | Что | Где | Через |
 |---|---|---|
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks}`) | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
-| Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
+| Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -89,6 +123,8 @@
 | `hellowin_scene_stage` | gauge | текущая сцена |
 | `hellowin_round` | gauge | текущий раунд |
 | `hellowin_pumpkin_stage{element}` | gauge | стадия каждой тыквы |
+| `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер при сборке таблицы лидеров |
+| `hellowin_players_registered` | gauge | игроки с именем; там же |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.
@@ -100,6 +136,8 @@
 |---|---|---|
 | `HELLOWIN_CLICKS_PER_STAGE` | 5 | кликов по тыкве для перехода в следующую стадию |
 | `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены |
+| `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
+| `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
 | `VALKEY_DSN` | `tcp://valkey:6379` | Valkey для idempotency (predis) |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | URL WebSocket для фронта |

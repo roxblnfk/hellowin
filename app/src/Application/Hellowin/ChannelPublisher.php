@@ -56,6 +56,14 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * @param list<array> $top Players as {@see Player::toArray()}, best first.
+     */
+    public function leaderboard(int $round, array $top): void
+    {
+        $this->publish(['type' => 'leaderboard', 'round' => $round, 'top' => $top]);
+    }
+
+    /**
      * Anonymous actions carry no `player` field at all.
      */
     private static function withPlayer(array $message, ?Player $player): array

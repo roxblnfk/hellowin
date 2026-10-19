@@ -46,6 +46,8 @@
 | `CENTRIFUGO_ALLOWED_ORIGINS` | `http://localhost:8080 http://127.0.0.1:8080` | Origin через пробел, с которых браузер может подключаться к WebSocket |
 | `HELLOWIN_CLICKS_PER_STAGE` | `5` | сколько кликов по тыкве переводят её в следующую стадию, целое > 0 |
 | `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам через запятую, накопительно и по возрастанию; длина списка — номер финальной сцены |
+| `HELLOWIN_LEADERBOARD_INTERVAL` | `5000` | раз во сколько миллисекунд тикер собирает и рассылает таблицу лидеров |
+| `HELLOWIN_LEADERBOARD_SIZE` | `10` | сколько игроков в таблице лидеров |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |

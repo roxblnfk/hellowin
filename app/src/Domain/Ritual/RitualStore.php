@@ -131,6 +131,16 @@ final readonly class RitualStore
     }
 
     /**
+     * Current round without taking locks, for events outside the ritual.
+     *
+     * @return positive-int
+     */
+    public function round(): int
+    {
+        return $this->readRound();
+    }
+
+    /**
      * Current state without taking locks: it may lag a concurrent click or transition.
      */
     public function snapshot(): RitualSnapshot

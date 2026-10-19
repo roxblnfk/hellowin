@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace App\Application\Bootloader;
 
 use App\Application\Config\HellowinConfig;
+use App\Application\Config\PlayerConfig;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Ticker\Ticker;
+use App\Domain\Clock\Clock;
+use App\Domain\Clock\SystemClock;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Lock\Locks;
@@ -85,6 +91,28 @@ final class HellowinBootloader extends Bootloader
                 HellowinConfig $config,
                 BroadcastInterface $broadcast,
             ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel()),
+            Clock::class => SystemClock::class,
+            LeaderboardService::class => static fn(
+                HellowinConfig $config,
+                PlayerConfig $players,
+                PlayerStore $store,
+                RitualStore $ritual,
+                CacheStorageProviderInterface $cache,
+                ChannelPublisher $publisher,
+                PlayMetrics $metrics,
+            ): LeaderboardService => new LeaderboardService(
+                $store,
+                $ritual,
+                $cache->storage($config->getStorage()),
+                $publisher,
+                $metrics,
+                $players->getLeaderboardSize(),
+            ),
+            Ticker::class => static fn(
+                PlayerConfig $players,
+                LeaderboardService $leaderboard,
+                LoggerInterface $logger,
+            ): Ticker => new Ticker($leaderboard, $players->getLeaderboardInterval(), $logger),
         ];
     }
 
@@ -103,6 +131,9 @@ final class HellowinBootloader extends Bootloader
         $logger = $container->get(LoggerInterface::class);
         \assert($metrics instanceof RitualMetrics && $store instanceof RitualStore && $logger instanceof LoggerInterface);
         $metrics->declare();
+        $play = $container->get(PlayMetrics::class);
+        \assert($play instanceof PlayMetrics);
+        $play->declare();
         try {
             $metrics->state($store->snapshot());
         } catch (\Throwable $e) {

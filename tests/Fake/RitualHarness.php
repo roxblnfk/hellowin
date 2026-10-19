@@ -8,11 +8,13 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\Job\TransitionPumpkin;
 use App\Application\Hellowin\Job\TransitionScene;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -40,6 +42,9 @@ final class RitualHarness
     public readonly PlayerStore $playerStore;
     public readonly PlayerService $players;
     public readonly ArrayStorage $storage;
+    public readonly ChannelPublisher $publisher;
+    public readonly PlayMetrics $playMetrics;
+    public readonly LeaderboardService $leaderboard;
 
     /**
      * @param positive-int $threshold
@@ -73,6 +78,9 @@ final class RitualHarness
         $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold);
+        $this->publisher = $publisher;
+        $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
+        $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
     }
 
     public function click(string $pumpkin, int $times = 1, ?string $player = null): void

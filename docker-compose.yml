@@ -35,6 +35,8 @@ services:
       DEBUG: "false"
       HELLOWIN_CLICKS_PER_STAGE: ${HELLOWIN_CLICKS_PER_STAGE:-5}
       HELLOWIN_SCENE_STAGE_MAX: ${HELLOWIN_SCENE_STAGE_MAX:-4,6,8}
+      HELLOWIN_LEADERBOARD_INTERVAL: ${HELLOWIN_LEADERBOARD_INTERVAL:-5000}
+      HELLOWIN_LEADERBOARD_SIZE: ${HELLOWIN_LEADERBOARD_SIZE:-10}
       # Game state (RoadRunner kv, redis driver) and idempotency keys (predis) live in the same Valkey.
       VALKEY_ADDR: valkey:6379
       VALKEY_DSN: tcp://valkey:6379

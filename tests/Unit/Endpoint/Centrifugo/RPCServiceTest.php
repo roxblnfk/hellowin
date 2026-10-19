@@ -162,17 +162,20 @@ final class RPCServiceTest
         $ritual = new RitualHarness();
         $ritual->click('pumpkin-2', 3, self::PLAYER);
 
+        $ritual->leaderboard->build();
+
         $response = $this->call($ritual, 'me', [], self::PLAYER);
 
         Assert::same($response['player']['clicks'] ?? null, 3);
+        Assert::same(\array_column($response['top'] ?? [], 'id'), [self::PLAYER]);
     }
 
     public function meIsNullForAnUnknownOrAnonymousPlayer(): void
     {
         $ritual = new RitualHarness();
 
-        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null]);
-        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null]);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null, 'top' => []]);
+        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'top' => []]);
     }
 
     #[BeforeTest]
@@ -183,7 +186,7 @@ final class RPCServiceTest
 
     private function call(RitualHarness $ritual, string $method, array $params, string $user = ''): array
     {
-        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, new NullLogger());
+        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, $ritual->leaderboard, new NullLogger());
         $service->handle(new RPC(
             worker: $this->worker,
             client: 'client-1',

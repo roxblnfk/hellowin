@@ -8,6 +8,7 @@ use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
 use App\Application\Player\InvalidNameException;
+use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
@@ -30,6 +31,7 @@ final readonly class RPCService implements ServiceInterface
         private ClickHandler $clicks,
         private SnapshotFactory $snapshot,
         private PlayerService $players,
+        private LeaderboardService $leaderboard,
         private LoggerInterface $logger,
     ) {}
 
@@ -44,7 +46,11 @@ final readonly class RPCService implements ServiceInterface
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             'register' => $this->register($request->getData(), $player),
-            'me' => ['ok' => true, 'player' => $player === null ? null : $this->players->find($player)?->toArray()],
+            'me' => [
+                'ok' => true,
+                'player' => $player === null ? null : $this->players->find($player)?->toArray(),
+                'top' => $this->leaderboard->last(),
+            ],
             default => self::fail('unknown method'),
         })));
     }

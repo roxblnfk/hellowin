@@ -2,8 +2,7 @@
 
 Статус: подключение, RPC `click` и `state`, события `click`, `pumpkin`, `scene`, `reset`, снимок состояния
 (со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
-**реализовано** на backend; разметка главной на переменных снимка — у фронтенда; летуны и таблица лидеров —
-**запланировано**.
+**реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) — тоже; летуны — **запланировано**.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -27,7 +26,7 @@
 | `click` | `{element}` | `{ok:true}` | реализовано |
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
 | `register` | `{name}` | `{ok:true, player: <Player>}` | реализовано |
-| `me` | `{}` | `{ok:true, player: <Player>}`, `player` — `null` у анонима и у игрока без действий; своя статистика при загрузке | реализовано |
+| `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>]}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий | реализовано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит или улетел) | запланировано |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
@@ -52,7 +51,7 @@
 | `reset` | — | сброс; новый `round` в самом событии |
 | `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points` | запущен летун (запланировано) |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна (запланировано) |
-| `leaderboard` | `top: [{id, name, clicks, finished}]` | периодически; запланировано |
+| `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
 `player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
 `emoji` сервер выбирает из набора emoji элемента — фронтенд
@@ -67,6 +66,7 @@
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
 {"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
+{"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":2,"points":5}]}
 {"type":"flyer","round":1,"flyer":"f-812","kind":"duck","depth":0,"from":{"x":-5,"y":18},"to":{"x":105,"y":10},"duration":9000,"points":3}
 {"type":"flyer","round":1,"flyer":"f-813","kind":"duck","depth":2,"bush":"bush-2","from":{"x":12,"y":70},"via":{"x":30,"y":20},"to":{"x":70,"y":-10},"duration":3500,"points":1}
 {"type":"shot","round":1,"flyer":"f-812","points":3}
