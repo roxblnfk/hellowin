@@ -12,7 +12,8 @@
           data-scene-stages="{{ $sceneStages }}"
           data-stage-max="{{ $stageMax ?? 4 }}"
           data-threshold="{{ $threshold }}"
-          data-bushes="{{ json_encode($bushes ?? []) }}">
+          data-bushes="{{ json_encode($bushes ?? []) }}"
+          data-now="{{ $now ?? 0 }}">
         <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
             <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
         </a>

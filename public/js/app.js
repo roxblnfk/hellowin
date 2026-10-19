@@ -62,6 +62,12 @@ async function main() {
     // client itself, not on a Subscription object.
     centrifuge.on('publication', (ctx) => client.apply(ctx.data));
 
+    // A background tab gets held-back publications in a burst when it returns; the scene drops expired flyers on
+    // its first frame, and a fresh offset keeps the next flights on the server's clock.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && connectedOnce) client.syncClock();
+    });
+
     // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event.
     const click = (id) => centrifuge.rpc('click', { element: id })
         .then(({ data }) => {

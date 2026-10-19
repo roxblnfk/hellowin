@@ -31,6 +31,7 @@ export function readSnapshot(root) {
         stageMax: int(root.dataset.stageMax, DEFAULT_STAGE_MAX),
         threshold: int(root.dataset.threshold, 1),
         bushes: parseBushes(root.dataset.bushes),
+        now: int(root.dataset.now, 0),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
             id: el.dataset.element,
             type: el.dataset.type,
@@ -48,11 +49,18 @@ export function readSnapshot(root) {
  * @param {object|null} scene API of pixel/scene.js, or null without a canvas
  * @param {{requestState: () => Promise<object>}} transport  resolves with a fresh snapshot (RPC `state`)
  */
-export function createClient(root, scene, { requestState }) {
+export function createClient(root, scene, { requestState, now = () => Date.now() }) {
     const model = readSnapshot(root);
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     let syncing = null;
+    // Server clock minus ours, from the snapshot's `now`; 0 until one is known.
+    let offset = 0;
+    const takeTime = (serverTime) => {
+        if (serverTime > 0) offset = serverTime - now();
+    };
+    takeTime(model.now);
+    scene?.setServerClock(() => now() + offset);
 
     const hud = (name) => root.querySelector(`[data-hud-${name}]`);
     const button = (id) => root.querySelector(`[data-element="${CSS.escape(id)}"]`);
@@ -91,6 +99,7 @@ export function createClient(root, scene, { requestState }) {
     }
 
     function load(snapshot) {
+        takeTime(snapshot.now);
         Object.assign(model, {
             round: snapshot.round,
             scene: snapshot.scene,
@@ -181,6 +190,11 @@ export function createClient(root, scene, { requestState }) {
         model,
         load,
         resync,
+
+        /** Refreshes the clock offset from RPC `state` without touching the scene (after the tab comes back). */
+        syncClock() {
+            return requestState().then((snapshot) => takeTime(snapshot?.now)).catch((error) => console.warn('state rpc failed', error));
+        },
 
         /** Applies one channel event (protocol.md); events of another round trigger a resync. */
         apply(event) {

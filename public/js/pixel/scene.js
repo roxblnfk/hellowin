@@ -76,7 +76,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, flyer: Function, shot: Function, flyerAt: Function, perch: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, perch: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -188,6 +188,8 @@ export async function createScene(rootEl, snapshot) {
     const particles = [];
     let clouds = [];
     const flyers = new Map();
+    // Server time in ms; the client model supplies it with the clock offset (setServerClock).
+    let serverNow = () => Date.now();
     const bushes = new Map();
     const flyerTextures = new Map();
     const hazyTextures = new Map();
@@ -825,13 +827,14 @@ export async function createScene(rootEl, snapshot) {
             const set = FLYERS[f.kind]?.[f.depth] ?? FLYERS.duck[0];
             let art;
             if (f.shotAt === null) {
-                const local = clock - f.born;
-                if (local > f.duration + 200) {
+                const now = serverNow();
+                const local = now - f.launchedAt;
+                if (now >= f.expiresAt) {
                     f.sprite.destroy();
                     flyers.delete(id);
                     continue;
                 }
-                f.pos = pathAt(f, Math.min(1, local / f.duration));
+                f.pos = pathAt(f, clamp(local / f.duration, 0, 1));
                 art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length], f.depth === 0);
             } else {
                 // Hit frame, then a tumble that falls off the bottom of the screen.
@@ -856,8 +859,14 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    // Flights run on server time, so every player sees a bird at the same spot and a late event picks the flight
+    // up midway; a bird past `expiresAt` (say, events held back in a background tab) is never drawn.
     function launch(event) {
         if (flyers.has(event.flyer)) return;
+        const now = serverNow();
+        const launchedAt = event.launchedAt ?? now;
+        const expiresAt = event.expiresAt ?? launchedAt + event.duration;
+        if (now >= expiresAt) return;
         const sprite = new Sprite();
         [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)].addChild(sprite);
         flyers.set(event.flyer, {
@@ -867,14 +876,15 @@ export async function createScene(rootEl, snapshot) {
             via: event.via ?? null,
             to: event.to,
             duration: Math.max(1, event.duration),
-            born: clock,
+            launchedAt,
+            expiresAt,
             flip: event.to.x < event.from.x,
             sprite,
             shotAt: null,
             pos: toScreenArt(event.from),
         });
         const bush = event.bush && bushes.get(event.bush);
-        if (bush) bush.rustleUntil = clock + RUSTLE_MS;
+        if (bush && now - launchedAt < RUSTLE_MS) bush.rustleUntil = clock + RUSTLE_MS - (now - launchedAt);
         animateFlyers();
     }
 
@@ -1164,6 +1174,11 @@ export async function createScene(rootEl, snapshot) {
 
         flyerAt(clientX, clientY) {
             return flyerAt(clientX, clientY);
+        },
+
+        /** Sets the server-time source flights are measured against. */
+        setServerClock(fn) {
+            serverNow = fn;
         },
 
         /** Outlines the flyers' hit boxes; a development aid for public/dev/lab.html. */

@@ -15,7 +15,7 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one, ?fps=1 logs the frame rate.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one, ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -87,13 +87,21 @@
         queue.push({ at: simTime + ms, fn });
     }
 
+    // Server time of the fake engine; the frozen clock runs from a fixed epoch. ?skew=ms shifts the client's own
+    // clock, which the snapshot's `now` has to compensate.
+    const EPOCH = 1_700_000_000_000;
+    const serverTime = () => (simulated ? EPOCH + simTime : Date.now());
+    const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
+    const clientTime = () => serverTime() + skew;
+    root.dataset.now = String(serverTime());
+
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
     const engine = readSnapshot(root);
     // HELLOWIN_SCENE_STAGE_MAX=4,6,8; the final scene keeps the last value.
     const SCENE_STAGE_MAX = [4, 6, 8, 8];
     const pending = new Set();
     const deliver = (event) => later(() => client.apply({ round: engine.round, ...event }), 20 + Math.random() * 40);
-    const engineSnapshot = () => structuredClone(engine);
+    const engineSnapshot = () => ({ ...structuredClone(engine), now: serverTime() });
 
     function engineClick(id) {
         const p = engine.elements.find((e) => e.id === id);
@@ -129,7 +137,6 @@
     const POINTS = [3, 2, 1];
     const live = new Map();
     let flyerSeq = 0;
-    const now = () => (simulated ? simTime : performance.now());
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
     function engineFlyer({ depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
@@ -149,14 +156,16 @@
             path = { from: { x: ltr ? -8 : 108, y }, to: { x: ltr ? 108 : -8, y: y + (Math.random() - 0.5) * 12 } };
             if (Math.random() < 0.5) path.via = { x: 50, y: Math.max(2, y - 8 - Math.random() * 8) };
         }
-        live.set(id, { until: now() + DURATION[depth] + 500, points: POINTS[depth], shot: false });
-        deliver({ type: 'flyer', flyer: id, kind: Math.random() < 0.25 ? 'chicken' : 'duck', depth, duration: DURATION[depth], points: POINTS[depth], ...path });
+        const launchedAt = serverTime();
+        const expiresAt = launchedAt + DURATION[depth];
+        live.set(id, { until: expiresAt + 500, points: POINTS[depth], shot: false });
+        deliver({ type: 'flyer', flyer: id, kind: Math.random() < 0.25 ? 'chicken' : 'duck', depth, duration: DURATION[depth], points: POINTS[depth], launchedAt, expiresAt, ...path });
         return id;
     }
 
     function engineShoot(id) {
         const f = live.get(id);
-        if (!f || f.shot || now() > f.until) return { ok: true, hit: false };
+        if (!f || f.shot || serverTime() > f.until) return { ok: true, hit: false };
         f.shot = true;
         deliver({ type: 'shot', flyer: id, points: f.points });
         return { ok: true, hit: true, points: f.points };
@@ -173,7 +182,7 @@
     const scene = await createScene(root, readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
     if (params.has('hits')) scene?.showHits(true);
-    const client = createClient(root, scene, { requestState: async () => engineSnapshot() });
+    const client = createClient(root, scene, { requestState: async () => engineSnapshot(), now: clientTime });
     client.start();
     if (startStage > 4) engineJump(startStage);
 
