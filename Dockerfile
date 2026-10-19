@@ -48,7 +48,8 @@ COPY app ./app
 RUN mkdir -p runtime && chown -R www-data:www-data runtime
 USER www-data
 ENV APP_ENV=prod \
-    DEBUG=false
+    DEBUG=false \
+    VERBOSITY_LEVEL=basic
 EXPOSE 8080 10001 2112
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1
