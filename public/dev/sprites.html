@@ -218,6 +218,21 @@
     section('weeds', 'сорняки 4× (земля)', 'soil', DECOR.weed.map((c, i) => view(c, 4, `weed${i}`)));
     section('weeds', 'сорняки 4× (небо)', 'sky', DECOR.weed.map((c, i) => view(c, 4, `weed${i}`)));
 
+    section('props', 'дерево 3× (perch — красная метка)', 'sky', [view(DECOR.tree, 3, 'tree')]);
+    section('props', 'плетень и реквизит 4×', 'soil', [
+        diorama(150, 64, 20, 4, [
+            ...Array.from({ length: 8 }, (_, i) => [DECOR.fence[i % 3 === 2 ? 1 : 0], 8 + i * 16, 34]),
+            [DECOR.fenceEnd, 129, 34],
+            [DECOR.hay, 30, 50], [DECOR.basket, 60, 52], [pumpkinSprite(4, 's', seedOf('pumpkin-3')), 82, 56],
+            [DECOR.can, 104, 50], [DECOR.stone[0], 118, 58], [DECOR.stone[1], 124, 61], [DECOR.stone[2], 12, 60],
+            [pick(DECOR.weed, 2), 140, 40], [pick(DECOR.weed, 0), 46, 42],
+        ]),
+    ]);
+    section('props', 'реквизит 6×', 'soil', [
+        ...DECOR.fence.map((c, i) => view(c, 6, `fence${i}`)), view(DECOR.fenceEnd, 6, 'fenceEnd'),
+        view(DECOR.hay, 6, 'hay'), view(DECOR.basket, 6, 'basket'), view(DECOR.can, 6, 'can'),
+        ...DECOR.stone.map((c, i) => view(c, 6, `stone${i}`)),
+    ]);
     section('root', 'корень 3× и 6× (земля)', 'soil', [view(DECOR.root, 3, 'root'), view(DECOR.root, 6, 'root 6×')]);
 
     section('particles', 'частицы 6×', 'sky', Object.entries(PARTICLES).flatMap(([name, list]) =>

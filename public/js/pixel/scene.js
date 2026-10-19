@@ -120,10 +120,11 @@ export async function createScene(rootEl, snapshot) {
     const baseLayer = new Container();
     const treeLayer = new Container();
     const plantLayer = new Container();
+    const bugLayer = new Container();
     const pumpkinLayer = new Container();
     const particleLayer = new Container();
     const flashLayer = new Container();
-    world.addChild(skyLayer, cloudLayer, baseLayer, treeLayer, plantLayer, pumpkinLayer, particleLayer, flashLayer);
+    world.addChild(skyLayer, cloudLayer, baseLayer, treeLayer, plantLayer, bugLayer, pumpkinLayer, particleLayer, flashLayer);
 
     let target = null;
     const display = new Sprite();
@@ -169,6 +170,7 @@ export async function createScene(rootEl, snapshot) {
     const pumpkins = new Map();
     const particles = [];
     let clouds = [];
+    let bugs = [];
     let perch = { x: 0, y: 0 };
     let clock = 0;
 
@@ -237,12 +239,69 @@ export async function createScene(rootEl, snapshot) {
         return {
             cx: c.x,
             cy: c.y,
-            rx: artW * Math.min(0.47, 0.33 * spread),
+            rx: artW * Math.min(0.47, 0.29 * spread),
             ry: Math.min(artH * 0.24, c.y - horizon - 3),
         };
     }
 
     const inPatch = (shape, x, y) => ((x - shape.cx) / shape.rx) ** 2 + ((y - shape.cy) / shape.ry) ** 2;
+
+    // The same test with a lumpy rim: the radius wobbles with the angle, so the edge is not a clean ellipse.
+    function inRagged(shape, x, y) {
+        const a = Math.atan2((y - shape.cy) / shape.ry, (x - shape.cx) / shape.rx);
+        const wobble = 1 + 0.05 * Math.sin(5 * a + 1) + 0.035 * Math.sin(11 * a + 2) + 0.02 * Math.sin(23 * a);
+        return inPatch(shape, x, y) / (wobble * wobble);
+    }
+
+    /** A point on the patch rim at screen angle `deg` (−90 is the far side), `r` times the radius. */
+    function onRim(shape, deg, r) {
+        const a = (deg * Math.PI) / 180;
+        return { x: shape.cx + Math.cos(a) * shape.rx * r, y: shape.cy + Math.sin(a) * shape.ry * r };
+    }
+
+    // Props around the patch: a low wattle fence along the far rim, hay, a basket, a watering can and stones at the
+    // near rim. Only decoration: kept outside the patch, so they never cover a pumpkin's hit zone, and away from the
+    // screen sides where the duck bushes sit.
+    function drawProps(ctx, shape, near) {
+        const fences = DECOR.fence;
+        const fence = fences[0];
+        const end = DECOR.fenceEnd;
+        const span = spreadX(layout.width) > 1.3 ? 40 : 60;
+        const arc = [];
+        for (let deg = -90 - span; deg <= -90 + span; deg += 0.5) arc.push(onRim(shape, deg, 1.06));
+        const posts = [arc[0]];
+        let run = 0;
+        for (let i = 1; i < arc.length; i++) {
+            run += Math.hypot(arc[i].x - arc[i - 1].x, arc[i].y - arc[i - 1].y);
+            if (run >= fence.w - 1) {
+                posts.push(arc[i]);
+                run = 0;
+            }
+        }
+        if (!near) {
+            for (let i = 1; i < posts.length; i++) {
+                const a = posts[i - 1];
+                const b = posts[i];
+                stamp(ctx, fences[i % fences.length], (a.x + b.x) / 2, Math.max(a.y, b.y));
+            }
+            stamp(ctx, end, posts[0].x, posts[0].y);
+            stamp(ctx, end, posts[posts.length - 1].x, posts[posts.length - 1].y);
+            return;
+        }
+        const stones = DECOR.stone;
+        const items = [
+            { def: DECOR.hay, at: onRim(shape, 18, 1.16) },
+            { def: DECOR.basket, at: onRim(shape, 158, 1.12) },
+            { def: DECOR.can, at: onRim(shape, 52, 1.08) },
+            { def: stones[0], at: onRim(shape, 104, 1.07) },
+            { def: stones[stones.length - 1], at: onRim(shape, 206, 1.06) },
+        ];
+        // On a phone the patch reaches the screen sides: pull props back in, or drop one that would sit far from its spot.
+        for (const { def, at } of items.sort((a, b) => a.at.y - b.at.y)) {
+            const x = clamp(at.x, def.w / 2 + 2, layout.artW - def.w / 2 - 2);
+            if (Math.abs(x - at.x) < def.w * 0.75) stamp(ctx, def, x, at.y);
+        }
+    }
 
     // Height of the far plan above the horizon; clouds and the sun stay above it.
     const farPlan = () => Math.max(DECOR.hills.h, ...DECOR.farTree.map((t) => t.h));
@@ -269,13 +328,13 @@ export async function createScene(rootEl, snapshot) {
 
         const image = ctx.createImageData(artW, artH - horizon);
         const rgb = (key) => [(PALETTE[key] >> 16) & 255, (PALETTE[key] >> 8) & 255, PALETTE[key] & 255];
-        const COLORS = Object.fromEntries(['soil', 'soilDark', 'soilLight', 'leaf', 'leafDark', 'leafLight'].map((k) => [k, rgb(k)]));
+        const COLORS = Object.fromEntries(['soil', 'soilDark', 'soilLight', 'leaf', 'leafDark', 'leafLight', 'leafShine'].map((k) => [k, rgb(k)]));
         const vp = { x: shape.cx, y: horizon - (shape.cy - horizon) * 0.6 };
         const fan = (shape.cy + shape.ry - vp.y) / 10;
         for (let y = horizon; y < artH; y++) {
             const depth = (y - horizon) / (artH - horizon);
             for (let x = 0; x < artW; x++) {
-                const d = inPatch(shape, x, y);
+                const d = inRagged(shape, x, y);
                 const checker = (x + y) % 2 === 0;
                 let key;
                 if (d < 0.9 || (d < 1 && checker)) {
@@ -285,12 +344,16 @@ export async function createScene(rootEl, snapshot) {
                         : f < 0.3 ? 'soilLight'
                         : random() < 0.03 ? (random() < 0.5 ? 'soilDark' : 'soilLight')
                         : 'soil';
-                } else if (d < 1.06) {
-                    key = 'soilDark';
+                } else if (d < 1.1 && random() < (1.1 - d) * 6) {
+                    // Clods of dug soil scattered over the rim.
+                    key = random() < 0.6 ? 'soilDark' : 'soilLight';
                 } else {
                     const mow = (Math.sqrt(y - horizon + 1) * 1.7) % 1 < 0.14;
                     const n = random();
-                    key = n < 0.05 * depth ? 'leafLight'
+                    // Warmer, sunlit grass right around the patch.
+                    const warm = Math.max(0, 1.6 - d) * 0.12;
+                    key = n < warm * 0.5 ? 'leafShine'
+                        : n < 0.05 * depth + warm ? 'leafLight'
                         : mow || n < 0.04 + 0.12 * depth || (depth > 0.4 && y % 4 === 0 && checker) ? 'leafDark'
                         : 'leaf';
                 }
@@ -303,6 +366,18 @@ export async function createScene(rootEl, snapshot) {
             }
         }
         ctx.putImageData(image, 0, horizon);
+
+        // Grass blades leaning in over the soil along the rim.
+        for (let i = 0; i < shape.rx * 6; i++) {
+            const p = onRim(shape, random() * 360, 0.9 + random() * 0.08);
+            const x = Math.round(p.x);
+            const y = Math.round(p.y);
+            const tall = 2 + Math.floor(random() * 2);
+            ctx.fillStyle = css(PALETTE[random() < 0.5 ? 'leaf' : 'leafDark']);
+            ctx.fillRect(x, y - tall + 1, 1, tall);
+            if (random() < 0.4) ctx.fillRect(x + 1, y - 1, 1, 1);
+        }
+        drawProps(ctx, shape, false);
 
         // Rejection sampling: sparse inside the patch, denser outside and toward the edges, rarer and smaller far off.
         const weeds = DECOR.weed;
@@ -327,6 +402,7 @@ export async function createScene(rootEl, snapshot) {
             picks.push({ def, x, y });
         }
         picks.sort((a, b) => a.y - b.y).forEach((p) => stamp(ctx, p.def, p.x, p.y));
+        drawProps(ctx, shape, true);
 
         baseLayer.removeChildren().forEach((s) => s.destroy());
         baseLayer.addChild(new Sprite(texture(c)));
@@ -516,6 +592,29 @@ export async function createScene(rootEl, snapshot) {
         plantLayer.addChild(new Sprite(texture(c)));
     }
 
+    // Two butterflies drifting lazily over the lawn on either side of the patch: a 3×1 open and a 1×2 closed frame.
+    function placeBugs() {
+        bugLayer.removeChildren().forEach((c) => c.destroy());
+        const shape = patchShape();
+        const frame = (w, h, key) => {
+            const c = canvas(w, h);
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = css(PALETTE[key]);
+            ctx.fillRect(0, 0, w, h);
+            return texture(c);
+        };
+        bugs = [
+            { key: 'white', at: onRim(shape, 200, 1.35), phase: 0 },
+            { key: 'sun', at: onRim(shape, -20, 1.3), phase: 7 },
+        ].map(({ key, at, phase }) => {
+            const open = artTexture(`bug:open:${key}`, () => frame(3, 1, key));
+            const closed = artTexture(`bug:closed:${key}`, () => frame(1, 2, key));
+            const sprite = new Sprite(open);
+            bugLayer.addChild(sprite);
+            return { sprite, open, closed, x: at.x, y: at.y - 6, phase };
+        });
+    }
+
     function pumpkinMode(p) {
         if (p.stage >= state.stageMax) return 'done';
         if (p.clicks >= state.threshold) return 'ready';
@@ -599,6 +698,7 @@ export async function createScene(rootEl, snapshot) {
         drawBase();
         drawTree();
         drawPlants();
+        placeBugs();
         buildPumpkins();
         for (const particle of particles.splice(0)) particle.sprite.destroy();
         publishHitZones();
@@ -692,6 +792,14 @@ export async function createScene(rootEl, snapshot) {
         }
 
         pumpkins.forEach(animatePumpkin);
+        for (const bug of bugs) {
+            bug.sprite.visible = !reduced;
+            const t = clock / 1000 + bug.phase;
+            const x = bug.x + Math.sin(t * 0.31) * 16 + Math.sin(t * 0.9) * 3;
+            const y = bug.y + Math.sin(t * 0.47) * 5 - Math.abs(Math.sin(t * 2.3)) * 2;
+            bug.sprite.texture = Math.floor(clock / 160 + bug.phase) % 2 ? bug.open : bug.closed;
+            bug.sprite.position.set(Math.round(x), Math.round(y));
+        }
 
         for (let i = particles.length - 1; i >= 0; i--) {
             const particle = particles[i];

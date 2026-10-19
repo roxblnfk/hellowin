@@ -35,6 +35,10 @@ export const PALETTE = {
     bark: 0x6a4c3e,
     barkLight: 0x9c7856,
 
+    hayDark: 0xa0742e,
+    hay: 0xd6aa4c,
+    hayLight: 0xf2d888,
+
     soilDark: 0x4a2a1e,
     soil: 0x6e4028,
     soilLight: 0x96623a,

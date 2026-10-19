@@ -498,6 +498,11 @@ const DECOR_LEGEND = {
     a: 'hazeLight',
     u: 'haze',
     U: 'hazeDark',
+    H: 'hayDark',
+    Y: 'hay',
+    j: 'hayLight',
+    g: 'grayLight',
+    G: 'gray',
 };
 
 // Far hills with a forest edge in front, in haze tones. Every wave and crown wraps at HILLS_W, so the strip tiles.
@@ -540,23 +545,24 @@ function hillsSprite() {
 }
 
 // The tree is generated once at load: leaf clusters as scalloped discs lit from the top-left, a tapering trunk and
-// one long branch reaching right. Deterministic, so every page draws the same tree.
-const TREE_W = 124;
+// one branch reaching right from under the crown. Deterministic, so every page draws the same tree.
+const TREE_W = 104;
 const TREE_H = 104;
 const TRUNK_X = 34;
-const BRANCH = { x0: 38, x1: 120, y0: 64, rise: 13 };
-const PERCH_X = 104;
+const BRANCH = { x0: 37, x1: 97, y0: 66, rise: 11 };
+const PERCH_X = 93;
 
 // [cx, cy, r], drawn back to front: lower clusters sit behind the ones above them.
 const TREE_CLUSTERS = [
     [8, 38, 7], [60, 36, 7], [22, 48, 9], [46, 48, 9], [34, 46, 12],
     [20, 34, 13], [48, 34, 13], [14, 24, 10], [54, 22, 10], [34, 22, 14],
-    [26, 10, 9], [42, 10, 9], [78, 58, 5], [118, 49, 3],
+    [26, 10, 9], [42, 10, 9],
 ];
 
 function branchTop(x) {
     const s = (x - BRANCH.x0) / (BRANCH.x1 - BRANCH.x0);
-    return Math.round(BRANCH.y0 - BRANCH.rise * Math.sin((s * Math.PI) / 2));
+    // Eases out, so the last stretch under the perch is level.
+    return Math.round(BRANCH.y0 - BRANCH.rise * (1 - (1 - s) ** 2));
 }
 
 function treeSprite() {
@@ -585,21 +591,33 @@ function treeSprite() {
         }
     }
 
-    // Branch: tapers from 4 to 2 px, light on top, outline underneath.
+    // Branch: thick where it leaves the trunk, tapering to 2 px; light on top, outline underneath.
     for (let x = BRANCH.x0; x <= BRANCH.x1; x++) {
-        const s = (x - BRANCH.x0) / (BRANCH.x1 - BRANCH.x0);
+        const t = (x - BRANCH.x0) / (BRANCH.x1 - BRANCH.x0);
         const top = branchTop(x);
-        const th = Math.max(2, Math.round(4 - 2.4 * s));
+        const th = Math.max(2, Math.round(6 - 4 * t ** 0.7)) + Math.max(0, Math.round((0.1 - t) * 30));
         for (let k = 0; k < th; k++) {
-            set(x, top + k, k === 0 ? 'p' : k === th - 1 ? 'Q' : 'q');
+            set(x, top + k, k === 0 || (k === 1 && th >= 5) ? 'p' : k === th - 1 ? 'Q' : 'q');
         }
         set(x, top + th, 'O');
     }
-    // A short twig rising off the branch.
-    for (let k = 1; k <= 5; k++) {
-        set(70 + k, branchTop(70) - k, k < 3 ? 'q' : 'p');
-        set(70 + k, branchTop(70) - k + 1, 'Q');
+    const tip = branchTop(BRANCH.x1);
+    set(BRANCH.x1 + 1, tip, 'Q');
+    set(BRANCH.x1 + 1, tip + 1, 'O');
+    // One short knot-twig and two small leaves: at the twig's end and at the tip.
+    const twig = branchTop(72);
+    for (let k = 1; k <= 4; k++) {
+        set(72 + k, twig - k, 'p');
+        set(72 + k, twig - k + 1, 'Q');
     }
+    const leaf = (x, y) => {
+        set(x, y, 'i');
+        set(x + 1, y, 'l');
+        set(x, y + 1, 'l');
+        set(x + 1, y + 1, 'L');
+    };
+    leaf(77, twig - 6);
+    leaf(BRANCH.x1 + 2, tip - 1);
 
     const owner = Array.from({ length: TREE_H }, () => Array(TREE_W).fill(-1));
     TREE_CLUSTERS.forEach(([cx, cy, r], id) => {
@@ -685,8 +703,119 @@ function leafSprite(w, h, tilt = 0) {
     return sprite(grid.map((row) => row.join('')), DECOR_LEGEND, { x: stalk, y: h - 1 });
 }
 
+// A wattle fence section: a post on the left, thin stakes, and rods woven over and under them in bands. Sections
+// tile along x; the band phase differs between the two variants so a row of them does not repeat too evenly.
+const FENCE_W = 16;
+const FENCE_H = 16;
+
+function fenceSection(phase) {
+    const grid = Array.from({ length: FENCE_H }, () => Array(FENCE_W).fill('.'));
+    const stakes = [6, 10, 14];
+    // Rods stacked with no gaps, like real wattle; the variants differ in where the weave starts.
+    const bands = phase ? [4, 6, 8, 10, 12] : [3, 5, 7, 9, 11];
+    for (const x of stakes) {
+        for (let y = 2; y < FENCE_H; y++) grid[y][x] = y === 2 ? 'p' : 'Q';
+    }
+    bands.forEach((y0, b) => {
+        for (let x = 3; x < FENCE_W; x++) {
+            const s = stakes.indexOf(x);
+            // At every other stake the rod passes behind it.
+            if (s >= 0 && (s + b + phase) % 2 === 0) continue;
+            grid[y0][x] = 'p';
+            grid[y0 + 1][x] = (x + b * 3) % 7 === 0 ? 'Q' : 'q';
+        }
+    });
+    for (let y = 0; y < FENCE_H; y++) {
+        grid[y][0] = y === 0 ? '.' : 'p';
+        grid[y][1] = 'q';
+        grid[y][2] = y === 0 ? '.' : 'O';
+    }
+    grid[0][1] = 'p';
+    return sprite(grid.map((r) => r.join('')), DECOR_LEGEND, { x: FENCE_W >> 1, y: FENCE_H });
+}
+
 export const DECOR = {
     tree: treeSprite(),
+    // Fence sections tile along x with a step of their width; fenceEnd closes the run on the right.
+    fence: [fenceSection(0), fenceSection(1)],
+    fenceEnd: sprite([
+        '.p.',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+        'pqO',
+    ], DECOR_LEGEND, { x: 1, y: 16 }),
+    hay: sprite([
+        '..HHHHHHHHHOOOOOOO..',
+        '.HjjjjQjYYjjjQjjjjO.',
+        'HjjjYYQjjjYYjQjjYYjO',
+        'HjjjjjQYjjjjjQjjjjYO',
+        'HHHHHHQHHHHHHQHHHHHO',
+        'HjjYHHQYYYHHYQYYHHYO',
+        'HjjYYYQHYYYYYQYYYYHO',
+        'HjjYYYQYHHYYYQYYYYYO',
+        'HjjYHHQYYYHHYQYYHHYO',
+        'HjjYYYQHYYYYYQYYYYHO',
+        'HjjYYYQYHHYYYQYYYYYO',
+        'HjjYHHQYYYHHYQYYHHYO',
+        'HjjYYYQHYYYYYQYYYYHO',
+        '.OOOOOOOOOOOOOOOOOO.',
+    ], DECOR_LEGEND, { x: 10, y: 14 }),
+    can: sprite([
+        '..OOOO......',
+        '.O....O..OO.',
+        'OggggggO.OgO',
+        'OgwggGGOOgO.',
+        'OgwggGGOgO..',
+        'OgggGGGgO...',
+        'OgggGGGO....',
+        'OggGGGGO....',
+        'OGGGGGGO....',
+        '.OOOOOO.....',
+    ], DECOR_LEGEND, { x: 6, y: 10 }),
+    stone: [
+        sprite([
+            '..OOO.',
+            '.OggGO',
+            'OgGGGO',
+            '.OOOO.',
+        ], DECOR_LEGEND, { x: 3, y: 4 }),
+        sprite([
+            '.OO.',
+            'OgGO',
+            '.OO.',
+        ], DECOR_LEGEND, { x: 2, y: 3 }),
+        sprite([
+            '..OOOO..',
+            '.OggGGO.',
+            'OgwgGGGO',
+            'OgGGGGGO',
+            '.OOOOOO.',
+        ], DECOR_LEGEND, { x: 4, y: 5 }),
+    ],
+    basket: sprite([
+        '.HHHHHHOOOOOO.',
+        'HjjjjjjjjjjjjO',
+        'HjQQQQQQQQQQjO',
+        'HjjYYYYYYYYYYO',
+        '.OjHYYHHYYHHO.',
+        '.OjYHHYYHHYYO.',
+        '..OjYYHHYYHO..',
+        '..OjHHYYHHYO..',
+        '...OjYHHYYO...',
+        '...OOOOOOOO...',
+    ], DECOR_LEGEND, { x: 7, y: 10 }),
     hills: hillsSprite(),
     farTree: [
         sprite([
