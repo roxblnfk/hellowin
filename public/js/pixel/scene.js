@@ -119,20 +119,23 @@ export async function createScene(rootEl, snapshot) {
     const skyLayer = new Container();
     const cloudLayer = new Container();
     const baseLayer = new Container();
-    const treeLayer = new Container();
     const plantLayer = new Container();
     const bugLayer = new Container();
-    const bushLayer = new Container();
-    // Far flyers pass behind the tree and the fence; near ones fly in front of the patch.
+    // Flyers never go behind the far plan: depth 0 flies between the hills and everything standing on the ground,
+    // depth 1 over the ground objects, depth 2 over depth 1.
     const farFlyerLayer = new Container();
+    const midFlyerLayer = new Container();
     const nearFlyerLayer = new Container();
-    const pumpkinLayer = new Container();
+    // Everything that stands on the ground and has height: grass and weeds, bushes, props, fence, the tree, foliage,
+    // the root and the pumpkins. One container sorted by the y of each object's foot, so nearer things cover farther.
+    const groundLayer = new Container();
+    groundLayer.sortableChildren = true;
     const particleLayer = new Container();
     const flashLayer = new Container();
     // Full-screen veil for the new-round dim-and-flash.
     const veil = new Sprite(Texture.WHITE);
     veil.visible = false;
-    world.addChild(skyLayer, cloudLayer, farFlyerLayer, baseLayer, treeLayer, plantLayer, bugLayer, bushLayer, pumpkinLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
+    world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, farFlyerLayer, groundLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
 
     let target = null;
     const display = new Sprite();
@@ -183,6 +186,7 @@ export async function createScene(rootEl, snapshot) {
     const flyers = new Map();
     const bushes = new Map();
     const flyerTextures = new Map();
+    const hazyTextures = new Map();
     let veilStart = -1e9;
     const VEIL = [['outline', 0.6], ['outline', 0.6], ['outline', 0.45], ['white', 0.55], ['white', 0.3]];
     let bugs = [];
@@ -274,10 +278,40 @@ export async function createScene(rootEl, snapshot) {
         return { x: shape.cx + Math.cos(a) * shape.rx * r, y: shape.cy + Math.sin(a) * shape.ry * r };
     }
 
+    const defTextures = new Map();
+    const defTexture = (def) => {
+        if (!defTextures.has(def)) defTextures.set(def, texture(bake(def)));
+        return defTextures.get(def);
+    };
+
+    // Sort key: the foot's y, then x for a stable order between objects on the same row.
+    const depthKey = (x, y) => Math.round(y) * 8192 + Math.round(x) + 4096;
+
+    /** Puts a standing object on the ground with its anchor at (x, y); `sortY` overrides the depth row. */
+    function addGround(def, x, y, { tex = defTexture(def), sortY = y } = {}) {
+        const sprite = new Sprite(tex);
+        sprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+        sprite.position.set(Math.round(x), Math.round(y));
+        sprite.zIndex = depthKey(x, sortY);
+        groundLayer.addChild(sprite);
+        return sprite;
+    }
+
+    // Tufts around the foot of a bush, prop, trunk or fence post: a few in front cover its base, one or two behind,
+    // so the object grows out of the grass instead of sitting on top of it.
+    function rootIn(x, y, halfW, random) {
+        const tufts = [...DECOR.grass, ...DECOR.weed];
+        const front = 3 + Math.floor(random() * 3);
+        for (let i = 0; i < front + 2; i++) {
+            const dy = i < front ? 1 + random() * 2 : -(1 + random() * 2);
+            addGround(tufts[Math.floor(random() * tufts.length)], x + (random() - 0.5) * 2 * halfW, y + dy);
+        }
+    }
+
     // Props around the patch: a low wattle fence along the far rim, hay, a basket, a watering can and stones at the
     // near rim. Only decoration: kept outside the patch, so they never cover a pumpkin's hit zone, and away from the
     // screen sides where the duck bushes sit.
-    function drawProps(ctx, shape, near) {
+    function placeProps(shape, random) {
         const fences = DECOR.fence;
         const fence = fences[0];
         const end = DECOR.fenceEnd;
@@ -293,15 +327,16 @@ export async function createScene(rootEl, snapshot) {
                 run = 0;
             }
         }
-        if (!near) {
-            for (let i = 1; i < posts.length; i++) {
-                const a = posts[i - 1];
-                const b = posts[i];
-                stamp(ctx, fences[i % fences.length], (a.x + b.x) / 2, Math.max(a.y, b.y));
-            }
-            stamp(ctx, end, posts[0].x, posts[0].y);
-            stamp(ctx, end, posts[posts.length - 1].x, posts[posts.length - 1].y);
-            return;
+        for (let i = 1; i < posts.length; i++) {
+            const a = posts[i - 1];
+            const b = posts[i];
+            const y = Math.max(a.y, b.y);
+            addGround(fences[i % fences.length], (a.x + b.x) / 2, y);
+            rootIn(b.x, y, 2, random);
+        }
+        for (const post of [posts[0], posts[posts.length - 1]]) {
+            addGround(end, post.x, post.y);
+            rootIn(post.x, post.y, 2, random);
         }
         const stones = DECOR.stone;
         const items = [
@@ -314,7 +349,9 @@ export async function createScene(rootEl, snapshot) {
         // On a phone the patch reaches the screen sides: pull props back in, or drop one that would sit far from its spot.
         for (const { def, at } of items.sort((a, b) => a.at.y - b.at.y)) {
             const x = clamp(at.x, def.w / 2 + 2, layout.artW - def.w / 2 - 2);
-            if (Math.abs(x - at.x) < def.w * 0.75) stamp(ctx, def, x, at.y);
+            if (Math.abs(x - at.x) >= def.w * 0.75) continue;
+            addGround(def, x, at.y);
+            rootIn(x, at.y, def.w / 2, random);
         }
     }
 
@@ -392,7 +429,6 @@ export async function createScene(rootEl, snapshot) {
             ctx.fillRect(x, y - tall + 1, 1, tall);
             if (random() < 0.4) ctx.fillRect(x + 1, y - 1, 1, 1);
         }
-        drawProps(ctx, shape, false);
 
         // Rejection sampling: sparse inside the patch, denser outside and toward the edges, rarer and smaller far off.
         const weeds = DECOR.weed;
@@ -416,8 +452,8 @@ export async function createScene(rootEl, snapshot) {
             }
             picks.push({ def, x, y });
         }
-        picks.sort((a, b) => a.y - b.y).forEach((p) => stamp(ctx, p.def, p.x, p.y));
-        drawProps(ctx, shape, true);
+        picks.forEach((p) => addGround(p.def, p.x, p.y));
+        placeProps(shape, random);
 
         baseLayer.removeChildren().forEach((s) => s.destroy());
         baseLayer.addChild(new Sprite(texture(c)));
@@ -433,10 +469,8 @@ export async function createScene(rootEl, snapshot) {
             x: Math.round(Math.max(artW * 0.07, artW * 0.32 - (px - def.anchor.x))),
             y: horizon + 3,
         };
-        treeLayer.removeChildren().forEach((s) => s.destroy());
-        const sprite = new Sprite(artTexture('tree', () => texture(bake(def))));
-        sprite.position.set(foot.x - def.anchor.x, foot.y - def.anchor.y);
-        treeLayer.addChild(sprite);
+        addGround(def, foot.x, foot.y);
+        rootIn(foot.x, foot.y, 6, rng(5));
         perch = { x: (foot.x - def.anchor.x + px) * layout.cssPx, y: (foot.y - def.anchor.y + py) * layout.cssPx };
     }
 
@@ -600,8 +634,9 @@ export async function createScene(rootEl, snapshot) {
             const leaf = heapLeaves[Math.floor(random() * heapLeaves.length)];
             foliage.push({ def: leaf, x: root.x + Math.cos(a) * r * 11, y: root.y + Math.sin(a) * r * 5 });
         }
-        foliage.sort((a, b) => a.y - b.y).forEach((f) => stamp(ctx, f.def, f.x, f.y));
-        stamp(ctx, DECOR.root, root.x, root.y);
+        foliage.forEach((leaf) => addGround(leaf.def, leaf.x, leaf.y));
+        // The root sorts in front of its heap, so the leaves frame it instead of burying it.
+        addGround(DECOR.root, root.x, root.y, { sortY: root.y + 20 });
 
         plantLayer.removeChildren().forEach((s) => s.destroy());
         plantLayer.addChild(new Sprite(texture(c)));
@@ -650,7 +685,6 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function buildPumpkins() {
-        pumpkinLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
         flashLayer.removeChildren().forEach((c) => c.destroy());
         pumpkins.clear();
         const random = rng(3);
@@ -663,7 +697,8 @@ export async function createScene(rootEl, snapshot) {
             const layers = Object.fromEntries(LAYERS.map((name) => [name, new Sprite()]));
             body.addChild(...LAYERS.map((name) => layers[name]));
             node.addChild(ring, body);
-            pumpkinLayer.addChild(node);
+            node.zIndex = depthKey(toArt(element).x, toArt(element).y);
+            groundLayer.addChild(node);
             const p = {
                 id: element.id,
                 size: element.size ?? 'm',
@@ -709,6 +744,7 @@ export async function createScene(rootEl, snapshot) {
         target = RenderTexture.create({ width: layout.artW, height: layout.artH, resolution: 1, scaleMode: 'nearest' });
         display.texture = target;
         display.scale.set(layout.cssPx);
+        groundLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
         drawSky();
         drawBase();
         drawTree();
@@ -732,25 +768,37 @@ export async function createScene(rootEl, snapshot) {
     });
 
     function placeBushes() {
-        bushLayer.removeChildren().forEach((c) => c.destroy());
         bushes.clear();
+        const random = rng(11);
         for (const b of [...(state.bushes ?? [])].sort((a, c) => a.y - c.y)) {
             const idle = flyerArt(BUSH.idle[seedOf(b.id) % BUSH.idle.length]);
-            const sprite = new Sprite(idle.texture);
-            sprite.anchor.set(idle.ax, idle.ay);
             const at = toScreenArt(b);
-            sprite.position.set(Math.round(at.x), Math.round(at.y));
-            bushLayer.addChild(sprite);
+            const sprite = addGround(idle.def, at.x, at.y, { tex: idle.texture });
+            rootIn(at.x, at.y, idle.def.w / 2 - 2, random);
             bushes.set(b.id, { sprite, idle, rustleUntil: -1e9 });
         }
     }
 
-    /** Texture plus anchor fractions of a flyers.js sprite, cached per sprite object. */
-    function flyerArt(def) {
-        if (!flyerTextures.has(def)) {
-            flyerTextures.set(def, { texture: texture(flyerBake(def)), ax: def.anchor.x / def.w, ay: def.anchor.y / def.h, def });
+    /**
+     * Texture plus anchor fractions of a flyers.js sprite, cached per sprite object. `hazy` mixes every pixel 28%
+     * toward hazeLight for the farthest flyers: the pixels stay solid, only their colours move toward the sky.
+     */
+    function flyerArt(def, hazy = false) {
+        const cache = hazy ? hazyTextures : flyerTextures;
+        if (!cache.has(def)) {
+            const c = flyerBake(def);
+            if (hazy) {
+                const ctx = c.getContext('2d');
+                const img = ctx.getImageData(0, 0, c.width, c.height);
+                const haze = [(PALETTE.hazeLight >> 16) & 255, (PALETTE.hazeLight >> 8) & 255, PALETTE.hazeLight & 255];
+                for (let i = 0; i < img.data.length; i += 4) {
+                    for (let k = 0; k < 3; k++) img.data[i + k] = Math.round(img.data[i + k] * 0.72 + haze[k] * 0.28);
+                }
+                ctx.putImageData(img, 0, 0);
+            }
+            cache.set(def, { texture: texture(c), ax: def.anchor.x / def.w, ay: def.anchor.y / def.h, def });
         }
-        return flyerTextures.get(def);
+        return cache.get(def);
     }
 
     function pathAt(f, t) {
@@ -780,7 +828,7 @@ export async function createScene(rootEl, snapshot) {
                     continue;
                 }
                 f.pos = pathAt(f, Math.min(1, local / f.duration));
-                art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length]);
+                art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length], f.depth === 0);
             } else {
                 // Hit frame, then a tumble that falls off the bottom of the screen.
                 const fall = (clock - f.shotAt) / 1000;
@@ -790,7 +838,7 @@ export async function createScene(rootEl, snapshot) {
                     flyers.delete(id);
                     continue;
                 }
-                art = flyerArt(fall < 0.16 ? set.hit : set.fall[Math.floor(fall / 0.12) % set.fall.length]);
+                art = flyerArt(fall < 0.16 ? set.hit : set.fall[Math.floor(fall / 0.12) % set.fall.length], f.depth === 0);
             }
             f.sprite.texture = art.texture;
             f.sprite.anchor.set(art.ax, art.ay);
@@ -807,7 +855,7 @@ export async function createScene(rootEl, snapshot) {
     function launch(event) {
         if (flyers.has(event.flyer)) return;
         const sprite = new Sprite();
-        (event.depth >= 2 ? nearFlyerLayer : farFlyerLayer).addChild(sprite);
+        [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)].addChild(sprite);
         flyers.set(event.flyer, {
             kind: event.kind,
             depth: event.depth ?? 0,

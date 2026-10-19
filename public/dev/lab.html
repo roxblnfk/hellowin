@@ -15,7 +15,7 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one, ?fps=1 logs the frame rate.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -244,6 +244,22 @@
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);
         }
+    }
+
+    // ?fps=1 logs the frame rate every 2 s (counts animation frames, the same ones Pixi renders on).
+    if (params.get('fps') === '1') {
+        let frames = 0;
+        let since = performance.now();
+        const count = (now) => {
+            frames++;
+            if (now - since >= 2000) {
+                console.log('FPS', Math.round((frames * 1000) / (now - since)));
+                frames = 0;
+                since = now;
+            }
+            requestAnimationFrame(count);
+        };
+        requestAnimationFrame(count);
     }
 
     if (simulated) {
