@@ -107,24 +107,23 @@ const CHICKEN = {
     wingColors: ['w', 'W', 'W'],
 };
 
-// Depth 0 is hand-drawn below: at 8 px a rasterised shape loses the head.
-const DEPTH_W = [8, 14, 26];
+// Depth 0 is hand-drawn below: at 4 px a rasterised shape loses the head.
+const DEPTH_W = [4, 14, 26];
 
-// Far flyers are just readable specks: a duck is a dark head on a light body, a hen a white blob with a red comb.
+// Far flyers are specks with two wing positions: a duck is a dark head on a light body, a hen a white blob with a
+// red comb. The four fly frames alternate them.
 const FAR = {
     duck: {
-        anchor: { x: 4, y: 2 },
-        up: ['..g.....', '..gg..KH', 'gGGGGBKY', '.gGGGG..', '........'],
-        mid: ['........', '.ggg..KH', 'gGGGGBKY', '.gGGGG..', '........'],
-        down: ['........', '......KH', 'gGGGGBKY', '.gGgGG..', '...gg...'],
-        hit: ['.g..g...', '..gg..KH', 'gGGGGBKY', '.gGGGG..', 'G....g..'],
+        anchor: { x: 2, y: 1 },
+        up: ['.g..', 'GGGK', '....'],
+        down: ['....', 'GGGK', '.g..'],
+        hit: ['g.g.', 'GGGK', '...G'],
     },
     chicken: {
-        anchor: { x: 4, y: 3 },
-        up: ['..W...R.', '.WWW.ww.', 'wwwwwwwY', '.wwwwww.', '..WWWW..', '...o.o..'],
-        mid: ['......R.', 'WWW..ww.', 'wwwwwwwY', '.wwwwww.', '..WWWW..', '...o.o..'],
-        down: ['......R.', '.....ww.', 'wwwwwwwY', '.wwWWWw.', '..WWWW..', '...o.o..'],
-        hit: ['.W..W.R.', '..WW.ww.', 'wwwwwwwY', '.wwwwww.', 'w.WWWW.W', '...o.o..'],
+        anchor: { x: 2, y: 1 },
+        up: ['.W.R', 'wwww', '.ww.'],
+        down: ['...R', 'wwww', '.Ww.'],
+        hit: ['W.WR', 'wwww', 'w.w.'],
     },
 };
 
@@ -133,7 +132,7 @@ function farSet(kind) {
     const make = (rows) => ({ w: rows[0].length, h: rows.length, rows, legend: LEGEND, anchor: { ...far.anchor } });
     const hit = make(far.hit);
     return {
-        fly: ['up', 'mid', 'down', 'mid'].map((wing) => make(far[wing])),
+        fly: ['up', 'down', 'up', 'down'].map((wing) => make(far[wing])),
         hit,
         fall: [rotate90(hit), rotate180(hit)],
     };
