@@ -26,11 +26,18 @@ services:
       context: .
       target: app
     image: hellowin-app:latest
+    depends_on:
+      valkey:
+        condition: service_healthy
     environment:
       # Not taken from .env: it is shared with a local (non-Docker) setup that usually runs APP_ENV=local, DEBUG=true.
       APP_ENV: prod
       DEBUG: "false"
       HELLOWIN_CLICKS_PER_STAGE: ${HELLOWIN_CLICKS_PER_STAGE:-5}
+      HELLOWIN_SCENE_STAGE_MAX: ${HELLOWIN_SCENE_STAGE_MAX:-4,6,8}
+      # Game state (RoadRunner kv, redis driver) and idempotency keys (predis) live in the same Valkey.
+      VALKEY_ADDR: valkey:6379
+      VALKEY_DSN: tcp://valkey:6379
       BROADCAST_CONNECTION: centrifugo
       CENTRIFUGO_GRPC_API: centrifugo:10000
       CENTRIFUGO_WS_URL: ${CENTRIFUGO_WS_URL:-/connection/websocket}
@@ -38,6 +45,22 @@ services:
       - "8080"
       - "10001"
       - "2112"
+    restart: unless-stopped
+
+  # AOF on a volume: the ritual and its idempotency keys survive restarts of app and valkey.
+  valkey:
+    image: valkey/valkey:8.1.10-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey-data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   centrifugo:
@@ -121,5 +144,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  valkey-data:
   prometheus-data:
   grafana-data:

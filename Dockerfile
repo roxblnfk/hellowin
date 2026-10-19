@@ -45,7 +45,8 @@ COPY --from=vendor /app/vendor ./vendor
 COPY .rr.yaml app.php ./
 COPY public ./public
 COPY app ./app
-RUN mkdir -p runtime && chown -R www-data:www-data runtime
+# Workers of every pool boot at once and race to create these on the first start.
+RUN mkdir -p runtime/cache/views runtime/cache/listeners && chown -R www-data:www-data runtime
 USER www-data
 ENV APP_ENV=prod \
     DEBUG=false \
