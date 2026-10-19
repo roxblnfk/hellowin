@@ -1,6 +1,7 @@
 import {
     Application,
     Container,
+    Graphics,
     RenderTexture,
     Sprite,
     Texture,
@@ -136,6 +137,9 @@ export async function createScene(rootEl, snapshot) {
     const veil = new Sprite(Texture.WHITE);
     veil.visible = false;
     world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, farFlyerLayer, groundLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
+    // Debug outline of the flyers' hit boxes (public/dev/lab.html ?hits=1).
+    const hitOverlay = new Graphics();
+    world.addChild(hitOverlay);
 
     let target = null;
     const display = new Sprite();
@@ -813,7 +817,7 @@ export async function createScene(rootEl, snapshot) {
     }
 
     // Wingbeat period per depth, far to near (public/dev/flyers.html).
-    const FLAP = [180, 130, 90];
+    const FLAP = [260, 130, 90];
     const RUSTLE_MS = 600;
 
     function animateFlyers() {
@@ -880,7 +884,19 @@ export async function createScene(rootEl, snapshot) {
         f.shotAt = clock;
         f.shotPos = { ...f.pos };
         f.drift = (f.flip ? -1 : 1) * 12;
-        if (!reduced) {
+        if (!reduced && f.depth === 0) {
+            // A bird a few pixels big loses a couple of single-pixel feathers.
+            const key = f.kind === 'chicken' ? 'white' : 'duckGrayDark';
+            const speck = artTexture(`speck:${key}`, () => {
+                const c = canvas(1, 1);
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = css(PALETTE[key]);
+                ctx.fillRect(0, 0, 1, 1);
+                return texture(c);
+            });
+            spawn([speck], f.pos.x, f.pos.y, -6, -8, 20, 1);
+            spawn([speck], f.pos.x, f.pos.y, 7, -5, 20, 1.1);
+        } else if (!reduced) {
             const feathers = feathersOf(f.kind).map((def) => flyerArt(def).texture);
             for (let i = 0; i < 6; i++) {
                 const a = (i / 6) * Math.PI * 2 + 0.4;
@@ -891,20 +907,51 @@ export async function createScene(rootEl, snapshot) {
         spawn([score.texture], f.pos.x - score.def.w / 2, f.pos.y - 14, 0, -10, 0, 1.2);
     }
 
-    /** Id of the flyer under the pointer, nearest depth first, with a few art pixels of slack; null when none. */
+    /**
+     * Hit box of a flyer in art pixels: the body only, 60% of the sprite's width and height around the anchor, so
+     * wings, tail and legs do not count. The tiny far birds have no box: only their own opaque pixels hit.
+     */
+    function hitBox(f) {
+        const { def } = f.art;
+        const left = Math.round(f.pos.x) - (f.flip ? def.w - def.anchor.x : def.anchor.x);
+        const top = Math.round(f.pos.y) - def.anchor.y;
+        if (f.depth === 0) return { left, top, w: def.w, h: def.h, pixels: true };
+        const w = Math.max(2, Math.round(def.w * 0.6));
+        const h = Math.max(2, Math.round(def.h * 0.6));
+        return { left: Math.round(f.pos.x - w / 2), top: Math.round(f.pos.y - h / 2), w, h, pixels: false };
+    }
+
+    function hits(f, x, y) {
+        const box = hitBox(f);
+        if (x < box.left || x >= box.left + box.w || y < box.top || y >= box.top + box.h) return false;
+        if (!box.pixels) return true;
+        const { def } = f.art;
+        const col = Math.floor(x - box.left);
+        const row = def.rows[Math.floor(y - box.top)] ?? '';
+        return Boolean(def.legend[row[f.flip ? def.w - 1 - col : col]]);
+    }
+
+    /** Id of the flyer under the pointer, nearest depth first; null when none. */
     function flyerAt(clientX, clientY) {
         const rect = app.canvas.getBoundingClientRect();
         const x = (clientX - rect.left) / layout.cssPx;
         const y = (clientY - rect.top) / layout.cssPx;
-        const SLACK = 3;
         const live = [...flyers].filter(([, f]) => f.shotAt === null && f.art).sort(([, a], [, b]) => b.depth - a.depth);
         for (const [id, f] of live) {
-            const { def } = f.art;
-            const left = f.pos.x - (f.flip ? def.w - def.anchor.x : def.anchor.x);
-            const top = f.pos.y - def.anchor.y;
-            if (x >= left - SLACK && x <= left + def.w + SLACK && y >= top - SLACK && y <= top + def.h + SLACK) return id;
+            if (hits(f, x, y)) return id;
         }
         return null;
+    }
+
+    let showHits = false;
+    function drawHits() {
+        hitOverlay.clear();
+        if (!showHits) return;
+        for (const f of flyers.values()) {
+            if (f.shotAt !== null || !f.art) continue;
+            const b = hitBox(f);
+            hitOverlay.rect(b.left + 0.5, b.top + 0.5, b.w - 1, b.h - 1).stroke({ width: 1, color: 0xff00ff });
+        }
     }
 
     /** One particle; `kind` names a PARTICLES set or is a list of textures to pick from. */
@@ -1013,6 +1060,7 @@ export async function createScene(rootEl, snapshot) {
         }
 
         animateFlyers();
+        drawHits();
 
         for (let i = particles.length - 1; i >= 0; i--) {
             const particle = particles[i];
@@ -1116,6 +1164,11 @@ export async function createScene(rootEl, snapshot) {
 
         flyerAt(clientX, clientY) {
             return flyerAt(clientX, clientY);
+        },
+
+        /** Outlines the flyers' hit boxes; a development aid for public/dev/lab.html. */
+        showHits(on) {
+            showHits = Boolean(on);
         },
 
         setScene(n, stageMax) {

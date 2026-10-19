@@ -125,7 +125,7 @@
 
     // Flyers as the server launches them: a depth picks duration and points, near ducks may start from a bush and
     // arc through `via`; a shot counts until duration + 500 ms.
-    const DURATION = [9000, 6000, 4000];
+    const DURATION = [16000, 6500, 4000];
     const POINTS = [3, 2, 1];
     const live = new Map();
     let flyerSeq = 0;
@@ -172,6 +172,7 @@
 
     const scene = await createScene(root, readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
+    if (params.has('hits')) scene?.showHits(true);
     const client = createClient(root, scene, { requestState: async () => engineSnapshot() });
     client.start();
     if (startStage > 4) engineJump(startStage);
