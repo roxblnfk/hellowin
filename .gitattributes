@@ -1,0 +1,11 @@
+# Line-ending normalization for text files.
+* text=auto
+
+# PHP-aware hunk headers in `git diff`.
+*.php diff=php
+
+# Binary files keep their bytes.
+*.ico binary
+
+# List-like manifests: concurrent additions to the same list merge instead of conflicting.
+/composer.json merge=union
