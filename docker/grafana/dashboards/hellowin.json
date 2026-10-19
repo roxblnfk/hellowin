@@ -1,13 +1,13 @@
 {
   "uid": "hellowin",
   "title": "Hellowin",
-  "description": "Clicks, stage and WebSocket traffic of the Hellowin demo (RoadRunner + Centrifugo).",
+  "description": "Clicks, ritual scene, idempotent transitions and WebSocket traffic of the Hellowin demo (RoadRunner + Centrifugo).",
   "tags": ["hellowin", "roadrunner", "centrifugo"],
   "editable": false,
   "graphTooltip": 1,
   "refresh": "5s",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "time": { "from": "now-30m", "to": "now" },
   "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
   "templating": { "list": [] },
@@ -27,7 +27,7 @@
       "type": "stat",
       "title": "Total clicks",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
       "targets": [
         { "refId": "A", "expr": "sum(hellowin_clicks_total) or vector(0)", "instant": true, "range": false }
       ],
@@ -52,11 +52,11 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Current stage",
+      "title": "Current scene",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 5, "y": 1 },
       "targets": [
-        { "refId": "A", "expr": "max(hellowin_stage) or vector(0)", "instant": true, "range": false }
+        { "refId": "A", "expr": "max(hellowin_scene_stage) or vector(0)", "instant": true, "range": false }
       ],
       "fieldConfig": {
         "defaults": {
@@ -81,14 +81,43 @@
         "textMode": "value",
         "justifyMode": "center",
         "orientation": "auto"
-      }
+      },
+      "description": "Scene of the ritual (0 … final). Moves when every pumpkin reached the last stage of the scene."
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Round",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 9, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "max(hellowin_round) or vector(0)", "instant": true, "range": false }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Pass of the ritual; grows with every reset. It is part of every idempotency key."
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Clicks per second",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 13, "y": 1 },
       "targets": [
         { "refId": "A", "expr": "sum(rate(hellowin_clicks_total[1m])) or vector(0)" }
       ],
@@ -144,11 +173,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 9, "w": 16, "x": 0, "y": 6 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (element) (rate(hellowin_clicks_total[1m]))",
-          "legendFormat": "{{element}}"
-        }
+        { "refId": "A", "expr": "sum by (element) (rate(hellowin_clicks_total[1m]))", "legendFormat": "{{element}}" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -198,11 +223,12 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Stage",
+      "title": "Scene and round",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 15 },
       "targets": [
-        { "refId": "A", "expr": "max(hellowin_stage)", "legendFormat": "stage" },
+        { "refId": "A", "expr": "max(hellowin_scene_stage)", "legendFormat": "scene" },
+        { "refId": "C", "expr": "max(hellowin_round)", "legendFormat": "round" },
         { "refId": "B", "expr": "sum(hellowin_clicks_total)", "legendFormat": "total clicks" }
       ],
       "fieldConfig": {
@@ -220,17 +246,124 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "stage" },
+            "matcher": { "id": "byName", "options": "scene" },
             "properties": [
               { "id": "decimals", "value": 0 },
               { "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "round" },
+            "properties": [
+              { "id": "decimals", "value": 0 },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
           }
         ]
       },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Transitions: queue and idempotency",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Jobs pushed vs transitions applied (per minute)",
+      "description": "Every click over the threshold pushes a transition job until the transition is done; the idempotency key lets only one of them run.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (kind) (increase(hellowin_transition_jobs_pushed_total[1m]))", "legendFormat": "pushed {{kind}}" },
+        { "refId": "B", "expr": "sum by (kind) (increase(hellowin_transitions_total[1m]))", "legendFormat": "applied {{kind}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 22,
+      "type": "bargauge",
+      "title": "Jobs pushed vs transitions applied (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (hellowin_transition_jobs_pushed_total)",
+          "legendFormat": "pushed {{kind}}",
+          "instant": true,
+          "range": false
+        },
+        { "refId": "B", "expr": "sum by (kind) (hellowin_transitions_total)", "legendFormat": "applied {{kind}}", "instant": true, "range": false }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "min": 0, "color": { "mode": "palette-classic" } }, "overrides": [] },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Duplicates dropped",
+      "description": "Transition jobs pushed minus transitions applied: duplicates the idempotency key stopped (a few may still be waiting in the queue).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (hellowin_transition_jobs_pushed_total) - sum by (kind) (hellowin_transitions_total)",
+          "legendFormat": "{{kind}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 24,
+      "type": "bargauge",
+      "title": "Pumpkin stages",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 30 },
+      "targets": [
+        { "refId": "A", "expr": "max by (element) (hellowin_pumpkin_stage)", "legendFormat": "{{element}}", "instant": true, "range": false }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "min": 0, "color": { "mode": "continuous-YlRd" } }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "vertical",
+        "displayMode": "gradient",
+        "showUnfilled": true
       }
     },
     {
@@ -238,7 +371,7 @@
       "type": "row",
       "title": "Centrifugo (WebSockets)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
       "panels": []
     },
     {
@@ -246,7 +379,7 @@
       "type": "timeseries",
       "title": "Connections and subscriptions",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
       "targets": [
         { "refId": "A", "expr": "sum(centrifugo_node_num_clients)", "legendFormat": "clients" },
         { "refId": "B", "expr": "sum(centrifugo_node_num_subscriptions)", "legendFormat": "subscriptions" },
@@ -261,10 +394,7 @@
         },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
     },
     {
       "id": 11,
@@ -272,39 +402,24 @@
       "title": "Messages sent to clients per second",
       "description": "Frames written to client transports (publications fan-out, RPC replies, pings…).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (frame_type) (rate(centrifugo_transport_messages_sent[1m]))",
-          "legendFormat": "{{frame_type}}"
-        }
+        { "refId": "A", "expr": "sum by (frame_type) (rate(centrifugo_transport_messages_sent[1m]))", "legendFormat": "{{frame_type}}" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "ops", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 12,
       "type": "timeseries",
       "title": "Publications and server API calls per second",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (type) (rate(centrifugo_node_messages_sent_count[1m]))",
-          "legendFormat": "broker: {{type}}"
-        },
+        { "refId": "A", "expr": "sum by (type) (rate(centrifugo_node_messages_sent_count[1m]))", "legendFormat": "broker: {{type}}" },
         {
           "refId": "B",
           "expr": "sum by (method) (rate(centrifugo_api_command_duration_seconds_histogram_count[1m]))",
@@ -312,17 +427,10 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "ops", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 13,
@@ -330,38 +438,23 @@
       "title": "Proxy calls to RoadRunner per second",
       "description": "Connect and RPC events proxied from Centrifugo to RoadRunner over gRPC.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (type) (rate(centrifugo_proxy_duration_seconds_histogram_count[1m]))",
-          "legendFormat": "{{type}}"
-        },
-        {
-          "refId": "B",
-          "expr": "sum by (type) (rate(centrifugo_proxy_errors[1m]))",
-          "legendFormat": "{{type}} errors"
-        }
+        { "refId": "A", "expr": "sum by (type) (rate(centrifugo_proxy_duration_seconds_histogram_count[1m]))", "legendFormat": "{{type}}" },
+        { "refId": "B", "expr": "sum by (type) (rate(centrifugo_proxy_errors[1m]))", "legendFormat": "{{type}} errors" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "ops", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 14,
       "type": "timeseries",
       "title": "Proxy latency p95",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
       "targets": [
         {
           "refId": "A",
@@ -370,24 +463,17 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "s", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 15,
       "type": "row",
       "title": "RoadRunner",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 },
       "panels": []
     },
     {
@@ -396,26 +482,15 @@
       "title": "HTTP requests per second by status",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 39 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 57 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (status) (rate(rr_http_request_total[1m]))",
-          "legendFormat": "{{status}}"
-        }
+        { "refId": "A", "expr": "sum by (status) (rate(rr_http_request_total[1m]))", "legendFormat": "{{status}}" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "reqps", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 17,
@@ -423,33 +498,22 @@
       "title": "HTTP latency p95",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 39 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 57 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(rr_http_request_duration_seconds_bucket[1m])))",
-          "legendFormat": "p95"
-        }
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(rr_http_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
-        },
+        "defaults": { "unit": "s", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
         "overrides": []
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
     },
     {
       "id": 18,
       "type": "timeseries",
       "title": "HTTP workers",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 39 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 57 },
       "targets": [
         { "refId": "A", "expr": "sum(rr_http_workers_ready)", "legendFormat": "ready" },
         { "refId": "B", "expr": "sum(rr_http_workers_working)", "legendFormat": "working" },
@@ -472,10 +536,7 @@
           }
         ]
       },
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      }
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
     }
   ]
 }
