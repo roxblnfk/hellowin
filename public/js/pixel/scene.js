@@ -828,7 +828,8 @@ export async function createScene(rootEl, snapshot) {
             let art;
             if (f.shotAt === null) {
                 const now = serverNow();
-                const local = now - f.launchedAt;
+                // A flyer stamped a few ms ahead of our clock estimate must not index frames with a negative time.
+                const local = Math.max(0, now - f.launchedAt);
                 if (now >= f.expiresAt) {
                     f.sprite.destroy();
                     flyers.delete(id);
