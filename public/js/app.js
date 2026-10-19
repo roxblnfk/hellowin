@@ -1,93 +1,80 @@
-(() => {
-    'use strict';
+import { createClient, readSnapshot } from './client.js';
 
-    const app = document.getElementById('app');
-    if (!app || typeof Centrifuge === 'undefined') {
+const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
+
+const root = document.getElementById('app');
+
+function websocketUrl(url) {
+    if (/^wss?:\/\//.test(url)) {
+        return url;
+    }
+    const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${scheme}//${location.host}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+// Imported lazily: without the Pixi CDN or WebGL the page keeps working with the emoji buttons.
+async function startScene(snapshot) {
+    try {
+        const { createScene } = await import('./pixel/scene.js');
+        return await createScene(root, snapshot);
+    } catch (error) {
+        console.warn('pixel scene failed to start', error);
+        return null;
+    }
+}
+
+async function main() {
+    const scene = await startScene(readSnapshot(root));
+    root.classList.add(scene ? 'has-canvas' : 'no-canvas');
+
+    if (typeof Centrifuge === 'undefined') {
+        createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')) }).start();
         return;
     }
 
-    const statusEl = app.querySelector('[data-status]');
-    const clicksEl = app.querySelector('[data-progress-clicks]');
-    const thresholdEl = app.querySelector('[data-progress-threshold]');
-    const progressEl = app.querySelector('[data-progress]');
+    const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl));
+    const client = createClient(root, scene, {
+        requestState: () => centrifuge.rpc('state', {}).then(({ data }) => {
+            if (!data?.ok) throw new Error(data?.error ?? 'bad state response');
+            return data.state;
+        }),
+    });
+    client.start();
 
-    function websocketUrl(url) {
-        if (/^wss?:\/\//.test(url)) {
-            return url;
-        }
-        const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${scheme}//${location.host}${url.startsWith('/') ? '' : '/'}${url}`;
-    }
-
-    function setStatus(status) {
+    const statusEl = root.querySelector('[data-status]');
+    const setStatus = (status) => {
+        if (!statusEl) return;
         statusEl.dataset.status = status;
-        statusEl.textContent = status;
-    }
-
-    function setProgress(clicks, threshold) {
-        clicksEl.textContent = clicks;
-        thresholdEl.textContent = threshold;
-        progressEl.max = threshold;
-        progressEl.value = clicks;
-    }
-
-    function popEmoji(elementId, emoji) {
-        const target = app.querySelector(`[data-element="${CSS.escape(elementId)}"]`);
-        if (!target) {
-            return;
-        }
-
-        const node = document.createElement('span');
-        node.className = 'emoji-pop';
-        node.textContent = emoji;
-        node.style.left = target.style.left;
-        node.style.top = target.style.top;
-        node.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 80)}px`);
-        node.style.setProperty('--rot', `${Math.round((Math.random() - 0.5) * 40)}deg`);
-        node.addEventListener('animationend', () => node.remove(), {once: true});
-        app.appendChild(node);
-    }
-
-    const handlers = {
-        emoji(msg) {
-            popEmoji(msg.element, msg.emoji);
-            setProgress(msg.clicks, msg.threshold);
-        },
-        state(msg) {
-            document.body.dataset.stage = msg.stage;
-            setProgress(msg.clicks, msg.threshold);
-        },
+        statusEl.textContent = STATUS[status];
     };
 
-    const centrifuge = new Centrifuge(websocketUrl(app.dataset.centrifugoUrl));
-
+    let connectedOnce = false;
     centrifuge.on('connecting', () => setStatus('connecting'));
-    centrifuge.on('connected', () => setStatus('connected'));
     centrifuge.on('disconnected', () => setStatus('disconnected'));
-
-    // The server subscribes the client to the channel on connect (server-side subscription),
-    // so its publications arrive on the client itself, not on a Subscription object.
-    centrifuge.on('publication', (ctx) => {
-        const handler = handlers[ctx.data?.type];
-        if (handler) {
-            handler(ctx.data);
-        }
+    centrifuge.on('connected', () => {
+        setStatus('connected');
+        if (connectedOnce) client.resync();
+        connectedOnce = true;
     });
 
-    // Nothing is drawn locally on click: the emoji appears when the server broadcasts it to everyone.
-    app.addEventListener('click', (event) => {
+    // The server subscribes the client on connect (server-side subscription), so publications arrive on the
+    // client itself, not on a Subscription object.
+    centrifuge.on('publication', (ctx) => client.apply(ctx.data));
+
+    // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event.
+    root.addEventListener('click', (event) => {
         const element = event.target.closest('[data-element]');
-        if (!element) {
-            return;
-        }
-        centrifuge.rpc('click', {element: element.dataset.element})
-            .then((result) => {
-                if (result.data && result.data.ok === false) {
-                    console.warn('click rejected', result.data.error);
-                }
+        if (!element) return;
+        centrifuge.rpc('click', { element: element.dataset.element })
+            .then(({ data }) => {
+                if (data?.ok === false) console.warn('click rejected', data.error);
             })
-            .catch((err) => console.warn('click rpc failed', err));
+            .catch((error) => console.warn('click rpc failed', error));
     });
 
     centrifuge.connect();
-})();
+}
+
+if (root) {
+    main();
+}

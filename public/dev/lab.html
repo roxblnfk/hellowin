@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hellowin lab</title>
+    <link rel="stylesheet" href="/css/app.css">
+    <style>
+        .show-hits .pumpkin {
+            outline: 1px solid #f0f;
+        }
+        .lab[hidden] {
+            display: none;
+        }
+        .lab {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 4;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 6px;
+            max-width: 60%;
+            font: 700 12px/1 var(--pixel-font);
+        }
+        .lab button, .lab select {
+            padding: 6px 8px;
+            border: 0;
+            font: inherit;
+            color: var(--cream);
+            background: var(--outline);
+            box-shadow: 0 0 0 2px var(--soil);
+            cursor: pointer;
+        }
+        .lab button[aria-pressed="true"] {
+            color: var(--outline);
+            background: var(--gold);
+        }
+    </style>
+</head>
+<!--
+  Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
+  engine that emits channel events through the same client model as app.js.
+  Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones.
+-->
+<body data-scene="0">
+<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5">
+    <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
+        <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
+    </a>
+    <div class="lab" data-lab>
+        <button type="button" data-lab-click>клик</button>
+        <button type="button" data-lab-auto aria-pressed="false">авто</button>
+        <select data-lab-stage aria-label="стадия">
+            <option value="">стадия…</option>
+            <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
+        </select>
+        <button type="button" data-lab-reset>reset</button>
+    </div>
+    <footer class="hud">
+        <span class="hud__item hud__status" data-status="connected">лаборатория</span>
+        <span class="hud__item">Раунд <b data-hud-round>1</b></span>
+        <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
+        <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
+    </footer>
+</main>
+<script type="module">
+    import { createClient, readSnapshot } from '/js/client.js';
+    import { createScene } from '/js/pixel/scene.js';
+
+    const params = new URLSearchParams(location.search);
+    const root = document.getElementById('app');
+    // ?w=390: headless windows have a minimum width, so narrow layouts are checked in a narrowed #app.
+    if (params.has('w')) root.style.width = `${Number.parseInt(params.get('w'), 10)}px`;
+    // Same set as the elements of app/config/hellowin.php: an uneven flat ring around the root at 50% / 63%.
+    const ELEMENTS = [
+        [46.4, 48.8, 'm'], [56.6, 55.1, 's'], [78.3, 50, 's'], [71.8, 57.4, 's'], [91.7, 58, 'm'], [79.4, 63.8, 's'],
+        [89.5, 73.3, 'l'], [72.8, 71.7, 'm'], [65.3, 79.6, 'm'], [48.5, 77.4, 'l'], [31.7, 83.2, 'm'], [31.8, 72.5, 'm'],
+        [10.6, 73.2, 'l'], [25.1, 64.6, 's'], [7.8, 59.5, 'm'], [27.5, 56, 's'], [25.1, 47.4, 's'], [38.9, 55.1, 's'],
+    ];
+    const startStage = Math.max(0, Math.min(8, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
+
+    ELEMENTS.forEach(([x, y, size], i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pumpkin';
+        b.dataset.element = `pumpkin-${i + 1}`;
+        b.dataset.type = 'pumpkin';
+        b.dataset.size = size;
+        b.dataset.stage = String(Math.min(startStage, 4));
+        b.dataset.clicks = String(startStage === 4 ? 0 : i % 6);
+        b.style.left = `${x}%`;
+        b.style.top = `${y}%`;
+        b.setAttribute('aria-label', `Тыква ${b.dataset.element}`);
+        b.innerHTML = '<span class="pumpkin__emoji" aria-hidden="true">🎃</span>';
+        root.insertBefore(b, root.querySelector('.hud'));
+    });
+    if (params.has('hits')) root.classList.add('show-hits');
+    if (params.get('ui') === '0') root.querySelector('[data-lab]').hidden = true;
+
+    // With ?freeze the lab runs on its own clock: headless screenshots get no animation frames, so time is stepped
+    // by hand and every timer below goes through this queue.
+    const freeze = Number.parseInt(params.get('freeze') ?? '', 10);
+    const simulated = freeze > 0;
+    let simTime = 0;
+    const queue = [];
+    function later(fn, ms) {
+        if (!simulated) return setTimeout(fn, ms);
+        queue.push({ at: simTime + ms, fn });
+    }
+
+    // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
+    const engine = readSnapshot(root);
+    // HELLOWIN_SCENE_STAGE_MAX=4,6,8; the final scene keeps the last value.
+    const SCENE_STAGE_MAX = [4, 6, 8, 8];
+    const pending = new Set();
+    const deliver = (event) => later(() => client.apply({ round: engine.round, ...event }), 20 + Math.random() * 40);
+    const engineSnapshot = () => structuredClone(engine);
+
+    function engineClick(id) {
+        const p = engine.elements.find((e) => e.id === id);
+        if (engine.scene < engine.sceneStages && p.stage < engine.stageMax && p.clicks < engine.threshold) p.clicks++;
+        deliver({ type: 'click', element: id, emoji: '🎃', clicks: p.clicks, threshold: engine.threshold, stage: p.stage });
+        if (p.clicks >= engine.threshold && p.stage < engine.stageMax && !pending.has(id)) {
+            pending.add(id);
+            later(() => {
+                pending.delete(id);
+                p.stage++;
+                p.clicks = 0;
+                deliver({ type: 'pumpkin', element: id, stage: p.stage });
+                if (engine.elements.every((e) => e.stage >= engine.stageMax) && engine.scene < engine.sceneStages) {
+                    engine.scene++;
+                    engine.stageMax = SCENE_STAGE_MAX[engine.scene];
+                    deliver({ type: 'scene', scene: engine.scene, stageMax: engine.stageMax });
+                }
+            }, 150);
+        }
+    }
+
+    function engineReset() {
+        engine.round++;
+        engine.scene = 0;
+        engine.stageMax = SCENE_STAGE_MAX[0];
+        engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
+        deliver({ type: 'reset' });
+    }
+
+    // Stages past 4 belong to later scenes: the jump moves the scene along with them.
+    function engineJump(stage) {
+        engine.scene = SCENE_STAGE_MAX.findIndex((max) => max >= stage);
+        engine.stageMax = SCENE_STAGE_MAX[engine.scene];
+        engine.elements.forEach((e) => { e.stage = stage; e.clicks = 0; });
+        client.load(engineSnapshot());
+    }
+
+    const scene = await createScene(root, readSnapshot(root));
+    root.classList.add(scene ? 'has-canvas' : 'no-canvas');
+    const client = createClient(root, scene, { requestState: async () => engineSnapshot() });
+    client.start();
+    if (startStage > 4) engineJump(startStage);
+
+    const randomId = () => engine.elements[Math.floor(Math.random() * engine.elements.length)].id;
+    root.addEventListener('click', (event) => {
+        const el = event.target.closest('[data-element]');
+        if (el) engineClick(el.dataset.element);
+    });
+    root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
+    root.querySelector('[data-lab-reset]').addEventListener('click', engineReset);
+    root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
+        if (event.target.value !== '') engineJump(Number(event.target.value));
+        event.target.value = '';
+    });
+
+    let auto = 0;
+    const autoButton = root.querySelector('[data-lab-auto]');
+    const toggleAuto = () => {
+        if (auto) {
+            clearInterval(auto);
+            auto = 0;
+        } else {
+            auto = setInterval(() => engineClick(randomId()), 70);
+        }
+        autoButton.setAttribute('aria-pressed', String(Boolean(auto)));
+    };
+    autoButton.addEventListener('click', toggleAuto);
+    if (params.get('auto') === '1' && !simulated) toggleAuto();
+
+    const initial = engineSnapshot();
+    function simulate() {
+        Object.assign(engine, structuredClone(initial));
+        queue.length = 0;
+        pending.clear();
+        client.load(engineSnapshot());
+        let nextClick = 0;
+        for (simTime = 0; simTime < freeze; simTime += 16) {
+            if (params.get('auto') === '1' && simTime >= nextClick) {
+                engineClick(randomId());
+                nextClick += 70;
+            }
+            queue.sort((a, b) => a.at - b.at);
+            while (queue.length && queue[0].at <= simTime) queue.shift().fn();
+            scene?.step(16);
+        }
+    }
+
+    if (simulated) {
+        simulate();
+        // Headless Edge resizes the window right before the capture; replaying keeps the frozen frame at the final
+        // size. Runs before paint, unlike the debounced resize inside the scene.
+        let size = `${root.clientWidth}x${root.clientHeight}`;
+        new ResizeObserver(() => {
+            const next = `${root.clientWidth}x${root.clientHeight}`;
+            if (next !== size) {
+                size = next;
+                simulate();
+            }
+        }).observe(root);
+    }
+</script>
+</body>
+</html>

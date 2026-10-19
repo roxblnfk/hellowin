@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — спрайты</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 10px; }
+        .sky { background: #8ccff0; }
+        .soil { background: #6e4028; }
+        .night { background: #141026; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cell span { font-size: 11px; color: #222; }
+        .soil .cell span { color: #eee; }
+    </style>
+</head>
+<body>
+<div id="out"></div>
+<script type="module">
+    import { pumpkinSprite, pumpkinLayers, seedOf, silhouette, PARTICLES, DECOR, bake, PUMPKIN_STAGES } from '../js/pixel/sprites.js';
+    import { PALETTE } from '../js/pixel/palette.js';
+
+    const params = new URLSearchParams(location.search);
+    const only = params.get('only');
+    const out = document.getElementById('out');
+    const sizes = ['l', 'm', 's'];
+    const css = (key) => `#${PALETTE[key].toString(16).padStart(6, '0')}`;
+
+    // Marks art-pixel points on a scaled sprite: magenta emit.cut, cyan emit.top, red perch.
+    function marks(box, points, scale) {
+        for (const [[x, y], color] of points) {
+            const dot = document.createElement('i');
+            dot.style.cssText = `position:absolute;left:${x * scale}px;top:${y * scale}px;width:${scale}px;height:${scale}px;outline:2px solid ${color}`;
+            box.append(dot);
+        }
+    }
+
+    function view(sprite, scale, label) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const box = document.createElement('div');
+        box.style.position = 'relative';
+        const c = bake(sprite);
+        c.style.width = `${sprite.w * scale}px`;
+        c.style.height = `${sprite.h * scale}px`;
+        box.append(c);
+        if (scale >= 6 && sprite.emit) {
+            marks(box, [[sprite.emit.cut, '#f0f'], [sprite.emit.top, '#0ff']], scale);
+        }
+        if (sprite.perch) {
+            marks(box, [[sprite.perch, '#f00']], scale);
+        }
+        cell.append(box);
+        if (label) {
+            const s = document.createElement('span');
+            s.textContent = label;
+            cell.append(s);
+        }
+        return cell;
+    }
+
+    // A slice of the real scene: sky, hedge line, soil; sprites stamped by their anchors.
+    function diorama(w, h, horizon, scale, items, withHills = false) {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = css('sky');
+        ctx.fillRect(0, 0, w, horizon);
+        ctx.fillStyle = css('leafDark');
+        ctx.fillRect(0, horizon, w, 1);
+        ctx.fillStyle = css('leaf');
+        ctx.fillRect(0, horizon + 1, w, 3);
+        ctx.fillStyle = css('soil');
+        ctx.fillRect(0, horizon + 4, w, h - horizon - 4);
+        if (withHills) {
+            for (let x = 0; x < w; x += DECOR.hills.w) {
+                ctx.drawImage(bake(DECOR.hills), x, horizon - DECOR.hills.h);
+            }
+        }
+        for (const [sprite, x, y] of items) {
+            ctx.drawImage(bake(sprite), x - sprite.anchor.x, y - sprite.anchor.y);
+        }
+        c.style.width = `${w * scale}px`;
+        c.style.height = `${h * scale}px`;
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.append(c);
+        return cell;
+    }
+
+    function section(id, title, bg, items) {
+        if (only && only !== id) {
+            return;
+        }
+        const h = document.createElement('h2');
+        h.textContent = title;
+        const row = document.createElement('div');
+        row.className = `row ${bg}`;
+        row.append(...items);
+        out.append(h, row);
+    }
+
+    const stages = [...Array(PUMPKIN_STAGES + 1).keys()];
+
+    // The real ids and sizes from app/config/hellowin.php.
+    const IDS = ['m', 's', 's', 's', 'm', 's', 'l', 'm', 'm', 'l', 'm', 'm', 'l', 's', 'm', 's', 's', 's']
+        .map((size, i) => ({ id: `pumpkin-${i + 1}`, size }));
+    if (!only || only === 'ids') {
+        const h = document.createElement('h2');
+        h.textContent = '18 реальных id × стадии 0–4, 3×';
+        const table = document.createElement('div');
+        table.className = 'sky';
+        table.style.cssText = 'display:grid;grid-template-columns:repeat(6,auto);gap:6px 14px;padding:10px;justify-content:start;align-items:end';
+        for (const { id, size } of IDS) {
+            const label = document.createElement('span');
+            label.textContent = `${id} ${size}`;
+            label.style.color = '#123';
+            table.append(label, ...stages.map((st) => view(pumpkinSprite(st, size, seedOf(id)), 3)));
+        }
+        out.append(h, table);
+    }
+
+    // Night: back lit from inside, glow added on top of it, body over both.
+    function night(stage, size, seed, scale) {
+        const { w, h, layers } = pumpkinLayers(stage, size, seed);
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const lit = { ...layers.back, legend: { ...layers.back.legend, X: 'fleshDark', x: 'flesh' } };
+        ctx.drawImage(bake(lit), 0, 0);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6;
+        ctx.drawImage(bake(silhouette(layers.glow, 'pumpkinShine')), 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        for (const layer of [layers.body, layers.rim, layers.stem]) {
+            if (layer) ctx.drawImage(bake(layer), 0, 0);
+        }
+        c.style.width = `${w * scale}px`;
+        c.style.height = `${h * scale}px`;
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.append(c);
+        return cell;
+    }
+
+    for (const [id, size, stage] of [['pumpkin-7', 'l', 3], ['pumpkin-2', 's', 4]]) {
+        const seed = seedOf(id);
+        const { layers } = pumpkinLayers(stage, size, seed);
+        section('layers', `слои ${id} (${size}), стадия ${stage}, 6×`, 'sky', [
+            ...Object.entries(layers).map(([name, layer]) => layer ? view(layer, 6, name) : document.createTextNode(`${name}: null`)),
+            view(pumpkinSprite(stage, size, seed), 6, 'композит'),
+        ]);
+        const dark = document.createElement('div');
+        section('layers', 'ночь (back осветлён, glow additive)', 'night', [
+            night(stage, size, seed, 6), night(4, size, seed, 6), night(2, size, seed, 6),
+        ]);
+    }
+    const pick = (list, i) => list[i % list.length];
+
+    for (const scale of [3, 6]) {
+        for (const size of scale === 6 ? ['l', 's'] : sizes) {
+            section('pumpkins', `тыква ${size}, ${scale}×`, 'sky',
+                stages.map((st) => view(pumpkinSprite(st, size), scale, `stage ${st}`)));
+        }
+    }
+    section('pumpkins', 'все тыквы 1× и 2×', 'sky', [
+        ...sizes.flatMap((size) => stages.map((st) => view(pumpkinSprite(st, size), 1))),
+        ...sizes.flatMap((size) => stages.map((st) => view(pumpkinSprite(st, size), 2))),
+    ]);
+    section('pumpkins', 'тыквы 3× на земле + силуэт-вспышка', 'soil', [
+        ...sizes.map((size) => view(pumpkinSprite(PUMPKIN_STAGES, size), 3, size)),
+        ...sizes.map((size) => view(silhouette(pumpkinSprite(1, size)), 3, `white ${size}`)),
+    ]);
+
+    section('tree', 'дерево 3× в сцене (perch — красная метка)', 'soil', [
+        diorama(260, 250, 96, 3, [
+            [pick(DECOR.farTree, 0), 120, 97], [pick(DECOR.farTree, 1), 150, 97], [pick(DECOR.farTree, 2), 162, 97],
+            [pick(DECOR.farTree, 1), 228, 97], [pick(DECOR.farTree, 0), 8, 97],
+            [DECOR.tree, 44, 106],
+            [DECOR.root, 175, 190],
+            [pumpkinSprite(0, 'm'), 140, 180],
+            [pumpkinSprite(2, 's'), 210, 160],
+            [pumpkinSprite(4, 'l'), 205, 230],
+            [pumpkinSprite(3, 'm'), 120, 236],
+            [pick(DECOR.weed, 0), 12, 220], [pick(DECOR.weed, 1), 24, 228], [pick(DECOR.weed, 2), 70, 246],
+            [pick(DECOR.weed, 3), 110, 118], [pick(DECOR.weed, 4), 250, 240], [pick(DECOR.weed, 5), 60, 160],
+            [pick(DECOR.weed, 2), 6, 140], [pick(DECOR.weed, 4), 90, 112], [pick(DECOR.weed, 3), 250, 130],
+        ], true),
+    ]);
+    section('tree', 'дерево 2× на небе и на земле', 'sky', [view(DECOR.tree, 2, 'sky')]);
+    section('tree', '', 'soil', [view(DECOR.tree, 2, 'soil'), view(DECOR.tree, 1, '1×')]);
+
+    const foliage = (bg) => [
+        ...DECOR.leaf.map((c, i) => view(c, 6, `leaf${i}`)),
+        ...DECOR.tendril.map((c, i) => view(c, 6, `tendril${i}`)),
+    ];
+    section('foliage', 'листья и усы 6× (земля)', 'soil', foliage());
+    section('foliage', 'листья и усы 6× (небо)', 'sky', foliage());
+    // Dense overlap, as along a vine.
+    section('foliage', 'листва вдоль побега 4×', 'soil', [
+        diorama(90, 30, 0, 4, Array.from({ length: 14 }, (_, i) => [
+            pick(DECOR.leaf, i * 7 + (i >> 1)), 6 + i * 6, 14 + ((i * 5) % 7) - 3,
+        ]).concat([[DECOR.tendril[0], 30, 26], [pick(DECOR.tendril, 1), 66, 8]])),
+    ]);
+
+    section('weeds', 'сорняки 4× (земля)', 'soil', DECOR.weed.map((c, i) => view(c, 4, `weed${i}`)));
+    section('weeds', 'сорняки 4× (небо)', 'sky', DECOR.weed.map((c, i) => view(c, 4, `weed${i}`)));
+
+    section('root', 'корень 3× и 6× (земля)', 'soil', [view(DECOR.root, 3, 'root'), view(DECOR.root, 6, 'root 6×')]);
+
+    section('particles', 'частицы 6×', 'sky', Object.entries(PARTICLES).flatMap(([name, list]) =>
+        list.map((p, i) => view(p, 6, `${name}${i}`))));
+    section('particles', 'частицы 6× на земле', 'soil', Object.entries(PARTICLES).flatMap(([name, list]) =>
+        list.map((p, i) => view(p, 6, `${name}${i}`))));
+    section('decor', 'небо и мелочь 3×', 'sky', [
+        view(DECOR.sun, 3, 'sun'),
+        ...DECOR.cloud.map((c, i) => view(c, 3, `cloud${i}`)),
+        ...DECOR.grass.map((c, i) => view(c, 3, `grass${i}`)),
+        ...DECOR.flower.map((c, i) => view(c, 3, `flower${i}`)),
+    ]);
+</script>
+</body>
+</html>

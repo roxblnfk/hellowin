@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/css/app.css">
     <stack:collect name="styles" level="2"/>
 </head>
-<body data-stage="${stage|0}">
+<body data-scene="${scene|0}">
 <block:body/>
 <stack:collect name="scripts" level="2"/>
 </body>
