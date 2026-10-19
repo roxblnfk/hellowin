@@ -13,15 +13,9 @@
 | `http://localhost:8080/connection/websocket` | WebSocket Centrifugo |
 | `http://localhost:8080/grafana/` | дашборд «Hellowin» (публичный, только чтение) |
 
-1. Создайте `.env` из примера и задайте в нём `GF_SECURITY_ADMIN_PASSWORD`:
-
-   ```bash
-   cp .env.docker.example .env
-   ```
-
-   Если `.env` уже занят под локальный запуск без Docker (`.env.sample`), держите переменные Compose в отдельном
-   файле и передавайте его в каждую команду: `docker compose --env-file .env.docker up -d --build`. Режим приложения
-   в контейнере от `.env` не зависит: `docker-compose.yml` всегда задаёт `APP_ENV=prod`, `DEBUG=false`.
+1. Для локального запуска настраивать ничего не нужно. Переменные Compose (см. ниже) берутся из `.env`, пример —
+   `.env.docker.example`. Режим приложения в контейнере от `.env` не зависит: `docker-compose.yml` всегда задаёт
+   `APP_ENV=prod`, `DEBUG=false`.
 
 2. Запустите:
 
@@ -41,7 +35,7 @@
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
-| `GF_SECURITY_ADMIN_PASSWORD` | — (обязательна) | пароль администратора Grafana, применяется при первом запуске |
+| `GF_SECURITY_ADMIN_PASSWORD` | `admin` | пароль администратора Grafana, применяется при первом запуске. Для публичного развёртывания задайте обязательно |
 | `GF_SECURITY_ADMIN_USER` | `admin` | логин администратора Grafana |
 | `HTTP_PORT` | `8080` | внешний порт nginx |
 | `PUBLIC_URL` | `http://localhost:8080` | внешний адрес сайта; от него Grafana строит `root_url` |
@@ -52,7 +46,7 @@
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |
 
 Чтобы открыть демо в интернет, опубликуйте порт `proxy` (или поставьте перед ним TLS-терминатор) и выставьте
-`PUBLIC_URL=https://your.domain` и `CENTRIFUGO_ALLOWED_ORIGINS=https://your.domain`.
+`PUBLIC_URL=https://your.domain`, `CENTRIFUGO_ALLOWED_ORIGINS=https://your.domain` и свой `GF_SECURITY_ADMIN_PASSWORD`.
 
 ### Grafana
 
