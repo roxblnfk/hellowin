@@ -57,7 +57,8 @@ services:
   # AOF on a volume: the ritual and its idempotency keys survive restarts of app and valkey.
   valkey:
     image: valkey/valkey:8.1.10-alpine
-    command: ["valkey-server", "--appendonly", "yes"]
+    # AOF and noeviction: idempotency markers must survive restarts and memory pressure, or a transition could run twice
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes:
       - valkey-data:/data
     expose:

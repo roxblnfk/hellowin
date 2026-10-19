@@ -4699,12 +4699,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/idempotency.git",
-                "reference": "9c41acb8ffe35f55e79a04f9ce71743777cbcfb1"
+                "reference": "7f3be2b13772433ca50c5bba7be30f07174a2746"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/idempotency/zipball/9c41acb8ffe35f55e79a04f9ce71743777cbcfb1",
-                "reference": "9c41acb8ffe35f55e79a04f9ce71743777cbcfb1",
+                "url": "https://api.github.com/repos/spiral/idempotency/zipball/7f3be2b13772433ca50c5bba7be30f07174a2746",
+                "reference": "7f3be2b13772433ca50c5bba7be30f07174a2746",
                 "shasum": ""
             },
             "require": {
@@ -4770,7 +4770,7 @@
                 "issues": "https://github.com/spiral/idempotency/issues",
                 "source": "https://github.com/spiral/idempotency/tree/feat/redis-at-most-once"
             },
-            "time": "2026-10-19T19:36:13+00:00"
+            "time": "2026-10-19T20:18:42+00:00"
         },
         {
             "name": "spiral/nyholm-bridge",
