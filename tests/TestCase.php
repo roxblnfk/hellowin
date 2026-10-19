@@ -15,6 +15,7 @@ abstract class TestCase extends BaseTestCase
         'APP_ENV' => 'testing',
         'TOKENIZER_CACHE_TARGETS' => true,
         'TELEMETRY_DRIVER' => 'null',
+        'BROADCAST_CONNECTION' => 'null',
     ];
 
     #[\Override]

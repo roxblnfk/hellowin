@@ -7,6 +7,8 @@ namespace App\Application;
 use Spiral\Boot\Bootloader\CoreBootloader;
 use Spiral\Bootloader as Framework;
 use Spiral\Bootloader\Http\HttpBootloader;
+use Spiral\Broadcasting\Bootloader\BroadcastingBootloader;
+use Spiral\Cache\Bootloader\CacheBootloader;
 use Spiral\DotEnv\Bootloader\DotenvBootloader;
 use Spiral\Monolog\Bootloader\MonologBootloader;
 use Spiral\Nyholm\Bootloader\NyholmBootloader;
@@ -46,6 +48,11 @@ class Kernel extends \Spiral\Framework\Kernel
             RoadRunnerBridge\LoggerBootloader::class,
             RoadRunnerBridge\HttpBootloader::class,
             RoadRunnerBridge\MetricsBootloader::class,
+            RoadRunnerBridge\LockBootloader::class,
+            CacheBootloader::class,
+            RoadRunnerBridge\CacheBootloader::class,
+            BroadcastingBootloader::class,
+            RoadRunnerBridge\CentrifugoBootloader::class,
 
             // HTTP
             HttpBootloader::class,
@@ -61,6 +68,14 @@ class Kernel extends \Spiral\Framework\Kernel
             RoadRunnerBridge\CommandBootloader::class,
 
             Bootloader\RoutesBootloader::class,
+        ];
+    }
+
+    #[\Override]
+    public function defineAppBootloaders(): array
+    {
+        return [
+            Bootloader\HellowinBootloader::class,
         ];
     }
 }
