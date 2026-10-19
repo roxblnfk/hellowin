@@ -24,7 +24,8 @@
     "require-dev": {
         "bamarni/composer-bin-plugin": "^1.8",
         "spiral/dumper": "^3.3.1",
-        "spiral/testing": "^3.0",
+        "spiral/testing": "^4.0@dev",
+        "testo/testo": "^0.10.56",
         "vimeo/psalm": "^6.10"
     },
     "autoload": {
@@ -65,8 +66,7 @@
         "cs:fix": "php-cs-fixer fix -v --config=tools/code-style/.php-cs-fixer.dist.php",
         "psalm": "psalm",
         "psalm:baseline": "psalm --set-baseline=psalm-baseline.xml",
-        "test": "phpunit",
-        "test-coverage": "phpunit --coverage"
+        "test": "testo"
     },
     "minimum-stability": "dev",
     "prefer-stable": true

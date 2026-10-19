@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use Tests\TestCase;
+use Testo\Assert;
+use Testo\Test;
 
-class DemoTest extends TestCase
+#[Test]
+final class DemoTest
 {
-    public function testDemo(): void
+    public function demo(): void
     {
         $expected = true;
         $actual = false;
 
-        $this->assertTrue($expected);
-        $this->assertFalse($actual);
+        Assert::true($expected);
+        Assert::false($actual);
     }
 }

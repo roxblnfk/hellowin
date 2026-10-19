@@ -6,47 +6,47 @@ namespace Tests\Feature\Controller;
 
 use Spiral\Bootloader\I18nBootloader;
 use Spiral\Testing\Http\FakeHttp;
+use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
+use Testo\Lifecycle\BeforeTest;
+use Testo\Test;
 use Tests\TestCase;
 
-class HomeControllerTest extends TestCase
+#[Test]
+final class HomeControllerTest extends TestCase
 {
     private FakeHttp $http;
 
-    public function testDefaultActionWorks(): void
+    public function defaultActionWorks(): void
     {
         $response = $this->http->get('/')->assertOk();
 
-        $this->assertStringContainsString(
-            'The PHP Framework for future Innovators',
-            \strip_tags((string) $response->getOriginalResponse()->getBody()),
-        );
+        Assert::string(\strip_tags((string) $response->getOriginalResponse()->getBody()))
+            ->contains('The PHP Framework for future Innovators');
     }
 
-    public function testDefaultActionWithRuLocale(): void
+    public function defaultActionWithRuLocale(): void
     {
-        if (!\in_array(I18nBootloader::class, $this->getRegisteredBootloaders())) {
-            $this->markTestSkipped('Component `spiral/translator` is not installed.');
+        if (!\in_array(I18nBootloader::class, $this->getRegisteredBootloaders(), true)) {
+            throw new SkipTest('Component `spiral/translator` is not installed.');
         }
 
         $response = $this->http->withHeader('accept-language', 'ru')->get('/')->assertOk();
 
-        $this->assertStringContainsString(
-            'PHP Framework для будущих инноваторов',
-            \strip_tags((string) $response->getOriginalResponse()->getBody()),
-        );
+        Assert::string(\strip_tags((string) $response->getOriginalResponse()->getBody()))
+            ->contains('PHP Framework для будущих инноваторов');
     }
 
-    public function testInteractWithConsole(): void
+    public function interactWithConsole(): void
     {
         $output = $this->runCommand('views:reset');
 
-        $this->assertStringContainsString('cache', $output);
+        Assert::string($output)->contains('cache');
     }
 
-    protected function setUp(): void
+    #[BeforeTest]
+    protected function createHttpClient(): void
     {
-        parent::setUp();
-
         $this->http = $this->fakeHttp();
     }
 }
