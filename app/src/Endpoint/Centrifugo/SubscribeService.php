@@ -23,12 +23,11 @@ final readonly class SubscribeService implements ServiceInterface
         private HellowinConfig $config,
     ) {}
 
-    /**
-     * @param Subscribe $request
-     */
     #[\Override]
     public function handle(RequestInterface $request): void
     {
+        \assert($request instanceof Subscribe);
+
         if ($request->channel !== $this->config->getChannel()) {
             $request->error(self::PERMISSION_DENIED, 'permission denied');
             return;

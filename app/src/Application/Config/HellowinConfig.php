@@ -10,22 +10,11 @@ use Spiral\Core\InjectableConfig;
 
 /**
  * @see app/config/hellowin.php
- *
- * @psalm-type ElementSpec = array{id: non-empty-string, type: non-empty-string, x: int|float, y: int|float, emojis: non-empty-list<non-empty-string>}
  */
 final class HellowinConfig extends InjectableConfig
 {
     public const CONFIG = 'hellowin';
 
-    /**
-     * @var array{
-     *     channel: non-empty-string,
-     *     storage: non-empty-string,
-     *     centrifugo_url: string,
-     *     thresholds: int|string|list<int>,
-     *     elements: list<ElementSpec>,
-     * }
-     */
     protected array $config = [
         'channel' => 'hellowin',
         'storage' => 'hellowin',
@@ -39,7 +28,7 @@ final class HellowinConfig extends InjectableConfig
      */
     public function getChannel(): string
     {
-        return $this->config['channel'];
+        return self::nonEmptyString($this->config['channel'] ?? null, 'channel');
     }
 
     /**
@@ -49,12 +38,12 @@ final class HellowinConfig extends InjectableConfig
      */
     public function getStorage(): string
     {
-        return $this->config['storage'];
+        return self::nonEmptyString($this->config['storage'] ?? null, 'storage');
     }
 
     public function getCentrifugoUrl(): string
     {
-        return $this->config['centrifugo_url'];
+        return self::nonEmptyString($this->config['centrifugo_url'] ?? null, 'centrifugo_url');
     }
 
     /**
@@ -62,10 +51,7 @@ final class HellowinConfig extends InjectableConfig
      */
     public function getThresholds(): Thresholds
     {
-        $value = $this->config['thresholds'];
-        $values = \is_array($value) ? $value : \explode(',', (string) $value);
-
-        return new Thresholds(\array_map(static fn(int|string $v): int => (int) \trim((string) $v), $values));
+        return self::thresholds($this->config['thresholds'] ?? null);
     }
 
     /**
@@ -73,15 +59,62 @@ final class HellowinConfig extends InjectableConfig
      */
     public function getElements(): array
     {
-        return \array_map(
-            static fn(array $spec): Element => new Element(
-                id: $spec['id'],
-                type: $spec['type'],
-                x: (float) $spec['x'],
-                y: (float) $spec['y'],
-                emojis: $spec['emojis'],
+        $elements = $this->config['elements'] ?? [];
+        \is_array($elements) or throw new \InvalidArgumentException('Config "hellowin.elements" must be a list.');
+
+        return \array_values(\array_map(self::element(...), $elements));
+    }
+
+    private static function thresholds(mixed $value): Thresholds
+    {
+        $values = match (true) {
+            \is_array($value) => $value,
+            \is_int($value) => [$value],
+            \is_string($value) => \explode(',', $value),
+            default => throw new \InvalidArgumentException('Config "hellowin.thresholds" must be a list or a string.'),
+        };
+
+        return new Thresholds(\array_values(\array_map(
+            static fn(mixed $v): int => \is_numeric($v) ? (int) $v : throw new \InvalidArgumentException(
+                'Config "hellowin.thresholds" must contain integers.',
             ),
-            $this->config['elements'],
+            $values,
+        )));
+    }
+
+    private static function element(mixed $spec): Element
+    {
+        \is_array($spec) or throw new \InvalidArgumentException('Each element of "hellowin.elements" must be an array.');
+
+        $emojis = $spec['emojis'] ?? null;
+        \is_array($emojis) && $emojis !== [] or throw new \InvalidArgumentException('Element emojis must be a non-empty list.');
+
+        return new Element(
+            id: self::nonEmptyString($spec['id'] ?? null, 'elements.*.id'),
+            type: self::nonEmptyString($spec['type'] ?? null, 'elements.*.type'),
+            x: self::float($spec['x'] ?? null, 'elements.*.x'),
+            y: self::float($spec['y'] ?? null, 'elements.*.y'),
+            emojis: \array_values(\array_map(
+                static fn(mixed $emoji): string => self::nonEmptyString($emoji, 'elements.*.emojis'),
+                $emojis,
+            )),
         );
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private static function nonEmptyString(mixed $value, string $key): string
+    {
+        return \is_string($value) && $value !== ''
+            ? $value
+            : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be a non-empty string.', $key));
+    }
+
+    private static function float(mixed $value, string $key): float
+    {
+        return \is_int($value) || \is_float($value)
+            ? (float) $value
+            : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be a number.', $key));
     }
 }

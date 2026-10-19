@@ -24,16 +24,24 @@ final readonly class RPCService implements ServiceInterface
         private LoggerInterface $logger,
     ) {}
 
-    /**
-     * @param RPC $request
-     */
     #[\Override]
     public function handle(RequestInterface $request): void
     {
+        \assert($request instanceof RPC);
+
         $request->respond(new RPCResponse(match ($request->method) {
             'click' => $this->click($request->getData()),
             default => self::fail('unknown method'),
         }));
+    }
+
+    /**
+     * @param non-empty-string $error
+     * @return array{ok: false, error: non-empty-string}
+     */
+    private static function fail(string $error): array
+    {
+        return ['ok' => false, 'error' => $error];
     }
 
     private function click(array $params): array
@@ -54,13 +62,5 @@ final readonly class RPCService implements ServiceInterface
             $this->logger->error('Click failed: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
             return self::fail('internal error');
         }
-    }
-
-    /**
-     * @return array{ok: false, error: non-empty-string}
-     */
-    private static function fail(string $error): array
-    {
-        return ['ok' => false, 'error' => $error];
     }
 }

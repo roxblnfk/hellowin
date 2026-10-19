@@ -74,10 +74,16 @@ final readonly class GameState
     /**
      * @return int<0, max>
      */
+    private static function toCount(mixed $value): int
+    {
+        return \is_int($value) && $value > 0 ? $value : 0;
+    }
+
+    /**
+     * @return int<0, max>
+     */
     private function readInt(string $key): int
     {
-        $value = $this->storage->get($key, 0);
-
-        return \is_int($value) && $value > 0 ? $value : 0;
+        return self::toCount($this->storage->get($key, 0));
     }
 }

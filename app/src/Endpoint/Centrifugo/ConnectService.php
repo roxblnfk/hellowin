@@ -20,12 +20,11 @@ final readonly class ConnectService implements ServiceInterface
         private HellowinConfig $config,
     ) {}
 
-    /**
-     * @param Connect $request
-     */
     #[\Override]
     public function handle(RequestInterface $request): void
     {
+        \assert($request instanceof Connect);
+
         $request->respond(new ConnectResponse(
             user: '',
             channels: [$this->config->getChannel()],
