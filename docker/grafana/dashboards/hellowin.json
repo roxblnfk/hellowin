@@ -1,13 +1,13 @@
 {
   "uid": "hellowin",
   "title": "Hellowin",
-  "description": "Clicks, ritual scene, idempotent transitions and WebSocket traffic of the Hellowin demo (RoadRunner + Centrifugo).",
+  "description": "Clicks, ritual scene, idempotent transitions, players, flyers and WebSocket traffic of the Hellowin demo (RoadRunner + Centrifugo).",
   "tags": ["hellowin", "roadrunner", "centrifugo"],
   "editable": false,
   "graphTooltip": 1,
   "refresh": "5s",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "time": { "from": "now-30m", "to": "now" },
   "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
   "templating": { "list": [] },
@@ -367,11 +367,159 @@
       }
     },
     {
+      "id": 30,
+      "type": "row",
+      "title": "Players",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "panels": []
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Players",
+      "description": "Browsers known by their secret, named or not. The ticker sets it on every leaderboard build.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 40 },
+      "targets": [{ "refId": "A", "expr": "max(hellowin_players)", "instant": true, "range": false }],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Registered (named)",
+      "description": "Players who sent RPC register with a name.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 40 },
+      "targets": [{ "refId": "A", "expr": "max(hellowin_players_registered)", "instant": true, "range": false }],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Players over time",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 40 },
+      "targets": [
+        { "refId": "A", "expr": "max(hellowin_players)", "legendFormat": "players" },
+        { "refId": "B", "expr": "max(hellowin_players_registered)", "legendFormat": "registered" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 34,
+      "type": "row",
+      "title": "Flyers: launched, shot, escaped",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "panels": []
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Flyers per minute",
+      "description": "The ticker launches flyers and counts the ones that left the screen; RPC shoot counts hits. Every flyer ends exactly once: launched = shot + escaped + still in the sky.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(hellowin_flyers_launched_total[1m]))", "legendFormat": "launched" },
+        { "refId": "B", "expr": "sum(increase(hellowin_flyers_shot_total[1m]))", "legendFormat": "shot" },
+        { "refId": "C", "expr": "sum(increase(hellowin_flyers_escaped_total[1m]))", "legendFormat": "escaped" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 36,
+      "type": "bargauge",
+      "title": "Flyers by depth (total)",
+      "description": "Depth 0 is the farthest: slowest and worth the most points.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 47 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (depth) (hellowin_flyers_launched_total)", "legendFormat": "launched, depth {{depth}}", "instant": true, "range": false },
+        { "refId": "B", "expr": "sum by (depth) (hellowin_flyers_shot_total)", "legendFormat": "shot, depth {{depth}}", "instant": true, "range": false },
+        { "refId": "C", "expr": "sum by (depth) (hellowin_flyers_escaped_total)", "legendFormat": "escaped, depth {{depth}}", "instant": true, "range": false }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "min": 0, "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Hit rate",
+      "description": "Shot flyers out of the flyers that are over: shot / (shot + escaped).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 47 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(hellowin_flyers_shot_total) / (sum(hellowin_flyers_shot_total) + sum(hellowin_flyers_escaped_total))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.2 }, { "color": "green", "value": 0.5 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
       "id": 9,
       "type": "row",
       "title": "Centrifugo (WebSockets)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
       "panels": []
     },
     {
@@ -379,7 +527,7 @@
       "type": "timeseries",
       "title": "Connections and subscriptions",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 56 },
       "targets": [
         { "refId": "A", "expr": "sum(centrifugo_node_num_clients)", "legendFormat": "clients" },
         { "refId": "B", "expr": "sum(centrifugo_node_num_subscriptions)", "legendFormat": "subscriptions" },
@@ -402,7 +550,7 @@
       "title": "Messages sent to clients per second",
       "description": "Frames written to client transports (publications fan-out, RPC replies, pings…).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 56 },
       "targets": [
         { "refId": "A", "expr": "sum by (frame_type) (rate(centrifugo_transport_messages_sent[1m]))", "legendFormat": "{{frame_type}}" }
       ],
@@ -417,7 +565,7 @@
       "type": "timeseries",
       "title": "Publications and server API calls per second",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 56 },
       "targets": [
         { "refId": "A", "expr": "sum by (type) (rate(centrifugo_node_messages_sent_count[1m]))", "legendFormat": "broker: {{type}}" },
         {
@@ -438,7 +586,7 @@
       "title": "Proxy calls to RoadRunner per second",
       "description": "Connect and RPC events proxied from Centrifugo to RoadRunner over gRPC.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 },
       "targets": [
         { "refId": "A", "expr": "sum by (type) (rate(centrifugo_proxy_duration_seconds_histogram_count[1m]))", "legendFormat": "{{type}}" },
         { "refId": "B", "expr": "sum by (type) (rate(centrifugo_proxy_errors[1m]))", "legendFormat": "{{type}} errors" }
@@ -454,7 +602,7 @@
       "type": "timeseries",
       "title": "Proxy latency p95",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 },
       "targets": [
         {
           "refId": "A",
@@ -473,7 +621,7 @@
       "type": "row",
       "title": "RoadRunner",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
       "panels": []
     },
     {
@@ -482,7 +630,7 @@
       "title": "HTTP requests per second by status",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 57 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 73 },
       "targets": [
         { "refId": "A", "expr": "sum by (status) (rate(rr_http_request_total[1m]))", "legendFormat": "{{status}}" }
       ],
@@ -498,7 +646,7 @@
       "title": "HTTP latency p95",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 57 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 73 },
       "targets": [
         { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(rr_http_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" }
       ],
@@ -513,7 +661,7 @@
       "type": "timeseries",
       "title": "HTTP workers",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 57 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 73 },
       "targets": [
         { "refId": "A", "expr": "sum(rr_http_workers_ready)", "legendFormat": "ready" },
         { "refId": "B", "expr": "sum(rr_http_workers_working)", "legendFormat": "working" },
