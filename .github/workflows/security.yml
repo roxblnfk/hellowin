@@ -51,8 +51,9 @@ jobs:
       - name: 🛠️ Setup problem matchers
         run: echo "::add-matcher::${{ runner.tool_cache }}/php.json"
 
+      # No --strict while spiral/roadrunner-bridge is pinned to the 4.x-dev branch: strict mode fails on exact constraints.
       - name: 🤖 Validate composer.json
-        run: composer validate --ansi --strict
+        run: composer validate --ansi
 
       - name: 📥 Install dependencies with composer
         uses: ramsey/composer-install@v3
