@@ -63,7 +63,7 @@
 <svg class="diagram__svg" viewBox="0 0 1000 600" style="min-width: 720px" role="img" aria-label="Модули Hellowin: браузер ходит в nginx, nginx раздаёт запросы в RoadRunner, Centrifugo и Grafana; Centrifugo и RoadRunner связаны по gRPC в обе стороны; Prometheus собирает метрики с RoadRunner и Centrifugo.">
 <defs><marker id="a-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="d-group g-rr" x="440" y="160" width="500" height="310" rx="10"/>
-<text class="d-h" x="456" y="182" text-anchor="start">RoadRunner 3 · контейнер app · .rr.yaml</text>
+<text class="d-h" x="456" y="182" text-anchor="start">RoadRunner 3 · app · .rr.yaml</text>
 <rect class="d-box g-edge" x="20" y="200" width="150" height="90" rx="6"/>
 <text class="d-t" x="95" y="233.5" text-anchor="middle">Браузер</text>
 <text class="d-m" x="95" y="248.5" text-anchor="middle">app.js</text>
@@ -77,8 +77,9 @@
 <text class="d-m" x="710" y="68.5" text-anchor="middle">:8000 WebSocket, /metrics</text>
 <text class="d-m" x="710" y="83.5" text-anchor="middle">:10000 gRPC API</text>
 <rect class="d-box g-rr" x="460" y="196" width="140" height="50" rx="6"/>
-<text class="d-t" x="530" y="217" text-anchor="middle">http</text>
-<text class="d-m" x="530" y="232" text-anchor="middle">:8080</text>
+<text class="d-t" x="530" y="212" text-anchor="middle">http</text>
+<text class="d-m" x="530" y="226" text-anchor="middle">:8080</text>
+<text class="d-s" x="530" y="240" text-anchor="middle" style="font-size:9.5px">metrics → gzip → static</text>
 <rect class="d-box g-rr" x="640" y="196" width="160" height="50" rx="6"/>
 <text class="d-t" x="720" y="217" text-anchor="middle">centrifuge</text>
 <text class="d-m" x="720" y="232" text-anchor="middle">proxy :10001</text>
@@ -109,7 +110,7 @@
 <text class="d-l" x="460" y="57" text-anchor="middle">/connection/ → :8000</text>
 <text class="d-s" x="460" y="82" text-anchor="middle">WebSocket</text>
 <path class="d-e" d="M390 221 L460 221" marker-end="url(#a-ln)"/>
-<text class="d-l" x="424" y="213" text-anchor="middle">/ → :8080</text>
+<text class="d-l" x="415" y="213" text-anchor="middle">/→:8080</text>
 <path class="d-e" d="M320 290 L320 520" marker-end="url(#a-ln)"/>
 <text class="d-l" x="328" y="400" text-anchor="start">/grafana/ → :3000</text>
 <path class="d-e d-e--acc" d="M680 110 L680 196" marker-end="url(#a-acc)"/>
@@ -477,7 +478,7 @@
                 При старте воркера <code>ClickMetrics</code> объявляет коллекторы в плагине <code>metrics</code>, а на
                 каждый клик вызывает <code>metrics.Add</code> и <code>metrics.Set</code> по RPC. Ошибка метрик только
                 пишется в лог: клик из-за неё не падает. RoadRunner отдаёт всё на <code>:2112/metrics</code> вместе со
-                своими <code>rr_http_*</code> (middleware <code>http_metrics</code> в <code>.rr.yaml</code>).
+                своими <code>rr_http_*</code> (middleware <code>http_metrics</code> в <code>.rr.yaml</code>; там же <code>gzip</code>, который сжимает и ответы PHP, и статику — он стоит перед <code>static</code>, потому что RoadRunner 3 выполняет middleware слева направо).
             </p>
             <p>
                 Prometheus раз в 5 секунд скрейпит <code>app:2112</code> и <code>centrifugo:8000/metrics</code>.
