@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Domain\Clock\Clock;
+use App\Domain\Clock\SystemClock;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
 use App\Domain\Ritual\RitualPolicy;
@@ -19,7 +21,8 @@ use App\Domain\Ritual\RitualStore;
  *     stageMax: int<0, max>,
  *     threshold: positive-int,
  *     bushes: list<array{id: non-empty-string, x: float, y: float}>,
- *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>
+ *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>,
+ *     now: int
  * }
  */
 final readonly class SnapshotFactory
@@ -34,6 +37,7 @@ final readonly class SnapshotFactory
         private RitualPolicy $policy,
         private int $threshold,
         private array $bushes = [],
+        private Clock $clock = new SystemClock(),
     ) {}
 
     /**
@@ -60,6 +64,8 @@ final readonly class SnapshotFactory
             'threshold' => $this->threshold,
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
+            // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
+            'now' => $this->clock->now(),
         ];
     }
 }

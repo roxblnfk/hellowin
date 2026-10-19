@@ -110,12 +110,18 @@ final readonly class Flyer
         $event['to'] = $this->to->toArray();
         $event['duration'] = $this->duration;
         $event['points'] = $this->points;
+        // A backgrounded tab receives queued publications late; these let it drop flyers already gone
+        $event['launchedAt'] = $this->launchedAt;
+        $event['expiresAt'] = $this->expiresAt();
 
         return $event;
     }
 
     public function toArray(): array
     {
-        return $this->toEvent() + ['launchedAt' => $this->launchedAt];
+        $data = $this->toEvent();
+        unset($data['expiresAt']);
+
+        return $data;
     }
 }

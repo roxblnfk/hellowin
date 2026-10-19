@@ -85,12 +85,14 @@ final class HellowinBootloader extends Bootloader
                 ElementRegistry $elements,
                 RitualStore $store,
                 RitualPolicy $policy,
+                Clock $clock,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
                 $policy,
                 $config->getClicksPerStage(),
                 $config->getBushes(),
+                $clock,
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,

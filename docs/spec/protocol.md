@@ -51,7 +51,7 @@
 | `pumpkin` | `element`, `stage`, `player?` | тыква перешла в новую стадию (ровно одно событие на переход) |
 | `scene` | `scene`, `stageMax` | сцена сменилась (ровно одно событие на смену) |
 | `reset` | — | сброс; новый `round` в самом событии |
-| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points` | запущен летун |
+| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
@@ -74,8 +74,8 @@
 {"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
 {"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":2,"points":5}]}
-{"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3}
-{"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1}
+{"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3,"launchedAt":1760900000000,"expiresAt":1760900009000}
+{"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1,"launchedAt":1760900002000,"expiresAt":1760900006000}
 {"type":"shot","round":1,"flyer":"f-3a9c01d2","points":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 ```
 
@@ -91,7 +91,8 @@
   "stageMax": 4,
   "threshold": 5,
   "bushes": [{"id":"bush-1","x":4,"y":66}],
-  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}]
+  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}],
+  "now": 1760900001500
 }
 ```
 
@@ -101,3 +102,11 @@
 `HELLOWIN_SCENE_STAGE_MAX`); `stageMax` — последняя стадия тыквы в текущей сцене, в финальной — та же, что в сцене
 перед ней (см. [`scenario.md`](scenario.md)). `clicks` — клики с момента перехода тыквы в текущую стадию. Страница
 `GET /` отдаёт снимок в шаблон `home` (переменные — см. [`frontend.md`](frontend.md)) вместе с `centrifugoUrl`.
+
+### Время летунов
+
+`launchedAt` и `expiresAt` в событии `flyer` — серверное Unix-время в мс; `now` в снимке — серверное время его сборки.
+Клиент считает смещение часов `offset = now − Date.now()` (по снимку страницы или RPC `state`) и **не рисует летуна**,
+если `Date.now() + offset >= expiresAt`; уже нарисованного убирает к `expiresAt`. Так свёрнутая вкладка, получившая
+пачку отложенных публикаций при разворачивании, не выпускает птиц, которых уже нельзя сбить (сервер принимает
+выстрел не позже `expiresAt` + 500 мс). Если смещение неизвестно — считать его 0.

@@ -88,11 +88,11 @@ final class RitualHarness
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players, $threshold);
         $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold);
+        $this->clock = new FrozenClock();
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, clock: $this->clock);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
-        $this->clock = new FrozenClock();
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
         $this->flyers = new FlyerService(
             new FlyerFactory(
