@@ -1,0 +1,54 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "http_server": {
+    "port": 8000
+  },
+  "client": {
+    "allowed_origins": [],
+    "proxy": {
+      "connect": {
+        "enabled": true,
+        "endpoint": "grpc://app:10001",
+        "timeout": "3s"
+      }
+    }
+  },
+  "rpc": {
+    "proxy": {
+      "endpoint": "grpc://app:10001",
+      "timeout": "3s"
+    },
+    "without_namespace": {
+      "proxy_enabled": true
+    }
+  },
+  "channel": {
+    "without_namespace": {
+      "allow_subscribe_for_client": false,
+      "allow_subscribe_for_anonymous": false,
+      "allow_publish_for_client": false,
+      "allow_publish_for_subscriber": false,
+      "allow_publish_for_anonymous": false,
+      "allow_history_for_client": false,
+      "allow_presence_for_client": false
+    }
+  },
+  "http_api": {
+    "disabled": true
+  },
+  "grpc_api": {
+    "enabled": true,
+    "port": 10000
+  },
+  "prometheus": {
+    "enabled": true
+  },
+  "health": {
+    "enabled": true
+  },
+  "admin": {
+    "enabled": false
+  }
+}
