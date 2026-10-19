@@ -32,6 +32,33 @@ final class TransitionHandlerTest
         Assert::same($ritual->counters()[RitualMetrics::PUMPKIN_STAGE . '{pumpkin-1}'], 1.0);
     }
 
+    public function thePlayerOfTheJobThatRunsFinishedThePumpkin(): void
+    {
+        $ritual = new RitualHarness(threshold: 2);
+        $ritual->click('pumpkin-1', 1, 'aaaaaaaaaaaaaaaa');
+        $ritual->click('pumpkin-1', 1, 'bbbbbbbbbbbbbbbb');
+        $ritual->click('pumpkin-1', 1, 'aaaaaaaaaaaaaaaa');
+
+        $ritual->runJobs();
+
+        Assert::same(\array_column($ritual->broadcast->ofType('pumpkin'), 'player'), [
+            ['id' => 'bbbbbbbbbbbbbbbb', 'name' => null],
+        ]);
+        Assert::same($ritual->playerStore->find('bbbbbbbbbbbbbbbb')?->finished, 1);
+        Assert::same($ritual->playerStore->find('aaaaaaaaaaaaaaaa')?->finished, 0);
+        Assert::same($ritual->playerStore->find('aaaaaaaaaaaaaaaa')?->clicks, 2);
+    }
+
+    public function anonymousTransitionCarriesNoPlayer(): void
+    {
+        $ritual = new RitualHarness(threshold: 1);
+        $ritual->click('pumpkin-1');
+
+        $ritual->runJobs();
+
+        Assert::false(\array_key_exists('player', $ritual->broadcast->ofType('pumpkin')[0]));
+    }
+
     public function duplicateTransitionChangesNothing(): void
     {
         $ritual = new RitualHarness(threshold: 2);

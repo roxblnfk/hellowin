@@ -6,6 +6,7 @@ namespace App\Application\Hellowin\Job;
 
 use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
+use App\Domain\Player\PlayerId;
 use Spiral\Idempotency\Attribute\Idempotent;
 use Spiral\Queue\JobHandler;
 
@@ -16,8 +17,8 @@ use Spiral\Queue\JobHandler;
 #[Idempotent(storage: 'transitions', key: 'payload.key')]
 final class TransitionPumpkin extends JobHandler
 {
-    public function invoke(int $round, string $pumpkin, int $toStage, TransitionHandler $transitions): void
+    public function invoke(int $round, string $pumpkin, int $toStage, TransitionHandler $transitions, ?string $player = null): void
     {
-        $transitions->pumpkin($round, $pumpkin, $toStage);
+        $transitions->pumpkin($round, $pumpkin, $toStage, PlayerId::isValid($player) ? $player : null);
     }
 }

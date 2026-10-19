@@ -35,13 +35,18 @@ final readonly class TransitionQueue
         return \sprintf('%d:scene:%d', $round, $toScene);
     }
 
-    public function pumpkin(int $round, string $pumpkin, int $toStage): void
+    /**
+     * @param non-empty-string|null $player Player of the click that queues the job; not part of the key, so
+     *        of the duplicates the one that runs decides who finished the pumpkin.
+     */
+    public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null): void
     {
         $this->queue->push(TransitionPumpkin::class, [
             'key' => self::pumpkinKey($round, $pumpkin, $toStage),
             'round' => $round,
             'pumpkin' => $pumpkin,
             'toStage' => $toStage,
+            'player' => $player,
         ]);
         $this->metrics->jobPushed(RitualMetrics::KIND_PUMPKIN);
     }

@@ -1,7 +1,7 @@
 # Движок (backend)
 
-Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики.
-Кто запускает сброс и игроки — **запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
+Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
+игроки и их статистика. Кто запускает сброс, летуны и таблица лидеров — **запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
 
 ## Классы
 
@@ -15,24 +15,28 @@
 | Сброс | `Application/Hellowin/ResetService`, консоль `hellowin:reset` (`Endpoint/Console/ResetCommand`) |
 | Снимок для страницы и RPC `state` | `Application/Hellowin/SnapshotFactory` |
 | События канала | `Application/Hellowin/ChannelPublisher` |
+| Игроки: id из секрета, имя, запись в KV | `Domain/Player/PlayerId`, `PlayerName`, `PlayerStore`, `Application/Player/PlayerService` |
+| Локи нескольких ресурсов | `Domain/Lock/Locks` |
 
 ## Поток клика
 
-1. RPC `click {element}` → `RPCService` проверяет элемент по реестру.
+1. RPC `click {element}` → `RPCService` проверяет элемент по реестру; игрок — `user` подключения (`publicId` или пусто).
 2. Метрика `hellowin_clicks_total{type,element}`.
 3. Под RR-локом `pumpkin:{id}`: `clicks + 1` в KV; под тем же локом читаются `round` и `scene`.
-4. Публикация `click` в канал.
-5. Если политика разрешает переход (`clicks >= HELLOWIN_CLICKS_PER_STAGE` и `stage < stageMax(scene)`) — задача
-   `TransitionPumpkin {key, round, pumpkin, toStage}` в очередь, метрика
+4. Статистика игрока: под RR-локом `player:{id}` `clicks + 1` (анонимный клик — пропуск). Сбой статистики пишется
+   в лог и не ломает клик.
+5. Публикация `click` в канал (с `player`, если он есть).
+6. Если политика разрешает переход (`clicks >= HELLOWIN_CLICKS_PER_STAGE` и `stage < stageMax(scene)`) — задача
+   `TransitionPumpkin {key, round, pumpkin, toStage, player}` в очередь, метрика
    `hellowin_transition_jobs_pushed_total{kind="pumpkin"}`. Ставится на **каждом** таком клике, пока переход
-   не выполнен: дубли намеренные.
+   не выполнен: дубли намеренные. `player` — вне ключа: из дублей выполняется один, его игрок и «добил» тыкву.
 
 ## Переходы
 
 - **Тыква.** Обработчик `TransitionPumpkin` помечен `#[Idempotent(storage: 'transitions', key: 'payload.key')]`
   (пакет `spiral/idempotency`), ключ в payload — `{round}:{pumpkin}:{toStage}`. Внутри: RR-лок `pumpkin:{id}` →
   доменная проверка (`round` текущий и `stage == toStage - 1`) → `stage = toStage`, `clicks = 0` → лок отпущен →
-  публикация `pumpkin` → `hellowin_transitions_total{kind="pumpkin"}`, `hellowin_pumpkin_stage{element}` → проверка
+  `finished + 1` игроку из payload → публикация `pumpkin` (с `player`) → `hellowin_transitions_total{kind="pumpkin"}`, `hellowin_pumpkin_stage{element}` → проверка
   политики сцены по снимку → при необходимости задача `TransitionScene` (`pushed{kind="scene"}`).
 - **Сцена.** `TransitionScene {key, round, toScene}`, ключ `{round}:scene:{toScene}`, тоже `#[Idempotent]`. RR-лок
   `scene` → проверка (`round` текущий и `scene == toScene - 1`) → `scene = toScene` → публикация `scene` (со `stageMax`
@@ -63,8 +67,9 @@
 | Что | Где | Через |
 |---|---|---|
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks}`) | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза

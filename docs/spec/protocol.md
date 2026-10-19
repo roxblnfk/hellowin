@@ -1,8 +1,9 @@
 # Протокол клиент ↔ сервер
 
 Статус: подключение, RPC `click` и `state`, события `click`, `pumpkin`, `scene`, `reset`, снимок состояния
-(со `stageMax` и `size`) — **реализовано** на backend; разметка главной на переменных снимка — у фронтенда; всё про
-игроков — **запланировано**.
+(со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
+**реализовано** на backend; разметка главной на переменных снимка — у фронтенда; летуны и таблица лидеров —
+**запланировано**.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -13,7 +14,9 @@
 2. Centrifugo вызывает connect proxy → `ConnectService`. Сервер сам подписывает клиента на канал `hellowin`
    (server-side subscription): клиент **не** вызывает `subscribe`, а слушает `centrifuge.on('publication', …)`.
 3. Клиентам запрещено публиковать в канал и подписываться на другие каналы.
-4. Запланировано: в `data` подключения браузер передаёт `{playerSecret}` — см. [`players.md`](players.md).
+4. В `data` подключения браузер передаёт `{playerSecret}` — секрет из `localStorage`
+   (`new Centrifuge(url, {data: {playerSecret}})`). Сервер отвечает `user: publicId`; без секрета подключение анонимное.
+   Подробности — [`players.md`](players.md).
 
 ## RPC
 
@@ -23,11 +26,18 @@
 |---|---|---|---|
 | `click` | `{element}` | `{ok:true}` | реализовано |
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
-| `register` | `{name}` | `{ok:true, player:{id,name}}` | запланировано |
+| `register` | `{name}` | `{ok:true, player: <Player>}` | реализовано |
+| `me` | `{}` | `{ok:true, player: <Player>}`, `player` — `null` у анонима и у игрока без действий; своя статистика при загрузке | реализовано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит или улетел) | запланировано |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
-`invalid name`.
+`invalid name` и `anonymous` (подключение без секрета).
+
+`Player` — `{id, name, clicks, finished, flyers, points}`: `id` — публичный id, `name` — `null` до `register`.
+
+```json
+{"ok":true,"player":{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":0,"points":0}}
+```
 
 ## События канала `hellowin`
 
@@ -44,14 +54,17 @@
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна (запланировано) |
 | `leaderboard` | `top: [{id, name, clicks, finished}]` | периодически; запланировано |
 
-`player` — `{id, name}` публичного игрока (запланировано). `emoji` сервер выбирает из набора emoji элемента — фронтенд
+`player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
+`emoji` сервер выбирает из набора emoji элемента — фронтенд
 может использовать его или игнорировать.
 
 Примеры:
 
 ```json
 {"type":"click","round":1,"element":"pumpkin-3","emoji":"🕸️","clicks":4,"threshold":5,"stage":0}
+{"type":"click","round":1,"element":"pumpkin-3","emoji":"🎃","clicks":5,"threshold":5,"stage":0,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":1}
+{"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
 {"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
 {"type":"flyer","round":1,"flyer":"f-812","kind":"duck","depth":0,"from":{"x":-5,"y":18},"to":{"x":105,"y":10},"duration":9000,"points":3}

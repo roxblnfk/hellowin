@@ -11,6 +11,7 @@ use RoadRunner\Centrifugal\Proxy\DTO\V1\RPCResponse;
 use RoadRunner\Centrifugo\Request\RPC;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataSet;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Tests\Fake\FakeLock;
@@ -22,6 +23,8 @@ use Tests\Fake\SpyWorker;
 #[Covers(SnapshotFactory::class)]
 final class RPCServiceTest
 {
+    private const PLAYER = '0123456789abcdef';
+
     private SpyWorker $worker;
 
     public function clickIsAccepted(): void
@@ -92,22 +95,102 @@ final class RPCServiceTest
         ]]);
     }
 
+    public function clickOfAPlayerIsAttributed(): void
+    {
+        $ritual = new RitualHarness();
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER);
+
+        Assert::same($ritual->broadcast->ofType('click')[0]['player'], ['id' => self::PLAYER, 'name' => null]);
+        Assert::same($ritual->playerStore->find(self::PLAYER)?->clicks, 1);
+    }
+
+    public function anonymousClickCarriesNoPlayer(): void
+    {
+        $ritual = new RitualHarness();
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1']);
+
+        Assert::false(\array_key_exists('player', $ritual->broadcast->ofType('click')[0]));
+        Assert::blank($ritual->playerStore->ids());
+    }
+
+    public function registerNamesThePlayer(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->click('pumpkin-1', 2, self::PLAYER);
+
+        $response = $this->call($ritual, 'register', ['name' => '  Jack O. Lantern '], self::PLAYER);
+
+        Assert::same($response, ['ok' => true, 'player' => [
+            'id' => self::PLAYER,
+            'name' => 'Jack O. Lantern',
+            'clicks' => 2,
+            'finished' => 0,
+            'flyers' => 0,
+            'points' => 0,
+        ]]);
+    }
+
+    #[DataSet([''], 'empty')]
+    #[DataSet(['   '], 'spaces')]
+    #[DataSet(['---'], 'punctuation only')]
+    #[DataSet(['<script>'], 'markup')]
+    #[DataSet(['a  b'], 'double space')]
+    #[DataSet(['abcdefghijklmnopqrstuvwxy'], 'too long')]
+    #[DataSet([42], 'number')]
+    #[DataSet([null], 'missing')]
+    public function registerRejectsAnInvalidName(mixed $name): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'register', ['name' => $name], self::PLAYER);
+
+        Assert::same($response, ['ok' => false, 'error' => 'invalid name']);
+        Assert::null($ritual->playerStore->find(self::PLAYER));
+    }
+
+    public function anonymousConnectionCannotRegister(): void
+    {
+        $response = $this->call(new RitualHarness(), 'register', ['name' => 'Jack']);
+
+        Assert::same($response, ['ok' => false, 'error' => 'anonymous']);
+    }
+
+    public function meReturnsTheStatistics(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->click('pumpkin-2', 3, self::PLAYER);
+
+        $response = $this->call($ritual, 'me', [], self::PLAYER);
+
+        Assert::same($response['player']['clicks'] ?? null, 3);
+    }
+
+    public function meIsNullForAnUnknownOrAnonymousPlayer(): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null]);
+        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null]);
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
         $this->worker = new SpyWorker();
     }
 
-    private function call(RitualHarness $ritual, string $method, array $params): array
+    private function call(RitualHarness $ritual, string $method, array $params, string $user = ''): array
     {
-        $service = new RPCService($ritual->clicks, $ritual->snapshot, new NullLogger());
+        $service = new RPCService($ritual->clicks, $ritual->snapshot, $ritual->players, new NullLogger());
         $service->handle(new RPC(
             worker: $this->worker,
             client: 'client-1',
             transport: 'websocket',
             protocol: 'json',
             encoding: 'json',
-            user: '',
+            user: $user,
             method: $method,
             meta: [],
             data: $params,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
 use Spiral\Broadcasting\BroadcastInterface;
 
@@ -23,9 +24,9 @@ final readonly class ChannelPublisher
     /**
      * @param positive-int $threshold
      */
-    public function click(int $round, Pumpkin $pumpkin, string $emoji, int $threshold): void
+    public function click(int $round, Pumpkin $pumpkin, string $emoji, int $threshold, ?Player $player = null): void
     {
-        $this->publish([
+        $this->publish(self::withPlayer([
             'type' => 'click',
             'round' => $round,
             'element' => $pumpkin->id,
@@ -33,12 +34,15 @@ final readonly class ChannelPublisher
             'clicks' => $pumpkin->clicks,
             'threshold' => $threshold,
             'stage' => $pumpkin->stage,
-        ]);
+        ], $player));
     }
 
-    public function pumpkin(int $round, Pumpkin $pumpkin): void
+    public function pumpkin(int $round, Pumpkin $pumpkin, ?Player $player = null): void
     {
-        $this->publish(['type' => 'pumpkin', 'round' => $round, 'element' => $pumpkin->id, 'stage' => $pumpkin->stage]);
+        $this->publish(self::withPlayer(
+            ['type' => 'pumpkin', 'round' => $round, 'element' => $pumpkin->id, 'stage' => $pumpkin->stage],
+            $player,
+        ));
     }
 
     public function scene(int $round, int $scene, int $stageMax): void
@@ -49,6 +53,16 @@ final readonly class ChannelPublisher
     public function reset(int $round): void
     {
         $this->publish(['type' => 'reset', 'round' => $round]);
+    }
+
+    /**
+     * Anonymous actions carry no `player` field at all.
+     */
+    private static function withPlayer(array $message, ?Player $player): array
+    {
+        $player === null or $message['player'] = $player->ref();
+
+        return $message;
     }
 
     private function publish(array $message): void

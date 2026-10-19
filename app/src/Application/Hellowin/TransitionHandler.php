@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Player\PlayerService;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -21,20 +22,22 @@ final readonly class TransitionHandler
         private TransitionQueue $queue,
         private ChannelPublisher $publisher,
         private RitualMetrics $metrics,
+        private PlayerService $players,
     ) {}
 
     /**
+     * @param non-empty-string|null $player Player of the click that queued the transition: it finished the pumpkin.
      * @return bool Whether the pumpkin moved.
      * @throws RitualBusyException
      */
-    public function pumpkin(int $round, string $pumpkin, int $toStage): bool
+    public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null): bool
     {
         $moved = $this->store->advancePumpkin($round, $pumpkin, $toStage);
         if ($moved === null) {
             return false;
         }
 
-        $this->publisher->pumpkin($round, $moved);
+        $this->publisher->pumpkin($round, $moved, $this->players->finishedPumpkin($player));
         $this->metrics->pumpkinMoved($moved);
 
         $ritual = $this->store->snapshot();

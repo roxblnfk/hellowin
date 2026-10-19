@@ -10,8 +10,11 @@ use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Player\PlayerService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
+use App\Domain\Lock\Locks;
+use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -41,6 +44,11 @@ final class HellowinBootloader extends Bootloader
                 $lock,
                 \array_map(static fn(Element $element): string => $element->id, $elements->all()),
             ),
+            PlayerStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): PlayerStore => new PlayerStore($cache->storage($config->getStorage()), new Locks($lock)),
             RitualPolicy::class => static fn(HellowinConfig $config): RitualPolicy
                 => new LockstepPolicy($config->getClicksPerStage(), $config->getSceneStageMax()),
             ClickHandler::class => static fn(
@@ -51,6 +59,7 @@ final class HellowinBootloader extends Bootloader
                 TransitionQueue $transitions,
                 RitualMetrics $metrics,
                 ChannelPublisher $publisher,
+                PlayerService $players,
             ): ClickHandler => new ClickHandler(
                 $elements,
                 $store,
@@ -58,6 +67,7 @@ final class HellowinBootloader extends Bootloader
                 $transitions,
                 $metrics,
                 $publisher,
+                $players,
                 $config->getClicksPerStage(),
             ),
             SnapshotFactory::class => static fn(

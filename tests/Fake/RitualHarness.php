@@ -13,8 +13,11 @@ use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Player\PlayerService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
+use App\Domain\Lock\Locks;
+use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use Psr\Log\NullLogger;
@@ -34,6 +37,9 @@ final class RitualHarness
     public readonly TransitionHandler $transitions;
     public readonly ResetService $reset;
     public readonly SnapshotFactory $snapshot;
+    public readonly PlayerStore $playerStore;
+    public readonly PlayerService $players;
+    public readonly ArrayStorage $storage;
 
     /**
      * @param positive-int $threshold
@@ -54,22 +60,25 @@ final class RitualHarness
             static fn(string $id): Element => new Element($id, 'pumpkin', 10, 20, ['🎃']),
             $pumpkins,
         ));
-        $this->store = new RitualStore(new ArrayStorage(), $this->lock, $pumpkins);
+        $this->storage = new ArrayStorage();
+        $this->store = new RitualStore($this->storage, $this->lock, $pumpkins);
+        $this->playerStore = new PlayerStore($this->storage, new Locks($this->lock));
+        $this->players = new PlayerService($this->playerStore, new NullLogger());
         $policy = new LockstepPolicy($threshold, $stageMax);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
         $publisher = new ChannelPublisher($this->broadcast, 'hellowin');
         $queue = new TransitionQueue($this->queue, $metrics);
 
-        $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $threshold);
-        $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics);
+        $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players, $threshold);
+        $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold);
     }
 
-    public function click(string $pumpkin, int $times = 1): void
+    public function click(string $pumpkin, int $times = 1, ?string $player = null): void
     {
         for ($i = 0; $i < $times; ++$i) {
-            $this->clicks->click($pumpkin);
+            $this->clicks->click($pumpkin, $player);
         }
     }
 
@@ -82,7 +91,7 @@ final class RitualHarness
         while ($job = \array_shift($this->queue->pushed)) {
             $payload = $job['payload'];
             match ($job['name']) {
-                TransitionPumpkin::class => $this->transitions->pumpkin($payload['round'], $payload['pumpkin'], $payload['toStage']),
+                TransitionPumpkin::class => $this->transitions->pumpkin($payload['round'], $payload['pumpkin'], $payload['toStage'], $payload['player'] ?? null),
                 TransitionScene::class => $this->transitions->scene($payload['round'], $payload['toScene']),
             };
         }

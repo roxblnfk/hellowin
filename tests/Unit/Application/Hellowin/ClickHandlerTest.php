@@ -53,7 +53,7 @@ final class ClickHandlerTest
 
         $ritual->click('pumpkin-1', 5);
 
-        $key = ['key' => '1:pumpkin-1:1', 'round' => 1, 'pumpkin' => 'pumpkin-1', 'toStage' => 1];
+        $key = ['key' => '1:pumpkin-1:1', 'round' => 1, 'pumpkin' => 'pumpkin-1', 'toStage' => 1, 'player' => null];
         Assert::same($ritual->queue->payloads(TransitionPumpkin::class), [$key, $key, $key]);
         Assert::same($ritual->counters()[RitualMetrics::JOBS_PUSHED . '{pumpkin}'], 3.0);
     }
