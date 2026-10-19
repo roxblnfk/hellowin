@@ -15,7 +15,7 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one, ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -228,6 +228,7 @@
     const initial = engineSnapshot();
     const resetAt = Number.parseInt(params.get('reset') ?? '-1', 10);
     const flyersOn = params.get('flyers') === '1';
+    const shotAt = Math.round((Number.parseInt(params.get('shotAt') ?? '896', 10) || 896) / 16) * 16;
     function simulate() {
         Object.assign(engine, structuredClone(initial));
         queue.length = 0;
@@ -243,13 +244,14 @@
                 nextClick += 70;
             }
             if (simTime === resetAt) engineReset();
-            // ?flyers=1: one flyer per depth right away (the near one from a bush), the middle one is shot at 900 ms.
+            // ?flyers=1: one flyer per depth right away (the near one from a bush); ?shoot=N (default 1) is shot at ?shotAt=ms (default 896, a multiple of 16).
             if (flyersOn && simTime === 0) {
-                engineFlyer({ depth: 0, bush: false, ltr: true });
-                target = engineFlyer({ depth: 1, bush: false, ltr: false });
-                engineFlyer({ depth: 2, bush: 'bush-1' });
+                const launched = [engineFlyer({ depth: 0, bush: false, ltr: true }),
+                    engineFlyer({ depth: 1, bush: false, ltr: false }),
+                    engineFlyer({ depth: 2, bush: 'bush-1' })];
+                target = launched[Math.min(2, Math.max(0, Number.parseInt(params.get('shoot') ?? '1', 10) || 0))];
             }
-            if (flyersOn && simTime === 896) engineShoot(target);
+            if (flyersOn && simTime === shotAt) engineShoot(target);
             queue.sort((a, b) => a.at - b.at);
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);

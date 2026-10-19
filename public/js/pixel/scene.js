@@ -366,6 +366,7 @@ export async function createScene(rootEl, snapshot) {
 
     // Far plan above the horizon, then the lawn and the dug patch seen from a low camera: furrows converge toward a
     // vanishing point above the horizon, mowing lines crowd together into the distance, weeds shrink and thin out.
+    let ridge = [];
     function drawBase() {
         const { artW, artH, horizon } = layout;
         const c = canvas(artW, artH);
@@ -383,6 +384,13 @@ export async function createScene(rootEl, snapshot) {
             farTrees.push({ def: DECOR.farTree[Math.floor(random() * DECOR.farTree.length)], x, y: horizon - Math.floor(random() * 2) });
         }
         farTrees.sort((a, b) => a.y - b.y).forEach((t) => stamp(ctx, t.def, t.x, t.y));
+        // Top of the far plan per column: a shot far bird drops behind the hills there instead of over the patch.
+        const far = ctx.getImageData(0, 0, artW, horizon).data;
+        ridge = Array.from({ length: artW }, (_, x) => {
+            let y = 0;
+            while (y < horizon && far[(y * artW + x) * 4 + 3] === 0) y++;
+            return y;
+        });
 
         const image = ctx.createImageData(artW, artH - horizon);
         const rgb = (key) => [(PALETTE[key] >> 16) & 255, (PALETTE[key] >> 8) & 255, PALETTE[key] & 255];
@@ -838,10 +846,13 @@ export async function createScene(rootEl, snapshot) {
                 f.pos = pathAt(f, clamp(local / f.duration, 0, 1));
                 art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length], f.depth === 0);
             } else {
-                // Hit frame, then a tumble that falls off the bottom of the screen.
+                // Hit frame, then a tumble down: far birds fall behind the hills, the nearer ones off the screen.
                 const fall = (clock - f.shotAt) / 1000;
                 f.pos = { x: f.shotPos.x + f.drift * fall, y: f.shotPos.y + 130 * fall * fall };
-                if (f.pos.y > layout.artH + 30) {
+                const floor = f.depth === 0
+                    ? Math.max(ridge[clamp(Math.round(f.pos.x), 0, ridge.length - 1)] ?? layout.horizon, f.shotPos.y + 2)
+                    : layout.artH + 30;
+                if (f.pos.y > floor) {
                     f.sprite.destroy();
                     flyers.delete(id);
                     continue;
