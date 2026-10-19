@@ -121,8 +121,10 @@
 
 Очередь подключена по скиллу пакета: `QueueIdempotencyBootloader`, `transports.queue` = `QueueRetryMiddleware`,
 `QueueKeyMiddleware`; в `app/config/queue.php` `interceptors.consume` — `ErrorHandlerInterceptor`,
-`RetryPolicyInterceptor`, `IdempotencyInterceptor` (retry снаружи: занятый ключ → `RetryableLockException` → задача
-возвращается в очередь с задержкой).
+`RetryPolicyInterceptor`, `IdempotencyInterceptor` (retry снаружи). У AtMostOnce-хранилища занятый ключ — это дубль:
+claim возвращает nil, обработчик не вызывается, задача подтверждается. Путь `LockedException` →
+`RetryableLockException` → повтор с задержкой относится к lease-хранилищам (AtLeastOnce) и сработает, только если
+alias `transitions` переключить обратно на `RedisLeaseConfig`.
 
 ## Хранилища
 

@@ -1,6 +1,6 @@
 # Инфраструктура
 
-Статус: **реализовано**, включая сервис `valkey` и очередь RR jobs.
+Статус: **реализовано**, включая сервис `valkey`, очередь RR jobs и процесс `ticker`.
 
 ## Сервисы (`docker-compose.yml`)
 
@@ -23,14 +23,16 @@ nginx: `/connection/` → `centrifugo:8000` (upgrade), `/grafana/` → `grafana:
 - PHP-воркеры → плагины RoadRunner (kv, lock, jobs, metrics, centrifuge) по goridge RPC `127.0.0.1:6001`.
 - RoadRunner KV (драйвер `redis`) → `valkey:6379` (`VALKEY_ADDR`); PHP → `valkey` напрямую только для ключей
   идемпотентности (predis, `VALKEY_DSN`). `app` стартует после healthy `valkey`.
-- Пулы воркеров: http (2), centrifuge (2), jobs (2, pipeline `transitions`).
+- Пулы воркеров: http (2), centrifuge (2), jobs (2, pipeline `transitions`). Отдельно плагин `service` держит один
+  долгоживущий процесс `ticker` (`php app.php hellowin:ticker`): летуны и таблица лидеров, см. `engine.md`.
 - HTTP-middleware RoadRunner выполняются слева направо: `http_metrics`, `gzip`, `static` — `gzip` перед `static`,
   чтобы сжималась и статика.
 - Prometheus скрейпит `app:2112` и `centrifugo:8000/metrics` раз в 5 с.
 - Grafana: datasource и дашборд «Hellowin» через provisioning (`docker/grafana/`), анонимы — роль Viewer (публичный
   read-only), дашборд домашний; админ — `GF_SECURITY_ADMIN_PASSWORD` (по умолчанию `admin`, для публичного
   развёртывания задать). Разделы дашборда: игра (клики, сцена, раунд), переходы (задачи в очереди против выполненных
-  по `kind`, «отсечённые дубли» = pushed − transitions, стадии тыкв), Centrifugo, RoadRunner.
+  по `kind`, «отсечённые дубли» = pushed − transitions, стадии тыкв), игроки, летуны (запущено / сбито / улетело по
+  глубине, процент попаданий), Centrifugo, RoadRunner.
 
 ## Режимы
 
