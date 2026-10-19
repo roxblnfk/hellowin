@@ -1,0 +1,16 @@
+<?php
+
+declare(strict_types=1);
+
+// Lives next to the isolated php-cs-fixer install in tools/code-style/; source paths reach the project root via ../../.
+require_once __DIR__ . '/vendor/autoload.php';
+
+return \Spiral\CodeStyle\Builder::create()
+    ->include(__DIR__ . '/../../app/src')
+    ->include(__DIR__ . '/../../app/config')
+    ->include(__DIR__ . '/../../tests')
+    ->include(__DIR__ . '/../../app.php')
+    ->include(__FILE__)
+    ->cache(__DIR__ . '/../../runtime/php-cs-fixer.cache')
+    ->allowRisky(false)
+    ->build();

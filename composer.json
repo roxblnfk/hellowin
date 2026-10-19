@@ -22,10 +22,10 @@
         "spiral/stempler-bridge": "^3.15"
     },
     "require-dev": {
-        "spiral/code-style": "^2.2",
+        "bamarni/composer-bin-plugin": "^1.8",
+        "spiral/dumper": "^3.3.1",
         "spiral/testing": "^3.0",
-        "vimeo/psalm": "^6.10",
-        "spiral/dumper": "^3.3.1"
+        "vimeo/psalm": "^6.10"
     },
     "autoload": {
         "psr-4": {
@@ -38,12 +38,18 @@
         }
     },
     "extra": {
-        "publish-cmd": "php app.php publish"
+        "publish-cmd": "php app.php publish",
+        "bamarni-bin": {
+            "bin-links": true,
+            "forward-command": false,
+            "target-directory": "tools"
+        }
     },
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "spiral/composer-publish-plugin": true
+            "spiral/composer-publish-plugin": true,
+            "bamarni/composer-bin-plugin": true
         }
     },
     "scripts": {
@@ -55,7 +61,8 @@
         ],
         "rr:download": "rr get-binary",
         "rr:download-protoc": "rr download-protoc-binary",
-        "cs:fix": "php-cs-fixer fix -v",
+        "cs:diff": "php-cs-fixer fix --dry-run -v --diff --config=tools/code-style/.php-cs-fixer.dist.php",
+        "cs:fix": "php-cs-fixer fix -v --config=tools/code-style/.php-cs-fixer.dist.php",
         "psalm": "psalm",
         "psalm:baseline": "psalm --set-baseline=psalm-baseline.xml",
         "test": "phpunit",
