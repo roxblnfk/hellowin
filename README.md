@@ -1,7 +1,7 @@
 # Hellowin
 
-Демо вебсокетов и каналов на Spiral Framework, RoadRunner 3 и Centrifugo. Архитектура — в
-[`docs/architecture.md`](docs/architecture.md).
+Демо вебсокетов и каналов на Spiral Framework, RoadRunner 3 и Centrifugo. Контекст для агентов — [`AGENTS.md`](AGENTS.md), спецификации — в
+[`docs/spec/`](docs/spec/).
 
 ## Запуск
 
