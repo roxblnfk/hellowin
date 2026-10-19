@@ -44,7 +44,7 @@ final class RoutesBootloader extends BaseRoutesBootloader
             'web' => [
                 CookiesMiddleware::class,
                 SessionMiddleware::class,
-                CsrfMiddleware::class
+                CsrfMiddleware::class,
             ],
         ];
     }
