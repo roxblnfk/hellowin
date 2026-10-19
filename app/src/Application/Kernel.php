@@ -7,14 +7,10 @@ namespace App\Application;
 use Spiral\Boot\Bootloader\CoreBootloader;
 use Spiral\Bootloader as Framework;
 use Spiral\Bootloader\Http\HttpBootloader;
-use Spiral\Debug\Bootloader\DumperBootloader;
 use Spiral\DotEnv\Bootloader\DotenvBootloader;
 use Spiral\Monolog\Bootloader\MonologBootloader;
 use Spiral\Nyholm\Bootloader\NyholmBootloader;
-use Spiral\Prototype\Bootloader\PrototypeBootloader;
 use Spiral\RoadRunnerBridge\Bootloader as RoadRunnerBridge;
-use Spiral\Sapi\Bootloader\SapiBootloader;
-use Spiral\Scaffolder\Bootloader\ScaffolderBootloader;
 use Spiral\Stempler\Bootloader\StemplerBootloader;
 use Spiral\Tokenizer\Bootloader\TokenizerListenerBootloader;
 use Spiral\Views\Bootloader\ViewsBootloader;
@@ -32,8 +28,6 @@ class Kernel extends \Spiral\Framework\Kernel
             CoreBootloader::class,
             DotenvBootloader::class,
             TokenizerListenerBootloader::class,
-
-            DumperBootloader::class,
         ];
     }
 
@@ -45,61 +39,28 @@ class Kernel extends \Spiral\Framework\Kernel
             MonologBootloader::class,
             YiiErrorHandlerBootloader::class,
             Bootloader\ExceptionHandlerBootloader::class,
-
-            // Application specific logs
             Bootloader\LoggingBootloader::class,
+            Framework\SnapshotsBootloader::class,
 
             // RoadRunner
             RoadRunnerBridge\LoggerBootloader::class,
             RoadRunnerBridge\HttpBootloader::class,
+            RoadRunnerBridge\MetricsBootloader::class,
 
-            // Core Services
-            Framework\SnapshotsBootloader::class,
-
-            // Security and validation
-            Framework\Security\EncrypterBootloader::class,
-            Framework\Security\FiltersBootloader::class,
-            Framework\Security\GuardBootloader::class,
-
-            // HTTP extensions
+            // HTTP
             HttpBootloader::class,
             Framework\Http\RouterBootloader::class,
-            Framework\Http\JsonPayloadsBootloader::class,
-            Framework\Http\CookiesBootloader::class,
-            Framework\Http\SessionBootloader::class,
-            Framework\Http\CsrfBootloader::class,
-            Framework\Http\PaginationBootloader::class,
+            NyholmBootloader::class,
 
             // Views
             ViewsBootloader::class,
             StemplerBootloader::class,
 
-            NyholmBootloader::class,
-
-            SapiBootloader::class,
-
-            RoadRunnerBridge\MetricsBootloader::class,
-
             // Console commands
             Framework\CommandBootloader::class,
             RoadRunnerBridge\CommandBootloader::class,
-            ScaffolderBootloader::class,
-            RoadRunnerBridge\ScaffolderBootloader::class,
 
-            // Fast code prototyping
-            PrototypeBootloader::class,
-
-            // Configure route groups, middleware for route groups
             Bootloader\RoutesBootloader::class,
-        ];
-    }
-
-    #[\Override]
-    public function defineAppBootloaders(): array
-    {
-        return [
-            // Application domain
-            Bootloader\AppBootloader::class,
         ];
     }
 }

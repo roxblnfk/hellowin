@@ -4,34 +4,18 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Web;
 
-use Exception;
-use Spiral\Prototype\Traits\PrototypeTrait;
 use Spiral\Router\Annotation\Route;
+use Spiral\Views\ViewsInterface;
 
-/**
- * Simple home page controller. It renders home page template and also provides
- * an example of exception page.
- */
-final class HomeController
+final readonly class HomeController
 {
-    /**
-     * Read more about Prototyping:
-     * @link https://spiral.dev/docs/basics-prototype/#installation
-     */
-    use PrototypeTrait;
+    public function __construct(
+        private ViewsInterface $views,
+    ) {}
 
-    #[Route(route: '/', name: 'index')]
+    #[Route(route: '/', name: 'index', methods: ['GET'])]
     public function index(): string
     {
         return $this->views->render('home');
-    }
-
-    /**
-     * Example of exception page.
-     */
-    #[Route(route: '/exception', name: 'exception')]
-    public function exception(): never
-    {
-        throw new \Exception('This is a test exception.');
     }
 }

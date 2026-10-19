@@ -5,14 +5,10 @@ declare(strict_types=1);
 namespace Tests;
 
 use Spiral\Core\Container;
-use Spiral\Testing\Attribute\Config;
 use Spiral\Testing\TestableKernelInterface;
 use Spiral\Testing\TestCase as BaseTestCase;
-use Spiral\Translator\TranslatorInterface;
-use Testo\Lifecycle\BeforeTest;
 use Tests\App\TestKernel;
 
-#[Config('session.handler', null)]
 abstract class TestCase extends BaseTestCase
 {
     public const ENV = [
@@ -44,15 +40,5 @@ abstract class TestCase extends BaseTestCase
         return [
             'root' => $root,
         ];
-    }
-
-    #[BeforeTest]
-    protected function setDefaultLocale(): void
-    {
-        $container = $this->getContainer();
-
-        if ($container->has(TranslatorInterface::class)) {
-            $container->get(TranslatorInterface::class)->setLocale('en');
-        }
     }
 }
