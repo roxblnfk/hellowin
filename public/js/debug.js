@@ -50,7 +50,12 @@ export function initDebugPanel(panel, { reset, clickAll, visible }) {
         disarm();
         resetButton.disabled = true;
         reset()
-            .catch((error) => console.warn('reset failed', error))
+            .catch((error) => {
+                console.warn('reset failed', error);
+                // The server can turn the button off for a public event (HELLOWIN_RESET_RPC); say so on the button.
+                resetButton.textContent = error?.message === 'reset disabled' ? 'Сброс выключен' : 'Не вышло';
+                setTimeout(() => !armed && (resetButton.textContent = label), CONFIRM_MS);
+            })
             .finally(() => (resetButton.disabled = false));
     });
 
