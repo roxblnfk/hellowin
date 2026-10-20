@@ -13,7 +13,6 @@ import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
 import { CLINK, createClinks } from './clink.js';
-import { frankenHalo } from './finale.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
@@ -1119,14 +1118,12 @@ export async function createScene(rootEl, snapshot) {
         }
         p.ring.texture = a.ring;
         p.ring.position.set(-a.def.anchor.x - 1, -a.def.anchor.y - 1);
-        // A burning or charmed pumpkin lights the ground around it; in the cursed world in FrankenPHP's lime.
-        const lit = p.stage > LIT_STAGE && lighting !== 'day' && !dark;
+        // A burning or charmed pumpkin lights the ground around it; in the cursed world only its cut-outs glow.
+        const lit = p.stage > LIT_STAGE && lighting !== 'day' && !dark && toneOf() !== 'franken';
         p.halo.visible = lit;
         if (lit) {
             const [rx, ry] = HALO[p.size] ?? HALO.m;
-            p.halo.texture = toneOf() === 'franken'
-                ? defTexture(artTexture(`franken-halo:${rx}:${ry}`, () => frankenHalo(rx, ry)))
-                : defTexture(halo(rx, ry, lighting === 'sunset' ? 'warm' : lighting === 'blood' ? 'violet' : 'green'));
+            p.halo.texture = defTexture(halo(rx, ry, lighting === 'sunset' ? 'warm' : lighting === 'blood' ? 'violet' : 'green'));
         }
     }
 
