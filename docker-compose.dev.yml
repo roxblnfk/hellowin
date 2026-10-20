@@ -1,4 +1,4 @@
-# Development override: bind-mounts the source code and exposes internal services on localhost.
+# Development override: bind-mounts the source code and exposes Prometheus on localhost.
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -V
 # vendor/ lives in an anonymous volume filled from the image; -V refreshes it after composer.lock changes.
 # PHP code changes need a worker reset: docker compose exec app rr reset
@@ -17,10 +17,6 @@ services:
       - /app/vendor
     healthcheck:
       disable: true
-
-  centrifugo:
-    ports:
-      - "127.0.0.1:8000:8000"
 
   prometheus:
     ports:

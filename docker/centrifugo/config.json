@@ -3,10 +3,13 @@
     "level": "info"
   },
   "http_server": {
-    "port": 8000
+    "port": 8000,
+    "internal_port": "9000"
   },
   "client": {
     "allowed_origins": [],
+    "user_connection_limit": 10,
+    "connection_rate_limit": 100,
     "proxy": {
       "connect": {
         "enabled": true,
