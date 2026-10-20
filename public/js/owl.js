@@ -10,14 +10,14 @@
 export const LINES = {
     intro: { button: 'Начало', hoot: true, text: 'Ух-ху! Печальные вести: RoadRunner мёртв. Но есть древний ритуал на тыквах — он его вернёт. Беритесь за ножи!' },
     rules: { button: 'Правила', text: 'Кликайте по тыквам — каждый клик видят все. Летунов можно сбивать: очки идут в таблицу.' },
-    hurry: { button: 'Поторопить', text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!' },
+    hurry: { button: 'Поторопить', text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!', scenes: { 1: 'Свечи сами не зажгутся!', 2: 'Магия сама себя не наколдует!', 3: 'Круг сам себя не нарисует!' } },
     clues: { button: 'Улики', text: 'Странно… Тыквы отзываются слишком быстро — будто кто-то обрабатывает каждый ваш клик.' },
-    flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.' },
+    flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.', scenes: { 1: 'На закате птицы разлетелись. Все смотрят на тыквы.', 2: 'Летучие мыши! Сбивайте — но не забывайте про тыквы.', 3: 'Червяки… Даже земля здесь ползает. Давите!' } },
     outro: { button: 'Прощание', text: 'Спасибо, что пришли! Дверь не закрывайте: тут теперь живут зомби.' },
     'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 1: 'Костёр пылает. Ждём знака… ух-ху.', 2: 'Достаточно… сейчас рванёт!', 3: 'Круг замкнут. Сейчас что-то поднимется…' } },
     'scene-1': { auto: true, hoot: true, text: 'Солнце садится. Поджигайте тыквы — пусть горят до самой ночи!' },
-    'scene-2': { auto: true, hoot: true, text: 'Ночь. Вот теперь начинается настоящее колдовство… Что может пойти не так?' },
-    'scene-3': { auto: true, hoot: true, text: 'Ой. Луна… она что, покраснела? Кажется, ритуал пошёл не совсем по плану.' },
+    'scene-2': { auto: true, hoot: true, text: 'Ночь. Открывайте книги — заколдуйте тыквы! Что может пойти не так?' },
+    'scene-3': { auto: true, hoot: true, text: 'Кровавая луна! Всё идёт по плану, ух-ху! Рисуйте круг на пепелище — он почти здесь!' },
     'last-pumpkin': { auto: true, text: 'Последнюю тыкву добил {player}! Запомним героя.' },
     'bonfire-open': { auto: true, hoot: true, text: 'Тыквы готовы! А теперь все вместе — разжигайте костёр!' },
     'bonfire-done': { auto: true, text: 'Костёр разжёг {player}! Ух, как пылает.' },
@@ -26,7 +26,7 @@ export const LINES = {
     'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!' },
     'finale-2': { auto: true, hoot: true, text: 'Что это? Что мы… ЧТО ВЫ НАДЕЛАЛИ?' },
     'finale-3': { auto: true, hoot: true, text: 'Походу… ошибочка вышла.', then: 'Он никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
-    'finale-4': { auto: true, hoot: true, text: 'Вот числа вечера. Каждый клик прошёл через него, а лишние он отбросил — чтобы тыква не перешла дважды.' },
+    'finale-4': { auto: true, hoot: true, text: 'Вот числа вечера. Каждый клик прошёл через него, а лишние он отбросил — чтобы тыква не перешла дважды.', then: 'Видите аптайм? Он не падал ни на секунду. Это мы тут чуть не умерли.' },
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
 };
@@ -45,19 +45,23 @@ export function lineText(event, scene = 0) {
     return (line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE);
 }
 
-// Long enough to read twice at a calm pace, never stuck for good.
-export const showMs = (text) => Math.min(12000, Math.max(3500, 2000 + text.length * 70));
+// Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good.
+export const showMs = (text) => Math.min(36000, Math.max(10500, 6000 + text.length * 210));
 
-// A line has the bubble at least this long before the next one takes over: the server says `last-pumpkin` and
-// `scene-ready` back to back, and the first must not flash by unread.
-const MIN_MS = 2500;
+// A line holds the bubble at least this long (or its whole time, if shorter) before the next one takes over: the
+// server says `last-pumpkin` and `scene-ready` back to back, and the first must not flash by unread. A two-part line
+// holds it through its first part and the hold of its second, so a burst never cuts off the `then`.
+const HOLD_MS = 7500;
+const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
+// A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
+const MAX_HOLD_MS = 36000 + HOLD_MS;
 const OWL_HEIGHT = 18;
 const GAP = 4;
 const EDGE = 8;
 
 /**
  * Speech bubble over the scene, anchored at the owl on the branch (`scene.perch()`); without a canvas it sits at
- * the top of the screen. A new line replaces the shown one once that has been up for MIN_MS; until then the newest
+ * the top of the screen. A new line replaces the shown one once its hold is over (HOLD_MS); until then the newest
  * waits (one slot, so a burst of lines does not queue up a minute of speech).
  *
  * @param {HTMLElement} root  #app
@@ -76,7 +80,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     bubble.append(textEl);
     root.append(bubble);
 
-    let shownAt = -1e9;
+    let holdUntil = -1e9;
     let pending = null;
     let waiting = false;
     let token = 0;
@@ -110,9 +114,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
 
     function show({ text, hoot, then = null }) {
         const mine = ++token;
-        shownAt = now();
         textEl.textContent = text;
         const ms = showMs(text);
+        holdUntil = now() + (then ? ms + holdOf(then) : holdOf(text));
         // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
         const delay = Number(scene?.owl?.({ ms, hoot })) || 0;
         const open = () => {
@@ -148,9 +152,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             if (!text) return;
             const catalog = event.text ? null : LINES[event.line];
             const line = { text, hoot: Boolean(catalog?.hoot), then: catalog?.then ?? null };
-            const left = MIN_MS - (now() - shownAt);
-            // A clock that went back (the lab replaying a frozen run) counts as a free bubble too.
-            if (bubble.hidden || left <= 0 || left > MIN_MS) {
+            const left = holdUntil - now();
+            // The moderator's own text is the host speaking live: it never waits behind a hold.
+            if (event.text || left <= 0 || left > MAX_HOLD_MS) {
                 pending = null;
                 show(line);
                 return;
