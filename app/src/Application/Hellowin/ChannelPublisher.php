@@ -99,13 +99,33 @@ final readonly class ChannelPublisher
         $this->publish(['type' => 'walker', 'round' => $round, 'walker' => $walker->toArray($item)]);
     }
 
+    /**
+     * A walk to a clink carries its target, so every client knows the character is going to clink.
+     */
     public function move(int $round, Walker $walker): void
     {
-        $this->publish([
+        $message = [
             'type' => 'move',
             'round' => $round,
             'player' => ['id' => $walker->id],
             'walk' => $walker->walk->toArray(),
+        ];
+        $walker->clink === null or $message['clink'] = $walker->clink->toTarget();
+
+        $this->publish($message);
+    }
+
+    /**
+     * @param non-empty-string $player Who came up.
+     * @param array<'walker'|'pumpkin', array{id: non-empty-string}> $target `walker` or `pumpkin`: what the player clinks with.
+     * @param int $toast Index of the toast in the frontend's catalogue, modulo its length; never negative.
+     * @param int $at Unix time in milliseconds of the meeting.
+     */
+    public function clink(int $round, string $player, array $target, int $toast, int $at): void
+    {
+        $this->publish(['type' => 'clink', 'round' => $round, 'player' => ['id' => $player]] + $target + [
+            'toast' => $toast,
+            'at' => $at,
         ]);
     }
 

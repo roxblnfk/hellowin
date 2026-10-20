@@ -73,6 +73,33 @@ final readonly class WalkZone
     }
 
     /**
+     * How far the point is from the lawn: 0 on it.
+     */
+    public function distance(Point $point): float
+    {
+        $nearest = $this->clamp($point);
+
+        return \hypot($nearest->x - $point->x, $nearest->y - $point->y);
+    }
+
+    /**
+     * A lawn point `$gap` to the side of `$target`, on the side `$from` comes from; the other side when the lawn
+     * squeezes that one into the target.
+     */
+    public function beside(Point $target, Point $from, float $gap): Point
+    {
+        $side = $from->x >= $target->x ? 1.0 : -1.0;
+        foreach ([$side, -$side] as $direction) {
+            $point = $this->clamp(new Point($target->x + $direction * $gap, $target->y));
+            if (\hypot($point->x - $target->x, $point->y - $target->y) >= $gap / 2.0) {
+                return $point;
+            }
+        }
+
+        return $this->clamp(new Point($target->x + $side * $gap, $target->y));
+    }
+
+    /**
      * Where a lawn point runs to when it flees the patch: along the ray from the patch centre through the point to the
      * edge of the rectangle. The centre itself runs down.
      */

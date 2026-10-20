@@ -113,8 +113,8 @@ final class RPCServiceTest
             'threshold' => 4,
             'bushes' => [['id' => 'bush-1', 'x' => 4.0, 'y' => 86.0, 'depth' => 2]],
             'elements' => [
-                ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 0],
-                ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 2],
+                ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'reachable' => false, 'stage' => 0, 'clicks' => 0],
+                ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'reachable' => false, 'stage' => 0, 'clicks' => 2],
             ],
             'walkers' => [],
             'ready' => false,
@@ -360,6 +360,41 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'move', ['x' => 10, 'y' => 90], self::PLAYER), ['ok' => false, 'error' => 'no character']);
         Assert::same($this->call($ritual, 'move', ['x' => 10, 'y' => 90]), ['ok' => false, 'error' => 'anonymous']);
         Assert::blank($ritual->broadcast->published);
+    }
+
+    public function clinkSendsTheCharacterToTheTarget(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1], reachable: ['pumpkin-2']);
+        $other = 'bbbbbbbbbbbbbbbb';
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'register', ['name' => 'Jill', 'look' => self::LOOK], $other);
+
+        Assert::same($this->call($ritual, 'clink', ['walker' => $other], self::PLAYER), ['ok' => false, 'error' => 'not cursed']);
+
+        $ritual->transitions->scene(1, 1);
+        foreach ([1, 2, 3, 4, 5] as $step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+        $ritual->broadcast->published = [];
+
+        $toWalker = $this->call($ritual, 'clink', ['walker' => $other], self::PLAYER);
+        $toPumpkin = $this->call($ritual, 'clink', ['pumpkin' => 'pumpkin-2'], self::PLAYER);
+
+        Assert::true($toWalker['ok']);
+        Assert::true($toPumpkin['ok']);
+        Assert::equals(\array_column($ritual->broadcast->ofType('move'), 'walk'), [$toWalker['walk'], $toPumpkin['walk']]);
+        Assert::same($this->call($ritual, 'clink', ['pumpkin' => 'pumpkin-1'], self::PLAYER), ['ok' => false, 'error' => 'no target']);
+        Assert::same($this->call($ritual, 'clink', ['walker' => 7], self::PLAYER), ['ok' => false, 'error' => 'no target']);
+        Assert::same($this->call($ritual, 'clink', [], self::PLAYER), ['ok' => false, 'error' => 'no target']);
+    }
+
+    public function clinkNeedsACharacter(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack'], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'clink', ['walker' => self::PLAYER], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        Assert::same($this->call($ritual, 'clink', ['walker' => self::PLAYER]), ['ok' => false, 'error' => 'anonymous']);
     }
 
     #[DataSet(['reset'])]

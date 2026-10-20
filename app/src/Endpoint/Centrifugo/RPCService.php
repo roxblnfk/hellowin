@@ -16,12 +16,14 @@ use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
+use App\Application\Walk\ClinkRefusedException;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
 use App\Domain\Ritual\RitualBusyException;
+use App\Domain\Walk\Clink;
 use Psr\Log\LoggerInterface;
 use RoadRunner\Centrifugo\Payload\RPCResponse;
 use RoadRunner\Centrifugo\Request\RequestInterface;
@@ -73,6 +75,7 @@ final readonly class RPCService implements ServiceInterface
             'time' => ['ok' => true, 'now' => $this->clock->now()],
             'register' => $this->register($request->getData(), $player),
             'move' => $this->move($request->getData(), $player),
+            'clink' => $this->clink($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),
             'reset' => $this->reset($request->getData()),
             'scene.next' => $this->nextScene($request->getData()),
@@ -267,6 +270,34 @@ final readonly class RPCService implements ServiceInterface
             return ['ok' => true, 'walk' => $this->walks->move($player, (float) $x, (float) $y)->toArray()];
         } catch (NoCharacterException) {
             return self::fail('no character');
+        }
+    }
+
+    /**
+     * A target that is not a string is no target at all.
+     *
+     * @param non-empty-string|null $player
+     */
+    private function clink(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        /** @var mixed $walker */
+        $walker = $params['walker'] ?? null;
+        /** @var mixed $pumpkin */
+        $pumpkin = $params['pumpkin'] ?? null;
+        [$kind, $target] = \is_string($walker)
+            ? [Clink::WALKER, $walker]
+            : [Clink::PUMPKIN, \is_string($pumpkin) ? $pumpkin : ''];
+
+        try {
+            return ['ok' => true, 'walk' => $this->walks->clink($player, $kind, $target)->toArray()];
+        } catch (NoCharacterException) {
+            return self::fail('no character');
+        } catch (ClinkRefusedException $e) {
+            return self::fail($e->error);
         }
     }
 }

@@ -26,6 +26,24 @@ final class WalkZoneTest
         Assert::equals(RitualHarness::walkZone()->clamp(new Point(-20, 120)), new Point(3, 97));
     }
 
+    public function distanceToTheLawnIsZeroOnIt(): void
+    {
+        $zone = RitualHarness::walkZone();
+
+        Assert::same($zone->distance(new Point(10, 90)), 0.0);
+        Assert::same($zone->distance(new Point(50, 80)), 8.0);
+    }
+
+    public function besideIsOnTheSideOfTheComer(): void
+    {
+        $zone = RitualHarness::walkZone();
+
+        Assert::equals($zone->beside(new Point(60, 90), new Point(20, 90), 4), new Point(56, 90));
+        Assert::equals($zone->beside(new Point(60, 90), new Point(60, 95), 4), new Point(64, 90));
+        // The edge of the lawn leaves no room on the right: the comer stands on the left
+        Assert::equals($zone->beside(new Point(97, 90), new Point(97, 95), 4), new Point(93, 90));
+    }
+
     public function pointInThePatchGoesToItsEdge(): void
     {
         $zone = RitualHarness::walkZone();

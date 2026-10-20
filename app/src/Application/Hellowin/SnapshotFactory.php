@@ -26,7 +26,7 @@ use App\Domain\Walk\WalkerStore;
  *     stageMax: int<0, max>,
  *     threshold: positive-int,
  *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
- *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size?: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>, threshold?: positive-int, stageMax?: int<0, max>}>,
+ *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size?: 's'|'m'|'l', reachable?: bool, stage: int<0, max>, clicks: int<0, max>, threshold?: positive-int, stageMax?: int<0, max>}>,
  *     walkers: list<array>,
  *     ready: bool,
  *     finale: array{step: int, reveal?: array}|null,

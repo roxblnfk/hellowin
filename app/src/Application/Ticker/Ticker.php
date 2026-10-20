@@ -65,6 +65,7 @@ final class Ticker
         }
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));
+        $this->safely('clinks', fn() => $this->walks->clinks());
 
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;

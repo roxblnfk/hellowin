@@ -106,6 +106,23 @@ final class HellowinConfigTest
         Assert::same($config->getElements()[0]->toArray(), ['id' => 'bonfire', 'type' => 'bonfire', 'x' => 50.0, 'y' => 63.0]);
     }
 
+    public function pumpkinsWithinReachOfTheLawnAreReachable(): void
+    {
+        $config = new HellowinConfig(['elements' => [
+            // 2.5 below the top edge of the patch, which touches the lawn there; then 12 inside it
+            ['id' => 'edge', 'type' => 'pumpkin', 'x' => 50, 'y' => 40.5, 'size' => 's', 'emojis' => ['🎃']],
+            ['id' => 'deep', 'type' => 'pumpkin', 'x' => 50, 'y' => 76, 'size' => 's', 'emojis' => ['🎃']],
+        ], 'walk' => [
+            'area' => ['x1' => 3, 'y1' => 30, 'x2' => 97, 'y2' => 97],
+            'patch' => ['cx' => 50, 'cy' => 63, 'rx' => 31, 'ry' => 25],
+            'reach' => 3,
+        ]]);
+
+        Assert::same(\array_map(static fn($element): bool => $element->reachable, $config->getElements()), [true, false]);
+        Assert::true($config->getElements()[0]->toArray()['reachable']);
+        Assert::same([$config->getClinkGap(), $config->getClinkDuration()], [4.0, 3200]);
+    }
+
     public function rejectsAnUnknownElementType(): never
     {
         $config = new HellowinConfig(['elements' => [

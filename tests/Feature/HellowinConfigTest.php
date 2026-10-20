@@ -28,6 +28,16 @@ final class HellowinConfigTest extends TestCase
         }
     }
 
+    public function shippedEdgePumpkinsAreReachable(): void
+    {
+        $reachable = [];
+        foreach ($this->getContainer()->get(HellowinConfig::class)->getElements() as $element) {
+            $element->reachable and $reachable[] = $element->id;
+        }
+
+        Assert::same($reachable, ['pumpkin-3', 'pumpkin-5', 'pumpkin-7', 'pumpkin-9', 'pumpkin-10', 'pumpkin-11', 'pumpkin-13', 'pumpkin-15', 'pumpkin-17']);
+    }
+
     public function shippedBushesAreOnTheGround(): void
     {
         $depths = \count($this->getContainer()->get(FlyerConfig::class)->getDepths());

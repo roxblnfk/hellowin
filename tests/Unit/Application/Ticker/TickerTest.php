@@ -26,6 +26,26 @@ final class TickerTest
         Assert::blank($ritual->broadcast->ofType('flyer'));
     }
 
+    public function everyTickLooksForArrivedClinks(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1], reachable: ['pumpkin-1']);
+        $ritual->transitions->scene(1, 1);
+        foreach ([1, 2, 3, 4, 5] as $step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack', ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']);
+        $ritual->walks->move('aaaaaaaaaaaaaaaa', 20, 90);
+        $walk = $ritual->walks->clink('aaaaaaaaaaaaaaaa', 'pumpkin', 'pumpkin-1');
+        $ticker = self::ticker($ritual);
+
+        $ticker->tick($ritual->clock->now = $walk->arrivesAt - 200);
+        Assert::blank($ritual->broadcast->ofType('clink'));
+        $ticker->tick($ritual->clock->now = $walk->arrivesAt);
+        $ticker->tick($ritual->clock->now += 200);
+
+        Assert::count($ritual->broadcast->ofType('clink'), 1);
+    }
+
     public function leaderboardWaitsForItsInterval(): void
     {
         $ritual = new RitualHarness();

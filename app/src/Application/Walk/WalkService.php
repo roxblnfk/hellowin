@@ -7,12 +7,15 @@ namespace App\Application\Walk;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Domain\Clock\Clock;
+use App\Domain\Element\Element;
+use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Point;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\Look;
 use App\Domain\Player\Player;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\Clink;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
@@ -34,6 +37,8 @@ final readonly class WalkService
      * @param float $speed Percents of the screen per second along the path.
      * @param positive-int $leaveAfter Milliseconds without a connection before the character leaves.
      * @param array{float, float} $spawnY Top and bottom of the band new characters appear in.
+     * @param float $clinkGap Percents of the screen between two characters that clink.
+     * @param positive-int $clinkDuration Milliseconds a clink plays; a new clink of the same player is refused meanwhile.
      */
     public function __construct(
         private WalkerStore $store,
@@ -48,6 +53,9 @@ final readonly class WalkService
         private int $leaveAfter,
         private array $spawnY,
         private Items $items,
+        private ElementRegistry $elements,
+        private float $clinkGap,
+        private int $clinkDuration,
         private Randomizer $random = new Randomizer(),
     ) {}
 
@@ -121,6 +129,117 @@ final readonly class WalkService
         $this->publisher->move($ritual->round, $walker);
 
         return $walker->walk;
+    }
+
+    /**
+     * Sends the character to clink with another character or a reachable pumpkin (docs/spec/scenario.md, «Чоканье»):
+     * to the side of the character where it stands or is heading, or to the lawn point nearest to the pumpkin. The
+     * clink itself happens on arrival, in {@see clinks()}.
+     *
+     * @param non-empty-string $id
+     * @param Clink::WALKER|Clink::PUMPKIN $kind
+     * @throws NoCharacterException The player has no character on the lawn.
+     * @throws ClinkRefusedException
+     * @throws LockBusyException
+     */
+    public function clink(string $id, string $kind, string $target): Walk
+    {
+        if (!isset($this->store->all()[$id])) {
+            throw new NoCharacterException('no character');
+        }
+        if (!$this->ritual->snapshot()->story->cursed()) {
+            throw new ClinkRefusedException('not cursed');
+        }
+        if ($target === '' || $target === $id) {
+            throw new ClinkRefusedException('no target');
+        }
+
+        $pumpkin = null;
+        if ($kind === Clink::PUMPKIN) {
+            $element = $this->elements->find($target);
+            $element !== null && $element->type === Element::TYPE_PUMPKIN && $element->reachable
+                or throw new ClinkRefusedException('no target');
+            $pumpkin = self::rounded($this->zone->clamp(new Point($element->x, $element->y)));
+        }
+
+        $now = $this->clock->now();
+        $walker = $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            function (array $walkers) use ($id, $kind, $target, $pumpkin, $now): array {
+                $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
+                $from = self::rounded($walker->walk->positionAt($now));
+
+                if ($pumpkin !== null) {
+                    $walk = Walk::along($this->zone->route($from, $pumpkin), $now, $this->speed);
+                    $clink = new Clink($kind, $target, $walk->arrivesAt);
+                } else {
+                    $other = $walkers[$target] ?? throw new ClinkRefusedException('no target');
+                    $stand = $other->walk->path[\count($other->walk->path) - 1];
+                    $meet = self::rounded($this->zone->beside($stand, $from, $this->clinkGap));
+                    $walk = Walk::along($this->zone->route($from, $meet), $now, $this->speed);
+                    $clink = new Clink($kind, $target, \max($walk->arrivesAt, $other->walk->arrivesAt), $other->walk->startedAt);
+                }
+
+                $walker->clinkPlaying($now, $this->clinkDuration) and throw new ClinkRefusedException('busy');
+                $walker = $walker->clinking($walk, $clink)->seen($now);
+                $walkers[$id] = $walker;
+
+                return [$walkers, $walker];
+            },
+        );
+
+        $this->publisher->move($this->ritual->round(), $walker);
+
+        return $walker->walk;
+    }
+
+    /**
+     * Clinks whose characters have arrived: the ticker calls it every tick. A clink happens when the target is in
+     * place — the pumpkin always, a character when it has not set off since the clink was asked for — and the world
+     * is still cursed; either way the clink is done with, under the lawn lock, so it is published once.
+     *
+     * @throws LockBusyException
+     */
+    public function clinks(): void
+    {
+        $now = $this->clock->now();
+        $due = \array_filter($this->store->all(), static fn(Walker $walker): bool => $walker->clink?->due($now) ?? false);
+        if ($due === []) {
+            return;
+        }
+
+        $ritual = $this->ritual->snapshot();
+        $cursed = $ritual->story->cursed();
+        $met = $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            static function (array $walkers) use ($now, $cursed): array {
+                $met = [];
+                foreach ($walkers as $id => $walker) {
+                    $clink = $walker->clink;
+                    if ($clink === null || !$clink->due($now)) {
+                        continue;
+                    }
+
+                    $target = $clink->kind === Clink::WALKER ? $walkers[$clink->target] ?? null : null;
+                    $inPlace = $clink->kind === Clink::PUMPKIN || $target?->walk->startedAt === $clink->since;
+                    $happens = $cursed && $inPlace;
+                    $walkers[$id] = $walker->clinked($happens ? $now : null);
+                    $happens and $met[] = [$id, $clink];
+                }
+
+                return [$walkers, $met];
+            },
+        );
+
+        foreach ($met as [$id, $clink]) {
+            $this->publisher->clink(
+                $ritual->round,
+                $id,
+                $clink->toTarget(),
+                $this->random->getInt(0, 0x7FFFFFFF),
+                $now,
+            );
+        }
     }
 
     /**

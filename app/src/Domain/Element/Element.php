@@ -27,6 +27,7 @@ final readonly class Element
      * @param float $y Vertical position, percent of the viewport height.
      * @param non-empty-list<non-empty-string> $emojis Pool to pick from on each click.
      * @param 's'|'m'|'l'|null $size Null for a centrepiece: it has one size.
+     * @param bool $reachable A pumpkin a character can clink with from the lawn; never a centrepiece.
      */
     public function __construct(
         public string $id,
@@ -35,6 +36,7 @@ final readonly class Element
         public float $y,
         public array $emojis,
         public ?string $size = 'm',
+        public bool $reachable = false,
     ) {}
 
     /**
@@ -50,12 +52,13 @@ final readonly class Element
     /**
      * Shape exposed to the page; emojis stay on the server.
      *
-     * @return array{id: non-empty-string, type: self::TYPE_*, x: float, y: float, size?: 's'|'m'|'l'}
+     * @return array{id: non-empty-string, type: self::TYPE_*, x: float, y: float, size?: 's'|'m'|'l', reachable?: bool}
      */
     public function toArray(): array
     {
         $data = ['id' => $this->id, 'type' => $this->type, 'x' => $this->x, 'y' => $this->y];
         $this->size === null or $data['size'] = $this->size;
+        $this->centrepiece() or $data['reachable'] = $this->reachable;
 
         return $data;
     }

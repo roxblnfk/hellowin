@@ -41,6 +41,9 @@ final class HellowinConfig extends InjectableConfig
             'spawn' => ['y1' => 86, 'y2' => 90],
             'speed' => 12,
             'leave_after' => 5000,
+            'reach' => 10,
+            'clink_gap' => 4,
+            'clink_duration' => 3200,
         ],
     ];
 
@@ -216,7 +219,16 @@ final class HellowinConfig extends InjectableConfig
         $elements = $this->config['elements'] ?? [];
         \is_array($elements) or throw new \InvalidArgumentException('Config "hellowin.elements" must be a list.');
 
-        return \array_values(\array_map(self::element(...), $elements));
+        $zone = $this->getWalkZone();
+        $reach = $this->getWalkReach();
+
+        return \array_values(\array_map(static function (mixed $spec) use ($zone, $reach): Element {
+            $element = self::element($spec);
+
+            return $element->centrepiece() || $zone->distance(new Point($element->x, $element->y)) > $reach
+                ? $element
+                : new Element($element->id, $element->type, $element->x, $element->y, $element->emojis, $element->size, true);
+        }, $elements));
     }
 
     /**
@@ -338,6 +350,44 @@ final class HellowinConfig extends InjectableConfig
     public function getWalkLeaveAfter(): int
     {
         return self::positiveInt($this->walk()['leave_after'] ?? null, 'walk.leave_after', 'HELLOWIN_WALK_LEAVE_AFTER');
+    }
+
+    /**
+     * @return float Percents of the screen: a pumpkin at most this far from the lawn is reachable for a clink.
+     */
+    public function getWalkReach(): float
+    {
+        return self::nonNegative($this->walk()['reach'] ?? 10, 'walk.reach');
+    }
+
+    /**
+     * @return float Percents of the screen between two characters that clink.
+     */
+    public function getClinkGap(): float
+    {
+        return self::nonNegative($this->walk()['clink_gap'] ?? 4, 'walk.clink_gap');
+    }
+
+    /**
+     * @return positive-int Milliseconds a clink plays: a new clink of the same player is refused meanwhile.
+     */
+    public function getClinkDuration(): int
+    {
+        /** @var mixed $value */
+        $value = $this->walk()['clink_duration'] ?? 3200;
+
+        return \is_int($value) && $value > 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.walk.clink_duration" must be a positive integer.');
+    }
+
+    private static function nonNegative(mixed $value, string $key): float
+    {
+        $value = self::float($value, $key);
+
+        return $value >= 0.0
+            ? $value
+            : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must not be negative.', $key));
     }
 
     private static function isItem(mixed $item): bool

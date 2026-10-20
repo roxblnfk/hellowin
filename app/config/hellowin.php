@@ -97,5 +97,12 @@ return [
 
         // Milliseconds a player may stay without connections before the character leaves: a reloaded page keeps it
         'leave_after' => env('HELLOWIN_WALK_LEAVE_AFTER', 5000),
+
+        // Clinking in the cursed world (scenario.md, «Чоканье»): a pumpkin at most `reach` percents from the lawn is
+        // reachable, a character clinking with another stands `clink_gap` percents to its side, and a clink plays
+        // `clink_duration` ms — the frontend's timeline of the clink
+        'reach' => 10,
+        'clink_gap' => 4,
+        'clink_duration' => 3200,
     ],
 ];

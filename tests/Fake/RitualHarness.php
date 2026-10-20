@@ -85,6 +85,7 @@ final class RitualHarness
      * @param positive-int $bonfireThreshold
      * @param positive-int|null $circle Last circle stage; null leaves the patch without a circle.
      * @param positive-int $circleThreshold
+     * @param list<non-empty-string> $reachable Pumpkins a character can clink with.
      */
     public function __construct(
         int $threshold = 2,
@@ -95,13 +96,17 @@ final class RitualHarness
         int $bonfireThreshold = 3,
         ?int $circle = null,
         int $circleThreshold = 3,
+        array $reachable = [],
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
         $this->metrics = new SpyMetrics();
 
         $elements = new ElementRegistry([
-            ...\array_map(static fn(string $id): Element => new Element($id, 'pumpkin', 10, 20, ['🎃']), $pumpkins),
+            ...\array_map(
+                static fn(string $id): Element => new Element($id, 'pumpkin', 10, 20, ['🎃'], reachable: \in_array($id, $reachable, true)),
+                $pumpkins,
+            ),
             ...($bonfire === null ? [] : [new Element(self::BONFIRE, Element::TYPE_BONFIRE, 50, 63, ['🔥'], null)]),
             ...($circle === null ? [] : [new Element(self::CIRCLE, Element::TYPE_CIRCLE, 50, 63, ['🩸'], null)]),
         ]);
@@ -163,6 +168,9 @@ final class RitualHarness
             5000,
             [86.0, 90.0],
             new Items([null, 'torch', 'pitchfork'], [5 => 'beer']),
+            $elements,
+            4.0,
+            3200,
             new Randomizer(new Mt19937(7)),
         );
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);

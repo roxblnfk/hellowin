@@ -28,7 +28,7 @@
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
-| Фигурки: вид, путь, зона, KV | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `register`, тикер) |
+| Фигурки: вид, путь, зона, KV, чоканье | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `Clink`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `clink`, `register`, тикер) |
 | Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo) |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 
@@ -60,6 +60,7 @@
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс; первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` = 5), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
+| Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
 
@@ -127,7 +128,7 @@
 
 Правила — [`players.md`](players.md), «Персонаж», «На поле»; события и RPC — [`protocol.md`](protocol.md).
 
-- **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt}`, меняется под RR-локом `walkers`.
+- **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt, clink?, clinkedAt?}`, меняется под RR-локом `walkers`.
   Один ключ — снимок читает фигурки одним запросом; сброс раунда его не трогает, позиции переживают сброс. `name` и
   `look` копируются из записи игрока при выходе на поле и повторном `register`.
 - **Выход на поле**: `register` с `look` (или повторный `register` игрока, у которого `look` уже есть) — фигурка
@@ -163,6 +164,29 @@
   фигурок сразу.
 - Сбой опроса presence (Centrifugo недоступен) — ошибка в лог, фигурки не трогаются: недоступный presence не значит,
   что все ушли.
+- **Чоканье по клику** (RPC `clink`, `WalkService::clink`; правила — [`scenario.md`](scenario.md), «Чоканье»).
+  Проверки по порядку: фигурка игрока на поле (`no character`), шаг финала 5+ (`Story::cursed`, `not cursed`), цель
+  (`no target`): чужая фигурка в `hellowin:walkers` или тыква с `reachable`. **Досягаемость** считает конфиг при сборке
+  элементов (`HellowinConfig::getElements`): тыква не дальше `walk.reach` процентов экрана от зоны прогулки
+  (`WalkZone::distance` — до ближайшей точки лужайки, `clamp`); с раскладкой по умолчанию это девять тыкв у края грядки.
+  **Точка встречи**: у тыквы — ближайшая к ней точка лужайки; у фигурки — сбоку от конца её пути (где стоит или куда
+  идёт), на `walk.clink_gap` по x со стороны подошедшего, приведённая в зону, а если край лужайки прижал её к цели —
+  с другой стороны (`WalkZone::beside`). Путь — тот же `WalkZone::route`, событие — обычный `move` с полем `clink`.
+  Под локом `walkers` фигурке пишется **ожидающее чоканье** `clink {kind, target, dueAt, since}`: `dueAt` — прибытие
+  подошедшего, а если цель ещё идёт — позднее из двух прибытий; `since` — `startedAt` пути цели в момент клика.
+  Любой новый путь фигурки (`move`, другой `clink`, разбегание) запись затирает — так новый ход отменяет недошедшее.
+- **Проверка по прибытии — тикер, каждый тик (200 мс)**: читает `hellowin:walkers` без лока и, только если у кого-то
+  наступил `dueAt`, берёт лок `walkers` и для каждой такой записи решает: чоканье случилось, если мир всё ещё проклят и
+  цель на месте — тыква всегда, фигурка — если она на поле и `startedAt` её пути равен `since` (не пошла заново).
+  Запись в любом случае снимается, у случившегося ставится `clinkedAt`; события `clink` (`toast` — случайное
+  0…2³¹−1, `at` — время тика) публикуются после лока. Снятие записи под локом и один тикер с лизингом дают ровно одно
+  событие на чоканье (сбой публикации теряет его, а не повторяет). Почему так: запись лежит в Valkey рядом с фигуркой
+  и переживает перезапуск воркеров и тикера — новый тикер найдёт просроченную и решит её на первом тике; тикер уже
+  крутится каждые 200 мс, точности хватает. Альтернатива — отложенная задача RR jobs с `delay`: точнее по времени,
+  но memory-очередь теряет её на рестарте, а отмену новым ходом всё равно пришлось бы проверять по записи.
+- **Пока чоканье играет** (`walk.clink_duration` мс от `clinkedAt`, по длине анимации фронтенда), новый `clink` того
+  же игрока — `busy`, не очередь: так проще и объяснимо, а игрок просто кликает ещё раз. `move` не ограничен.
+  `walk.reach`, `walk.clink_gap`, `walk.clink_duration` — раскладка в `app/config/hellowin.php`, не env, как `area`.
 
 ## Модератор
 
