@@ -27,6 +27,7 @@ use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
@@ -176,6 +177,12 @@ final class HellowinBootloader extends Bootloader
                 rarePoints: $flyers->getRarePoints(),
                 horizon: $config->getHorizon(),
             ),
+            ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
+                $config->getWalkZone(),
+                $flyers->getZombieDuration(),
+                $flyers->getZombiePoints(),
+                \min(1, \count($flyers->getDepths()) - 1),
+            ),
             FlyerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -195,6 +202,7 @@ final class HellowinBootloader extends Bootloader
                 $flyerConfig->getInterval(),
                 $walks,
                 $logger,
+                $flyerConfig->getZombieInterval(),
             ),
         ];
     }

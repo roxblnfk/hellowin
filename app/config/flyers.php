@@ -30,4 +30,10 @@ return [
     'rare' => env('HELLOWIN_FLYER_RARE', 'roadrunner;;witch;witch'),
     'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),
     'rare_points' => env('HELLOWIN_FLYER_RARE_POINTS', 10),
+
+    // Zombies of the cursed world, when the moderator lets them out: milliseconds between them (range or fixed),
+    // milliseconds from the patch to the edge of the lawn, points for one
+    'zombie_interval' => env('HELLOWIN_ZOMBIE_INTERVAL', '4000-9000'),
+    'zombie_duration' => env('HELLOWIN_ZOMBIE_DURATION', 14000),
+    'zombie_points' => env('HELLOWIN_ZOMBIE_POINTS', 2),
 ];

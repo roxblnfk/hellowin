@@ -17,6 +17,9 @@ final readonly class Flyer
 
     public const KIND_WITCH = 'witch';
 
+    /** A ground target of the cursed world, walking out of the patch. */
+    public const KIND_ZOMBIE = 'zombie';
+
     /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.

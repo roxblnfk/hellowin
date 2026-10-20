@@ -26,6 +26,9 @@ final class FlyerConfig extends InjectableConfig
         'rare' => 'roadrunner;;witch;witch',
         'rare_chance' => 0.08,
         'rare_points' => 10,
+        'zombie_interval' => '4000-9000',
+        'zombie_duration' => 14000,
+        'zombie_points' => 2,
     ];
 
     /**
@@ -35,22 +38,33 @@ final class FlyerConfig extends InjectableConfig
      */
     public function getInterval(): array
     {
-        $value = $this->config['interval'] ?? null;
-        \is_int($value) and $value = (string) $value;
-        $error = self::invalid('interval', 'HELLOWIN_FLYER_INTERVAL', 'milliseconds like "3000-8000" or "5000"', $value);
+        return self::range($this->config['interval'] ?? null, 'interval', 'HELLOWIN_FLYER_INTERVAL');
+    }
 
-        if (!\is_string($value) || \preg_match('/^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/', $value, $match) !== 1) {
-            throw $error;
-        }
-        $min = (int) $match[1];
-        $max = isset($match[2]) ? (int) $match[2] : $min;
+    /**
+     * Milliseconds between zombies in the cursed world, like {@see getInterval()}.
+     *
+     * @return array{positive-int, positive-int}
+     */
+    public function getZombieInterval(): array
+    {
+        return self::range($this->config['zombie_interval'] ?? null, 'zombie_interval', 'HELLOWIN_ZOMBIE_INTERVAL');
+    }
 
-        if ($min < 1 || $max < $min) {
-            throw $error;
-        }
+    /**
+     * @return positive-int Milliseconds a zombie takes from the patch to the edge of the lawn.
+     */
+    public function getZombieDuration(): int
+    {
+        return self::positiveInt($this->config['zombie_duration'] ?? null, 'zombie_duration', 'HELLOWIN_ZOMBIE_DURATION');
+    }
 
-        /** @var positive-int $max */
-        return [$min, $max];
+    /**
+     * @return positive-int
+     */
+    public function getZombiePoints(): int
+    {
+        return self::positiveInt($this->config['zombie_points'] ?? null, 'zombie_points', 'HELLOWIN_ZOMBIE_POINTS');
     }
 
     /**
@@ -152,6 +166,28 @@ final class FlyerConfig extends InjectableConfig
     public function getRarePoints(): int
     {
         return self::positiveInt($this->config['rare_points'] ?? null, 'rare_points', 'HELLOWIN_FLYER_RARE_POINTS');
+    }
+
+    /**
+     * @return array{positive-int, positive-int}
+     */
+    private static function range(mixed $value, string $key, string $env): array
+    {
+        \is_int($value) and $value = (string) $value;
+        $error = self::invalid($key, $env, 'milliseconds like "3000-8000" or "5000"', $value);
+
+        if (!\is_string($value) || \preg_match('/^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/', $value, $match) !== 1) {
+            throw $error;
+        }
+        $min = (int) $match[1];
+        $max = isset($match[2]) ? (int) $match[2] : $min;
+
+        if ($min < 1 || $max < $min) {
+            throw $error;
+        }
+
+        /** @var positive-int $max */
+        return [$min, $max];
     }
 
     /**

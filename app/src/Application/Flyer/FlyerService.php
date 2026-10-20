@@ -12,6 +12,7 @@ use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\ShotTally;
@@ -37,6 +38,7 @@ final readonly class FlyerService
         private Clock $clock,
         private ShotTally $tally,
         private LoggerInterface $logger = new NullLogger(),
+        private ?ZombieFactory $zombies = null,
     ) {}
 
     /**
@@ -61,6 +63,21 @@ final readonly class FlyerService
         $ritual = $this->ritual->snapshot();
 
         return $ritual->story->paused ? null : $this->release($ritual->round, $this->factory->launch($now, $ritual->scene));
+    }
+
+    /**
+     * The ticker's zombie: only in the cursed world, with zombies let out and the sky not paused.
+     *
+     * @param int $now Unix time in milliseconds.
+     */
+    public function launchZombie(int $now): ?Flyer
+    {
+        $ritual = $this->ritual->snapshot();
+        $story = $ritual->story;
+
+        return $this->zombies !== null && $story->cursed() && $story->zombies && !$story->paused
+            ? $this->release($ritual->round, $this->zombies->launch($now))
+            : null;
     }
 
     /**

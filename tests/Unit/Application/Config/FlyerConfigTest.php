@@ -91,6 +91,16 @@ final class FlyerConfigTest
         Assert::same((new FlyerConfig(['rare_points' => '7']))->getRarePoints(), 7);
     }
 
+    public function zombiesHaveTheirOwnPace(): void
+    {
+        $config = new FlyerConfig(['zombie_interval' => '1000-2000', 'zombie_duration' => '9000', 'zombie_points' => 3]);
+
+        Assert::same((new FlyerConfig())->getZombieInterval(), [4000, 9000]);
+        Assert::same($config->getZombieInterval(), [1000, 2000]);
+        Assert::same($config->getZombieDuration(), 9000);
+        Assert::same($config->getZombiePoints(), 3);
+    }
+
     #[DataSet(['witch,bat'], 'two kinds')]
     #[DataSet(['Witch'], 'uppercase')]
     public function rareFlyerIsOneKind(string $value): never

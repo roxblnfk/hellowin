@@ -71,6 +71,47 @@ final class TickerTest
         Assert::count($ritual->broadcast->ofType('flyer'), 1);
     }
 
+    public function zombiesWalkOnlyInTheCursedWorldWhenLetOut(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+
+        $ritual->story->zombies(true);
+        $ticker->tick(3_000);
+        Assert::blank(self::zombies($ritual));
+
+        $ritual->transitions->scene(1, 1);
+        for ($step = 1; $step <= 5; ++$step) {
+            $ritual->story->finaleStep($step);
+        }
+        $ticker->tick(6_000);
+        Assert::count(self::zombies($ritual), 1);
+
+        $ritual->story->pause(true);
+        $ticker->tick(9_000);
+        $ritual->story->pause(false);
+        $ritual->story->zombies(false);
+        $ticker->tick(12_000);
+        Assert::count(self::zombies($ritual), 1);
+    }
+
+    public function zombieIsShotLikeAFlyer(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        for ($step = 1; $step <= 5; ++$step) {
+            $ritual->story->finaleStep($step);
+        }
+        $ritual->story->zombies(true);
+        $zombie = $ritual->flyers->launchZombie($ritual->clock->now);
+        Assert::notNull($zombie);
+
+        Assert::same($ritual->flyers->shoot($zombie->id, 'aaaaaaaaaaaaaaaa'), 2);
+        Assert::null($ritual->flyers->shoot($zombie->id, 'bbbbbbbbbbbbbbbb'));
+        Assert::same($ritual->playerStore->find('aaaaaaaaaaaaaaaa')?->points, 2);
+    }
+
     public function flyersFollowTheScene(): void
     {
         $ritual = new RitualHarness();
@@ -113,7 +154,18 @@ final class TickerTest
 
     private static function ticker(RitualHarness $ritual): Ticker
     {
-        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger());
+        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger(), [3000, 3000]);
+    }
+
+    /**
+     * @return list<array>
+     */
+    private static function zombies(RitualHarness $ritual): array
+    {
+        return \array_values(\array_filter(
+            $ritual->broadcast->ofType('flyer'),
+            static fn(array $flyer): bool => $flyer['kind'] === 'zombie',
+        ));
     }
 
     private static function escaped(RitualHarness $ritual): float

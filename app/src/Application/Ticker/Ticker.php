@@ -22,11 +22,13 @@ final class Ticker
 
     private ?int $nextLeaderboard = null;
     private ?int $nextFlyer = null;
+    private ?int $nextZombie = null;
     private ?int $nextPresence = null;
 
     /**
      * @param positive-int $leaderboardInterval Milliseconds.
      * @param array{positive-int, positive-int} $flyerInterval Milliseconds between launches, min and max.
+     * @param array{positive-int, positive-int} $zombieInterval Milliseconds between zombies, min and max.
      */
     public function __construct(
         private readonly LeaderboardService $leaderboard,
@@ -35,6 +37,7 @@ final class Ticker
         private readonly array $flyerInterval,
         private readonly WalkService $walks,
         private readonly LoggerInterface $logger,
+        private readonly array $zombieInterval = [4000, 9000],
         private readonly Randomizer $random = new Randomizer(),
     ) {}
 
@@ -52,6 +55,13 @@ final class Ticker
         if ($now >= $this->nextFlyer) {
             $this->nextFlyer = $now + $this->flyerPause();
             $this->safely('flyer launch', fn() => $this->flyers->launchScheduled($now));
+        }
+
+        // Zombies keep their own schedule, so a cursed world gets them at their pace on top of the flyers
+        $this->nextZombie ??= $now + $this->random->getInt(...$this->zombieInterval);
+        if ($now >= $this->nextZombie) {
+            $this->nextZombie = $now + $this->random->getInt(...$this->zombieInterval);
+            $this->safely('zombie launch', fn() => $this->flyers->launchZombie($now));
         }
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));

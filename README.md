@@ -58,6 +58,9 @@
 | `HELLOWIN_FLYER_RARE` | `roadrunner;;witch;witch` | редкий летун каждой сцены (пусто — нет) |
 | `HELLOWIN_FLYER_RARE_CHANCE` | `0.08` | вероятность, что запуск — редкий летун сцены |
 | `HELLOWIN_FLYER_RARE_POINTS` | `10` | очки за редкого летуна (птица-бегун — всегда 0, её не сбить) |
+| `HELLOWIN_ZOMBIE_INTERVAL` | `4000-9000` | пауза между зомби в проклятом мире, мс: диапазон или число |
+| `HELLOWIN_ZOMBIE_DURATION` | `14000` | сколько миллисекунд зомби идёт от грядки до края лужайки |
+| `HELLOWIN_ZOMBIE_POINTS` | `2` | очки за зомби |
 | `HELLOWIN_WALK_SPEED` | `12` | скорость фигурок игроков, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | `5000` | сколько миллисекунд игрок может быть без подключений, прежде чем его фигурка уйдёт с поля |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |

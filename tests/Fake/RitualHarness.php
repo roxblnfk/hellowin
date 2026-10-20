@@ -28,6 +28,7 @@ use App\Domain\Flyer\FlyerDepth;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
+use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
@@ -129,6 +130,8 @@ final class RitualHarness
             $this->players,
             $this->clock,
             $this->shots,
+            new NullLogger(),
+            new ZombieFactory(self::walkZone(), 14000, 2, 1, new Randomizer(new Mt19937(3))),
         );
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
