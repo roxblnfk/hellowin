@@ -10,23 +10,26 @@ final readonly class ElementRegistry
     private array $elements;
 
     /**
-     * @param iterable<Element> $elements At most one of them is the bonfire.
+     * @param iterable<Element> $elements At most one centrepiece of each type.
      */
     public function __construct(iterable $elements)
     {
         $map = [];
-        $bonfire = null;
+        $centrepieces = [];
         foreach ($elements as $element) {
             isset($map[$element->id]) and throw new \InvalidArgumentException(
                 \sprintf('Duplicate element id "%s".', $element->id),
             );
             $map[$element->id] = $element;
 
-            if ($element->bonfire()) {
-                $bonfire === null or throw new \InvalidArgumentException(
-                    \sprintf('Elements "%s" and "%s" are both bonfires; there is one at most.', $bonfire, $element->id),
-                );
-                $bonfire = $element->id;
+            if ($element->centrepiece()) {
+                isset($centrepieces[$element->type]) and throw new \InvalidArgumentException(\sprintf(
+                    'Elements "%s" and "%s" are both of type "%s"; there is one at most.',
+                    $centrepieces[$element->type],
+                    $element->id,
+                    $element->type,
+                ));
+                $centrepieces[$element->type] = $element->id;
             }
         }
 
@@ -53,16 +56,19 @@ final readonly class ElementRegistry
     {
         $ids = [];
         foreach ($this->elements as $element) {
-            $element->bonfire() or $ids[] = $element->id;
+            $element->centrepiece() or $ids[] = $element->id;
         }
 
         return $ids;
     }
 
-    public function bonfire(): ?Element
+    /**
+     * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
+     */
+    public function centrepiece(string $type): ?Element
     {
         foreach ($this->elements as $element) {
-            if ($element->bonfire()) {
+            if ($element->type === $type) {
                 return $element;
             }
         }

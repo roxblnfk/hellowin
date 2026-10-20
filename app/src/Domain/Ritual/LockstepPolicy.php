@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Element\Element;
+
 /**
  * Pumpkins move stage by stage up to the last stage of the current scene and wait there; then the bonfire does the
  * same by its own threshold and stage maximums, and the scene is ready. A scene that does not take the bonfire past
- * its stage is ready with the pumpkins alone. Nothing moves in the final scene.
+ * its stage is ready with the pumpkins alone. In the final scene the pumpkins stay; the circle is drawn by its own
+ * threshold up to its last stage while the finale is at its first step, and makes the scene ready.
  */
 final readonly class LockstepPolicy implements RitualPolicy
 {
@@ -24,12 +27,16 @@ final readonly class LockstepPolicy implements RitualPolicy
      * @param positive-int $bonfireClicksPerStage Clicks the bonfire needs to move.
      * @param list<int> $bonfireStageMax The last bonfire stage of each scene, never decreasing; scenes past the list
      *        keep its last value. Empty leaves the bonfire at stage 0 everywhere.
+     * @param positive-int $circleClicksPerStage Clicks the circle needs to move.
+     * @param positive-int $circleStages The last circle stage, in the final scene; before it the circle stays at 0.
      */
     public function __construct(
         private int $clicksPerStage,
         array $stageMax,
         private int $bonfireClicksPerStage = 1,
         array $bonfireStageMax = [],
+        private int $circleClicksPerStage = 1,
+        private int $circleStages = 1,
     ) {
         $previous = 0;
         foreach ($stageMax as $stage) {
@@ -53,27 +60,96 @@ final readonly class LockstepPolicy implements RitualPolicy
     #[\Override]
     public function pumpkinTransition(Pumpkin $pumpkin, int $scene): ?int
     {
-        return $this->moving($scene)
-            && $pumpkin->stage < $this->stageMax($scene)
-            && $pumpkin->clicks >= $this->clicksPerStage
-            ? $pumpkin->stage + 1
-            : null;
+        return $this->transition(Element::TYPE_PUMPKIN, $pumpkin, $scene);
     }
 
     #[\Override]
-    public function bonfireTransition(Pumpkin $bonfire, int $scene): ?int
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene): ?int
     {
-        return $this->moving($scene)
-            && $bonfire->stage < $this->bonfireStageMax($scene)
-            && $bonfire->clicks >= $this->bonfireClicksPerStage
-            ? $bonfire->stage + 1
-            : null;
+        return $this->transition($type, $centrepiece, $scene);
     }
 
     #[\Override]
-    public function pumpkinsDone(int $scene, array $pumpkins): bool
+    public function centrepieceOpen(string $type, RitualSnapshot $ritual): bool
     {
-        if (!$this->moving($scene) || $pumpkins === []) {
+        $centrepiece = $ritual->centrepiece($type);
+        if ($centrepiece === null || $centrepiece->stage >= $this->stageMax($ritual->scene, $type)) {
+            return false;
+        }
+
+        return $type === Element::TYPE_BONFIRE
+            ? $this->pumpkinsDone($ritual->scene, $ritual->pumpkins)
+            : $this->drawing($ritual);
+    }
+
+    #[\Override]
+    public function sceneReady(RitualSnapshot $ritual): bool
+    {
+        if ($ritual->scene >= $this->finalScene()) {
+            return $this->drawing($ritual)
+                && $ritual->circle !== null
+                && $ritual->circle->stage >= $this->stageMax($ritual->scene, Element::TYPE_CIRCLE);
+        }
+
+        return $this->pumpkinsDone($ritual->scene, $ritual->pumpkins)
+            && ($ritual->bonfire === null || $ritual->bonfire->stage >= $this->stageMax($ritual->scene, Element::TYPE_BONFIRE));
+    }
+
+    /**
+     * The final scene keeps the last stage of the scene before it, for the pumpkins and the bonfire alike; the circle
+     * has stages in the final scene only.
+     */
+    #[\Override]
+    public function stageMax(int $scene, string $type = Element::TYPE_PUMPKIN): int
+    {
+        return match ($type) {
+            Element::TYPE_PUMPKIN => $this->stageMax[$this->index($scene, \count($this->stageMax))],
+            Element::TYPE_BONFIRE => $this->bonfireStageMax[
+                $this->index(\min($scene, $this->finalScene() - 1), \count($this->bonfireStageMax))
+            ],
+            Element::TYPE_CIRCLE => $scene >= $this->finalScene() ? $this->circleStages : 0,
+        };
+    }
+
+    #[\Override]
+    public function threshold(string $type = Element::TYPE_PUMPKIN): int
+    {
+        return match ($type) {
+            Element::TYPE_PUMPKIN => $this->clicksPerStage,
+            Element::TYPE_BONFIRE => $this->bonfireClicksPerStage,
+            Element::TYPE_CIRCLE => $this->circleClicksPerStage,
+        };
+    }
+
+    #[\Override]
+    public function finalScene(): int
+    {
+        return \count($this->stageMax);
+    }
+
+    /**
+     * Pumpkins and the bonfire move before the final scene, the circle only in it.
+     *
+     * @param Element::TYPE_* $type
+     * @return int<1, max>|null
+     */
+    private function transition(string $type, Pumpkin $element, int $scene): ?int
+    {
+        return $scene >= 0
+            && ($scene >= $this->finalScene()) === ($type === Element::TYPE_CIRCLE)
+            && $element->stage < $this->stageMax($scene, $type)
+            && $element->clicks >= $this->threshold($type)
+            ? $element->stage + 1
+            : null;
+    }
+
+    /**
+     * @param list<Pumpkin> $pumpkins
+     * @return bool Whether every pumpkin has reached the last stage of the scene; never in the final scene.
+     */
+    private function pumpkinsDone(int $scene, array $pumpkins): bool
+    {
+        if ($scene < 0 || $scene >= $this->finalScene() || $pumpkins === []) {
             return false;
         }
 
@@ -87,41 +163,12 @@ final readonly class LockstepPolicy implements RitualPolicy
         return true;
     }
 
-    #[\Override]
-    public function bonfireOpen(int $scene, array $pumpkins, Pumpkin $bonfire): bool
-    {
-        return $bonfire->stage < $this->bonfireStageMax($scene) && $this->pumpkinsDone($scene, $pumpkins);
-    }
-
-    #[\Override]
-    public function sceneReady(int $scene, array $pumpkins, ?Pumpkin $bonfire = null): bool
-    {
-        return $this->pumpkinsDone($scene, $pumpkins)
-            && ($bonfire === null || $bonfire->stage >= $this->bonfireStageMax($scene));
-    }
-
     /**
-     * The final scene keeps the last stage of the scene before it.
+     * The circle is drawn in the final scene until the moderator takes the first finale step.
      */
-    #[\Override]
-    public function stageMax(int $scene): int
+    private function drawing(RitualSnapshot $ritual): bool
     {
-        return $this->stageMax[$this->index($scene, \count($this->stageMax))];
-    }
-
-    /**
-     * The final scene keeps the last stage of the scene before it.
-     */
-    #[\Override]
-    public function bonfireStageMax(int $scene): int
-    {
-        return $this->bonfireStageMax[$this->index(\min($scene, $this->finalScene() - 1), \count($this->bonfireStageMax))];
-    }
-
-    #[\Override]
-    public function finalScene(): int
-    {
-        return \count($this->stageMax);
+        return $ritual->scene >= $this->finalScene() && $ritual->story->finale === 0;
     }
 
     /**
@@ -131,10 +178,5 @@ final readonly class LockstepPolicy implements RitualPolicy
     private function index(int $scene, int $length): int
     {
         return \max(0, \min($scene, $length - 1));
-    }
-
-    private function moving(int $scene): bool
-    {
-        return $scene >= 0 && $scene < $this->finalScene();
     }
 }

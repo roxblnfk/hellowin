@@ -49,6 +49,7 @@ use Spiral\Cache\Storage\ArrayStorage;
 final class RitualHarness
 {
     public const BONFIRE = 'bonfire';
+    public const CIRCLE = 'circle';
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -80,6 +81,8 @@ final class RitualHarness
      * @param list<non-empty-string> $pumpkins
      * @param list<int>|null $bonfire Last bonfire stage by scene; null leaves the patch without a bonfire.
      * @param positive-int $bonfireThreshold
+     * @param positive-int|null $circle Last circle stage; null leaves the patch without a circle.
+     * @param positive-int $circleThreshold
      */
     public function __construct(
         int $threshold = 2,
@@ -88,6 +91,8 @@ final class RitualHarness
         public readonly FakeLock $lock = new FakeLock(),
         ?array $bonfire = null,
         int $bonfireThreshold = 3,
+        ?int $circle = null,
+        int $circleThreshold = 3,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -96,26 +101,27 @@ final class RitualHarness
         $elements = new ElementRegistry([
             ...\array_map(static fn(string $id): Element => new Element($id, 'pumpkin', 10, 20, ['🎃']), $pumpkins),
             ...($bonfire === null ? [] : [new Element(self::BONFIRE, Element::TYPE_BONFIRE, 50, 63, ['🔥'], null)]),
+            ...($circle === null ? [] : [new Element(self::CIRCLE, Element::TYPE_CIRCLE, 50, 63, ['🩸'], null)]),
         ]);
         $this->storage = new ArrayStorage();
-        $this->store = new RitualStore($this->storage, $this->lock, $pumpkins, bonfire: $bonfire === null ? null : self::BONFIRE);
+        $this->store = new RitualStore($this->storage, $this->lock, $pumpkins, bonfire: $bonfire === null ? null : self::BONFIRE, circle: $circle === null ? null : self::CIRCLE);
         $this->playerStore = new PlayerStore($this->storage, new Locks($this->lock));
         $this->players = new PlayerService($this->playerStore, new NullLogger());
-        $policy = new LockstepPolicy($threshold, $stageMax, $bonfireThreshold, $bonfire ?? []);
+        $policy = new LockstepPolicy($threshold, $stageMax, $bonfireThreshold, $bonfire ?? [], $circleThreshold, $circle ?? 1);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
         $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork']));
         $queue = new TransitionQueue($this->queue, $metrics);
 
-        $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players, $threshold, bonfireThreshold: $bonfireThreshold);
+        $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players);
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->clock = new FrozenClock();
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $threshold, $bonfireThreshold);
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy);
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal, $bonfireThreshold);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);

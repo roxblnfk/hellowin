@@ -20,12 +20,12 @@ final readonly class Story
     public const LAST_STEP = 5;
 
     /**
-     * @param int<0, max>|null $ready Scene whose pumpkins have all reached its last stage; it waits for the moderator.
+     * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
      * @param int<0, 5>|null $finale Finale step; null outside the final scene.
      * @param bool $paused Flyers and zombies are not launched.
      * @param bool $zombies Zombies walk out of the patch in the cursed world.
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
-     *        pumpkin, or the bonfire in a scene that has it.
+     *        pumpkin, or the centrepiece in a scene that has one: the bonfire or the circle.
      * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.
      */
     public function __construct(
@@ -96,6 +96,14 @@ final readonly class Story
         return $this->finale !== null && $step === $this->finale + 1 && $step <= self::LAST_STEP
             ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire)
             : $this;
+    }
+
+    /**
+     * The first finale step waits for the final scene to be ready: FrankenPHP rises out of a closed circle.
+     */
+    public function awaitsReady(int $step): bool
+    {
+        return $this->finale === 0 && $step === 1 && $this->ready === null;
     }
 
     public function withPaused(bool $paused): self

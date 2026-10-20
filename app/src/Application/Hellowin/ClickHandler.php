@@ -15,10 +15,6 @@ use Random\Randomizer;
 
 final readonly class ClickHandler
 {
-    /**
-     * @param positive-int $threshold Clicks a pumpkin needs to move, sent to clients for the progress bar.
-     * @param positive-int $bonfireThreshold Clicks the bonfire needs to move.
-     */
     public function __construct(
         private ElementRegistry $elements,
         private RitualStore $store,
@@ -27,9 +23,7 @@ final readonly class ClickHandler
         private RitualMetrics $metrics,
         private ChannelPublisher $publisher,
         private PlayerService $players,
-        private int $threshold,
         private Randomizer $randomizer = new Randomizer(),
-        private int $bonfireThreshold = 1,
     ) {}
 
     /**
@@ -39,35 +33,34 @@ final readonly class ClickHandler
      *
      * @param non-empty-string|null $player Public id of the clicking player, null for an anonymous connection.
      * @throws UnknownElementException
-     * @throws ElementLockedException A click on the bonfire while it is closed: not counted, not published.
+     * @throws ElementLockedException A click on a closed centrepiece: not counted, not published.
      * @throws RitualBusyException
      */
     public function click(string $elementId, ?string $player = null): ClickOutcome
     {
         $element = $this->elements->find($elementId)
             ?? throw new UnknownElementException(\sprintf('Unknown element "%s".', $elementId));
-        $bonfire = $element->bonfire();
+        $type = $element->type;
 
-        // The pumpkins are read under the bonfire lock, so a reset cannot slip between the check and the count
-        $outcome = $this->store->click($element->id, $bonfire ? $this->bonfireOpen(...) : null)
-            ?? throw new ElementLockedException(\sprintf('The bonfire "%s" takes no clicks now.', $element->id));
+        // A centrepiece reads the whole ritual under its own lock, so a reset cannot slip between the check and the count
+        $accepts = null;
+        if ($element->centrepiece()) {
+            $centrepiece = $element->type;
+            $accepts = fn(RitualSnapshot $ritual): bool => $this->policy->centrepieceOpen($centrepiece, $ritual);
+        }
+        $outcome = $this->store->click($element->id, $accepts)
+            ?? throw new ElementLockedException(\sprintf('The %s "%s" takes no clicks now.', $type, $element->id));
         $this->metrics->click($element);
         $stats = $this->players->clicked($player);
 
         $emoji = $element->emojis[$this->randomizer->getInt(0, \count($element->emojis) - 1)];
-        $threshold = $bonfire ? $this->bonfireThreshold : $this->threshold;
-        $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $threshold, $stats);
+        $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $this->policy->threshold($type), $stats);
 
-        $toStage = $bonfire
-            ? $this->policy->bonfireTransition($outcome->pumpkin, $outcome->scene)
+        $toStage = $element->centrepiece()
+            ? $this->policy->centrepieceTransition($element->type, $outcome->pumpkin, $outcome->scene)
             : $this->policy->pumpkinTransition($outcome->pumpkin, $outcome->scene);
-        $toStage === null or $this->transitions->pumpkin($outcome->round, $element->id, $toStage, $player, $bonfire);
+        $toStage === null or $this->transitions->pumpkin($outcome->round, $element->id, $toStage, $player, $type);
 
         return $outcome;
-    }
-
-    private function bonfireOpen(RitualSnapshot $ritual): bool
-    {
-        return $ritual->bonfire !== null && $this->policy->bonfireOpen($ritual->scene, $ritual->pumpkins, $ritual->bonfire);
     }
 }

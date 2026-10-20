@@ -949,6 +949,9 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                     это видно по <code>kind="bonfire"</code> в метриках. Сцену делает готовой переход костра на его
                     последнюю стадию сцены (<code>HELLOWIN_BONFIRE_STAGE_MAX</code>) — тот же
                     <code>markReady()</code>, реплики <code>bonfire-done</code> и <code>scene-ready</code>.
+                    Так же в финальной сцене зал рисует магический круг (лок <code>circle</code>, ключ
+                    <code>{round}:circle:{toStage}</code>): замкнутый круг делает финал готовым, и только тогда
+                    «Шаг финала» поднимает FrankenPHP (без готовности — лишь с <code>force</code>).
                 </li>
                 <li>
                     <strong>Переход.</strong> Модератор нажимает «Следующая сцена» — RPC

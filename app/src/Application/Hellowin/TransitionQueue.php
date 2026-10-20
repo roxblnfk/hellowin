@@ -6,6 +6,7 @@ namespace App\Application\Hellowin;
 
 use App\Application\Hellowin\Job\TransitionPumpkin;
 use App\Application\Hellowin\Job\TransitionScene;
+use App\Domain\Element\Element;
 use Spiral\Queue\QueueInterface;
 
 /**
@@ -36,14 +37,14 @@ final readonly class TransitionQueue
     }
 
     /**
-     * The bonfire goes through the same job and key shape as a pumpkin, `{round}:bonfire:{toStage}`; only the metric
-     * label tells it apart.
+     * A centrepiece goes through the same job and key shape as a pumpkin, `{round}:bonfire:{toStage}` or
+     * `{round}:circle:{toStage}`; only the metric label tells it apart.
      *
      * @param non-empty-string|null $player Player of the click that queues the job; not part of the key, so
      *        of the duplicates the one that runs decides who finished the element.
-     * @param bool $bonfire The element is the bonfire.
+     * @param Element::TYPE_* $type Type of the element, the `kind` label of the metric.
      */
-    public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null, bool $bonfire = false): void
+    public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null, string $type = Element::TYPE_PUMPKIN): void
     {
         $this->queue->push(TransitionPumpkin::class, [
             'key' => self::pumpkinKey($round, $pumpkin, $toStage),
@@ -52,7 +53,7 @@ final readonly class TransitionQueue
             'toStage' => $toStage,
             'player' => $player,
         ]);
-        $this->metrics->jobPushed($bonfire ? RitualMetrics::KIND_BONFIRE : RitualMetrics::KIND_PUMPKIN);
+        $this->metrics->jobPushed($type);
     }
 
     public function scene(int $round, int $toScene): void

@@ -127,6 +127,28 @@ final class HellowinConfigTest
         Assert::same((new HellowinConfig(['bonfire_clicks_per_stage' => '40']))->getBonfireClicksPerStage(), 40);
     }
 
+    public function circleHasNoSizeAndItsOwnNumbers(): void
+    {
+        $config = new HellowinConfig(['elements' => [
+            ['id' => 'circle', 'type' => 'circle', 'x' => 50, 'y' => 63, 'size' => 'l', 'emojis' => ['🩸']],
+        ]]);
+
+        Assert::same($config->getElements()[0]->toArray(), ['id' => 'circle', 'type' => 'circle', 'x' => 50.0, 'y' => 63.0]);
+        Assert::same([$config->getCircleClicksPerStage(), $config->getCircleStages()], [20, 4]);
+        Assert::same((new HellowinConfig(['circle_stages' => ' 6 ']))->getCircleStages(), 6);
+    }
+
+    #[DataSet(['circle_stages', 0, 'HELLOWIN_CIRCLE_STAGES'])]
+    #[DataSet(['circle_clicks_per_stage', 'x', 'HELLOWIN_CIRCLE_CLICKS_PER_STAGE'])]
+    public function rejectsInvalidCircleNumbers(string $key, mixed $value, string $env): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
+
+        $config = new HellowinConfig([$key => $value]);
+        $config->getCircleStages();
+        $config->getCircleClicksPerStage();
+    }
+
     #[DataSet(['0,4,3'], 'decreasing')]
     #[DataSet(['-1,2'], 'negative')]
     #[DataSet([''], 'empty')]

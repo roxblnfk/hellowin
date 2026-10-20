@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Element\Element;
+
 /**
- * When pumpkins and the bonfire move forward and when a scene is ready for the next one. The engine asks the policy
- * before it queues a transition; the transition itself only checks that the state is still one step behind the
- * target. The scene itself moves only when the moderator says so.
+ * When pumpkins and the centrepieces move forward and when a scene is ready for the next step. The engine asks the
+ * policy before it queues a transition; the transition itself only checks that the state is still one step behind
+ * the target. The scene itself moves only when the moderator says so.
  *
- * The bonfire is lit after the pumpkins: in a scene that takes it further, it accepts clicks only once every pumpkin
- * is done, and the scene is ready once the bonfire is done too.
+ * The centrepieces stand one at a time in the middle of the patch, each with its own threshold and stages. The
+ * bonfire is lit after the pumpkins: in a scene that takes it further, it accepts clicks only once every pumpkin is
+ * done, and the scene is ready once the bonfire is done too. The magic circle is drawn in the final scene before the
+ * first finale step; the final scene is ready once the circle is closed.
  */
 interface RitualPolicy
 {
@@ -20,41 +24,37 @@ interface RitualPolicy
     public function pumpkinTransition(Pumpkin $pumpkin, int $scene): ?int;
 
     /**
-     * @return int<1, max>|null Stage the bonfire may move to now, null when it stays.
+     * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
+     * @return int<1, max>|null Stage the centrepiece may move to now, null when it stays.
      */
-    public function bonfireTransition(Pumpkin $bonfire, int $scene): ?int;
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene): ?int;
 
     /**
-     * @param list<Pumpkin> $pumpkins Every pumpkin of the ritual.
-     * @return bool Whether every pumpkin has reached the last stage of the scene; never in the final scene.
+     * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
+     * @return bool Whether a click on the centrepiece counts now; false when the ritual has none of the type.
      */
-    public function pumpkinsDone(int $scene, array $pumpkins): bool;
+    public function centrepieceOpen(string $type, RitualSnapshot $ritual): bool;
 
     /**
-     * @param list<Pumpkin> $pumpkins
-     * @return bool Whether a click on the bonfire counts: the pumpkins are done, the bonfire is not.
+     * @return bool Whether the scene is done and waits for the moderator: the pumpkins and the bonfire before the
+     *         final scene, the circle at the start of the final one.
      */
-    public function bonfireOpen(int $scene, array $pumpkins, Pumpkin $bonfire): bool;
+    public function sceneReady(RitualSnapshot $ritual): bool;
 
     /**
-     * @param list<Pumpkin> $pumpkins Every pumpkin of the ritual.
-     * @param Pumpkin|null $bonfire Null when the patch has no bonfire.
-     * @return bool Whether the scene is done and may move on; never in the final scene.
+     * @param Element::TYPE_* $type
+     * @return int<0, max> The last stage an element of the type reaches in the scene.
      */
-    public function sceneReady(int $scene, array $pumpkins, ?Pumpkin $bonfire = null): bool;
+    public function stageMax(int $scene, string $type = Element::TYPE_PUMPKIN): int;
 
     /**
-     * @return int<0, max> The last stage a pumpkin reaches in the scene.
+     * @param Element::TYPE_* $type
+     * @return positive-int Clicks an element of the type needs to move.
      */
-    public function stageMax(int $scene): int;
+    public function threshold(string $type = Element::TYPE_PUMPKIN): int;
 
     /**
-     * @return int<0, max> The last stage the bonfire reaches in the scene.
-     */
-    public function bonfireStageMax(int $scene): int;
-
-    /**
-     * @return positive-int The scene where the ritual ends and nothing moves any more.
+     * @return positive-int The scene where the pumpkins stop moving and the finale begins.
      */
     public function finalScene(): int;
 }

@@ -83,7 +83,7 @@ final class TickerTest
 
         $ritual->transitions->scene(1, 1);
         for ($step = 1; $step <= 5; ++$step) {
-            $ritual->story->finaleStep($step);
+            $ritual->story->finaleStep($step, force: true);
         }
         $ticker->tick(6_000);
         Assert::count(self::zombies($ritual), 1);
@@ -101,7 +101,7 @@ final class TickerTest
         $ritual = new RitualHarness(stageMax: [1]);
         $ritual->transitions->scene(1, 1);
         for ($step = 1; $step <= 5; ++$step) {
-            $ritual->story->finaleStep($step);
+            $ritual->story->finaleStep($step, force: true);
         }
         $ritual->story->zombies(true);
         $zombie = $ritual->flyers->launchZombie($ritual->clock->now);

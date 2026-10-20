@@ -29,11 +29,15 @@ return [
     'bonfire_clicks_per_stage' => env('HELLOWIN_BONFIRE_CLICKS_PER_STAGE', 20),
     'bonfire_stage_max' => env('HELLOWIN_BONFIRE_STAGE_MAX', '0,4,7'),
 
+    // The magic circle on the ashes of the final scene: clicks per stage and its last stage, where it is closed
+    'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
+    'circle_stages' => env('HELLOWIN_CIRCLE_STAGES', 4),
+
     // Valkey of the idempotency storage (app/config/idempotency.php)
     'valkey_dsn' => env('VALKEY_DSN', 'tcp://valkey:6379'),
 
-    // Pumpkins around the root in the centre of the screen and the bonfire on the tops in the very middle: x/y are
-    // percents of the viewport, a pumpkin's size is s, m or l
+    // Pumpkins around the root in the centre of the screen and, in the very middle, the bonfire on the tops and later
+    // the magic circle on its ashes: x/y are percents of the viewport, a pumpkin's size is s, m or l
     'elements' => [
         ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 47.8, 'y' => 51.2, 'size' => 'm', 'emojis' => ['🎃', '👻', '🦇']],
         ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 55.7, 'y' => 55, 'size' => 's', 'emojis' => ['🎃', '🍬', '🍭']],
@@ -54,6 +58,7 @@ return [
         ['id' => 'pumpkin-17', 'type' => 'pumpkin', 'x' => 35.8, 'y' => 51.5, 'size' => 's', 'emojis' => ['🎃', '🐺', '🌕']],
         ['id' => 'pumpkin-18', 'type' => 'pumpkin', 'x' => 45.2, 'y' => 58.4, 'size' => 's', 'emojis' => ['🎃', '🍄', '🦔']],
         ['id' => 'bonfire', 'type' => 'bonfire', 'x' => 50, 'y' => 63, 'emojis' => ['🔥', '✨', '💨']],
+        ['id' => 'circle', 'type' => 'circle', 'x' => 50, 'y' => 63, 'emojis' => ['🩸', '🔮', '🕯️']],
     ],
 
     // Bushes birds fly out of, on the edges of the patch: x/y are percents of the viewport; depth is the flyer depth

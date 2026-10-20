@@ -51,14 +51,18 @@ final readonly class StoryService
     }
 
     /**
+     * @param bool $force Take the first step even if the circle is not closed: the room got stuck.
      * @return int<0, 5> The current step: the requested one if it was next, the unchanged one otherwise.
-     * @throws StoryRefusedException Outside the final scene.
+     * @throws StoryRefusedException Outside the final scene, or the first step before the scene is ready.
      * @throws RitualBusyException
      */
-    public function finaleStep(int $step): int
+    public function finaleStep(int $step, bool $force = false): int
     {
-        [$before, $after] = $this->store->updateStory(static fn(Story $story): Story => $story->stepTo($step));
+        [$before, $after] = $this->store->updateStory(
+            static fn(Story $story): Story => !$force && $story->awaitsReady($step) ? $story : $story->stepTo($step),
+        );
         $after->finale === null and throw new StoryRefusedException('not final');
+        !$force && $before->awaitsReady($step) and throw new StoryRefusedException('not ready');
 
         if ($after->finale !== $before->finale) {
             $ritual = $this->store->snapshot();

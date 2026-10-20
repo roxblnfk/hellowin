@@ -7,7 +7,8 @@
 `move`, `leave`, `walkers` в снимке, `item` в `scene`) — тоже; модератор и сюжет (секрет модератора, RPC пульта, события
 `owl`, `ready`, `finale`, `pause`, `zombies`, `ready`/`finale`/`paused`/`zombies` в снимке) — тоже; летуны по сценам,
 особые летуны и зомби — тоже; костёр (элемент `bonfire` в снимке, ошибка `locked`, `bonfireStageMax` в `scene`,
-реплики `bonfire-open` / `bonfire-done`) и `wobble` летучих мышей — тоже.
+реплики `bonfire-open` / `bonfire-done`) и `wobble` летучих мышей — тоже; магический круг (элемент `circle` в снимке,
+`circleStageMax` в `scene`, реплика `circle-done`, `force` и `not ready` у `finale.step`) — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -49,14 +50,14 @@
 | Метод | Данные | Ответ, эффект |
 |---|---|---|
 | `scene.next` | `{scene, force?}` — сцена, которую видит модератор | `{ok:true, scene}` — сцена, которую модератор увидит: `scene+1` (переход поставлен в очередь, событие `scene` придёт следом) или текущая, если `scene` уже не текущая (без перехода). Без `force: true` — только из готовой сцены, иначе `not ready`; из финала — `final scene`; `scene` не целое ≥ 0 — `invalid scene` |
-| `finale.step` | `{step, force?}` — шаг, на который перейти (текущий + 1); шаг 1 — только при замкнутом круге, иначе `not ready` (с `force` — без проверки, **запланировано**) | `{ok:true, step}` — текущий шаг после вызова; событие `finale` и реплика `finale-{step}`; шаг не следующий (в т. ч. повтор и шаг > 5) — ответ с текущим без изменений; вне финальной сцены — `not final`; `step` не целое — `invalid step` |
+| `finale.step` | `{step, force?}` — шаг, на который перейти (текущий + 1); шаг 1 — только из готовой финальной сцены (круг замкнут), иначе `not ready`; с `force: true` — без проверки | `{ok:true, step}` — текущий шаг после вызова; событие `finale` и реплика `finale-{step}`; шаг не следующий (в т. ч. повтор и шаг > 5) — ответ с текущим без изменений; вне финальной сцены — `not final`; `step` не целое — `invalid step` |
 | `owl.say` | `{line, params?}` или `{text}` | `{ok:true}`, событие `owl`; `line` — id из каталога ([`scenario.md`](scenario.md), «Модератор и сова»; сервер проверяет формат slug `a-z 0-9 -` до 32 символов, не список), иначе `invalid line`; `params` — объект (не список), иначе `invalid params`; `text` — 1–200 символов после обрезки, иначе `invalid text`; если пришли и `text`, и `line` — говорится `text` |
 | `flyer.special` | `{kind}` — `witch`, `roadrunner` | `{ok:true, flyer}` — id запущенного летуна этого вида (событие `flyer`), даже на паузе; другой вид — `unknown kind` |
 | `zombies` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `zombies` (при включении — и реплика `zombies`); зомби запускаются только в проклятом мире (`finale` = 5); `on` не bool — `invalid on` |
 | `pause` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `pause`; на паузе летуны и зомби не запускаются, уже запущенные долетают; `on` не bool — `invalid on` |
 | `reset` | как выше | сброс ритуала |
 
-Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы или когда костёр уже на своей последней стадии сцены: клик не
+Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы или когда костёр уже на своей последней стадии сцены; по кругу — вне финальной сцены, после шага финала 0 или когда круг замкнут: клик не
 считается и не рассылается),
 `busy` (не удалось взять лок), `internal error`; для `register` —
 `invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `anonymous`, `invalid point` (`x`/`y` не числа),
@@ -82,17 +83,17 @@
 | `type` | Поля | Когда |
 |---|---|---|
 | `click` | `element`, `emoji`, `clicks`, `threshold`, `stage`, `player?` | каждый принятый клик |
-| `pumpkin` | `element`, `stage`, `player?` | элемент — тыква, костёр (`element: "bonfire"`) или магический круг (`element: "circle"`, **запланировано**) — перешёл в новую стадию (ровно одно событие на переход) |
-| `scene` | `scene`, `stageMax`, `bonfireStageMax` (последняя стадия костра в новой сцене), `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
+| `pumpkin` | `element`, `stage`, `player?` | элемент — тыква, костёр (`element: "bonfire"`) или магический круг (`element: "circle"`) — перешёл в новую стадию (ровно одно событие на переход) |
+| `scene` | `scene`, `stageMax`, `bonfireStageMax` (последняя стадия костра в новой сцене), `circleStageMax` (последняя стадия магического круга в новой сцене: `HELLOWIN_CIRCLE_STAGES` в финальной, 0 до неё), `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
 | `reset` | `item` (предмет фигурок в сцене 0) | сброс; новый `round` в самом событии |
 | `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `wobble?:{amp,waves}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
 | `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` — в пределах секунды, или прошёл экран входа) или сменил вид / имя |
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
 | `leave` | `player: {id}` | у игрока нет подключений дольше `HELLOWIN_WALK_LEAVE_AFTER` мс — фигурка уходит |
-| `ready` | `scene` | все тыквы сцены дошли до `stageMax`, а костёр — до своей последней стадии сцены (если она выше той, на которой он был) — сцена ждёт модератора (ровно одно событие на сцену); следом реплики совы `last-pumpkin` (если последней была тыква) или `bonfire-done` (если костёр) — обе только если добил игрок — и `scene-ready`. Если сцене нужен костёр, последняя тыква события `ready` не даёт: вместо него реплики `last-pumpkin` и `bonfire-open` |
+| `ready` | `scene` | все тыквы сцены дошли до `stageMax`, а костёр — до своей последней стадии сцены (если она выше той, на которой он был) — сцена ждёт модератора (ровно одно событие на сцену); следом реплики совы `last-pumpkin` (если последней была тыква) или `bonfire-done` (если костёр), `circle-done` (если замкнут магический круг — в финальной сцене на шаге 0 готовность даёт он) — только если добил игрок — и `scene-ready`. Если сцене нужен костёр, последняя тыква события `ready` не даёт: вместо него реплики `last-pumpkin` и `bonfire-open` |
 | `finale` | `step`, `reveal?` | шаг финала; на шаге 4 и дальше — `reveal` (см. «Снимок»). Шаг 0 приходит вместе с `scene` при входе в финальную сцену |
-| `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `bonfire-open`, `bonfire-done`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
+| `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `bonfire-open`, `bonfire-done`, `circle-done`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
 | `pause` | `on` | модератор включил или снял паузу нечисти |
 | `zombies` | `on` | модератор включил или выключил зомби |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
@@ -122,7 +123,7 @@
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":1}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
 {"type":"pumpkin","round":1,"element":"bonfire","stage":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
-{"type":"scene","round":1,"scene":1,"stageMax":8,"bonfireStageMax":4,"item":"candle"}
+{"type":"scene","round":1,"scene":1,"stageMax":8,"bonfireStageMax":4,"circleStageMax":0,"item":"candle"}
 {"type":"reset","round":2,"item":"pistol"}
 {"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
 {"type":"move","round":1,"player":{"id":"3f9c0a7d12b4e856"},"walk":{"path":[{"x":40,"y":94},{"x":66,"y":90},{"x":82,"y":74}],"startedAt":1760900002000,"arrivesAt":1760900006100}}
@@ -152,7 +153,8 @@
   "threshold": 5,
   "bushes": [{"id":"bush-1","x":4,"y":66,"depth":2}],
   "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2},
-               {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0}],
+               {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0},
+               {"id":"circle","type":"circle","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0}],
   "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
   "ready": false,
   "finale": null,
@@ -165,10 +167,11 @@
 `ready` — сцена готова и ждёт модератора; `finale` — `null` вне финальной сцены, в ней `{step, reveal?}`;
 `paused`, `zombies` — переключатели пульта. `reveal` — числа вечера с начала раунда для экрана
 разоблачения: `{clicks, jobs, burned, shot, lastPumpkin: {id, name} | null}` — принятые клики, выполненные задачи
-перехода (переходы тыкв и костра + переходы сцен), сгоревшие клики (сверх порога и после готовности тыквы; клики
-`locked` по костру не принимаются и сюда не входят), сбитые летуны (и зомби), кто добил последний элемент последней
-готовой сцены — тыкву или, в сцене с костром, костёр (`null`, если клик был анонимным или сцену переключили
-`force`, не дождавшись; имя поля осталось `lastPumpkin`). Как считаются — [`engine.md`](engine.md), «Сюжет».
+перехода (переходы тыкв, костра и круга + переходы сцен), сгоревшие клики (сверх порога и после готовности тыквы;
+клики `locked` по костру и кругу не принимаются и сюда не входят), сбитые летуны (и зомби), кто добил последний элемент
+последней готовой сцены — тыкву, в сцене с костром — костёр, в финальной — круг (если элемент добит анонимно, остаётся
+игрок прежней готовой сцены; `null`, если такого нет — добивали анонимно или сцены переключали `force`, не дождавшись;
+имя поля осталось `lastPumpkin`). Как считаются — [`engine.md`](engine.md), «Сюжет».
 
 Сброс (`reset`) возвращает и сюжет: `ready` — `false`, `finale` — `null`, `zombies` — `false`; `paused` сохраняется —
 пауза про зал, а не про сюжет. Клиент применяет это сам по событию `reset`, без RPC.
@@ -179,9 +182,10 @@
 за полёт); без поля — без колебаний; петли — `waves` с большой `amp` или отдельное поле, если понадобится (согласовать).
 Диапазоны — [`engine.md`](engine.md), «Летуны». `via` — контрольная точка дуги
 (квадратичная кривая), без неё полёт прямой. `x`/`y` — проценты экрана (на узких экранах фронтенд растягивает раскладку тыкв по x от центра — `spreadX`
-в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l` (у тыкв); у магического круга (`type: circle`, id `circle`, **запланировано**) — как у костра:
+в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l` (у тыкв); у магического круга (`type: circle`, id `circle`, без `size`) — как у костра:
 свои `threshold` (`HELLOWIN_CIRCLE_CLICKS_PER_STAGE`) и `stageMax` (`HELLOWIN_CIRCLE_STAGES` в финальной сцене, 0 до неё),
-кликабелен в финальной сцене на шаге 0, готовность финальной сцены — круг на `stageMax`, шаг финала 1 без готовности —
+кликабелен в финальной сцене на шаге 0, пока `stage` ниже `stageMax` (новую сцена приносит в `scene.circleStageMax`),
+готовность финальной сцены — круг на `stageMax`, шаг финала 1 без готовности —
 только `force`; у костра (`type: bonfire`, id `bonfire`, без `size`) — свои `threshold`
 (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`) и `stageMax` (последняя стадия костра в текущей сцене, из
 `HELLOWIN_BONFIRE_STAGE_MAX`; новую сцена приносит в `scene.bonfireStageMax`), кликабелен, когда все тыквы на

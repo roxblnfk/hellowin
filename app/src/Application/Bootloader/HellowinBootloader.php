@@ -9,13 +9,10 @@ use App\Application\Config\HellowinConfig;
 use App\Application\Config\PlayerConfig;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
-use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
-use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
-use App\Application\Player\PlayerService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
 use App\Application\Walk\CentrifugoPresence;
@@ -23,6 +20,7 @@ use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
+use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
@@ -60,7 +58,8 @@ final class HellowinBootloader extends Bootloader
                 $cache->storage($config->getStorage()),
                 $lock,
                 $elements->pumpkinIds(),
-                bonfire: $elements->bonfire()?->id,
+                bonfire: $elements->centrepiece(Element::TYPE_BONFIRE)?->id,
+                circle: $elements->centrepiece(Element::TYPE_CIRCLE)?->id,
             ),
             PlayerStore::class => static fn(
                 HellowinConfig $config,
@@ -73,27 +72,9 @@ final class HellowinBootloader extends Bootloader
                     $config->getSceneStageMax(),
                     $config->getBonfireClicksPerStage(),
                     $config->getBonfireStageMax(),
+                    $config->getCircleClicksPerStage(),
+                    $config->getCircleStages(),
                 ),
-            ClickHandler::class => static fn(
-                HellowinConfig $config,
-                ElementRegistry $elements,
-                RitualStore $store,
-                RitualPolicy $policy,
-                TransitionQueue $transitions,
-                RitualMetrics $metrics,
-                ChannelPublisher $publisher,
-                PlayerService $players,
-            ): ClickHandler => new ClickHandler(
-                $elements,
-                $store,
-                $policy,
-                $transitions,
-                $metrics,
-                $publisher,
-                $players,
-                $config->getClicksPerStage(),
-                bonfireThreshold: $config->getBonfireClicksPerStage(),
-            ),
             SnapshotFactory::class => static fn(
                 HellowinConfig $config,
                 FlyerConfig $flyers,
@@ -107,21 +88,19 @@ final class HellowinBootloader extends Bootloader
                 $elements,
                 $store,
                 $policy,
-                $config->getClicksPerStage(),
                 $config->getBushes(\count($flyers->getDepths())),
                 $clock,
                 $walkers,
                 $config->getItems(),
                 $reveal,
-                $config->getBonfireClicksPerStage(),
             ),
             ShotTally::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
-            RevealBuilder::class => static fn(HellowinConfig $config, ShotTally $shots, PlayerStore $players): RevealBuilder
-                => new RevealBuilder($shots, $players, $config->getClicksPerStage(), $config->getBonfireClicksPerStage()),
+            RevealBuilder::class => static fn(ShotTally $shots, PlayerStore $players, RitualPolicy $policy): RevealBuilder
+                => new RevealBuilder($shots, $players, $policy),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

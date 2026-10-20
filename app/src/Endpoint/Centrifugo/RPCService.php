@@ -184,7 +184,7 @@ final readonly class RPCService implements ServiceInterface
             return self::fail('invalid step');
         }
 
-        return ['ok' => true, 'step' => $this->story->finaleStep($step)];
+        return ['ok' => true, 'step' => $this->story->finaleStep($step, ($params['force'] ?? false) === true)];
     }
 
     /**

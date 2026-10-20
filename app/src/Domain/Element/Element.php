@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace App\Domain\Element;
 
 /**
- * A clickable thing on the page: a pumpkin or the bonfire in the middle of the patch.
+ * A clickable thing on the page: a pumpkin or a centrepiece in the middle of the patch — the bonfire of scenes 1–2 or
+ * the magic circle of the final scene.
  */
 final readonly class Element
 {
     public const TYPE_PUMPKIN = 'pumpkin';
 
-    /** The one element the whole room clicks once the pumpkins of the scene are done. */
+    /** The centrepiece the whole room clicks once the pumpkins of the scene are done. */
     public const TYPE_BONFIRE = 'bonfire';
+
+    /** The centrepiece the whole room draws on the ashes at the start of the final scene. */
+    public const TYPE_CIRCLE = 'circle';
+
+    public const CENTREPIECES = [self::TYPE_BONFIRE, self::TYPE_CIRCLE];
 
     /**
      * @param non-empty-string $id
@@ -20,7 +26,7 @@ final readonly class Element
      * @param float $x Horizontal position, percent of the viewport width.
      * @param float $y Vertical position, percent of the viewport height.
      * @param non-empty-list<non-empty-string> $emojis Pool to pick from on each click.
-     * @param 's'|'m'|'l'|null $size Null for the bonfire: it has one size.
+     * @param 's'|'m'|'l'|null $size Null for a centrepiece: it has one size.
      */
     public function __construct(
         public string $id,
@@ -31,9 +37,14 @@ final readonly class Element
         public ?string $size = 'm',
     ) {}
 
-    public function bonfire(): bool
+    /**
+     * One of a kind, with its own lock, record, threshold and stages: the bonfire or the circle.
+     *
+     * @psalm-assert-if-true self::TYPE_BONFIRE|self::TYPE_CIRCLE $this->type
+     */
+    public function centrepiece(): bool
     {
-        return $this->type === self::TYPE_BONFIRE;
+        return $this->type !== self::TYPE_PUMPKIN;
     }
 
     /**

@@ -231,6 +231,32 @@ final class RitualStoreTest
         Assert::equals($store->snapshot()->pumpkins, [new Pumpkin('a')]);
     }
 
+    public function circleKeepsItsOwnKeyAndLockBesideTheBonfire(): void
+    {
+        $storage = new ArrayStorage();
+        $lock = new FakeLock();
+        $store = new RitualStore($storage, $lock, ['a'], bonfire: 'fire', circle: 'ring');
+        $lock->held['circle'] = 'someone-else';
+
+        try {
+            $store->click('ring');
+            Assert::fail('The circle click must wait for the circle lock.');
+        } catch (RitualBusyException) {
+        }
+        $store->click('fire');
+        unset($lock->held['circle']);
+        $store->click('ring');
+        $store->advancePumpkin(1, 'ring', 1);
+
+        Assert::same($storage->get('hellowin:circle'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1]);
+        Assert::equals($store->snapshot()->circle, new Pumpkin('ring', 1, 0, 1));
+        Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire', 0, 1, 1));
+
+        $store->reset(1);
+
+        Assert::equals($store->snapshot()->circle, new Pumpkin('ring'));
+    }
+
     public function refusedClickWritesNothing(): void
     {
         $store = new RitualStore(new ArrayStorage(), new FakeLock(), ['a'], bonfire: 'fire');

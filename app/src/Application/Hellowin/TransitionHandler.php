@@ -6,6 +6,7 @@ namespace App\Application\Hellowin;
 
 use App\Application\Player\PlayerService;
 use App\Application\Story\OwlLine;
+use App\Domain\Element\Element;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -26,9 +27,9 @@ final readonly class TransitionHandler
     ) {}
 
     /**
-     * Moves a pumpkin or the bonfire. The last pumpkin of a scene opens the bonfire when the scene takes it further,
-     * otherwise makes the scene ready; the bonfire reaching its last stage of the scene makes it ready. A ready scene
-     * waits for the moderator, and the owl says each of these once.
+     * Moves a pumpkin or a centrepiece. The last pumpkin of a scene opens the bonfire when the scene takes it further,
+     * otherwise makes the scene ready; the bonfire reaching its last stage of the scene, or the circle its last stage,
+     * makes it ready. A ready scene waits for the moderator, and the owl says each of these once.
      *
      * @param non-empty-string|null $player Player of the click that queued the transition: it finished the element.
      * @return bool Whether the element moved.
@@ -45,23 +46,22 @@ final readonly class TransitionHandler
         $this->publisher->pumpkin($round, $moved, $finisher);
 
         $ritual = $this->store->snapshot();
-        $bonfire = $ritual->bonfire?->id === $moved->id;
-        $bonfire ? $this->metrics->bonfireMoved($moved) : $this->metrics->pumpkinMoved($moved);
+        $type = $ritual->typeOf($moved->id);
+        $this->metrics->moved($type, $moved);
         if ($ritual->round !== $round) {
             return true;
         }
 
         // Elements finishing at once may each see the same; the store marks it for one of them
         $params = $finisher === null ? null : ['player' => $finisher->ref()];
-        if ($this->policy->sceneReady($ritual->scene, $ritual->pumpkins, $ritual->bonfire)) {
+        if ($this->policy->sceneReady($ritual)) {
             if ($this->store->markReady($round, $ritual->scene, $player)) {
                 $this->publisher->ready($round, $ritual->scene);
-                $params === null or $this->publisher->owl($round, $bonfire ? OwlLine::BONFIRE_DONE : OwlLine::LAST_PUMPKIN, $params);
+                $params === null or $this->publisher->owl($round, OwlLine::finished($type), $params);
                 $this->publisher->owl($round, OwlLine::SCENE_READY);
             }
-        } elseif (!$bonfire
-            && $ritual->bonfire !== null
-            && $this->policy->bonfireOpen($ritual->scene, $ritual->pumpkins, $ritual->bonfire)
+        } elseif ($type === Element::TYPE_PUMPKIN
+            && $this->policy->centrepieceOpen(Element::TYPE_BONFIRE, $ritual)
             && $this->store->markBonfireOpen($round, $ritual->scene)) {
             $params === null or $this->publisher->owl($round, OwlLine::LAST_PUMPKIN, $params);
             $this->publisher->owl($round, OwlLine::BONFIRE_OPEN);
@@ -81,7 +81,13 @@ final readonly class TransitionHandler
             return false;
         }
 
-        $this->publisher->scene($round, $toScene, $this->policy->stageMax($toScene), $this->policy->bonfireStageMax($toScene));
+        $this->publisher->scene(
+            $round,
+            $toScene,
+            $this->policy->stageMax($toScene),
+            $this->policy->stageMax($toScene, Element::TYPE_BONFIRE),
+            $this->policy->stageMax($toScene, Element::TYPE_CIRCLE),
+        );
         $final and $this->publisher->finale($round, 0);
         $this->publisher->owl($round, OwlLine::scene($toScene));
         $this->metrics->sceneMoved($toScene);

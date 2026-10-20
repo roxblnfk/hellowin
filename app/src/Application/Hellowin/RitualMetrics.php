@@ -26,9 +26,20 @@ final readonly class RitualMetrics
     public const ROUND = 'hellowin_round';
     public const PUMPKIN_STAGE = 'hellowin_pumpkin_stage';
     public const BONFIRE_STAGE = 'hellowin_bonfire_stage';
-    public const KIND_PUMPKIN = 'pumpkin';
+    public const CIRCLE_STAGE = 'hellowin_circle_stage';
+
+    /** Element kinds of the job and transition counters are the element types. */
+    public const KIND_PUMPKIN = Element::TYPE_PUMPKIN;
+
+    public const KIND_BONFIRE = Element::TYPE_BONFIRE;
+    public const KIND_CIRCLE = Element::TYPE_CIRCLE;
     public const KIND_SCENE = 'scene';
-    public const KIND_BONFIRE = 'bonfire';
+
+    /** Gauges of the centrepieces: each its own, to keep the pumpkin stage panel on one scale. */
+    private const CENTREPIECE_STAGE = [
+        Element::TYPE_BONFIRE => self::BONFIRE_STAGE,
+        Element::TYPE_CIRCLE => self::CIRCLE_STAGE,
+    ];
 
     public function __construct(
         private MetricsInterface $metrics,
@@ -48,6 +59,7 @@ final readonly class RitualMetrics
             self::ROUND => Collector::gauge()->withHelp('Current round of the ritual.'),
             self::PUMPKIN_STAGE => Collector::gauge()->withHelp('Current stage of each pumpkin.')->withLabels('element'),
             self::BONFIRE_STAGE => Collector::gauge()->withHelp('Current stage of the bonfire.'),
+            self::CIRCLE_STAGE => Collector::gauge()->withHelp('Current stage of the magic circle.'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -68,16 +80,13 @@ final readonly class RitualMetrics
         $this->safely(fn() => $this->metrics->add(self::JOBS_PUSHED, 1, [$kind]));
     }
 
-    public function pumpkinMoved(Pumpkin $pumpkin): void
+    /**
+     * @param Element::TYPE_* $type
+     */
+    public function moved(string $type, Pumpkin $element): void
     {
-        $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [self::KIND_PUMPKIN]));
-        $this->pumpkinStage($pumpkin);
-    }
-
-    public function bonfireMoved(Pumpkin $bonfire): void
-    {
-        $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [self::KIND_BONFIRE]));
-        $this->bonfireStage($bonfire);
+        $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [$type]));
+        $this->stage($type, $element);
     }
 
     public function sceneMoved(int $scene): void
@@ -94,19 +103,22 @@ final readonly class RitualMetrics
         $this->safely(fn() => $this->metrics->set(self::ROUND, $snapshot->round));
         $this->safely(fn() => $this->metrics->set(self::SCENE, $snapshot->scene));
         foreach ($snapshot->pumpkins as $pumpkin) {
-            $this->pumpkinStage($pumpkin);
+            $this->stage(Element::TYPE_PUMPKIN, $pumpkin);
         }
-        $snapshot->bonfire === null or $this->bonfireStage($snapshot->bonfire);
+        foreach (Element::CENTREPIECES as $type) {
+            $centrepiece = $snapshot->centrepiece($type);
+            $centrepiece === null or $this->stage($type, $centrepiece);
+        }
     }
 
-    private function pumpkinStage(Pumpkin $pumpkin): void
+    /**
+     * @param Element::TYPE_* $type
+     */
+    private function stage(string $type, Pumpkin $element): void
     {
-        $this->safely(fn() => $this->metrics->set(self::PUMPKIN_STAGE, $pumpkin->stage, [$pumpkin->id]));
-    }
-
-    private function bonfireStage(Pumpkin $bonfire): void
-    {
-        $this->safely(fn() => $this->metrics->set(self::BONFIRE_STAGE, $bonfire->stage));
+        $this->safely(fn() => $type === Element::TYPE_PUMPKIN
+            ? $this->metrics->set(self::PUMPKIN_STAGE, $element->stage, [$element->id])
+            : $this->metrics->set(self::CENTREPIECE_STAGE[$type], $element->stage));
     }
 
     /**

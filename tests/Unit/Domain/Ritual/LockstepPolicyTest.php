@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Ritual;
 
+use App\Domain\Element\Element;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\Pumpkin;
+use App\Domain\Ritual\RitualSnapshot;
+use App\Domain\Story\Story;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
@@ -34,23 +37,23 @@ final class LockstepPolicyTest
     {
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
 
-        Assert::true($policy->sceneReady(0, [new Pumpkin('a', 4), new Pumpkin('b', 4)]));
-        Assert::true($policy->sceneReady(2, [new Pumpkin('a', 8), new Pumpkin('b', 8)]));
+        Assert::true($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 4), new Pumpkin('b', 4)])));
+        Assert::true($policy->sceneReady(self::ritual(2, [new Pumpkin('a', 8), new Pumpkin('b', 8)])));
     }
 
     public function sceneWaitsForTheLastPumpkin(): void
     {
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
 
-        Assert::false($policy->sceneReady(0, [new Pumpkin('a', 4), new Pumpkin('b', 3)]));
+        Assert::false($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 4), new Pumpkin('b', 3)])));
     }
 
-    public function nothingMovesInTheFinalScene(): void
+    public function finalSceneIsNotReadyWithoutTheCircle(): void
     {
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6]);
 
         Assert::same($policy->finalScene(), 2);
-        Assert::false($policy->sceneReady(2, [new Pumpkin('a', 6)]));
+        Assert::false($policy->sceneReady(self::ritual(2, [new Pumpkin('a', 6)], story: new Story(finale: 0))));
     }
 
     public function finalSceneKeepsTheLastStageMax(): void
@@ -62,7 +65,7 @@ final class LockstepPolicyTest
 
     public function sceneWithoutPumpkinsStays(): void
     {
-        Assert::false((new LockstepPolicy(5, [4]))->sceneReady(0, []));
+        Assert::false((new LockstepPolicy(5, [4]))->sceneReady(self::ritual(0, [])));
     }
 
     #[DataSet([[]], 'empty')]
@@ -82,31 +85,33 @@ final class LockstepPolicyTest
     #[DataSet([9, 7], 'past the list')]
     public function bonfireStageMaxGoesByScene(int $scene, int $expected): void
     {
-        Assert::same(self::withBonfire()->bonfireStageMax($scene), $expected);
+        Assert::same(self::policy()->stageMax($scene, Element::TYPE_BONFIRE), $expected);
     }
 
     public function bonfireOpensOnceThePumpkinsAreDoneAndUntilItIsDone(): void
     {
-        $policy = self::withBonfire();
+        $policy = self::policy();
         $done = [new Pumpkin('a', 6), new Pumpkin('b', 6)];
+        $open = static fn(int $scene, array $pumpkins, Pumpkin $bonfire): bool
+            => $policy->centrepieceOpen(Element::TYPE_BONFIRE, self::ritual($scene, $pumpkins, bonfire: $bonfire));
 
-        Assert::false($policy->bonfireOpen(1, [new Pumpkin('a', 6), new Pumpkin('b', 5)], new Pumpkin('f', 0)));
-        Assert::true($policy->bonfireOpen(1, $done, new Pumpkin('f', 3)));
-        Assert::false($policy->bonfireOpen(1, $done, new Pumpkin('f', 4)));
-        Assert::false($policy->bonfireOpen(0, [new Pumpkin('a', 4)], new Pumpkin('f', 0)));
-        Assert::false($policy->bonfireOpen(3, [new Pumpkin('a', 8)], new Pumpkin('f', 4)));
+        Assert::false($open(1, [new Pumpkin('a', 6), new Pumpkin('b', 5)], new Pumpkin('f', 0)));
+        Assert::true($open(1, $done, new Pumpkin('f', 3)));
+        Assert::false($open(1, $done, new Pumpkin('f', 4)));
+        Assert::false($open(0, [new Pumpkin('a', 4)], new Pumpkin('f', 0)));
+        Assert::false($open(3, [new Pumpkin('a', 8)], new Pumpkin('f', 4)));
+        Assert::false($policy->centrepieceOpen(Element::TYPE_BONFIRE, self::ritual(1, $done)));
     }
 
     public function sceneWithTheBonfireIsReadyOnceTheBonfireIsDone(): void
     {
-        $policy = self::withBonfire();
+        $policy = self::policy();
         $done = [new Pumpkin('a', 6), new Pumpkin('b', 6)];
 
-        Assert::true($policy->pumpkinsDone(1, $done));
-        Assert::false($policy->sceneReady(1, $done, new Pumpkin('f', 3)));
-        Assert::true($policy->sceneReady(1, $done, new Pumpkin('f', 4)));
-        Assert::true($policy->sceneReady(0, [new Pumpkin('a', 4)], new Pumpkin('f', 0)));
-        Assert::true($policy->sceneReady(1, $done));
+        Assert::false($policy->sceneReady(self::ritual(1, $done, bonfire: new Pumpkin('f', 3))));
+        Assert::true($policy->sceneReady(self::ritual(1, $done, bonfire: new Pumpkin('f', 4))));
+        Assert::true($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 4)], bonfire: new Pumpkin('f', 0))));
+        Assert::true($policy->sceneReady(self::ritual(1, $done)));
     }
 
     #[DataSet([0, 1, 20, 1], 'threshold reached')]
@@ -114,10 +119,13 @@ final class LockstepPolicyTest
     #[DataSet([4, 1, 20, null], 'last stage of the scene')]
     #[DataSet([4, 2, 25, 5], 'next scene')]
     #[DataSet([0, 0, 20, null], 'no bonfire in the scene')]
-    #[DataSet([7, 3, 20, null], 'final scene')]
+    #[DataSet([3, 3, 20, null], 'final scene')]
     public function bonfireMovesByItsOwnThreshold(int $stage, int $scene, int $clicks, ?int $expected): void
     {
-        Assert::same(self::withBonfire()->bonfireTransition(new Pumpkin('f', $stage, $clicks), $scene), $expected);
+        Assert::same(
+            self::policy()->centrepieceTransition(Element::TYPE_BONFIRE, new Pumpkin('f', $stage, $clicks), $scene),
+            $expected,
+        );
     }
 
     public function bonfireStageMaxNeverGoesDown(): never
@@ -127,8 +135,82 @@ final class LockstepPolicyTest
         new LockstepPolicy(5, [4, 6], 20, [0, 4, 3]);
     }
 
-    private static function withBonfire(): LockstepPolicy
+    #[DataSet([0, 0], 'scene 0')]
+    #[DataSet([2, 0], 'scene before the final one')]
+    #[DataSet([3, 4], 'final scene')]
+    public function circleHasStagesInTheFinalSceneOnly(int $scene, int $expected): void
     {
-        return new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8], bonfireClicksPerStage: 20, bonfireStageMax: [0, 4, 7]);
+        Assert::same(self::policy()->stageMax($scene, Element::TYPE_CIRCLE), $expected);
+    }
+
+    #[DataSet([0, 3, 15, 1], 'threshold reached')]
+    #[DataSet([0, 3, 14, null], 'below the threshold')]
+    #[DataSet([3, 3, 15, 4], 'closes')]
+    #[DataSet([4, 3, 30, null], 'closed')]
+    #[DataSet([0, 2, 15, null], 'before the final scene')]
+    public function circleMovesByItsOwnThresholdInTheFinalScene(int $stage, int $scene, int $clicks, ?int $expected): void
+    {
+        Assert::same(
+            self::policy()->centrepieceTransition(Element::TYPE_CIRCLE, new Pumpkin('c', $stage, $clicks), $scene),
+            $expected,
+        );
+    }
+
+    #[DataSet([3, 0, 0, true], 'start of the finale')]
+    #[DataSet([3, 0, 3, true], 'half drawn')]
+    #[DataSet([3, 0, 4, false], 'closed')]
+    #[DataSet([3, 1, 0, false], 'after the first step')]
+    #[DataSet([2, null, 0, false], 'before the final scene')]
+    public function circleIsOpenAtTheStartOfTheFinale(int $scene, ?int $step, int $stage, bool $expected): void
+    {
+        $ritual = self::ritual($scene, [new Pumpkin('a', 8)], new Story(finale: $step), circle: new Pumpkin('c', $stage));
+
+        Assert::same(self::policy()->centrepieceOpen(Element::TYPE_CIRCLE, $ritual), $expected);
+    }
+
+    public function closedCircleMakesTheFinalSceneReady(): void
+    {
+        $policy = self::policy();
+        $ritual = static fn(int $stage, int $step): RitualSnapshot
+            => self::ritual(3, [new Pumpkin('a', 8)], new Story(finale: $step), circle: new Pumpkin('c', $stage));
+
+        Assert::false($policy->sceneReady($ritual(3, 0)));
+        Assert::true($policy->sceneReady($ritual(4, 0)));
+        Assert::false($policy->sceneReady($ritual(4, 1)));
+    }
+
+    public function everyTypeHasItsThreshold(): void
+    {
+        $policy = self::policy();
+
+        Assert::same(
+            [$policy->threshold(), $policy->threshold(Element::TYPE_BONFIRE), $policy->threshold(Element::TYPE_CIRCLE)],
+            [5, 20, 15],
+        );
+    }
+
+    private static function policy(): LockstepPolicy
+    {
+        return new LockstepPolicy(
+            clicksPerStage: 5,
+            stageMax: [4, 6, 8],
+            bonfireClicksPerStage: 20,
+            bonfireStageMax: [0, 4, 7],
+            circleClicksPerStage: 15,
+            circleStages: 4,
+        );
+    }
+
+    /**
+     * @param list<Pumpkin> $pumpkins
+     */
+    private static function ritual(
+        int $scene,
+        array $pumpkins,
+        Story $story = new Story(),
+        ?Pumpkin $bonfire = null,
+        ?Pumpkin $circle = null,
+    ): RitualSnapshot {
+        return new RitualSnapshot(1, $scene, $pumpkins, $story, $bonfire, $circle);
     }
 }

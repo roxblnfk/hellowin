@@ -407,7 +407,9 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'finale.step', ['step' => 1], moderator: true), ['ok' => false, 'error' => 'not final']);
         $ritual->transitions->scene(1, 1);
 
-        Assert::same($this->call($ritual, 'finale.step', ['step' => 1], moderator: true), ['ok' => true, 'step' => 1]);
+        // No circle drawn: the first step waits for the ready scene unless forced
+        Assert::same($this->call($ritual, 'finale.step', ['step' => 1], moderator: true), ['ok' => false, 'error' => 'not ready']);
+        Assert::same($this->call($ritual, 'finale.step', ['step' => 1, 'force' => true], moderator: true), ['ok' => true, 'step' => 1]);
         Assert::same($this->call($ritual, 'finale.step', ['step' => 1], moderator: true), ['ok' => true, 'step' => 1]);
         Assert::same($this->call($ritual, 'finale.step', ['step' => 3], moderator: true), ['ok' => true, 'step' => 1]);
 
@@ -428,7 +430,7 @@ final class RPCServiceTest
         $this->call($ritual, 'shoot', ['flyer' => $flyer->id]);
 
         for ($step = 1; $step <= 4; ++$step) {
-            $this->call($ritual, 'finale.step', ['step' => $step], moderator: true);
+            $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
 
         $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];

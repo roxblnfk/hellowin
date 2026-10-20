@@ -50,9 +50,9 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * Carries the item every character holds in the new scene and the last bonfire stage of the scene.
+     * Carries the item every character holds in the new scene and the last stages of the centrepieces in it.
      */
-    public function scene(int $round, int $scene, int $stageMax, int $bonfireStageMax = 0): void
+    public function scene(int $round, int $scene, int $stageMax, int $bonfireStageMax = 0, int $circleStageMax = 0): void
     {
         $this->publish([
             'type' => 'scene',
@@ -60,6 +60,7 @@ final readonly class ChannelPublisher
             'scene' => $scene,
             'stageMax' => $stageMax,
             'bonfireStageMax' => $bonfireStageMax,
+            'circleStageMax' => $circleStageMax,
             'item' => $this->items->forScene($scene),
         ]);
     }

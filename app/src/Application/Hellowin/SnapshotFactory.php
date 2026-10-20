@@ -37,21 +37,17 @@ use App\Domain\Walk\WalkerStore;
 final readonly class SnapshotFactory
 {
     /**
-     * @param positive-int $threshold
-     * @param positive-int $bonfireThreshold Clicks the bonfire needs to move.
      * @param list<Bush> $bushes
      */
     public function __construct(
         private ElementRegistry $elements,
         private RitualStore $store,
         private RitualPolicy $policy,
-        private int $threshold,
         private array $bushes = [],
         private Clock $clock = new SystemClock(),
         private ?WalkerStore $walkers = null,
         private Items $items = new Items(),
         private ?RevealBuilder $reveal = null,
-        private int $bonfireThreshold = 1,
     ) {}
 
     /**
@@ -69,9 +65,9 @@ final readonly class SnapshotFactory
                 'stage' => $pumpkin?->stage ?? 0,
                 'clicks' => $pumpkin?->clicks ?? 0,
             ];
-            $element->bonfire() and $state += [
-                'threshold' => $this->bonfireThreshold,
-                'stageMax' => $this->policy->bonfireStageMax($ritual->scene),
+            $element->centrepiece() and $state += [
+                'threshold' => $this->policy->threshold($element->type),
+                'stageMax' => $this->policy->stageMax($ritual->scene, $element->type),
             ];
             $elements[] = $state;
         }
@@ -81,7 +77,7 @@ final readonly class SnapshotFactory
             'scene' => $ritual->scene,
             'sceneStages' => $this->policy->finalScene(),
             'stageMax' => $this->policy->stageMax($ritual->scene),
-            'threshold' => $this->threshold,
+            'threshold' => $this->policy->threshold(),
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
             'walkers' => \array_values(\array_map(

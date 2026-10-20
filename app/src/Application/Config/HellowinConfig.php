@@ -27,6 +27,8 @@ final class HellowinConfig extends InjectableConfig
         'scene_stage_max' => '4,8,11',
         'bonfire_clicks_per_stage' => 20,
         'bonfire_stage_max' => '0,4,7',
+        'circle_clicks_per_stage' => 20,
+        'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
         'bushes' => [],
@@ -148,6 +150,28 @@ final class HellowinConfig extends InjectableConfig
 
         /** @var non-empty-list<int<0, max>> $list */
         return $list;
+    }
+
+    /**
+     * Clicks on the magic circle that move it to its next stage: the whole room draws it, like the bonfire.
+     *
+     * @return positive-int
+     */
+    public function getCircleClicksPerStage(): int
+    {
+        return self::positiveInt(
+            $this->config['circle_clicks_per_stage'] ?? null,
+            'circle_clicks_per_stage',
+            'HELLOWIN_CIRCLE_CLICKS_PER_STAGE',
+        );
+    }
+
+    /**
+     * @return positive-int The last stage of the magic circle: it is closed there, and the final scene is ready.
+     */
+    public function getCircleStages(): int
+    {
+        return self::positiveInt($this->config['circle_stages'] ?? null, 'circle_stages', 'HELLOWIN_CIRCLE_STAGES');
     }
 
     /**
@@ -310,8 +334,8 @@ final class HellowinConfig extends InjectableConfig
         \is_array($emojis) && $emojis !== [] or throw new \InvalidArgumentException('Element emojis must be a non-empty list.');
 
         $type = $spec['type'] ?? null;
-        \in_array($type, [Element::TYPE_PUMPKIN, Element::TYPE_BONFIRE], true) or throw new \InvalidArgumentException(
-            'Config "hellowin.elements.*.type" must be "pumpkin" or "bonfire".',
+        \in_array($type, [Element::TYPE_PUMPKIN, ...Element::CENTREPIECES], true) or throw new \InvalidArgumentException(
+            'Config "hellowin.elements.*.type" must be "pumpkin", "bonfire" or "circle".',
         );
 
         return new Element(
@@ -319,7 +343,7 @@ final class HellowinConfig extends InjectableConfig
             type: $type,
             x: self::float($spec['x'] ?? null, 'elements.*.x'),
             y: self::float($spec['y'] ?? null, 'elements.*.y'),
-            size: $type === Element::TYPE_BONFIRE ? null : self::size($spec['size'] ?? null),
+            size: $type === Element::TYPE_PUMPKIN ? self::size($spec['size'] ?? null) : null,
             emojis: \array_values(\array_map(
                 static fn(mixed $emoji): string => self::nonEmptyString($emoji, 'elements.*.emojis'),
                 $emojis,

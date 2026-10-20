@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Story;
 
 use App\Domain\Player\PlayerStore;
+use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualSnapshot;
 use App\Domain\Story\Reveal;
 use App\Domain\Story\ShotTally;
@@ -14,15 +15,10 @@ use App\Domain\Story\ShotTally;
  */
 final readonly class RevealBuilder
 {
-    /**
-     * @param positive-int $threshold Clicks a pumpkin transition takes.
-     * @param positive-int|null $bonfireThreshold Clicks a bonfire transition takes; null — as a pumpkin's.
-     */
     public function __construct(
         private ShotTally $shots,
         private PlayerStore $players,
-        private int $threshold,
-        private ?int $bonfireThreshold = null,
+        private RitualPolicy $policy,
     ) {}
 
     /**
@@ -45,6 +41,6 @@ final readonly class RevealBuilder
         $id = $ritual->story->lastPumpkin;
         $lastPumpkin = $id === null ? null : ($this->players->find($id)?->ref() ?? ['id' => $id, 'name' => null]);
 
-        return Reveal::of($ritual, $this->threshold, $this->shots->count($ritual->round), $lastPumpkin, $this->bonfireThreshold);
+        return Reveal::of($ritual, $this->policy, $this->shots->count($ritual->round), $lastPumpkin);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Story;
 
+use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\Pumpkin;
 use App\Domain\Ritual\RitualSnapshot;
 use App\Domain\Story\Reveal;
@@ -49,7 +50,7 @@ final class StoryTest
     {
         $ritual = new RitualSnapshot(1, 1, [new Pumpkin('a', 2, 7, 20), new Pumpkin('b', 1, 1, 4)]);
 
-        $reveal = Reveal::of($ritual, 5, 3, null);
+        $reveal = Reveal::of($ritual, new LockstepPolicy(5, [4, 8]), 3, null);
 
         // 24 accepted: 15 went into 3 transitions, 5 + 1 wait for the next ones
         Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'lastPumpkin' => null]);

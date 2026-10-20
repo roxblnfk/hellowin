@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Element\Element;
 use App\Domain\Story\Story;
 use Psr\SimpleCache\CacheInterface;
 use RoadRunner\Lock\LockInterface;
 
 /**
  * Ritual state in a key-value store: the round, the scene, the stage and click counters of every pumpkin and of the
- * bonfire, and the story the moderator leads beside them.
+ * centrepieces — the bonfire and the magic circle — and the story the moderator leads beside them.
  *
- * Each pumpkin is written under its own lock `pumpkin:{id}`, the bonfire under `bonfire`, the scene and the story
- * under `scene`. A reset takes `scene` and then every element lock, so no click or transition interleaves with it:
+ * Each pumpkin is written under its own lock `pumpkin:{id}`, a centrepiece into `hellowin:{type}` under the lock named
+ * by its type (`bonfire`, `circle`), the scene and the story under `scene`. A reset takes `scene` and then every element lock, so no click or transition interleaves with it:
  * a click reads the round and the scene under the element lock and therefore never sees a half-reset ritual.
  */
 final readonly class RitualStore
@@ -22,19 +23,22 @@ final readonly class RitualStore
     private const KEY_SCENE = 'hellowin:scene';
     private const KEY_STORY = 'hellowin:story';
     private const KEY_PUMPKIN = 'hellowin:pumpkin:';
-    private const KEY_BONFIRE = 'hellowin:bonfire';
+    private const KEY_CENTREPIECE = 'hellowin:';
     private const LOCK_SCENE = 'scene';
     private const LOCK_PUMPKIN = 'pumpkin:';
-    private const LOCK_BONFIRE = 'bonfire';
 
     /** @var list<non-empty-string> */
     private array $pumpkins;
+
+    /** @var array<non-empty-string, Element::TYPE_BONFIRE|Element::TYPE_CIRCLE> Centrepiece types by element id. */
+    private array $centrepieces;
 
     /**
      * @param iterable<non-empty-string> $pumpkins Ids of every pumpkin of the ritual.
      * @param float $lockTtl Seconds a lock outlives a crashed worker.
      * @param float $lockWait Seconds to wait for a busy lock before giving up.
      * @param non-empty-string|null $bonfire Element id of the bonfire, null when the patch has none.
+     * @param non-empty-string|null $circle Element id of the magic circle, null when the patch has none.
      */
     public function __construct(
         private CacheInterface $storage,
@@ -42,17 +46,23 @@ final readonly class RitualStore
         iterable $pumpkins,
         private float $lockTtl = 5.0,
         private float $lockWait = 5.0,
-        private ?string $bonfire = null,
+        ?string $bonfire = null,
+        ?string $circle = null,
     ) {
         $ids = [];
         foreach ($pumpkins as $id) {
             $ids[] = $id;
         }
         $this->pumpkins = $ids;
+
+        $centrepieces = [];
+        $bonfire === null or $centrepieces[$bonfire] = Element::TYPE_BONFIRE;
+        $circle === null or $centrepieces[$circle] = Element::TYPE_CIRCLE;
+        $this->centrepieces = $centrepieces;
     }
 
     /**
-     * Counts a click on a pumpkin or the bonfire.
+     * Counts a click on a pumpkin or a centrepiece.
      *
      * @param \Closure(RitualSnapshot): bool|null $accepts Decides on the whole ritual, read under the element lock,
      *        whether the click counts at all.
@@ -77,7 +87,7 @@ final readonly class RitualStore
     }
 
     /**
-     * Moves a pumpkin or the bonfire to the stage if it is still one stage behind it in the same round; clicks start
+     * Moves a pumpkin or a centrepiece to the stage if it is still one stage behind it in the same round; clicks start
      * over.
      *
      * @return Pumpkin|null The moved element, null when the transition is stale or already done.
@@ -182,7 +192,7 @@ final readonly class RitualStore
     }
 
     /**
-     * Starts the next round from scene 0 with every pumpkin and the bonfire at stage 0 and the story over. Runs once
+     * Starts the next round from scene 0 with every pumpkin and centrepiece at stage 0 and the story over. Runs once
      * per round: a call for a round that is already over changes nothing.
      *
      * @return positive-int|null The new round, null when `$fromRound` is not the current one.
@@ -240,7 +250,8 @@ final readonly class RitualStore
                 $this->pumpkins,
             ),
             story: Story::fromArray($values[self::KEY_STORY] ?? null),
-            bonfire: $this->bonfire === null ? null : self::toPumpkin($this->bonfire, $values[self::KEY_BONFIRE] ?? null),
+            bonfire: $this->centrepiece(Element::TYPE_BONFIRE, $values),
+            circle: $this->centrepiece(Element::TYPE_CIRCLE, $values),
         );
     }
 
@@ -278,11 +289,22 @@ final readonly class RitualStore
     }
 
     /**
-     * @return list<non-empty-string> Pumpkins and the bonfire.
+     * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
+     * @param array<array-key, mixed> $values
+     */
+    private function centrepiece(string $type, array $values): ?Pumpkin
+    {
+        $id = \array_search($type, $this->centrepieces, true);
+
+        return $id === false ? null : self::toPumpkin($id, $values[$this->keyOf($id)] ?? null);
+    }
+
+    /**
+     * @return list<non-empty-string> Pumpkins and centrepieces.
      */
     private function elements(): array
     {
-        return $this->bonfire === null ? $this->pumpkins : [...$this->pumpkins, $this->bonfire];
+        return [...$this->pumpkins, ...\array_keys($this->centrepieces)];
     }
 
     /**
@@ -300,7 +322,7 @@ final readonly class RitualStore
      */
     private function keyOf(string $id): string
     {
-        return $id === $this->bonfire ? self::KEY_BONFIRE : self::KEY_PUMPKIN . $id;
+        return isset($this->centrepieces[$id]) ? self::KEY_CENTREPIECE . $this->centrepieces[$id] : self::KEY_PUMPKIN . $id;
     }
 
     /**
@@ -308,7 +330,7 @@ final readonly class RitualStore
      */
     private function lockOf(string $id): string
     {
-        return $id === $this->bonfire ? self::LOCK_BONFIRE : self::LOCK_PUMPKIN . $id;
+        return $this->centrepieces[$id] ?? self::LOCK_PUMPKIN . $id;
     }
 
     /**

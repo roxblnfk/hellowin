@@ -126,7 +126,7 @@ final class TransitionHandlerTest
         Assert::false($ritual->transitions->scene(1, 1));
 
         Assert::same($ritual->store->snapshot()->scene, 1);
-        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 2, 'bonfireStageMax' => 0, 'item' => 'torch']]);
+        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 2, 'bonfireStageMax' => 0, 'circleStageMax' => 0, 'item' => 'torch']]);
         Assert::same($ritual->broadcast->ofType('owl'), [['type' => 'owl', 'round' => 1, 'line' => 'scene-1']]);
         Assert::blank($ritual->broadcast->ofType('finale'));
         $counters = $ritual->counters();
