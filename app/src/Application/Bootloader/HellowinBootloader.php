@@ -28,6 +28,7 @@ use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
+use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -99,6 +100,18 @@ final class HellowinBootloader extends Bootloader
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
+            // Wait under a second for a bucket's lock: it is held for one read and one write
+            RateLimiter::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+                Clock $clock,
+            ): RateLimiter => new RateLimiter(
+                $cache->storage('process'),
+                new Locks($lock, ttl: 1.0, wait: 0.5),
+                $clock,
+                $config->getRpcRates(),
+            ),
             ShotTally::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

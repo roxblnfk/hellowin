@@ -685,6 +685,28 @@
         ]
       },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Refused by the rate limits (per minute)",
+      "description": "RPC calls refused by the per-player token buckets of the app, by group of methods, and PHP pages refused by the RoadRunner rate_limiter middleware with 429.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 81 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (group) (increase(hellowin_rpc_rate_limited_total[1m]))", "legendFormat": "RPC {{group}}" },
+        { "refId": "B", "expr": "sum(increase(rr_http_request_total{status=\"429\"}[1m])) or vector(0)", "legendFormat": "HTTP 429" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
     }
   ]
 }

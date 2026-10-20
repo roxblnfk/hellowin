@@ -7,6 +7,7 @@ namespace Tests\Unit\Application\Config;
 use App\Application\Config\HellowinConfig;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
+use App\Domain\RateLimit\TokenBucket;
 use App\Domain\Walk\WalkZone;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -281,5 +282,49 @@ final class HellowinConfigTest
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('hellowin.items');
 
         (new HellowinConfig(['items' => $items]))->getItems();
+    }
+
+    public function rpcRatesDefaultToEveryGroup(): void
+    {
+        Assert::equals((new HellowinConfig())->getRpcRates(), [
+            'click' => new TokenBucket(20.0, 40),
+            'shoot' => new TokenBucket(20.0, 40),
+            'move' => new TokenBucket(10.0, 20),
+            'other' => new TokenBucket(10.0, 30),
+        ]);
+    }
+
+    #[DataSet([' 2.5 , 5 ', 2.5, 5], 'fraction with spaces')]
+    #[DataSet(['15,15', 15.0, 15], 'integers')]
+    public function rpcRateIsPerSecondAndBurst(string $value, float $rate, int $burst): void
+    {
+        Assert::equals(
+            (new HellowinConfig(['rpc_rate' => ['click' => $value]]))->getRpcRates(),
+            ['click' => new TokenBucket($rate, $burst)],
+        );
+    }
+
+    #[DataSet(['0'], 'zero string')]
+    #[DataSet([0], 'zero')]
+    #[DataSet([''], 'empty')]
+    #[DataSet([false], 'false')]
+    public function rpcRateOffLeavesTheGroupOut(mixed $value): void
+    {
+        Assert::equals(
+            (new HellowinConfig(['rpc_rate' => ['click' => $value, 'move' => '1,1']]))->getRpcRates(),
+            ['move' => new TokenBucket(1.0, 1)],
+        );
+    }
+
+    #[DataSet(['20'], 'no burst')]
+    #[DataSet(['20,0'], 'zero burst')]
+    #[DataSet(['0,5'], 'zero rate')]
+    #[DataSet(['fast'], 'word')]
+    public function rejectsInvalidRpcRate(string $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('"hellowin.rpc_rate.click" (env HELLOWIN_RPC_RATE_CLICK) must be "<per second>,<burst>"');
+
+        (new HellowinConfig(['rpc_rate' => ['click' => $value]]))->getRpcRates();
     }
 }

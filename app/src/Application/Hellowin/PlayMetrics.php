@@ -21,6 +21,7 @@ final readonly class PlayMetrics
     public const FLYERS_SHOT = 'hellowin_flyers_shot_total';
     public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
     public const WALKERS = 'hellowin_walkers';
+    public const RPC_LIMITED = 'hellowin_rpc_rate_limited_total';
 
     public function __construct(
         private MetricsInterface $metrics,
@@ -39,6 +40,7 @@ final readonly class PlayMetrics
             self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
+            self::RPC_LIMITED => Collector::counter()->withHelp('RPC calls refused by the rate limit.')->withLabels('group'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -62,6 +64,14 @@ final readonly class PlayMetrics
     public function walkers(int $count): void
     {
         $this->safely(fn() => $this->metrics->set(self::WALKERS, $count));
+    }
+
+    /**
+     * @param non-empty-string $group
+     */
+    public function rpcLimited(string $group): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::RPC_LIMITED, 1, [$group]));
     }
 
     public function flyerLaunched(Flyer $flyer): void

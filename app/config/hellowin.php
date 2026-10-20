@@ -35,6 +35,15 @@ return [
     'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
     'circle_stages' => env('HELLOWIN_CIRCLE_STAGES', 4),
 
+    // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
+    // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
+    'rpc_rate' => [
+        'click' => env('HELLOWIN_RPC_RATE_CLICK', '20,40'),
+        'shoot' => env('HELLOWIN_RPC_RATE_SHOOT', '20,40'),
+        'move' => env('HELLOWIN_RPC_RATE_MOVE', '10,20'),
+        'other' => env('HELLOWIN_RPC_RATE_OTHER', '10,30'),
+    ],
+
     // Valkey of the idempotency storage (app/config/idempotency.php)
     'valkey_dsn' => env('VALKEY_DSN', 'tcp://valkey:6379'),
 

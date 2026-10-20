@@ -7,6 +7,7 @@ namespace App\Application\Config;
 use App\Domain\Element\Element;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
+use App\Domain\RateLimit\TokenBucket;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\WalkZone;
 use Spiral\Core\InjectableConfig;
@@ -31,6 +32,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
+        'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
         'horizon' => 38,
@@ -196,6 +198,47 @@ final class HellowinConfig extends InjectableConfig
     public function getValkeyDsn(): string
     {
         return self::nonEmptyString($this->config['valkey_dsn'] ?? null, 'valkey_dsn');
+    }
+
+    /**
+     * RPC limits by group of methods. A value is `"<per second>,<burst>"`; 0 or an empty one turns the group's limit
+     * off, and the group is left out.
+     *
+     * @return array<non-empty-string, TokenBucket>
+     */
+    public function getRpcRates(): array
+    {
+        $groups = $this->config['rpc_rate'] ?? [];
+        \is_array($groups) or throw new \InvalidArgumentException('Config "hellowin.rpc_rate" must be an array.');
+
+        $buckets = [];
+        /** @var mixed $value */
+        foreach ($groups as $group => $value) {
+            \is_string($group) && $group !== '' or throw new \InvalidArgumentException(
+                'Config "hellowin.rpc_rate" must map groups of methods to limits.',
+            );
+            \is_int($value) and $value = (string) $value;
+            \is_string($value) and $value = \trim($value);
+            if (\in_array($value, ['', '0', null, false], true)) {
+                continue;
+            }
+
+            $match = [];
+            \is_string($value) && \preg_match('/^(\d+(?:\.\d+)?)\s*,\s*(\d+)$/', $value, $match);
+            $rate = (float) ($match[1] ?? 0);
+            $burst = (int) ($match[2] ?? 0);
+            $rate > 0 && $burst > 0 or throw new \InvalidArgumentException(\sprintf(
+                'Config "hellowin.rpc_rate.%1$s" (env HELLOWIN_RPC_RATE_%2$s) must be "<per second>,<burst>" with '
+                    . 'both above zero, like "20,40", or 0 to turn the limit off; got %3$s.',
+                $group,
+                \strtoupper($group),
+                \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),
+            ));
+
+            $buckets[$group] = new TokenBucket($rate, $burst);
+        }
+
+        return $buckets;
     }
 
     /**

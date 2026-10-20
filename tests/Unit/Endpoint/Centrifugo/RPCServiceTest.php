@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Endpoint\Centrifugo;
 
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Domain\Lock\Locks;
+use App\Domain\RateLimit\RateLimiter;
+use App\Domain\RateLimit\TokenBucket;
 use App\Endpoint\Centrifugo\ConnectService;
 use App\Endpoint\Centrifugo\RPCService;
 use Psr\Log\NullLogger;
 use RoadRunner\Centrifugal\Proxy\DTO\V1\RPCResponse;
 use RoadRunner\Centrifugo\Request\RPC;
+use Spiral\Cache\Storage\ArrayStorage;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
@@ -650,14 +655,103 @@ final class RPCServiceTest
         Assert::false($this->call($ritual, 'state', [])['state']['zombies']);
     }
 
+    public function playerOverItsClickBurstIsRateLimited(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 2)]);
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+        $response = $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+
+        Assert::same($response, ['ok' => false, 'error' => 'rate limited']);
+        Assert::count($ritual->broadcast->ofType('click'), 2);
+        Assert::same($ritual->playerStore->find(self::PLAYER)?->clicks, 2);
+        Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['click']], $ritual->metrics->calls, true));
+    }
+
+    public function playerKeepsItsBucketAcrossConnections(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1)]);
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter, client: 'tab-1');
+        $response = $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter, client: 'tab-2');
+
+        Assert::same($response, ['ok' => false, 'error' => 'rate limited']);
+    }
+
+    public function connectionWithoutPlayerHasItsOwnBucket(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1)]);
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], limiter: $limiter, client: 'tab-1');
+
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], limiter: $limiter, client: 'tab-2'), ['ok' => true]);
+        Assert::same(
+            $this->call($ritual, 'click', ['element' => 'pumpkin-1'], limiter: $limiter, client: 'tab-1'),
+            ['ok' => false, 'error' => 'rate limited'],
+        );
+    }
+
+    public function methodsWithoutALimitOfTheirOwnShareOther(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1), 'other' => new TokenBucket(1.0, 1)]);
+
+        Assert::same($this->call($ritual, 'time', [], self::PLAYER, limiter: $limiter)['ok'], true);
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter), ['ok' => true]);
+        Assert::same($this->call($ritual, 'state', [], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+        Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['other']], $ritual->metrics->calls, true));
+    }
+
+    public function moderatorIsNeverRateLimited(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1)]);
+
+        for ($i = 0; $i < 5; ++$i) {
+            Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, true, $limiter), ['ok' => true]);
+        }
+    }
+
+    public function unavailableLimiterLetsTheCallThrough(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = new RateLimiter(
+            new ArrayStorage(),
+            new Locks(new FakeLock(available: false)),
+            $ritual->clock,
+            ['click' => new TokenBucket(1.0, 1)],
+        );
+
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter), ['ok' => true]);
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
         $this->worker = new SpyWorker();
     }
 
-    private function call(RitualHarness $ritual, string $method, array $params, string $user = '', bool $moderator = false): array
+    /**
+     * @param array<non-empty-string, TokenBucket> $buckets
+     */
+    private function limiter(RitualHarness $ritual, array $buckets): RateLimiter
     {
+        return new RateLimiter(new ArrayStorage(), new Locks(new FakeLock()), $ritual->clock, $buckets);
+    }
+
+    private function call(
+        RitualHarness $ritual,
+        string $method,
+        array $params,
+        string $user = '',
+        bool $moderator = false,
+        ?RateLimiter $limiter = null,
+        string $client = 'client-1',
+    ): array {
         $service = new RPCService(
             $ritual->clicks,
             $ritual->snapshot,
@@ -669,10 +763,12 @@ final class RPCServiceTest
             $ritual->walks,
             $ritual->story,
             $ritual->clock,
+            $limiter ?? $this->limiter($ritual, []),
+            new PlayMetrics($ritual->metrics, new NullLogger()),
         );
         $service->handle(new RPC(
             worker: $this->worker,
-            client: 'client-1',
+            client: $client,
             transport: 'websocket',
             protocol: 'json',
             encoding: 'json',

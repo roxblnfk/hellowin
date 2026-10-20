@@ -7,6 +7,7 @@ namespace App\Endpoint\Centrifugo;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ElementLockedException;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
@@ -22,6 +23,7 @@ use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
+use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Walk\Clink;
 use Psr\Log\LoggerInterface;
@@ -36,9 +38,15 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  *
  * The player is the connection's user, set by {@see ConnectService}: the client never sends its id. Console methods
  * answer `forbidden` to every connection but the moderator's, whose role {@see ConnectService} put into the meta.
+ *
+ * Every call but the moderator's first takes a token of its player's bucket — of the connection's, when it has no
+ * player — for its group of methods ({@see RateLimiter}); an empty bucket answers `rate limited`.
  */
 final readonly class RPCService implements ServiceInterface
 {
+    /** Methods with a limit of their own; the rest share `other`. */
+    private const RATE_GROUPS = ['click', 'shoot', 'move'];
+
     private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds'];
 
     public function __construct(
@@ -52,6 +60,8 @@ final readonly class RPCService implements ServiceInterface
         private WalkService $walks,
         private StoryService $story,
         private Clock $clock,
+        private RateLimiter $limiter,
+        private PlayMetrics $metrics,
     ) {}
 
     #[\Override]
@@ -62,6 +72,11 @@ final readonly class RPCService implements ServiceInterface
         $player = PlayerId::isValid($request->user) ? $request->user : null;
         $moderator = ($request->meta[ConnectService::META_MODERATOR] ?? null) === true;
         $method = (string) $request->method;
+
+        if (!$moderator && !$this->withinRate($method, $player ?? $request->client)) {
+            $request->respond(new RPCResponse(self::fail('rate limited')));
+            return;
+        }
 
         if (\in_array($method, self::CONSOLE, true) && !$moderator) {
             $request->respond(new RPCResponse(self::fail('forbidden')));
@@ -102,6 +117,33 @@ final readonly class RPCService implements ServiceInterface
     private static function fail(string $error): array
     {
         return ['ok' => false, 'error' => $error];
+    }
+
+    /**
+     * A failing limiter — the lock or the KV plugin in trouble — lets the call through: the limit guards the game
+     * from floods and must not take it down with it.
+     */
+    private function withinRate(string $method, string $caller): bool
+    {
+        $group = \in_array($method, self::RATE_GROUPS, true) ? $method : 'other';
+        if ($caller === '') {
+            return true;
+        }
+
+        try {
+            $allowed = $this->limiter->allow($group, $caller);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Rate limit of {group} is unavailable: {message}', [
+                'group' => $group,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+            return true;
+        }
+
+        $allowed or $this->metrics->rpcLimited($group);
+
+        return $allowed;
     }
 
     /**
