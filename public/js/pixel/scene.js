@@ -12,7 +12,7 @@ import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
-import { CLINK, createClinks } from './clink.js';
+import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
@@ -125,7 +125,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, circle: Function, setFinale: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, walkerHit: Function, clink: Function, perch: Function, circle: Function, setFinale: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -1936,7 +1936,10 @@ export async function createScene(rootEl, snapshot) {
             const frames = p.art.frames[name];
             if (frames && !reduced) p.layers[name].texture = frames[Math.floor((clock + p.phase) / FRAME_MS[name]) % frames.length];
         }
-        if (p.arms.visible && !reduced) showArms(p, raiseFrame(p.seed, serverNow()));
+        if (p.arms.visible) {
+            const clinkFrame = pumpkinClinkFrame(p, serverNow());
+            showArms(p, clinkFrame ?? (reduced ? 0 : raiseFrame(p.seed, serverNow())));
+        }
         p.halo.position.set(Math.round(at.x), Math.round(at.y));
         p.shadow.visible = p.lift > 0;
         if (p.shadow.visible) {
@@ -2160,7 +2163,8 @@ export async function createScene(rootEl, snapshot) {
 
     function setWalker(data) {
         const old = walkers.get(data.id);
-        const w = { shoot: null, ...old, ...data, seed: seedOf(data.id) };
+        // `clink` (heading to a clink by click) comes with the walker or not at all.
+        const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, seed: seedOf(data.id) };
         if (!old || data.walk !== old.walk) retrack(w, w.walk);
         if (!old) {
             walkers.set(w.id, w);
@@ -2300,39 +2304,134 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /*
-     * Clinking glasses in the cursed world (clink.js; docs/spec/frontend.md, «Финал»): the groups of the current slot
-     * by the server clock, each with its centre in art px where the walkers are drawn. A walker on the way walks on and
-     * joins in once it stands, if the clink still runs; a shot is more important for a moment.
+     * Clinking glasses in the cursed world (clink.js; docs/spec/frontend.md, «Финал»), two kinds on the server clock:
+     * the planner's groups of the current slot, and clinks by click — the server's `clink` events, a pair of the walker
+     * who came up and its target, another walker or a reachable pumpkin (it raises its glass instead). A walker heading
+     * to a clink by click is left out of the planner, and a planned group with a walker in one is skipped. A walker on the way walks and joins in once it stands, if the clink
+     * still runs; a shot is more important for a moment.
      */
     const clinkPlan = createClinks();
+    const clinks = new Map();
     let toastSpeech = null;
     const FOAM = ['white', 'white', 'cream', 'hazeLight'];
-    // How far a walker leans toward the group's centre to reach the glasses (art px), and the glass's reach from the
-    // anchor it leans by.
+    // How far a walker leans toward the meeting point to reach the glasses (art px), and the glass's reach from the
+    // anchor it leans by; a pumpkin's glass meets the walker's this far out from its middle.
     const LEAN_MAX = 6;
     const GLASS_REACH = 10;
+    const PUMPKIN_REACH = 6;
+    // The toast's bubble: over a walker's anchor by this much, over a pumpkin's top by this much (art px).
+    const WALKER_HEAD = 34;
+    const PUMPKIN_HEAD = 2;
+    // The walker's hit box around its anchor, art px: generous, so a moving finger still finds a standing figure.
+    const WALKER_HIT = { half: 8, up: 30, down: 2 };
 
+    const walkersOf = (c) => [c.player, c.walker].filter(Boolean);
+
+    function addClink(event) {
+        const by = walkers.get(event?.player?.id);
+        if (by) by.clink = null;
+        const c = clinkOf(event);
+        if (!c || serverNow() - c.at > CLINK_STALE_MS) return;
+        // One clink per walker and pumpkin at a time: a newer one takes over.
+        for (const [key, old] of clinks) {
+            const shared = walkersOf(old).some((id) => walkersOf(c).includes(id)) || (old.pumpkin && old.pumpkin === c.pumpkin);
+            if (shared && old.at <= c.at) clinks.delete(key);
+        }
+        clinks.set(c.key, c);
+    }
+
+    // The pumpkin's top middle and where its glass meets a walker's, art px.
+    function pumpkinPoints(p, toward) {
+        const { def } = p.art;
+        const row = Math.max(0, def.rows.findIndex((r) => [...r].some((ch) => def.legend[ch])));
+        const top = { x: p.pos.x, y: p.pos.y - p.lift - def.anchor.y + row - PUMPKIN_HEAD };
+        return { at: { ...p.pos }, head: top, meet: { x: p.pos.x + Math.sign(toward.x - p.pos.x) * PUMPKIN_REACH, y: p.pos.y } };
+    }
+
+    // A failed clink by click sends no event (protocol.md, `clink`): the heading is let go this long after both should
+    // have arrived (the server's tick, the delivery), as the next snapshot would have it.
+    const CLINK_PENDING_GRACE = 1000;
+
+    // Whether walker `w` is on its way to a clink by click (`clink` of its move): the planner leaves it out.
+    function headingToClink(w, now) {
+        if (!w.clink) return false;
+        const target = w.clink.walker ? walkers.get(w.clink.walker.id) : null;
+        return now < Math.max(w.walk?.arrivesAt ?? 0, target?.walk?.arrivesAt ?? 0) + CLINK_PENDING_GRACE;
+    }
+
+    // Whether walker `id` is in a clink by click during [from, until): its group of the planner sits that slot out.
+    const clickedBetween = (id, from, until) => [...clinks.values()].some((c) => walkersOf(c).includes(id) && c.at < until && c.at + CLINK.end > from);
+
+    /**
+     * The clinks now playing, each { key, at, until, toast, sides: [{ w?, p?, at, head }], meet }: by click the walker
+     * who came up first and its target second, `meet` where the glasses meet (a group's centre); `of` maps a walker id
+     * to { group, index, meet } while the poses last.
+     */
     function clinksNow(now) {
         const of = new Map();
-        if (!inFinale() || finale.step < 5) return { of, groups: [] };
-        const groups = clinkPlan.at(now, walkers.values()).map((g) => {
-            const members = g.ids.map((id) => walkers.get(id)).filter((w) => w?.sprite && w.track);
-            const points = members.map((w) => walkerArt(walkAt(w.track, clock).at));
-            const centre = points.length ? { x: points.reduce((a, p) => a + p.x, 0) / points.length, y: Math.min(...points.map((p) => p.y)) } : null;
-            return { ...g, members, points, centre };
-        }).filter((g) => g.centre);
-        for (const g of groups) {
-            if (now - g.at < CLINK.end) g.members.forEach((w, i) => of.set(w.id, { group: g, index: i }));
+        const groups = [];
+        const cursed = inFinale() && finale.step >= 5;
+        const take = (group) => {
+            groups.push(group);
+            if (now - group.at < CLINK.end) group.sides.forEach((side, index) => side.w && of.set(side.w.id, { group, index, meet: group.meet }));
+        };
+        if (cursed) {
+            for (const g of clinkPlan.at(now, [...walkers.values()].filter((w) => !headingToClink(w, now)))) {
+                if (now >= g.until || g.ids.some((id) => clickedBetween(id, g.at, g.until))) continue;
+                const sides = g.ids.map((id) => walkers.get(id)).filter((w) => w?.sprite && w.track).map((w) => {
+                    const at = walkerArt(walkAt(w.track, clock).at);
+                    return { w, at, head: { x: at.x, y: at.y - WALKER_HEAD } };
+                });
+                if (!sides.length) continue;
+                const meet = { x: sides.reduce((a, side) => a + side.at.x, 0) / sides.length, y: Math.min(...sides.map((side) => side.at.y)) };
+                take({ key: g.key, at: g.at, until: g.until, toast: g.toast, sides, meet });
+            }
+        }
+        for (const [key, c] of clinks) {
+            // Kept a slot longer than it plays, so the planned group it overlapped does not come back for its tail.
+            if (now >= c.until + SLOT_MS) clinks.delete(key);
+            if (!cursed || now < c.at || now >= c.until) continue;
+            const by = walkers.get(c.player);
+            const target = c.walker ? walkers.get(c.walker) : pumpkins.get(c.pumpkin);
+            if (!by?.sprite || !by.track || !target || (c.walker && (!target.sprite || !target.track)) || (c.pumpkin && !target.art)) continue;
+            const first = walkerArt(walkAt(by.track, clock).at);
+            const sides = [{ w: by, at: first, head: { x: first.x, y: first.y - WALKER_HEAD } }];
+            let meet;
+            if (c.walker) {
+                const at = walkerArt(walkAt(target.track, clock).at);
+                sides.push({ w: target, at, head: { x: at.x, y: at.y - WALKER_HEAD } });
+                meet = { x: (first.x + at.x) / 2, y: Math.min(first.y, at.y) };
+            } else {
+                const points = pumpkinPoints(target, first);
+                sides.push({ p: target, at: points.at, head: points.head });
+                meet = points.meet;
+            }
+            take({ ...c, sides, meet });
         }
         return { of, groups };
     }
 
-    // Facing the group's centre from the side (by the order in the group when straight above or below it); turning,
-    // reaching out, the strike, back, then the glass raised for the toast. The lean toward the centre eases in with
-    // the reach and out after the strike.
-    function clinkView(w, { group, index }, at, now) {
+    // The arms frame of a pumpkin in a clink now (it raises its glass toward the walker with the walker's timeline), or
+    // null when it is in none.
+    function pumpkinClinkFrame(p, now) {
+        if (!inFinale() || finale.step < 5) return null;
+        for (const c of clinks.values()) {
+            const t = now - c.at;
+            if (c.pumpkin !== p.id || t < 0 || t >= CLINK.end) continue;
+            const by = walkers.get(c.player);
+            if (!by?.track || walkAt(by.track, clock).moving) continue;
+            if (t < CLINK.reach) return 0;
+            if (t < CLINK.raise) return reduced ? 0 : 1;
+            return 2;
+        }
+        return null;
+    }
+
+    // Facing the meeting point from the side (straight above or below it: by the order in the group); turning, reaching out, the strike, back, then the glass raised for the toast. The lean toward the meeting
+    // point eases in with the reach and out after the strike.
+    function clinkView(w, { group, index, meet }, at, now) {
         const t = now - group.at;
-        const dx = group.centre.x - at.x;
+        const dx = meet.x - at.x;
         const flip = Math.abs(dx) >= 1 ? dx < 0 : index % 2 === 1;
         const item = w.item ?? null;
         const idle = poseOf('idle');
@@ -2384,8 +2483,8 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
-    // The toast over the group's heads from CLINK.toast; a toast of two voices puts the line over the first walker and
-    // the reply over the second, one after the other.
+    // The toast over the group from CLINK.toast; a toast of two voices puts the line over the first (by click: the walker
+    // who came up) and the reply over the second (its target, the pumpkin too), one after the other.
     function toastBubbles(groups, now) {
         if (!groups.length && !toastSpeech) return;
         toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
@@ -2393,12 +2492,28 @@ export async function createScene(rootEl, snapshot) {
             const t = now - g.at;
             if (t < CLINK.toast || now >= g.until) continue;
             const [line, reply] = g.toast;
-            const head = (p) => ({ x: p.x, y: p.y - 34 });
-            if (!reply) toastSpeech.say('toast:' + g.key, line, head(g.centre));
-            else if (t < CLINK.reply || g.points.length < 2) toastSpeech.say('toast:' + g.key, line, head(g.points[0]));
-            else toastSpeech.say('reply:' + g.key, reply, head(g.points[1]));
+            const heads = g.sides.map((side) => side.head);
+            const over = { x: heads.reduce((a, h) => a + h.x, 0) / heads.length, y: Math.min(...heads.map((h) => h.y)) };
+            if (!reply) toastSpeech.say('toast:' + g.key, line, over);
+            else if (t < CLINK.reply || heads.length < 2) toastSpeech.say('toast:' + g.key, line, heads[0]);
+            else toastSpeech.say('reply:' + g.key, reply, heads[1]);
         }
         toastSpeech.sweep();
+    }
+
+    /** Id of the walker drawn under a screen point, the nearest to the camera first; null when none. */
+    function walkerHit(clientX, clientY) {
+        const rect = app.canvas.getBoundingClientRect();
+        const x = (clientX - rect.left) / layout.cssPx;
+        const y = (clientY - rect.top) / layout.cssPx;
+        let best = null;
+        for (const w of walkers.values()) {
+            if (!w.sprite) continue;
+            const { x: wx, y: wy } = w.sprite.position;
+            if (Math.abs(x - wx) > WALKER_HIT.half || y < wy - WALKER_HIT.up || y > wy + WALKER_HIT.down) continue;
+            if (!best || wy > best.y) best = { id: w.id, y: wy };
+        }
+        return best?.id ?? null;
     }
 
     /** An additive halo of a halo() sprite centred on an art point, over the walker. */
@@ -3055,11 +3170,12 @@ export async function createScene(rootEl, snapshot) {
             setWalker(w);
         },
 
-        /** Channel event `move`: the walker follows the new path on the server clock. */
-        move(id, walk) {
+        /** Channel event `move`: the walker follows the new path on the server clock; `clink` — the target it heads to clink with. */
+        move(id, walk, clink = null) {
             const w = walkers.get(id);
             if (!w) return;
             w.walk = walk;
+            w.clink = clink;
             w.shoot = null;
             retrack(w, walk);
         },
@@ -3090,6 +3206,16 @@ export async function createScene(rootEl, snapshot) {
 
         flyerAt(clientX, clientY) {
             return flyerAt(clientX, clientY);
+        },
+
+        /** Id of the walker drawn under a screen point (the nearest to the camera), or null; the client decides what a click on it does. */
+        walkerHit(clientX, clientY) {
+            return walkerHit(clientX, clientY);
+        },
+
+        /** Channel event `clink`: the pair turns to each other, strikes, raises the glasses; older than 3 s is not played. */
+        clink(event) {
+            addClink(event);
         },
 
         /** Sets the server-time source flights are measured against. */

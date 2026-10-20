@@ -38,6 +38,11 @@
   the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene. The "выстрел" button
   launches a bird that a walker shoots down. ?clink=1 stands the bots in little groups a few steps apart and keeps them
   there: with ?finale=5 (beer in every hand) they clink glasses, ?finale=5&clink=1&walkers=8&freeze=ms catches a clink.
+  Clinking by click (cursed world, ?finale=5): with ?me=1 a click on a bot walks up to it and clinks (RPC `clink` →
+  `move`, then `clink` at the arrival), a click on a reachable pumpkin (the front ones by the lawn, `reachable`)
+  clinks with it. ?clickclink=1 stands the bots apart and keeps them there, and they clink by click themselves: bot 1
+  with bot 2 (a two-voice toast), bot 3 with pumpkin-10, bot 4 with bot 5 — at the start and every 9 s; ?toast=N gives
+  all of them toast N. ?finale=5&clickclink=1&walkers=5&freeze=1900 catches the strike, 2700 the toasts, 3700 the reply.
   Items in the final scene follow `finale_items`: the red flame at step 0, empty hands on steps 1–4, beer from step 5.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
@@ -123,7 +128,7 @@
     </form>
 </dialog>
 <script type="module">
-    import { bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
+    import { bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
     import { initDebugPanel } from '/js/debug.js';
     import { initJoin, storedLook } from '/js/join.js';
     import { createOwl } from '/js/owl.js';
@@ -141,6 +146,8 @@
         [71, 72.8, 'l'], [59.6, 71.1, 'm'], [60.7, 80.8, 'm'], [50.4, 82.7, 'l'], [40, 83.7, 'm'], [43.6, 74.1, 'm'],
         [29.3, 78.5, 'l'], [35.4, 69.6, 's'], [27.7, 60.2, 'm'], [40.6, 64, 's'], [35.8, 51.5, 's'], [45.2, 58.4, 's'],
     ];
+    // The pumpkins reachable for a clink by click (the `reachable` defaults of app/config/hellowin.php).
+    const REACHABLE = new Set([3, 5, 7, 9, 10, 11, 13, 15, 17]);
     const startStage = Math.max(0, Math.min(11, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
     // The bonfire of app/config/hellowin.php: on the root, its own threshold and last stage per scene.
     const BONFIRE_CLICKS = Math.max(1, Number.parseInt(params.get('bclicks') ?? '20', 10) || 20);
@@ -161,6 +168,7 @@
         b.style.setProperty('--x', String(x));
         b.style.setProperty('--y', String(y));
         b.style.zIndex = String(Math.round(y * 10));
+        if (REACHABLE.has(i + 1)) b.dataset.reachable = '';
         b.setAttribute('aria-label', `Тыква ${b.dataset.element}`);
         b.innerHTML = '<span class="pumpkin__emoji" aria-hidden="true">🎃</span>';
         root.insertBefore(b, root.querySelector('.hud'));
@@ -315,7 +323,11 @@
     // the cursed world (?finale=5) the beer glasses clink.
     const clinkStart = params.get('clink') === '1';
     const CLINK_GROUPS = [{ x: 22, y: 93, n: 2 }, { x: 70, y: 94, n: 3 }, { x: 9, y: 66, n: 2 }, { x: 91, y: 64, n: 1 }, { x: 46, y: 95, n: 2 }];
+    // ?clickclink=1: the bots stand apart, off the patch, and do not wander; in the cursed world they walk up and clink.
+    const clickClinkStart = params.get('clickclink') === '1';
+    const CLICK_SPOTS = [{ x: 14, y: 93 }, { x: 30, y: 92 }, { x: 66, y: 95 }, { x: 78, y: 93 }, { x: 92, y: 80 }];
     function clinkPoint(i) {
+        if (clickClinkStart) return CLICK_SPOTS[i] ? clampToZone(CLICK_SPOTS[i]) : spawnPoint();
         let k = i;
         for (const g of CLINK_GROUPS) {
             if (k < g.n) return clampToZone({ x: g.x + (k - (g.n - 1) / 2) * 5.5, y: g.y - (k % 2) * 1.5 });
@@ -331,7 +343,7 @@
             name: BOT_NAMES[i],
             look: randomLook(random),
             item: i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
-            walk: standing(clinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
+            walk: standing(clinkStart || clickClinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     if (params.get('me') === '1') {
@@ -670,14 +682,74 @@
         deliver({ type: 'walker', walker: structuredClone(next) });
     }
 
-    function engineMove(id, target) {
+    // Any new path cancels a clink by click not reached yet; `clink` — the target of one, sent with the move.
+    function engineMove(id, target, clink = null) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
         const now = serverTime();
         const path = route(round1(walkPoint(w.walk, now)), clampToZone(target));
         w.walk = { path, startedAt: now, arrivesAt: now + Math.round((lengthOf(path) / WALK_SPEED) * 1000) };
-        deliver({ type: 'move', player: { id }, walk: structuredClone(w.walk) });
+        if (clink) w.clink = clink;
+        else delete w.clink;
+        deliver({ type: 'move', player: { id }, walk: structuredClone(w.walk), ...(clink ? { clink: structuredClone(clink) } : {}) });
         return { ok: true, walk: w.walk };
+    }
+
+    // RPC `clink` like WalkService::clink (engine.md, «Чоканье по клику»; walk.clink_gap, walk.clink_duration): to a
+    // walker — beside the end of its path, CLINK_GAP in x on the clinker's side (the other side when the lawn's edge
+    // pushed the spot onto it); to a reachable pumpkin — the nearest lawn point. The move carries `clink`; once both
+    // have arrived (plus the ticker's delay) and neither was sent elsewhere, `clink` with a random toast. `busy` while
+    // the player's last clink plays.
+    const CLINK_GAP = 4;
+    const CLINK_DURATION = 3200;
+    const CLINK_TICK = 100;
+    const clinkedAt = new Map();
+    function engineClink(id, { walker, pumpkin } = {}, toast = null) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (!(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP)) return { ok: false, error: 'not cursed' };
+        const t = walker !== undefined ? engine.walkers.find((x) => x.id === walker) : null;
+        let spot;
+        let target;
+        if (walker !== undefined) {
+            if (!t || walker === id) return { ok: false, error: 'no target' };
+            const end = t.walk.path[t.walk.path.length - 1];
+            const side = walkPoint(w.walk, serverTime()).x <= end.x ? -1 : 1;
+            spot = clampToZone({ x: end.x + side * CLINK_GAP, y: end.y });
+            if (Math.abs(spot.x - end.x) < CLINK_GAP / 2) spot = clampToZone({ x: end.x - side * CLINK_GAP, y: end.y });
+            target = { walker: { id: walker } };
+        } else {
+            const p = engine.elements.find((e) => e.id === pumpkin);
+            if (!p || p.type !== 'pumpkin' || !p.reachable) return { ok: false, error: 'no target' };
+            spot = clampToZone(p);
+            target = { pumpkin: { id: pumpkin } };
+        }
+        if (serverTime() < (clinkedAt.get(id) ?? -Infinity) + CLINK_DURATION) return { ok: false, error: 'busy' };
+        const { walk } = engineMove(id, spot, target);
+        const targetWalk = t?.walk;
+        const due = Math.max(walk.arrivesAt, targetWalk?.arrivesAt ?? 0) + CLINK_TICK;
+        later(() => {
+            if (w.walk !== walk || w.clink !== target) return;
+            delete w.clink;
+            if (t && (t.walk !== targetWalk || !engine.walkers.includes(t))) return;
+            const at = serverTime();
+            clinkedAt.set(id, at);
+            deliver({ type: 'clink', player: { id }, ...target, toast: toast ?? Math.floor(Math.random() * 2 ** 31), at });
+        }, due - serverTime());
+        return { ok: true, walk };
+    }
+
+    // ?clickclink=1: the bots clink by click themselves — the first round with fixed toasts, later ones random; ?toast=N always N.
+    let clinkRounds = 0;
+    function startClinks() {
+        const first = clinkRounds++ === 0;
+        const bots = wanderers();
+        const forced = params.has('toast') ? Number.parseInt(params.get('toast'), 10) || 0 : null;
+        const plans = [[0, 1, 27], [2, 'pumpkin-10', 1], [3, 4, 0]];
+        for (const [by, target, toast] of plans) {
+            if (!bots[by] || (typeof target === 'number' && !bots[target])) continue;
+            engineClink(bots[by].id, typeof target === 'number' ? { walker: bots[target].id } : { pumpkin: target }, forced ?? (first ? toast : null));
+        }
     }
 
     // Name rules of players.md: trimmed, 1–24 letters, digits, single spaces, _ . -, at least one letter or digit.
@@ -825,7 +897,7 @@
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
     if (params.get('join') === '1') join.open();
     root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
-    if (!simulated && !clinkStart) wanderers().forEach((w) => wander(w.id));
+    if (!simulated && !clinkStart && !clickClinkStart) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
     window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);
@@ -838,15 +910,23 @@
         const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
         return (list.length ? list : open)[Math.floor(Math.random() * (list.length || open.length))].id;
     };
-    // Like app.js: a locked bonfire is not even asked.
+    // Your clinks by click, warned like app.js warns a rejected RPC.
+    const labClink = (target) => {
+        const reply = engineClink(ME, target);
+        if (!reply.ok) console.warn('clink rejected', reply.error);
+    };
+    // Like app.js: a locked bonfire is not even asked, a reachable pumpkin in the cursed world takes a clink instead.
     root.addEventListener('click', (event) => {
         const el = event.target.closest('[data-element]');
-        if (el && client.clickable(el.dataset.element)) engineClick(el.dataset.element);
+        if (!el) return;
+        if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
+        else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element);
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
     // Your shots are yours when your character is on the field: a witch then gets the owl's `witch-down`.
     bindShooting(root, scene, (id) => engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null));
+    bindClinking(root, scene, client, labClink);
     // A flyer every 3–8 s, like the server's launcher; none while paused.
     const launchLater = () => setTimeout(() => {
         if (!engine.paused) engineFlyer();
@@ -862,6 +942,10 @@
         launchLater();
         zombieLater();
         later(startEvents, 500);
+        if (clickClinkStart) {
+            later(startClinks, 800);
+            setInterval(startClinks, 9000);
+        }
     }
     root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
         if (event.target.value !== '') engineJump(Number(event.target.value));
@@ -894,6 +978,7 @@
         queue.length = 0;
         pending.clear();
         live.clear();
+        clinkedAt.clear();
         flyerSeq = 0;
         deliveredBy = 0;
         client.load(engineSnapshot());
@@ -923,6 +1008,10 @@
             }
             if (flyersOn && simTime === shotAt) engineShoot(target, params.get('shooter') === '1' ? engine.walkers[0] : null);
             if (simTime === 0) ({ zombie, worm, firefly } = startEvents());
+            if (simTime === 0 && clickClinkStart) {
+                clinkRounds = 0;
+                startClinks();
+            }
             if (firefly && simTime === fireflyShotAt) engineShoot(firefly, engine.walkers[0] ?? null);
             if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             if (worm && simTime === wormShotAt) engineShoot(worm, engine.walkers[0] ?? null);

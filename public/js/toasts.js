@@ -1,10 +1,10 @@
 // Toasts of the cursed world (docs/spec/scenario.md, «Проклятый мир», «Чоканье»): what the walkers say over their
-// clinking glasses. No message comes from the server: the toast follows from the group and the server clock
-// (pixel/clink.js), so the whole room reads the same line over the same glasses.
+// clinking glasses. The whole room reads the same line over the same glasses: an automatic clink takes its toast from
+// the group and the server clock (pixel/clink.js), a clink by click from the number the server sends (`clink` event).
 
 /**
  * The catalog; add toasts at the end, so the ones already said keep their indexes. A toast is a line, or two voices
- * [line, reply]: the first over one walker of the group, the reply over another.
+ * [line, reply]: the first over one walker of the group, the reply over another (or over the pumpkin it clinks with).
  */
 export const TOASTS = [
     'За RR!',
@@ -43,6 +43,13 @@ export const TOASTS = [
     ['Кто-нибудь помнит, зачем мы его воскрешали?', 'Ради метрик!'],
     'За тыквы — они тоже работали всю ночь!',
 ];
+
+/** The toast of a `clink` event's index (the catalog wraps around): [line] or [line, reply]. */
+export function toastAt(index) {
+    const n = Number.isInteger(index) && index >= 0 ? index : 0;
+    const toast = TOASTS[n % TOASTS.length];
+    return Array.isArray(toast) ? toast : [toast];
+}
 
 const SEED = 0x70a57;
 

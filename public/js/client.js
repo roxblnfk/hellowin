@@ -81,7 +81,7 @@ export function readSnapshot(root) {
             if (!isPumpkin(element)) {
                 return { ...element, threshold: int(el.dataset.threshold, 1), stageMax: int(el.dataset.stageMax) };
             }
-            return { ...element, size: el.dataset.size || 'm' };
+            return { ...element, size: el.dataset.size || 'm', reachable: el.hasAttribute('data-reachable') };
         }),
     };
 }
@@ -142,6 +142,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             el.toggleAttribute('data-done', element.stageMax > 0 && element.stage >= element.stageMax);
             return;
         }
+        el.toggleAttribute('data-reachable', element.reachable === true);
         el.toggleAttribute('data-ready', element.clicks >= model.threshold && element.stage < model.stageMax);
         el.toggleAttribute('data-done', element.stage >= model.stageMax);
         el.toggleAttribute('data-float', floats(element.stage, model.scene, model.sceneStages, model.finale?.step));
@@ -250,7 +251,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         const known = new Map(model.elements.map((e) => [e.id, e]));
         model.elements = snapshot.elements.map((e) => (!isPumpkin(e)
             ? { ...known.get(e.id), ...e }
-            : { ...known.get(e.id), ...e, size: e.size ?? known.get(e.id)?.size ?? 'm' }));
+            : { ...known.get(e.id), ...e, size: e.size ?? known.get(e.id)?.size ?? 'm', reachable: e.reachable === true }));
         if (bonfireOf()) bonfireMaxByScene.set(model.scene, bonfireOf().stageMax);
         paintAll();
         scene?.render(snapshotOf());
@@ -317,7 +318,17 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (!w || !event.walk) return;
             w.walk = event.walk;
-            scene?.move(w.id, w.walk);
+            // Heading to a clink by click; a move without the field cancels the one not reached yet.
+            if (event.clink) w.clink = event.clink;
+            else delete w.clink;
+            scene?.move(w.id, w.walk, w.clink ?? null);
+        },
+
+        // The walk to it is over; the moment itself is not state, and the scene does not play one that came too late.
+        clink(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (w) delete w.clink;
+            scene?.clink(event);
         },
 
         leave(event) {
@@ -441,6 +452,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         });
     }
 
+    /** Whether this browser has a character on the field and may send `move`. */
+    const canWalk = () => model.me !== null && model.walkers.some((w) => w.id === model.me);
+    /** Whether the story is in the cursed world (finale step 5+), where a click may clink glasses. */
+    const cursed = () => model.scene >= model.sceneStages && (model.finale?.step ?? -1) >= CURSED_STEP;
+
     return {
         model,
         load,
@@ -457,9 +473,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.setMe(model.me);
         },
 
-        /** Whether this browser has a character on the field and may send `move`. */
-        canWalk() {
-            return model.me !== null && model.walkers.some((w) => w.id === model.me);
+        canWalk,
+
+        cursed,
+
+        /** Whether a click on walker `id` is a clink (RPC `clink {walker}`): someone else's, in the cursed world, and I am on the field. */
+        clinksWalker(id) {
+            return Boolean(id) && id !== model.me && cursed() && canWalk() && model.walkers.some((w) => w.id === id);
+        },
+
+        /** Whether a click on element `id` is a clink (RPC `clink {pumpkin}`) instead of `click`: a reachable pumpkin, likewise. */
+        clinksPumpkin(id) {
+            const element = findElement(id);
+            return Boolean(element && isPumpkin(element) && element.reachable) && cursed() && canWalk();
         },
 
         /**
@@ -564,6 +590,37 @@ export function bindShooting(root, scene, shoot) {
         event.preventDefault();
         event.stopPropagation();
     }, { capture: true });
+}
+
+/**
+ * Clinking in the cursed world: a click or tap on someone else's walker asks the server to walk up and clink
+ * (`clinksWalker`), instead of a step to that spot or a click on a pumpkin button over it. Runs on the root in the
+ * capture phase after bindShooting, so a flyer shot (already prevented) stays first; a keyboard click (`detail` 0,
+ * no pointer position) is left to its button. Over such a walker the root gets `data-clink-hover` (a pointer cursor).
+ *
+ * @param {{clinksWalker: (id: string) => boolean}} client  the client model's routing
+ * @param {(target: {walker: string}) => void} clink  sends RPC `clink`; nothing is drawn until the `move` and `clink` events
+ */
+export function bindClinking(root, scene, client, clink) {
+    if (!scene) return;
+    const target = (event) => {
+        if (event.target.closest?.(UI)) return null;
+        const id = scene.walkerHit(event.clientX, event.clientY);
+        return id && client.clinksWalker(id) ? id : null;
+    };
+    root.addEventListener('click', (event) => {
+        if (event.defaultPrevented || event.detail === 0) return;
+        const id = target(event);
+        if (!id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clink({ walker: id });
+    }, { capture: true });
+    root.addEventListener('pointermove', (event) => {
+        if (event.pointerType === 'touch') return;
+        root.toggleAttribute('data-clink-hover', target(event) !== null);
+    });
+    root.addEventListener('pointerleave', () => root.removeAttribute('data-clink-hover'));
 }
 
 /**

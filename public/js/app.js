@@ -1,4 +1,4 @@
-import { bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
+import { bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 import { createOwl } from './owl.js';
 import { createReveal } from './reveal.js';
@@ -155,9 +155,17 @@ async function main() {
             if (data?.ok === false) console.warn('click rejected', data.error);
         })
         .catch((error) => console.warn('click rpc failed', error));
+    // In the cursed world a reachable pumpkin takes a clink instead: the walk comes as `move`, the glasses as `clink`.
+    const clink = (target) => centrifuge.rpc('clink', target)
+        .then(({ data }) => {
+            if (data?.ok === false) console.warn('clink rejected', data.error);
+        })
+        .catch((error) => console.warn('clink rpc failed', error));
     root.addEventListener('click', (event) => {
         const element = event.target.closest('[data-element]');
-        if (element) click(element.dataset.element);
+        if (!element) return;
+        if (client.clinksPumpkin(element.dataset.element)) clink({ pumpkin: element.dataset.element });
+        else click(element.dataset.element);
     });
 
     // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back.
@@ -166,6 +174,8 @@ async function main() {
             if (data?.ok === false) console.warn('shot rejected', data.error);
         })
         .catch((error) => console.warn('shoot rpc failed', error)));
+    // After the shots: a press on a flyer stays a shot even over a walker.
+    bindClinking(root, scene, client, clink);
 
     // The character appears when the channel's `walker` event comes back, like everything else.
     // Lazy like the scene: without the character sprites the page still clicks pumpkins and shoots.

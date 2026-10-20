@@ -1,4 +1,4 @@
-import { toastOf } from '../toasts.js';
+import { toastAt, toastOf } from '../toasts.js';
 
 /*
  * Clinking glasses in the cursed world (docs/spec/scenario.md, «Чоканье»; docs/spec/frontend.md, «Финал»). Frontend
@@ -13,6 +13,10 @@ import { toastOf } from '../toasts.js';
  * slots before (the group changed: someone came or left) — so a pair clinks at most once per COOLDOWN × SLOT_MS. The
  * rule looks only at candidates, never at its own past answers, so a client that just opened the page agrees with one
  * that has been watching all along.
+ *
+ * On top of the planner, a clink by click: the server's `clink` event (a player walked up to another walker or a
+ * reachable pumpkin), played from its `at` with the same timeline (clinkOf). The scene leaves a walker heading to one
+ * out of the planner and skips the planner's groups with a walker in one.
  */
 
 export const SLOT_MS = 6000;
@@ -116,4 +120,24 @@ export function createClinks() {
             return now >= slot * SLOT_MS + START_MS ? memo.groups : [];
         },
     };
+}
+
+/** A `clink` event older than this on arrival (a background tab, a reconnect) is not played. */
+export const CLINK_STALE_MS = 3000;
+
+// A clink by click has no slot to fit in: its toast may outlast the raised glass a little, so a longer line is read.
+const CLICK_TOAST_MAX = CLINK.end + 1300;
+
+/**
+ * A `clink` event as the scene plays it: { key, player, walker, pumpkin, at, toast: [line] | [line, reply], until },
+ * or null for an event without a player, a target or a time.
+ */
+export function clinkOf(event) {
+    const player = event?.player?.id;
+    const walker = event?.walker?.id ?? null;
+    const pumpkin = event?.pumpkin?.id ?? null;
+    if (!player || (!walker && !pumpkin) || !Number.isFinite(event.at)) return null;
+    const toast = toastAt(event.toast);
+    const shown = Math.min(CLICK_TOAST_MAX, CLINK.toast + 2000 + toast.join(' ').length * 65 + (toast.length > 1 ? 1600 : 0));
+    return { key: `${player}@${event.at}`, player, walker, pumpkin, at: event.at, toast, until: event.at + Math.max(CLINK.end, shown) };
 }

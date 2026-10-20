@@ -57,6 +57,11 @@ body {
     image-rendering: pixelated;
 }
 
+/* Someone else's walker under the pointer in the cursed world: a click clinks glasses with it (client.js, bindClinking). */
+.patch[data-clink-hover] {
+    cursor: pointer;
+}
+
 /*
  * Each element is a transparent hit zone over its sprite. The scene publishes the sprite box per size in CSS
  * pixels (--hit-*-{size}, --hit-*-bonfire); without a canvas the button is a centred emoji instead.
