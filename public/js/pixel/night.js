@@ -178,6 +178,60 @@ export function relightCanvas(source, lighting, light = null) {
     return canvas;
 }
 
+// How much of its own colour beer keeps in a lighting — the pumpkins' and the walkers' alike: night and blood moon
+// turn amber grey-blue, and a glass that does not read as beer misses the point of the cursed world.
+export const BEER_KEEP = 0.65;
+
+/** A colour BEER_KEEP of the way from its lit value back to its day one. */
+export function keepHueColor(day, lighting) {
+    const lit = lighting === 'day' ? day : litColor(day, lighting);
+    return [16, 8, 0].reduce((acc, sh) => acc | (Math.round(((day >> sh) & 255) * BEER_KEEP + ((lit >> sh) & 255) * (1 - BEER_KEEP)) << sh), 0);
+}
+
+/** Bakes a sprite ({ w, h, rows, legend }) in keepHueColor: the beer of a pumpkin's glass. */
+export function keepHueBake(def, lighting) {
+    const c = document.createElement('canvas');
+    c.width = def.w;
+    c.height = def.h;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(def.w, def.h);
+    for (let y = 0; y < def.h; y++) {
+        for (let x = 0; x < def.w; x++) {
+            const key = def.legend[def.rows[y][x]];
+            if (!key) continue;
+            const color = keepHueColor(PALETTE[key], lighting);
+            const i = (y * def.w + x) * 4;
+            img.data[i] = (color >> 16) & 255;
+            img.data[i + 1] = (color >> 8) & 255;
+            img.data[i + 2] = color & 255;
+            img.data[i + 3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+}
+
+/** A copy of a day canvas with every opaque pixel in keepHueColor: the beer in a walker's glass. */
+export function keepHueCanvas(source, lighting) {
+    const canvas = document.createElement('canvas');
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0);
+    if (lighting === 'day') return canvas;
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] === 0) continue;
+        const c = keepHueColor((d[i] << 16) | (d[i + 1] << 8) | d[i + 2], lighting);
+        d[i] = (c >> 16) & 255;
+        d[i + 1] = (c >> 8) & 255;
+        d[i + 2] = c & 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+}
+
 /**
  * Whether the art pixel (x, y) falls in the near light of { x, y, rx, ry }: solid in the inner half, dithered out to
  * the edge. Use it per sprite (at its anchor) to pick bakeLit(sprite, 'firelight') over the far lighting.
@@ -337,6 +391,7 @@ const HALO_TONES = {
     green: { a: 'eyeGreen', b: 'eerieDark' },
     violet: { a: 'violetGlow', b: 'violet' },
     franken: { a: 'frankenGlowHot', b: 'frankenGlowDark' },
+    red: { a: 'rune', b: 'runeDark' },
 };
 const haloCache = new Map();
 
@@ -344,7 +399,7 @@ const haloCache = new Map();
  * A dithered ground light rx × ry (flattened like the ground): two tones in Bayer steps, dense in the middle and
  * sparse at the edge. Meant for an additive blend at alpha ~0.5–0.7 over the night ground. Tones: 'warm' (the
  * bonfire), 'candle' (a walker's candle, lighter), 'green' (scene 2 magic), 'violet' (blood moon), 'franken' (the
- * cursed world's lime: a firefly's lantern).
+ * cursed world's lime: a firefly's lantern), 'red' (the magic circle's red: a walker's red flame).
  */
 export function halo(rx, ry, tone = 'warm') {
     const key = `${rx}:${ry}:${tone}`;

@@ -10,6 +10,8 @@
         .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; padding: 8px; background: #5cac3c; }
         .row.soil { background: #96623a; }
         .row.sky { background: #8ccff0; }
+        .row.night { background: #13142f; }
+        .row.night .cell span, .row.night .head { color: #ccd; }
         .cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
         .cell span { font-size: 10px; color: #123; white-space: nowrap; }
         .head { width: 110px; align-self: center; color: #102; font-weight: bold; }
@@ -20,8 +22,8 @@
     </style>
 </head>
 <body>
-<p>Параметры: <code>?look=body,cloak,face,eyes,hat</code> <code>?item=beer|broom|pistol</code>
-    <code>?t=мс</code> (стоп-кадр) <code>?zoom=N</code> <code>?only=mixer|frames|body|cloak|face|eyes|hat|item</code> <code>?parts=id,id</code> (строки раздела)</p>
+<p>Параметры: <code>?look=body,cloak,face,eyes,hat</code> <code>?item=beer|broom|pistol|red-flame</code>
+    <code>?t=мс</code> (стоп-кадр) <code>?zoom=N</code> <code>?only=mixer|frames|body|cloak|face|eyes|hat|item|hands</code> <code>?parts=id,id</code> (строки раздела)</p>
 <div id="out"></div>
 <script type="module">
     import { CATALOG, ITEMS, DEFAULT_LOOK, DIRS, POSES, FRAME, normalizeLook, randomLook, characterFrame } from '../js/pixel/characters.js';
@@ -133,6 +135,14 @@
         cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
     section('item', 'Предметы: idle / walk / fidget по направлениям', ITEMS.map((it) => [it.label, DIRS.flatMap((dir) => ['idle', 'walk', 'fidget'].map((pose) =>
         cell(() => ({ look: base, dir, pose, item: it.id }), `${dir} ${pose}`))), it.id]));
+    // Empty hands, the red flame and the beer in every pose, the aimed one too: the shot points the finger or holds the
+    // flame out; clink and toast are the cursed world's clinking glasses.
+    section('hands', 'Пустые руки, красный огонёк и пиво: все позы', [
+        ['Пустые руки', allPoses(base, null), 'none'],
+        ['Красный огонёк', allPoses(base, 'red-flame'), 'red-flame'],
+        ['Пиво', allPoses(base, 'beer'), 'beer'],
+    ]);
+    section('hands', 'Красный огонёк ночью (фон тёмный: огонёк светится сам)', [['Красный огонёк', allPoses(base, 'red-flame'), 'red-flame-night']], 'night');
     section('mix', 'Случайные', [0, 1, 2].map((k) => [null, Array.from({ length: 10 }, (_, i) => {
         // Seeded so a screenshot of the sheet is reproducible.
         let s = (k * 10 + i + 1) * 2654435761 >>> 0;

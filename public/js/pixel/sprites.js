@@ -563,6 +563,8 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
     const lightLegend = st >= 10 ? { ...PUMPKIN_LEGEND, ...magic } : st === 9 ? { ...PUMPKIN_LEGEND, ...cast } : PUMPKIN_LEGEND;
     const glowLegend = st >= 5 ? lightLegend : { '.': null, w: 'white' };
     const fireLegend = st >= 9 ? FIRE[tone] ?? FIRE.green : FIRE.warm;
+    // In the cursed world only the cuts glow: no ring of light around the silhouette.
+    const auraFrames = tone === 'franken' ? null : extra?.auraFrames;
     const result = {
         w: pw,
         h: ph,
@@ -576,13 +578,13 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
             stem: grids.stem ? layerSprite(grids.stem, st >= 8 ? legend : PUMPKIN_LEGEND, anchor) : null,
             glow: layerSprite(grids.glow, glowLegend, anchor),
             fire: extra?.fireFrames ? layerSprite(extra.fireFrames[0], fireLegend, anchor) : null,
-            aura: extra?.auraFrames ? layerSprite(extra.auraFrames[0], glowLegend, anchor) : null,
+            aura: auraFrames ? layerSprite(auraFrames[0], glowLegend, anchor) : null,
         },
     };
     if (extra) {
         result.glowFrames = extra.glowFrames.map((g) => layerSprite(g, glowLegend, anchor));
         if (extra.fireFrames) result.fireFrames = extra.fireFrames.map((g) => layerSprite(g, fireLegend, anchor));
-        if (extra.auraFrames) result.auraFrames = extra.auraFrames.map((g) => layerSprite(g, glowLegend, anchor));
+        if (auraFrames) result.auraFrames = auraFrames.map((g) => layerSprite(g, glowLegend, anchor));
         result.cap = extra.cap;
     }
     layersCache.set(key, result);
@@ -979,6 +981,145 @@ export function pumpkinSprite(stage, size, seed = 0) {
     const sprite = { w, h, rows, legend: layers.body.legend, anchor, emit };
     pumpkinCache.set(key, sprite);
     return sprite;
+}
+
+// The cursed world's pumpkins hold beer: a mug with a handle, a foam head over the rim and an amber body with a
+// highlight stripe, drawn with the handle on the left (towards the body when the mug is on the right). Lit chars go to
+// the `lit` layer (glass, arms), beer chars to the `beer` layer, which the scene bakes keeping its hue at night.
+// grip — the handle pixel the mitten closes over; reach — how far the hand sits out from the side in the hold pose.
+const ARMS_LIT = { '.': null, O: 'outline', t: 'cream', T: 'hayLight', G: 'grayLight' };
+const ARMS_BEER = { '.': null, w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', o: 'pumpkin' };
+const ARMS = {
+    l: {
+        reach: 3,
+        grip: [0, 6],
+        glass: [
+            '....cww..',
+            '..cwwwwc.',
+            '..wwwwwww',
+            '..GwwwwGw',
+            'GGGyYYoG.',
+            'G.GyYYoG.',
+            'G.GyYYoG.',
+            'G.GyYYoG.',
+            'GGGyYYoG.',
+            '..GyYYoG.',
+            '..GGGGGG.',
+        ],
+    },
+    m: {
+        reach: 2,
+        grip: [0, 5],
+        glass: [
+            '...cww..',
+            '..cwwwwc',
+            '..wwwwww',
+            'GGGyYoG.',
+            'G.GyYoG.',
+            'G.GyYoG.',
+            'GGGyYoG.',
+            '..GyYoG.',
+            '..GGGGG.',
+        ],
+    },
+    s: {
+        reach: 2,
+        grip: [0, 4],
+        glass: [
+            '..cww.',
+            '.cwwwc',
+            '.wwwww',
+            'GGyYoG',
+            'GGyYoG',
+            '.GyYoG',
+            '.GGGGG',
+        ],
+    },
+};
+// Arm paths from the shoulder, [dx, dy] with dx away from the body; the last point is the hand. `rise` lifts the
+// raised glass clear above the pumpkin's top.
+const ARM_POSES = {
+    hold: (r) => [[0, 0], [1, 0], ...Array.from({ length: r - 1 }, (_, i) => [2 + i, -1 - (i >> 1)])],
+    half: (r, rise) => [[0, 0], [1, -1], ...Array.from({ length: Math.round(rise / 2) }, (_, i) => [2 + (i >> 2), -2 - i])],
+    up: (r, rise) => [[0, 0], [1, -1], [2, -2], ...Array.from({ length: rise - 2 }, (_, i) => [2 + (i >> 2), -3 - i])],
+};
+const FREE_ARM = (r) => [[0, 0], [1, 1], ...Array.from({ length: r - 1 }, (_, i) => [2 + (i >> 1), 2 + i])];
+const armsCache = new Map();
+
+/**
+ * Arms with a beer mug for a pumpkin of the cursed world: { anchor, frames } with frames hold, half, up (raised over
+ * the head), each { lit, beer } sprites of one w×h and that anchor at the pumpkin's foot, like pumpkinLayers. The mug's
+ * side follows the seed. The frames reach past the pumpkin's own grid, so the scene places them by their own anchor.
+ */
+export function pumpkinArms(stage, size, seed = 0) {
+    const sz = ARMS[size] ? size : 'm';
+    const key = `${sz}:${Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0))}:${seed >>> 0}`;
+    if (armsCache.has(key)) return armsCache.get(key);
+    const L = pumpkinLayers(stage, sz, seed);
+    const rows = L.layers.body.rows.map((row) => [...row].map((ch, x) => (ch !== '.' ? x : -1)).filter((x) => x >= 0));
+    const solid = rows.map((xs, y) => (xs.length ? y : -1)).filter((y) => y >= 0);
+    const y0 = solid[0];
+    const shoulder = Math.round(y0 + (solid[solid.length - 1] - y0) * 0.58);
+    const xl = Math.min(...rows[shoulder]);
+    const xr = Math.max(...rows[shoulder]);
+    const { reach, grip, glass: drawn } = ARMS[sz];
+    const dir = seed & 1 ? -1 : 1;
+    // Mirrored for a mug on the left; the highlight stays on the lit left side.
+    const glass = dir > 0 ? drawn : drawn.map((row) => [...row].reverse().map((ch) => ({ y: 'o', o: 'y' }[ch] ?? ch)).join(''));
+    const gw = glass[0].length;
+    const gh = glass.length;
+    const rise = shoulder - y0 + gh - grip[1] + 1;
+    const frames = Object.values(ARM_POSES).map((pose) => {
+        const px = new Map();
+        const put = (x, y, ch) => px.set(`${x},${y}`, { x, y, ch });
+        // 2 px thick: a light core, the dark outline under it and on its right.
+        const stroke = (x0, d, pts) => {
+            const at = pts.map(([dx, dy]) => [x0 + d * dx, shoulder + dy]);
+            at.forEach(([x, y]) => {
+                put(x, y + 1, 'O');
+                put(x + 1, y, 'O');
+            });
+            at.forEach(([x, y]) => put(x, y, 't'));
+        };
+        const mitten = (x, y, d) => {
+            [[0, -1], [d, -1], [0, 0], [d, 0]].forEach(([dx, dy]) => put(x + dx, y + dy, 'T'));
+            put(x, y + 1, 'O');
+            put(x + d, y + 1, 'O');
+        };
+        const sx = dir > 0 ? xr + 1 : xl - 1;
+        const arm = pose(reach, rise);
+        stroke(sx, dir, arm);
+        const [hx, hy] = arm[arm.length - 1];
+        const handX = sx + dir * hx;
+        const handY = shoulder + hy;
+        const gripX = dir > 0 ? grip[0] : gw - 1 - grip[0];
+        const gx = handX + dir - gripX;
+        const gy = handY - grip[1];
+        glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(gx + dx, gy + dy, ch)));
+        mitten(handX, handY, dir);
+        const fx = dir > 0 ? xl - 1 : xr + 1;
+        const free = FREE_ARM(Math.max(2, reach - 1));
+        stroke(fx, -dir, free);
+        const [ex, ey] = free[free.length - 1];
+        mitten(fx - dir * ex, shoulder + ey + 1, -dir);
+        return px;
+    });
+    const all = frames.flatMap((px) => [...px.values()]);
+    const minX = Math.min(0, ...all.map((p) => p.x));
+    const maxX = Math.max(L.w - 1, ...all.map((p) => p.x));
+    const minY = Math.min(0, ...all.map((p) => p.y));
+    const maxY = Math.max(L.h - 1, ...all.map((p) => p.y));
+    const anchor = { x: L.anchor.x - minX, y: L.anchor.y - minY };
+    const layer = (px, legend) => {
+        const grid = Array.from({ length: maxY - minY + 1 }, () => Array(maxX - minX + 1).fill('.'));
+        px.forEach(({ x, y, ch }) => {
+            if (ch in legend) grid[y - minY][x - minX] = ch;
+        });
+        return layerSprite(grid, legend, anchor);
+    };
+    const result = { anchor, frames: frames.map((px) => ({ lit: layer(px, ARMS_LIT), beer: layer(px, ARMS_BEER) })) };
+    armsCache.set(key, result);
+    return result;
 }
 
 export function silhouette(sprite, key = 'white') {

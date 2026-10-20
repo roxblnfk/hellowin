@@ -123,8 +123,10 @@ function stroke(g, [x1, y1], [x2, y2], color) {
     }
 }
 
-// Effects (muzzle flash, smoke, the ritual's palm lights, the candle flame) glow without an outline.
-const FX_KEYS = new Set(['fxFlash', 'fxCore', 'fxSmoke', 'fxPalm', 'fxPalmCore', 'fxFlame', 'fxFlameHot', 'fxFlameCore']);
+// Effects (muzzle flash, smoke, the ritual's palm lights, the candle flame, the red flame) glow without an outline.
+const FX_KEYS = new Set([
+    'fxFlash', 'fxCore', 'fxSmoke', 'fxPalm', 'fxPalmCore', 'fxFlame', 'fxFlameHot', 'fxFlameCore', 'fxRune', 'fxRuneDark', 'fxRuneHot', 'fxRuneCore',
+]);
 const isFx = (key) => FX_KEYS.has(key);
 
 function outlined(g) {
@@ -251,6 +253,21 @@ function rig(dir, pose, frame) {
                 { sh: [-7 + sx, sh], hand: [-12 + sx, up], far: false },
                 { sh: [5 + sx, sh], hand: [10 + sx, up], far: false },
             ];
+    }
+    if (pose === 'clink' || pose === 'toast') {
+        // Clinking glasses: the item hand thrusts the glass forward at chest height (frame 1 — the strike, a pixel
+        // further), or raises it overhead for the toast (frame 1 a pixel higher). From the side the raised arm goes up
+        // in front of the face like the ritual's, the glass clear of the head.
+        const front = pose === 'clink'
+            ? { sh: [-7, sh], hand: [-11 - frame, -10] }
+            : { sh: [-7, sh], hand: [-12, -22 - frame] };
+        if (side) {
+            r.hold = pose === 'clink'
+                ? { sh: [-1, sh], hand: [5 + frame, -9] }
+                : { sh: [-1, sh], elbow: [4, -13], hand: [5, -22 - frame] };
+        } else {
+            r.hold = dir === 'back' ? Object.fromEntries(Object.entries(front).map(([k, v]) => [k, mirrorBlock(v)])) : front;
+        }
     }
     return r;
 }
@@ -841,7 +858,9 @@ const CLOAKS = {
 // ---------------------------------------------------------------------------------------------------------------
 // Items: per direction, rows plus the grip — the item pixel under the top-left of the 2×2 hand. The back view mirrors
 // the front. muzzle — where the flash goes, barrel — which way it fires; flame — the item pixel the flame stands on;
-// fx — where the item's own shot effect starts when it is aimed (shoot pose).
+// fx — where the item's own shot effect starts when it is aimed (shoot pose); flames — which flicker frames stand on
+// the flame pixel (FLAMES, the candle's by default); keep — legend chars that keep their hue at night (the beer and its
+// foam, not the glass), returned as their own layer.
 
 const ITEM_LEGEND = {
     w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', g: 'grayLight', a: 'gray', k: 'barkDark',
@@ -865,8 +884,8 @@ const BROOM = [
 const ITEM_DEFS = {
     beer: {
         label: 'Пиво',
-        front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3], fx: [2, 0] },
-        side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], fx: [2, 0] },
+        front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3], fx: [2, 0], keep: 'wcyY' },
+        side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], fx: [2, 0], keep: 'wcyY' },
     },
     broom: {
         label: 'Метла',
@@ -925,6 +944,13 @@ const ITEM_DEFS = {
             grip: [4, 12],
         },
     },
+    // A small red flame floating over the open palm, in the magic circle's red: no rows, only light (RED_FLAME), so
+    // the night never dims it. It hovers a pixel above the hand; from the side ahead of the fingers, clear of the face.
+    'red-flame': {
+        label: 'Красный огонёк',
+        front: { rows: ['.', '.', '.'], grip: [0, 2], flame: [0, 0], fx: [0, -1], flames: 'red' },
+        side: { rows: ['......', '......'], grip: [0, 1], flame: [5, 0], fx: [5, -1], flames: 'red' },
+    },
 };
 
 // Shooting always shows the pistol, aimed: [fire, recoil] per direction; barrel — the firing direction, a vector.
@@ -946,6 +972,14 @@ const CANDLE_FLAME = [
     ['.Y.', '.Y.', 'YwY', '.y.'],
     ['...', 'Y..', 'ywY', '.y.'],
 ];
+// The red flame: a rounded wisp with a white-hot heart and a dark-red tip; steady, stretched tall, bent.
+const RED_LEGEND = { R: 'fxRune', r: 'fxRuneDark', h: 'fxRuneHot', w: 'fxRuneCore' };
+const RED_FLAME = [
+    ['.r.', '.R.', 'RhR', 'RwR', '.R.'],
+    ['.r.', '.R.', '.R.', 'RhR', 'RwR', '.R.'],
+    ['r..', '.R.', 'RRh', 'RwR', '.R.'],
+];
+const FLAMES = { candle: [CANDLE_FLAME, FLAME_LEGEND], red: [RED_FLAME, RED_LEGEND] };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Shot effects the scene plays over a shooting walker (docs/spec/frontend.md, «Выстрел»). Sprites in the sprites.js
@@ -1028,6 +1062,9 @@ function puffSprite(r, density, v) {
 }
 
 const SPELL_LEGEND = { '.': null, M: 'magicCore', h: 'eerieHot', n: 'eyeGreen' };
+// The red flame's shot: the flash recoloured in the magic circle's reds, and a spark of the same light.
+const RED_FX_LEGEND = { '.': null, W: 'columnCore', s: 'bloodMoonLight', Y: 'rune', o: 'runeDark', r: 'runeDark', R: 'rune', h: 'bloodMoonLight', w: 'columnCore' };
+const redFlashCache = new Map();
 const BUBBLE_LEGEND = { '.': null, w: 'white', W: 'hazeLight' };
 const fxSprite = (rows, legend) => ({ w: rows[0].length, h: rows.length, rows, legend, anchor: { x: rows[0].length >> 1, y: rows.length >> 1 } });
 const flashCache = new Map();
@@ -1056,6 +1093,17 @@ export const SHOT_FX = {
         fxSprite(['.ww.', 'w..W', 'w..W', '.WW.'], BUBBLE_LEGEND),
     ],
     pop: fxSprite(['w...w', '.....', '.....', '.....', 'W...W'], BUBBLE_LEGEND),
+    /** The red flame's flare: the flash frames for a direction in the magic circle's reds, light; cached. */
+    redFlash(barrel) {
+        const key = barrel.join(',');
+        if (!redFlashCache.has(key)) redFlashCache.set(key, SHOT_FX.flash(barrel).map((def) => ({ ...def, legend: RED_FX_LEGEND })));
+        return redFlashCache.get(key);
+    },
+    // The red flame's spark streaking at the target: a four-point star turning between two shapes, light.
+    redSpark: [
+        fxSprite(['..R..', '.RhR.', 'RhwhR', '.RhR.', '..R..'], RED_FX_LEGEND),
+        fxSprite(['r...r', '.hRh.', '.RwR.', '.hRh.', 'r...r'], RED_FX_LEGEND),
+    ],
 };
 
 /** Stamps the item; returns a mapper from item pixels to local coordinates (the flip mirrors the columns). */
@@ -1171,7 +1219,9 @@ function compose(look, dir, pose, frame, item) {
     // arm, an empty hand points.
     const gun = shoot && item === 'pistol';
     const held = !ritual && !gun && ITEM_DEFS[item];
-    const holding = !shoot && held;
+    // Clinking and the toast raise the item hand even when it is empty.
+    const raised = pose === 'clink' || pose === 'toast';
+    const holding = !shoot && (held || raised);
     const cloak = CLOAKS[look.cloak];
     const out = blank();
     const layer = (paint) => {
@@ -1196,6 +1246,7 @@ function compose(look, dir, pose, frame, item) {
 
     const fx = blank();
     const result = { out };
+    let keep = null;
     if (shoot || holding) {
         const arm = shoot ? r.aim : r.hold;
         layer((g) => {
@@ -1203,19 +1254,24 @@ function compose(look, dir, pose, frame, item) {
             const spr = gun ? AIM[dir === 'side' ? 'side' : 'front'][frame] : held ? ITEM_DEFS[item][dir === 'side' ? 'side' : 'front'] : null;
             if (!spr) {
                 // The fingertip past the pointing hand.
-                result.muzzle = [dir === 'front' ? arm.hand[0] - 1 : arm.hand[0] + 2, arm.hand[1]];
+                if (shoot) result.muzzle = [dir === 'front' ? arm.hand[0] - 1 : arm.hand[0] + 2, arm.hand[1]];
                 return;
             }
             const at = placeItem(g, spr, arm.hand, flip);
-            const muzzle = spr.muzzle ? at(spr.muzzle) : shoot && spr.fx ? at(spr.fx) : null;
+            if (spr.keep) {
+                const keys = new Set([...spr.keep].map((ch) => ITEM_LEGEND[ch]));
+                keep = g.map((k) => (keys.has(k) ? k : null));
+            }
+            const muzzle = spr.muzzle ? at(spr.muzzle) : (shoot || raised) && spr.fx ? at(spr.fx) : null;
             if (muzzle) result.muzzle = muzzle;
             if (spr.barrel) result.barrel = flip ? [-spr.barrel[0], spr.barrel[1]] : spr.barrel;
             if (spr.flame) {
                 // Flicker frames of the flame; the frame itself carries none, so relighting the frame never dims it.
                 const [bx, by] = at(spr.flame);
-                result.flames = CANDLE_FLAME.map((rows) => {
+                const [frames, legend] = FLAMES[spr.flames ?? 'candle'];
+                result.flames = frames.map((rows) => {
                     const fl = blank();
-                    stamp(fl, bx - 1, by - rows.length + 1, rows, FLAME_LEGEND, flip);
+                    stamp(fl, bx - 1, by - rows.length + 1, rows, legend, flip);
                     return fl;
                 });
                 result.flame = [bx, by - 1];
@@ -1229,7 +1285,12 @@ function compose(look, dir, pose, frame, item) {
                 put(fx, muzzle[0] + (flip ? -1 : 1), muzzle[1] - 2, 'fxSmoke');
             }
         });
-        layer((g) => drawArm(g, body, { ...arm, far: false }));
+        const hand = blank();
+        drawArm(hand, body, { ...arm, far: false });
+        const handOut = outlined(hand);
+        over(out, handOut);
+        // What the hand covers is not beer any more.
+        if (keep) keep = keep.map((k, i) => (handOut[i] ? null : k));
     }
     if (ritual) {
         // A small light over each palm, in the eye colour; on odd frames a spark flickers off it.
@@ -1242,6 +1303,7 @@ function compose(look, dir, pose, frame, item) {
     }
     over(out, fx);
     if (ritual || gun) result.glow = fx;
+    if (keep?.some(Boolean)) result.keep = keep.map((k, i) => (fx[i] ? null : k));
     return result;
 }
 
@@ -1255,6 +1317,11 @@ const FX_COLORS = {
     fxFlame: PALETTE.pumpkinLight,
     fxFlameHot: PALETTE.pumpkinShine,
     fxFlameCore: PALETTE.flameCore,
+    // The red flame in the magic circle's colours, all of them emissive (night.js, EMISSIVE).
+    fxRune: PALETTE.rune,
+    fxRuneDark: PALETTE.runeDark,
+    fxRuneHot: PALETTE.bloodMoonLight,
+    fxRuneCore: PALETTE.columnCore,
 };
 
 const EYES = [
@@ -1311,6 +1378,8 @@ export const POSES = {
     walk: { frames: 4, ms: 150 },
     shoot: { frames: 2, ms: 180 },
     ritual: { frames: 4, ms: 380 },
+    clink: { frames: 2, ms: 350 },
+    toast: { frames: 2, ms: 450 },
 };
 
 /** Canvas size shared by every frame and the anchor inside it (bottom centre, between the feet). */
@@ -1357,8 +1426,10 @@ function paintGrid(grid, colorOf) {
  * shoot pose aims the item: the pistol's own aimed sprites (glow — its flash or smoke pixels, `barrel` — the firing
  * direction, a vector), any other item held out on the aimed arm, an empty hand pointing; `muzzle` is where the
  * scene's shot effect starts (the muzzle, the item's `fx` pixel, the fingertip). Both poses have their lights in
- * `canvas` too. A held candle has its flame only in the
- * glow: `flames` — its flicker frames (`glow` is the first), `flame` — the flame's core.
+ * `canvas` too. A held candle (and the red flame) has its flame only in the
+ * glow: `flames` — its flicker frames (`glow` is the first), `flame` — the flame's core. A held beer brings `beer`:
+ * the beer and foam pixels of `canvas` alone, for the scene to keep their hue at night over the relit frame. Clinking
+ * (`clink`) and the toast (`toast`) raise the item hand; their `muzzle` is the glass's top.
  */
 export function characterFrame(look, { dir, pose, frame = 0, item = null } = {}) {
     const full = normalizeLook(look);
@@ -1382,6 +1453,7 @@ export function characterFrame(look, { dir, pose, frame = 0, item = null } = {})
         result.muzzle = toCanvas(composed.muzzle);
         result.barrel = composed.barrel;
     }
+    if (composed.keep) result.beer = paintGrid(composed.keep, colorOf);
     if (composed.flames) {
         result.flames = composed.flames.map((g) => paintGrid(g, colorOf));
         result.glow = result.flames[0];

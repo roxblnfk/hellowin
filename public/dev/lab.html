@@ -36,7 +36,9 @@
   Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
   your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
   the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene. The "выстрел" button
-  launches a bird that a walker shoots down.
+  launches a bird that a walker shoots down. ?clink=1 stands the bots in little groups a few steps apart and keeps them
+  there: with ?finale=5 (beer in every hand) they clink glasses, ?finale=5&clink=1&walkers=8&freeze=ms catches a clink.
+  Items in the final scene follow `finale_items`: the red flame at step 0, empty hands on steps 1–4, beer from step 5.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
   step N (a fake `reveal` from step 4), ?paused=1 / ?zombies=1 start with the switch on, ?owl=<line id> or
@@ -222,7 +224,9 @@
 
     // Server time of the fake engine; the frozen clock runs from a fixed epoch. ?skew=ms shifts the client's own
     // clock, which the snapshot's `now` has to compensate.
-    const EPOCH = 1_700_000_000_000;
+    // ?epoch=ms moves the frozen clock's start (a multiple of 6000 keeps the clink slots in place: ?epoch=336000 reaches a
+    // two-voice toast without stepping through minutes).
+    const EPOCH = 1_700_000_000_000 + (Number.parseInt(params.get('epoch') ?? '0', 10) || 0);
     const serverTime = () => (simulated ? EPOCH + simTime : Date.now());
     const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
     const clientTime = () => serverTime() + skew;
@@ -307,6 +311,18 @@
     // In the finale the bots start around the patch, as a room gathered for the ritual would.
     const finaleStart = params.has('finale') || params.get('ritual') === '1';
     const gatherPoint = (i, n) => clampToZone(rim(Math.PI * (0.08 + (0.84 * i) / Math.max(1, n - 1)), 1.12));
+    // ?clink=1: the bots stand in little groups of 2, 3, 2, 1… a few steps apart, off the patch, and do not wander — in
+    // the cursed world (?finale=5) the beer glasses clink.
+    const clinkStart = params.get('clink') === '1';
+    const CLINK_GROUPS = [{ x: 22, y: 93, n: 2 }, { x: 70, y: 94, n: 3 }, { x: 9, y: 66, n: 2 }, { x: 91, y: 64, n: 1 }, { x: 46, y: 95, n: 2 }];
+    function clinkPoint(i) {
+        let k = i;
+        for (const g of CLINK_GROUPS) {
+            if (k < g.n) return clampToZone({ x: g.x + (k - (g.n - 1) / 2) * 5.5, y: g.y - (k % 2) * 1.5 });
+            k -= g.n;
+        }
+        return spawnPoint();
+    }
     const startWalkers = [];
     for (let i = 0; i < botCount; i++) {
         const random = seeded(1000 + i);
@@ -315,7 +331,7 @@
             name: BOT_NAMES[i],
             look: randomLook(random),
             item: i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
-            walk: standing(finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
+            walk: standing(clinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     if (params.get('me') === '1') {
@@ -330,7 +346,9 @@
     // Stand-in for the `items` of app/config/hellowin.php (what the walkers hold in each scene); an id without art
     // yet shows an empty hand.
     // ?item=<id> makes every scene hand out that item (a candle at night, say).
-    const ITEM_BY_SCENE = params.has('item') ? Array(4).fill(params.get('item')) : ['pistol', 'candle', 'book', 'book'];
+    const ITEM_BY_SCENE = params.has('item') ? Array(4).fill(params.get('item')) : ['pistol', 'candle', 'book', 'red-flame'];
+    // And of `finale_items`: the final scene's item at step 0, empty hands on steps 1–4, beer from step 5 on.
+    const itemOfFinale = (step) => (params.has('item') ? params.get('item') : step === 0 ? ITEM_BY_SCENE[3] : step >= 5 ? 'beer' : null);
     const LAST_STEP = 5;
     const moderator = params.get('mod') === '1';
     // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
@@ -443,7 +461,7 @@
             deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, bonfireStageMax: engineBonfire().stageMax, circleStageMax: engineCircle()?.stageMax ?? 0, item: ITEM_BY_SCENE[to] });
             if (to >= engine.sceneStages) {
                 engine.finale = finaleOf(0);
-                deliver({ type: 'finale', ...engine.finale });
+                deliver({ type: 'finale', ...engine.finale, item: itemOfFinale(0) });
             }
             deliver({ type: 'owl', line: `scene-${to}` });
         }, 150);
@@ -457,7 +475,8 @@
             // Step 1 waits for the closed circle unless forced.
             if (step === 1 && !engine.ready && force !== true) throw new Error('not ready');
             engine.finale = finaleOf(step);
-            deliver({ type: 'finale', ...structuredClone(engine.finale) });
+            engine.walkers.forEach((w) => { w.item = itemOfFinale(step); });
+            deliver({ type: 'finale', ...structuredClone(engine.finale), item: itemOfFinale(step) });
             // Step 2 scatters the walkers: each one outward from the patch to the edge of the lawn.
             if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
@@ -750,6 +769,7 @@
                 engine.ready = true;
             }
             engine.finale = finaleOf(Math.max(0, Math.min(LAST_STEP, Number.parseInt(params.get('finale') ?? '0', 10) || 0)));
+            engine.walkers.forEach((w) => { w.item = itemOfFinale(engine.finale.step); });
         }
         engine.paused = params.get('paused') === '1';
         engine.zombies = params.get('zombies') === '1';
@@ -805,7 +825,7 @@
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
     if (params.get('join') === '1') join.open();
     root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
-    if (!simulated) wanderers().forEach((w) => wander(w.id));
+    if (!simulated && !clinkStart) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
     window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);

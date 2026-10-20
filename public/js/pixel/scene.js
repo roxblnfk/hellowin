@@ -11,13 +11,15 @@ import {
 import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
+import { createBubbles } from './bubble.js';
+import { CLINK, createClinks } from './clink.js';
 import { frankenHalo } from './finale.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
-import { NIGHT, bakeLit, halo, litColor, paintSky, relightCanvas } from './night.js';
+import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_FLIGHT, glowing } from './owl.js';
 import { PALETTE } from './palette.js';
-import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
+import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
 const SIZES = ['s', 'm', 'l'];
 // Back to front: the aura under everything, the glow above back and under body (hidden by day), the fire on top.
@@ -60,6 +62,22 @@ function mix(a, b) {
     h ^= h >>> 13;
     h = Math.imul(h, 0xc2b2ae35);
     return (h ^ (h >>> 16)) >>> 0;
+}
+
+// The cursed world's pumpkins now and then raise their beer: in about a third of the slots, for RAISE_MS at a moment
+// the hash picks, on the server clock, so the whole room sees the same pumpkin raise it.
+const RAISE_SLOT_MS = 5000;
+const RAISE_MS = 1400;
+const RAISE_EASE_MS = 140;
+
+/** The arms frame of a pumpkin at server time `now`: 0 holds the glass, 1 halfway, 2 raised (sprites.js, pumpkinArms). */
+function raiseFrame(seed, now) {
+    const slot = Math.floor(now / RAISE_SLOT_MS);
+    const h = mix(seed ^ 0x6265, slot);
+    if (h % 100 >= 33) return 0;
+    const t = now - slot * RAISE_SLOT_MS - ((h >>> 8) % (RAISE_SLOT_MS - RAISE_MS));
+    if (t < 0 || t >= RAISE_MS) return 0;
+    return t < RAISE_EASE_MS || t >= RAISE_MS - RAISE_EASE_MS ? 1 : 2;
 }
 
 function canvas(w, h) {
@@ -1067,6 +1085,12 @@ export async function createScene(rootEl, snapshot) {
     // Halo radii per size for the lit pumpkins' ground light.
     const HALO = { l: [16, 5], m: [13, 5], s: [10, 4] };
 
+    const showArms = (p, frame) => {
+        const f = p.armsArt.frames[frame];
+        p.arms.children[0].texture = f.lit;
+        p.arms.children[1].texture = f.beer;
+    };
+
     function applyArt(p) {
         // Lit where it will stand: after the jump out a pumpkin may leave the firelight.
         const at = out ? p.out : p.home;
@@ -1081,6 +1105,17 @@ export async function createScene(rootEl, snapshot) {
             // finale puts every light out for a while (darkPumpkins).
             sprite.visible = Boolean(a.layers[name]) && (name !== 'glow' || (p.stage >= LIT_STAGE && lighting !== 'day')) && !(dark && LIGHT_LAYERS.has(name));
             sprite.position.set(-a.def.anchor.x, -a.def.anchor.y);
+        }
+        // In the cursed world the pumpkins hold beer: arms and glass lit like the body, the beer keeping its amber.
+        p.arms.visible = toneOf() === 'franken';
+        if (p.arms.visible) {
+            const lit = lightAt(at.x, at.y);
+            p.armsArt = artTexture(`pumpkin-arms:${clamp(p.stage, 0, PUMPKIN_STAGES)}:${p.size}:${p.seed}:${lit}`, () => {
+                const { anchor, frames } = pumpkinArms(p.stage, p.size, p.seed);
+                return { anchor, frames: frames.map((f) => ({ lit: texture(litBake(f.lit, lit)), beer: texture(keepHueBake(f.beer, lit)) })) };
+            });
+            showArms(p, 0);
+            p.arms.position.set(-p.armsArt.anchor.x, -p.armsArt.anchor.y);
         }
         p.ring.texture = a.ring;
         p.ring.position.set(-a.def.anchor.x - 1, -a.def.anchor.y - 1);
@@ -1107,7 +1142,9 @@ export async function createScene(rootEl, snapshot) {
             // The figure's origin is the anchor point, so squash and sway pivot on the pumpkin's base.
             const body = new Container();
             const layers = Object.fromEntries(LAYERS.map((name) => [name, new Sprite()]));
-            body.addChild(...LAYERS.map((name) => layers[name]));
+            const arms = new Container();
+            arms.addChild(new Sprite(), new Sprite());
+            body.addChild(...LAYERS.map((name) => layers[name]), arms);
             node.addChild(ring, body);
             groundLayer.addChild(node);
             // Ground light and the shadow of a floating pumpkin lie flat under everything standing.
@@ -1135,6 +1172,7 @@ export async function createScene(rootEl, snapshot) {
                 ring,
                 body,
                 layers,
+                arms,
                 halo: glow,
                 shadow,
                 phase: random() * 1000,
@@ -1901,6 +1939,7 @@ export async function createScene(rootEl, snapshot) {
             const frames = p.art.frames[name];
             if (frames && !reduced) p.layers[name].texture = frames[Math.floor((clock + p.phase) / FRAME_MS[name]) % frames.length];
         }
+        if (p.arms.visible && !reduced) showArms(p, raiseFrame(p.seed, serverNow()));
         p.halo.position.set(Math.round(at.x), Math.round(at.y));
         p.shadow.visible = p.lift > 0;
         if (p.shadow.visible) {
@@ -1925,10 +1964,15 @@ export async function createScene(rootEl, snapshot) {
     const poseOf = (pose) => POSES[pose] ?? { frames: 1, ms: 500 };
     // Character frames per lighting: each canvas is recoloured once per lighting it shows up in (night.js).
     const frameTextures = new Map();
-    const frameTexture = (c, lit = 'day') => {
+    // A held beer (`beer` of the frame) keeps its amber over the relit frame, like the pumpkins' (night.js, BEER_KEEP).
+    const frameTexture = (c, lit = 'day', beer = null) => {
         if (!frameTextures.has(lit)) frameTextures.set(lit, new WeakMap());
         const cache = frameTextures.get(lit);
-        if (!cache.has(c)) cache.set(c, texture(lit === 'day' ? c : relightCanvas(c, lit)));
+        if (!cache.has(c)) {
+            const relit = lit === 'day' ? c : relightCanvas(c, lit);
+            if (beer && lit !== 'day') relit.getContext('2d').drawImage(keepHueCanvas(beer, lit), 0, 0);
+            cache.set(c, texture(relit));
+        }
         return cache.get(c);
     };
     // A candle casts a small warm circle at dusk and at night; the spell book a faint green one after dark.
@@ -1963,6 +2007,14 @@ export async function createScene(rootEl, snapshot) {
     const EMBER_IDLE_MS = [1200, 3200];
     const EMBER_CAP = 7;
     const EMBER_COLORS = ['flameCore', 'pumpkinShine', 'pumpkinLight', 'pumpkin', 'ember'];
+    // The red flame (scene 3, finale step 0): a slower, gentler flicker than the candle's, a red ground light and halo
+    // after dark, no trail. Its shot — a red flare and a spark streaking at the target, red embers in its wake.
+    const RED_FLAME_MS = 140;
+    const RED_LIGHT = halo(9, 4, 'red');
+    const RED_ALPHA = [0.42, 0.48, 0.36];
+    const RED_HALO = halo(5, 4, 'red');
+    const RED_EMBERS = ['columnCore', 'bloodMoonLight', 'rune', 'runeDark'];
+    const RED_SPARK_SPEED = 640;
 
     // Topmost opaque row of a character frame: frames keep headroom for tall hats, the label goes over the real head.
     const frameTops = new WeakMap();
@@ -2170,12 +2222,15 @@ export async function createScene(rootEl, snapshot) {
         const now = serverNow();
         const ritual = inFinale() && ritualOf(finale.step, finale.ready, sinceStep());
         const dark = lighting !== 'day';
+        const clinking = clinksNow(now);
         for (const w of walkers.values()) {
             if (!w.sprite) continue;
             const s = walkAt(w.track, clock);
             w.drawn = s.at;
             const at = walkerArt(s.at);
+            const clink = clinking.of.get(w.id);
             let view;
+            let lean = 0;
             if (s.moving) {
                 const [dir, flip] = facing(s.from, s.to);
                 const walk = poseOf('walk');
@@ -2190,22 +2245,27 @@ export async function createScene(rootEl, snapshot) {
                 const [dir, flip] = towardCentre(at);
                 const pose = poseOf('ritual');
                 view = { dir, flip, pose: 'ritual', frame: Math.floor((now + w.seed) / pose.ms) % pose.frames, item: null };
+            } else if (clink) {
+                w.shoot = null;
+                ({ view, lean } = clinkView(w, clink, at, now));
             } else {
                 w.shoot = null;
                 view = { ...idleOf(w, s, now), item: w.item ?? null };
             }
             if (reduced && !s.moving && view.pose !== 'shoot') view.frame = 0;
             const f = characterFrame(w.look, view);
-            const x = Math.round(at.x);
+            const x = Math.round(at.x + lean);
             const y = Math.round(at.y);
-            w.sprite.texture = frameTexture(f.canvas, lightAt(at.x, at.y));
+            if (clink) clinkFoam(w, clink, f, view, x, y, now);
+            w.sprite.texture = frameTexture(f.canvas, lightAt(at.x, at.y), f.beer);
             w.sprite.anchor.set(f.anchor.x / f.canvas.width, f.anchor.y / f.canvas.height);
             w.sprite.scale.x = view.flip ? -1 : 1;
             w.sprite.position.set(x, y);
             w.sprite.zIndex = depthKey(at.x, at.y);
             w.flash.visible = false;
             w.halo.visible = false;
-            const light = !dark ? null : view.item === 'candle' ? NIGHT.candleLight : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
+            const red = view.item === 'red-flame';
+            const light = !dark ? null : view.item === 'candle' ? NIGHT.candleLight : red ? RED_LIGHT : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
             w.glow.visible = Boolean(light);
             if (light) {
                 w.glow.texture = defTexture(light);
@@ -2216,15 +2276,15 @@ export async function createScene(rootEl, snapshot) {
             if (f.flames) {
                 // The candle: a flicker frame by a hash of short slots, the same on every client; the ground light
                 // and the halo breathe with it and stand under and around the flame, wherever the hand carries it.
-                const k = reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / FLAME_MS)) % FLICKER.length];
+                const k = reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / (red ? RED_FLAME_MS : FLAME_MS))) % FLICKER.length];
                 glow = f.flames[k];
                 const flame = framePoint(f.flame, x, y, view.flip);
                 if (light) {
-                    w.glow.alpha = CANDLE_ALPHA[k];
+                    w.glow.alpha = (red ? RED_ALPHA : CANDLE_ALPHA)[k];
                     w.glow.position.set(flame.x, y);
                 }
-                if (dark) placeHalo(w, FLAME_HALO, flame, HALO_ALPHA[k] * (lighting === 'sunset' ? 1 : 1.4));
-                candleTrail(w, flame, s.moving, view);
+                if (dark) placeHalo(w, red ? RED_HALO : FLAME_HALO, flame, HALO_ALPHA[k] * (lighting === 'sunset' ? 1 : 1.4));
+                if (!red) candleTrail(w, flame, s.moving, view);
             }
             if (view.pose === 'shoot') shotFx(w, view, x, y);
             w.lights.visible = Boolean(glow);
@@ -2239,6 +2299,109 @@ export async function createScene(rootEl, snapshot) {
             const half = w.label.width / 2 + 2;
             w.label.position.set(Math.round(clamp(x * layout.cssPx, half, layout.width - half)), Math.round((y - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
         }
+        toastBubbles(clinking.groups, now);
+    }
+
+    /*
+     * Clinking glasses in the cursed world (clink.js; docs/spec/frontend.md, «Финал»): the groups of the current slot
+     * by the server clock, each with its centre in art px where the walkers are drawn. A walker on the way walks on and
+     * joins in once it stands, if the clink still runs; a shot is more important for a moment.
+     */
+    const clinkPlan = createClinks();
+    let toastSpeech = null;
+    const FOAM = ['white', 'white', 'cream', 'hazeLight'];
+    // How far a walker leans toward the group's centre to reach the glasses (art px), and the glass's reach from the
+    // anchor it leans by.
+    const LEAN_MAX = 6;
+    const GLASS_REACH = 10;
+
+    function clinksNow(now) {
+        const of = new Map();
+        if (!inFinale() || finale.step < 5) return { of, groups: [] };
+        const groups = clinkPlan.at(now, walkers.values()).map((g) => {
+            const members = g.ids.map((id) => walkers.get(id)).filter((w) => w?.sprite && w.track);
+            const points = members.map((w) => walkerArt(walkAt(w.track, clock).at));
+            const centre = points.length ? { x: points.reduce((a, p) => a + p.x, 0) / points.length, y: Math.min(...points.map((p) => p.y)) } : null;
+            return { ...g, members, points, centre };
+        }).filter((g) => g.centre);
+        for (const g of groups) {
+            if (now - g.at < CLINK.end) g.members.forEach((w, i) => of.set(w.id, { group: g, index: i }));
+        }
+        return { of, groups };
+    }
+
+    // Facing the group's centre from the side (by the order in the group when straight above or below it); turning,
+    // reaching out, the strike, back, then the glass raised for the toast. The lean toward the centre eases in with
+    // the reach and out after the strike.
+    function clinkView(w, { group, index }, at, now) {
+        const t = now - group.at;
+        const dx = group.centre.x - at.x;
+        const flip = Math.abs(dx) >= 1 ? dx < 0 : index % 2 === 1;
+        const item = w.item ?? null;
+        const idle = poseOf('idle');
+        const base = { dir: 'side', flip, item };
+        const reach = clamp(Math.abs(dx) - GLASS_REACH, 0, LEAN_MAX) * (flip ? -1 : 1);
+        const ease = (k) => (reduced ? (k > 0 ? 1 : 0) : clamp(k, 0, 1));
+        let k = 0;
+        let view;
+        if (t < CLINK.reach) {
+            view = { ...base, pose: 'idle', frame: Math.floor((now + w.seed) / idle.ms) % idle.frames };
+        } else if (t < CLINK.back) {
+            k = ease((t - CLINK.reach) / (CLINK.strike - CLINK.reach));
+            view = { ...base, pose: 'clink', frame: t < CLINK.strike ? 0 : 1 };
+        } else if (t < CLINK.raise) {
+            k = 1 - ease((t - CLINK.back) / (CLINK.raise - CLINK.back));
+            view = { ...base, pose: 'idle', frame: 0 };
+        } else {
+            const toast = poseOf('toast');
+            view = { ...base, pose: 'toast', frame: Math.floor((t - CLINK.raise) / toast.ms) % toast.frames };
+        }
+        return { view, lean: Math.round(reach * k) };
+    }
+
+    // The strike: a splash of foam off the glass and a glint where the glasses meet, once per walker and clink.
+    function clinkFoam(w, { group }, f, view, x, y, now) {
+        if (view.pose !== 'clink' || now - group.at < CLINK.strike || !f.muzzle) return;
+        // Once per clink; a clock that went back (a replayed lab run) splashes again.
+        if (w.foam && w.foam.of === group.at && now >= w.foam.now) return;
+        w.foam = { of: group.at, now };
+        if (now - group.at > CLINK.back) return;
+        const top = framePoint(f.muzzle, x, y, view.flip);
+        const toward = view.flip ? -1 : 1;
+        // The foam keeps its hue like the beer in the glass.
+        const lit = lightAt(top.x, top.y);
+        const foam = FOAM.map((key) => artTexture(`foam-px:${key}:${lit}`, () => {
+            const c = canvas(1, 1);
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = css(keepHueColor(PALETTE[key], lit));
+            ctx.fillRect(0, 0, 1, 1);
+            return texture(c);
+        }));
+        const glint = spawn([defTexture(SHOT_FX.pop)], top.x + toward * 2, top.y - 1, 0, 0, 0, 0.16);
+        glint.sprite.pivot.set(2, 2);
+        if (reduced) return;
+        for (let i = 0; i < 6; i++) {
+            const a = -Math.PI / 2 + toward * between(-0.2, 0.9);
+            const v = between(18, 42);
+            ember(top.x + toward, top.y, Math.cos(a) * v, Math.sin(a) * v, 70, between(0.35, 0.6), 0, FOAM).frames = foam;
+        }
+    }
+
+    // The toast over the group's heads from CLINK.toast; a toast of two voices puts the line over the first walker and
+    // the reply over the second, one after the other.
+    function toastBubbles(groups, now) {
+        if (!groups.length && !toastSpeech) return;
+        toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
+        for (const g of groups) {
+            const t = now - g.at;
+            if (t < CLINK.toast || now >= g.until) continue;
+            const [line, reply] = g.toast;
+            const head = (p) => ({ x: p.x, y: p.y - 34 });
+            if (!reply) toastSpeech.say('toast:' + g.key, line, head(g.centre));
+            else if (t < CLINK.reply || g.points.length < 2) toastSpeech.say('toast:' + g.key, line, head(g.points[0]));
+            else toastSpeech.say('reply:' + g.key, reply, head(g.points[1]));
+        }
+        toastSpeech.sweep();
     }
 
     /** An additive halo of a halo() sprite centred on an art point, over the walker. */
@@ -2251,7 +2414,7 @@ export async function createScene(rootEl, snapshot) {
     }
 
     // Embers: 1-px light that cools from white-hot to red as it lives, a step cooler on some frames — a flicker.
-    const emberTextures = () => EMBER_COLORS.map((key) => artTexture(`ember-px:${key}`, () => {
+    const emberTextures = (colors = EMBER_COLORS) => colors.map((key) => artTexture(`ember-px:${key}`, () => {
         const c = canvas(1, 1);
         const ctx = c.getContext('2d');
         ctx.fillStyle = css(PALETTE[key]);
@@ -2264,8 +2427,8 @@ export async function createScene(rootEl, snapshot) {
         p.sprite.visible = t < 0.75 || Math.floor(p.age * 20) % 2 === 0;
         return p.frames[Math.min(p.frames.length - 1, Math.floor(p.heat + t * (p.frames.length - 1)) + flick)];
     }
-    function ember(x, y, vx, vy, gravity, life, heat) {
-        const frames = emberTextures();
+    function ember(x, y, vx, vy, gravity, life, heat, colors = EMBER_COLORS) {
+        const frames = emberTextures(colors);
         const p = spawn([frames[0]], x, y, vx, vy, gravity, life);
         Object.assign(p, { frames, heat, phase: Math.random() * 4, anim: emberAnim });
         return p;
@@ -2293,7 +2456,8 @@ export async function createScene(rootEl, snapshot) {
     /**
      * The shot's effect by the item in hand (docs/spec/frontend.md, «Выстрел»), from the item's point toward where the
      * target was at the shot: the pistol fires, the candle (and a torch) throws a fireball, the spell book strikes with
-     * green lightning, the beer mug burps bubbles. Anything else — an empty hand pointing, a broom — has no effect.
+     * green lightning, the red flame shoots a red spark, the beer mug burps bubbles. Anything else — an empty hand
+     * pointing, a broom — has no effect.
      */
     function shotFx(w, view, x, y) {
         const item = w.shoot.item;
@@ -2328,6 +2492,18 @@ export async function createScene(rootEl, snapshot) {
             if (!w.shoot.fired) {
                 w.shoot.fired = 1;
                 bolt(from, to);
+            }
+        } else if (item === 'red-flame') {
+            // A red flare off the flame toward the target, then the spark.
+            const k = FLASH_MS.findIndex((ms) => t < ms);
+            if (k >= 0) {
+                const a = Math.round((Math.atan2(dy, dx) / Math.PI) * 8) * (Math.PI / 8);
+                showFlash(w, SHOT_FX.redFlash([Math.round(Math.cos(a) * 8), Math.round(Math.sin(a) * 8)])[k], from);
+                if (dark && k < 2) placeHalo(w, RED_HALO, from, SHOT_AIR_ALPHA[k]);
+            }
+            if (!w.shoot.fired && t >= 30) {
+                w.shoot.fired = 1;
+                redSpark(from, to, len);
             }
         } else if (item === 'beer') {
             const bubbles = reduced ? BUBBLES.slice(0, 1) : BUBBLES;
@@ -2364,6 +2540,28 @@ export async function createScene(rootEl, snapshot) {
             for (let i = 0; i < 5; i++) {
                 const a = (i / 5) * Math.PI * 2 + between(0, 1);
                 ember(Math.round(p.x), Math.round(p.y), Math.cos(a) * between(20, 40), Math.sin(a) * between(20, 40) - 10, 40, between(0.3, 0.5), 0);
+            }
+        };
+    }
+
+    // The red flame's spark: a star of the circle's light streaking at the target, a dense wake of red embers behind it
+    // that reads as a streak; it bursts into embers where it ends. With reduced motion only the flare stays.
+    function redSpark(from, to, len) {
+        if (reduced) return;
+        const frames = SHOT_FX.redSpark.map((def) => defTexture(def));
+        const p = spawn([frames[0]], from.x, from.y, ((to.x - from.x) / len) * RED_SPARK_SPEED, ((to.y - from.y) / len) * RED_SPARK_SPEED, 0, Math.min(1, len / RED_SPARK_SPEED));
+        p.sprite.pivot.set(2, 2);
+        p.anim = (q) => frames[Math.floor(q.age * 25) % frames.length];
+        let trail = 0;
+        p.tick = (q) => {
+            if (q.age < trail) return;
+            trail = q.age + 0.008;
+            ember(Math.round(q.x - q.vx * 0.008), Math.round(q.y - q.vy * 0.008), between(-3, 3), between(-4, 4), 0, between(0.15, 0.3), between(0.5, 1.5), RED_EMBERS);
+        };
+        p.done = () => {
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2 + between(0, 0.8);
+                ember(Math.round(p.x), Math.round(p.y), Math.cos(a) * between(25, 45), Math.sin(a) * between(25, 45) - 8, 30, between(0.3, 0.5), 0, RED_EMBERS);
             }
         };
     }
