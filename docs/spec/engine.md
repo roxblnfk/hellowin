@@ -7,7 +7,8 @@
 по сценам с пустыми наборами и `wobble` летучих мышей, магический круг финальной сцены (элемент `circle`: свой порог и
 стадии, `locked` вне шага финала 0, готовность финальной сцены, `not ready` и `force` у шага финала 1), червяки
 (`worm`) финальной сцены — наземные цели по лужайке, аптайм RoadRunner (`startedAt`) и разбегание фигурок на шаге
-финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`).
+финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
+порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`).
 
 ## Классы
 
@@ -60,7 +61,7 @@
 | Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` = 5), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
-| Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` → gauge `hellowin_players`, `hellowin_players_registered` |
+| Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
 публикуется на каждой сборке, даже без изменений: новый клиент получает таблицу в пределах интервала, а сразу —
@@ -174,14 +175,21 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire}` (`Domain/Story/Story`;
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k}` (`Domain/Story/Story`;
+  `k` — множитель порогов, вне 0,1–10 или нет поля — читается как 1;
   `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
-  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; пауза при этом остаётся.
-- **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `zombies` меняют сюжет под локом через
+  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; пауза и `k` при этом остаются.
+- **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `zombies`, `thresholds` меняют сюжет под локом через
   `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
   нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
   только публикует.
+- **Множитель порогов** (`k`): действующий порог — `RitualPolicy::threshold($type, $k)` = `max(1, round(базовый × k))`,
+  базовые — `HELLOWIN_CLICKS_PER_STAGE`, `HELLOWIN_BONFIRE_CLICKS_PER_STAGE`, `HELLOWIN_CIRCLE_CLICKS_PER_STAGE`. Клик
+  читает `k` из сюжета под локом элемента вместе с `round` и `scene` (`ClickOutcome::$k`) и по нему же решает о переходе
+  и шлёт `threshold` в `click`; снимок умножает `threshold` по `k` из того же `getMultiple`. Смена `k` ничего не
+  пересчитывает и задач не ставит: элемент, у которого `clicks` уже не меньше нового порога, двинется со следующим
+  кликом — тем же путём и с тем же ключом `{round}:{id}:{toStage}`, один переход на стадию; излишек сгорает, как обычно.
 - **Разбегание** на шаге финала 2 (`Story::SCATTER_STEP`): после события `finale` и реплики `finale-2`
   `WalkService::scatter` под локом `walkers` ведёт каждую фигурку с её текущей точки к краю лужайки — по лучу от центра
   грядки через фигурку до стороны прямоугольника `walk` (`WalkZone::outward`), путь — тем же `WalkZone::route`, что у
@@ -195,12 +203,14 @@
   первого воркера, а не от старта самого процесса RR: разница — секунды запуска пула.
 - **Разоблачение** (`Domain/Story/Reveal`, `Application/Story/RevealBuilder`) — числа раунда без отдельных счётчиков
   на клик: у каждой тыквы в записи `hellowin:pumpkin:{id}` есть `accepted` — принятые клики раунда, растёт под тем же
-  локом `pumpkin:{id}`, что и `clicks`. Отсюда: `clicks` = Σ `accepted`; `jobs` = Σ `stage` + `scene` (каждая стадия
-  и каждая сцена — ровно одна выполненная задача перехода); `burned` = `clicks` − `HELLOWIN_CLICKS_PER_STAGE` × Σ
-  `stage` − Σ min(`clicks`, порог) — переход тратит ровно порог, остальное сгорело на идемпотентности или после
-  готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. Костёр входит во все три суммы со своим порогом
-  (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`), круг — со своим (`HELLOWIN_CIRCLE_CLICKS_PER_STAGE`): их `accepted` — в
-  `clicks`, стадии — в `jobs`, сгоревшие — в `burned`; клики
+  локом `pumpkin:{id}`, что и `clicks`, и `spent` — сколько кликов взяли её выполненные переходы: задача перехода
+  прибавляет min(`clicks`, порог) по `k`, действующему, когда она выполняется. Отсюда: `clicks` = Σ `accepted`; `jobs` =
+  Σ `stage` + `scene` (каждая стадия и каждая сцена — ровно одна выполненная задача перехода); `burned` = `clicks` −
+  Σ `spent` − Σ min(`clicks`, действующий порог) — переход тратит ровно порог, остальное сгорело на идемпотентности или
+  после готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. `spent` в записи, а не `stage` × порог:
+  модератор меняет `k` посреди раунда, и каждая стадия стоила свой порог. Запись без `spent` (до появления поля)
+  читается как 0 — до сброса `burned` такого раунда завышен. Костёр и круг входят во все три суммы со своими порогами
+  и записями: их `accepted` — в `clicks`, стадии — в `jobs`, сгоревшие — в `burned`; клики
   `locked` не принимаются и не считаются нигде. Сбитые летуны — ключ `hellowin:shot`
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
   читается как 0, так что сброс его не трогает. `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
@@ -221,8 +231,9 @@
 4. Статистика игрока: под RR-локом `player:{id}` `clicks + 1` (анонимный клик — пропуск). Сбой статистики пишется
    в лог и не ломает клик.
 5. Публикация `click` в канал (с `player`, если он есть).
-6. Если политика разрешает переход (`clicks >= HELLOWIN_CLICKS_PER_STAGE` и `stage < stageMax(scene)`; у костра и
-   круга — их порог и потолок, `RitualPolicy::threshold($type)`, `stageMax($scene, $type)`) — задача
+6. Если политика разрешает переход (`clicks >=` действующий порог тыквы — `HELLOWIN_CLICKS_PER_STAGE` × `k` — и
+   `stage < stageMax(scene)`; у костра и круга — их порог и потолок, `RitualPolicy::threshold($type, $k)`,
+   `stageMax($scene, $type)`) — задача
    `TransitionPumpkin {key, round, pumpkin, toStage, player}` в очередь, метрика
    `hellowin_transition_jobs_pushed_total{kind="pumpkin"}` (у костра — `kind="bonfire"`, у круга — `kind="circle"`).
    Ставится на **каждом** таком клике, пока переход
@@ -232,7 +243,8 @@
 
 - **Тыква.** Обработчик `TransitionPumpkin` помечен `#[Idempotent(storage: 'transitions', key: 'payload.key')]`
   (пакет `spiral/idempotency`), ключ в payload — `{round}:{pumpkin}:{toStage}`. Внутри: RR-лок `pumpkin:{id}` →
-  доменная проверка (`round` текущий и `stage == toStage - 1`) → `stage = toStage`, `clicks = 0` → лок отпущен →
+  доменная проверка (`round` текущий и `stage == toStage - 1`) → `stage = toStage`, `spent += min(clicks, порог)`
+  (порог — по `k` в момент выполнения; задача, поставленная до смены `k`, выполняется всё равно), `clicks = 0` → лок отпущен →
   `finished + 1` игроку из payload → публикация `pumpkin` (с `player`) → `hellowin_transitions_total{kind="pumpkin"}`, `hellowin_pumpkin_stage{element}` → проверка
   готовности сцены по снимку (`RitualPolicy::sceneReady`) → под RR-локом `scene` отметка `ready` в сюжете, только если
   её ещё нет (две тыквы, добитые одновременно, обе видят сцену готовой — отметит одна) → событие `ready`, реплики
@@ -263,7 +275,7 @@
   {step: 0}`, реплика `scene-{toScene}` → `hellowin_transitions_total{kind="scene"}`, `hellowin_scene_stage`.
 - **Сброс.** `ResetService::reset(?int $fromRound)` (консоль `hellowin:reset [--round=N]`): под локами `scene`
   и всех `pumpkin:{id}`, `bonfire` и `circle` сравнивает текущий `round` с `fromRound` (по умолчанию — текущий); совпал — `round + 1`,
-  сцена 0, тыквы, костёр и круг `stage 0`/`clicks 0`/`accepted 0`, сюжет заново (кроме паузы), публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
+  сцена 0, тыквы, костёр и круг `stage 0`/`clicks 0`/`accepted 0`/`spent 0`, сюжет заново (кроме паузы и `k`), публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
   идемпотентность по `reset:{round}` без пакета: состояние и так защищено этими локами, а сравнение `round` под ними
   отсекает второй сброс того же раунда; ключ в Valkey дал бы второй источник правды о раунде. Сервис вызывается из любого
   места (будущее голосование) — достаточно передать раунд, который хотят завершить.
@@ -288,7 +300,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 | Что | Где | Через |
 |---|---|---|
-| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |

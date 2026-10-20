@@ -63,7 +63,7 @@ final class CircleTest
         Assert::same($ritual->broadcast->ofType('pumpkin'), [
             ['type' => 'pumpkin', 'round' => 1, 'element' => 'circle', 'stage' => 1, 'player' => ['id' => self::JACK, 'name' => null]],
         ]);
-        Assert::equals($ritual->store->snapshot()->circle, new Pumpkin(RitualHarness::CIRCLE, 1, 0, 4));
+        Assert::equals($ritual->store->snapshot()->circle, new Pumpkin(RitualHarness::CIRCLE, 1, 0, 4, 3));
         Assert::same($ritual->counters()[RitualMetrics::TRANSITIONS . '{circle}'], 1.0);
         Assert::same($ritual->counters()[RitualMetrics::CIRCLE_STAGE . '{}'], 1.0);
     }

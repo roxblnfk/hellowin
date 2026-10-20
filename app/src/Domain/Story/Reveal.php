@@ -15,7 +15,9 @@ use App\Domain\Ritual\RitualSnapshot;
  * Everything but the shots follows from the ritual state, so clicks pay no extra write: each pumpkin and centrepiece
  * count their accepted clicks under their own lock, every stage they reached is one transition job that ran, every
  * scene one more, and a transition consumes exactly its threshold of clicks — the rest burned on the idempotency key
- * while the transition was in flight, or after the pumpkin reached the last stage of its scene.
+ * while the transition was in flight, or after the pumpkin reached the last stage of its scene. The moderator may
+ * change the thresholds mid-round, so each element keeps the clicks its transitions took, and only the clicks
+ * gathered toward the next stage are measured by the threshold in force now.
  */
 final readonly class Reveal
 {
@@ -42,10 +44,14 @@ final readonly class Reveal
      */
     public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin): self
     {
-        $elements = \array_map(static fn(Pumpkin $pumpkin): array => [$pumpkin, $policy->threshold()], $ritual->pumpkins);
+        $k = $ritual->story->k;
+        $elements = \array_map(
+            static fn(Pumpkin $pumpkin): array => [$pumpkin, $policy->threshold(Element::TYPE_PUMPKIN, $k)],
+            $ritual->pumpkins,
+        );
         foreach (Element::CENTREPIECES as $type) {
             $centrepiece = $ritual->centrepiece($type);
-            $centrepiece === null or $elements[] = [$centrepiece, $policy->threshold($type)];
+            $centrepiece === null or $elements[] = [$centrepiece, $policy->threshold($type, $k)];
         }
 
         $clicks = 0;
@@ -54,7 +60,7 @@ final readonly class Reveal
         foreach ($elements as [$element, $cost]) {
             $clicks += $element->accepted;
             $stages += $element->stage;
-            $spent += $element->stage * $cost + \min($element->clicks, $cost);
+            $spent += $element->spent + \min($element->clicks, $cost);
         }
 
         return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin);

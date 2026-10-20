@@ -21,13 +21,13 @@ final readonly class LockstepPolicy implements RitualPolicy
     private array $bonfireStageMax;
 
     /**
-     * @param positive-int $clicksPerStage Clicks a pumpkin needs to move.
+     * @param positive-int $clicksPerStage Clicks a pumpkin needs to move at k = 1.
      * @param list<int> $stageMax The last pumpkin stage of each scene before the final
      *        one, strictly increasing; its length is the number of the final scene.
-     * @param positive-int $bonfireClicksPerStage Clicks the bonfire needs to move.
+     * @param positive-int $bonfireClicksPerStage Clicks the bonfire needs to move at k = 1.
      * @param list<int> $bonfireStageMax The last bonfire stage of each scene, never decreasing; scenes past the list
      *        keep its last value. Empty leaves the bonfire at stage 0 everywhere.
-     * @param positive-int $circleClicksPerStage Clicks the circle needs to move.
+     * @param positive-int $circleClicksPerStage Clicks the circle needs to move at k = 1.
      * @param positive-int $circleStages The last circle stage, in the final scene; before it the circle stays at 0.
      */
     public function __construct(
@@ -58,15 +58,15 @@ final readonly class LockstepPolicy implements RitualPolicy
     }
 
     #[\Override]
-    public function pumpkinTransition(Pumpkin $pumpkin, int $scene): ?int
+    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0): ?int
     {
-        return $this->transition(Element::TYPE_PUMPKIN, $pumpkin, $scene);
+        return $this->transition(Element::TYPE_PUMPKIN, $pumpkin, $scene, $k);
     }
 
     #[\Override]
-    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene): ?int
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0): ?int
     {
-        return $this->transition($type, $centrepiece, $scene);
+        return $this->transition($type, $centrepiece, $scene, $k);
     }
 
     #[\Override]
@@ -112,13 +112,15 @@ final readonly class LockstepPolicy implements RitualPolicy
     }
 
     #[\Override]
-    public function threshold(string $type = Element::TYPE_PUMPKIN): int
+    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0): int
     {
-        return match ($type) {
+        $base = match ($type) {
             Element::TYPE_PUMPKIN => $this->clicksPerStage,
             Element::TYPE_BONFIRE => $this->bonfireClicksPerStage,
             Element::TYPE_CIRCLE => $this->circleClicksPerStage,
         };
+
+        return \max(1, (int) \round((float) $base * $k));
     }
 
     #[\Override]
@@ -133,12 +135,12 @@ final readonly class LockstepPolicy implements RitualPolicy
      * @param Element::TYPE_* $type
      * @return int<1, max>|null
      */
-    private function transition(string $type, Pumpkin $element, int $scene): ?int
+    private function transition(string $type, Pumpkin $element, int $scene, float $k): ?int
     {
         return $scene >= 0
             && ($scene >= $this->finalScene()) === ($type === Element::TYPE_CIRCLE)
             && $element->stage < $this->stageMax($scene, $type)
-            && $element->clicks >= $this->threshold($type)
+            && $element->clicks >= $this->threshold($type, $k)
             ? $element->stage + 1
             : null;
     }

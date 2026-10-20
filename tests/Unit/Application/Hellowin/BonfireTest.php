@@ -115,7 +115,7 @@ final class BonfireTest
         Assert::same($ritual->broadcast->ofType('pumpkin'), [
             ['type' => 'pumpkin', 'round' => 1, 'element' => 'bonfire', 'stage' => 1, 'player' => ['id' => self::JACK, 'name' => null]],
         ]);
-        Assert::equals($ritual->store->snapshot()->bonfire, new Pumpkin(RitualHarness::BONFIRE, 1, 0, 4));
+        Assert::equals($ritual->store->snapshot()->bonfire, new Pumpkin(RitualHarness::BONFIRE, 1, 0, 4, 3));
         Assert::same($ritual->counters()[RitualMetrics::TRANSITIONS . '{bonfire}'], 1.0);
         Assert::same($ritual->counters()[RitualMetrics::BONFIRE_STAGE . '{}'], 1.0);
     }

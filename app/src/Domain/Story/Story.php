@@ -22,6 +22,11 @@ final readonly class Story
     /** The last finale step: the cursed world, an endless mode with zombies. */
     public const LAST_STEP = 5;
 
+    /** Bounds of the threshold multiplier the moderator may set. */
+    public const K_MIN = 0.1;
+
+    public const K_MAX = 10.0;
+
     /**
      * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
      * @param int<0, 5>|null $finale Finale step; null outside the final scene.
@@ -30,6 +35,7 @@ final readonly class Story
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
      *        pumpkin, or the centrepiece in a scene that has one: the bonfire or the circle.
      * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.
+     * @param float $k Multiplier of every click threshold, from {@see K_MIN} to {@see K_MAX}.
      */
     public function __construct(
         public ?int $ready = null,
@@ -38,6 +44,7 @@ final readonly class Story
         public bool $zombies = false,
         public ?string $lastPumpkin = null,
         public ?int $bonfire = null,
+        public float $k = 1.0,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -54,6 +61,8 @@ final readonly class Story
         $player = $value['lastPumpkin'] ?? null;
         /** @var mixed $bonfire */
         $bonfire = $value['bonfire'] ?? null;
+        /** @var mixed $k */
+        $k = $value['k'] ?? null;
 
         return new self(
             \is_int($ready) && $ready >= 0 ? $ready : null,
@@ -62,7 +71,16 @@ final readonly class Story
             ($value['zombies'] ?? false) === true,
             PlayerId::isValid($player) ? $player : null,
             \is_int($bonfire) && $bonfire >= 0 ? $bonfire : null,
+            self::isK($k) ? (float) $k : 1.0,
         );
+    }
+
+    /**
+     * @psalm-assert-if-true int|float $k
+     */
+    public static function isK(mixed $k): bool
+    {
+        return (\is_int($k) || \is_float($k)) && $k >= self::K_MIN && $k <= self::K_MAX;
     }
 
     /**
@@ -71,7 +89,7 @@ final readonly class Story
      */
     public function readyIn(int $scene, ?string $player): self
     {
-        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire);
+        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire, $this->k);
     }
 
     /**
@@ -79,7 +97,7 @@ final readonly class Story
      */
     public function bonfireOpenIn(int $scene): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene);
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene, $this->k);
     }
 
     /**
@@ -87,7 +105,7 @@ final readonly class Story
      */
     public function nextScene(bool $final): self
     {
-        return new self(null, $final ? 0 : null, $this->paused, $this->zombies, $this->lastPumpkin);
+        return new self(null, $final ? 0 : null, $this->paused, $this->zombies, $this->lastPumpkin, k: $this->k);
     }
 
     /**
@@ -97,7 +115,7 @@ final readonly class Story
     public function stepTo(int $step): self
     {
         return $this->finale !== null && $step === $this->finale + 1 && $step <= self::LAST_STEP
-            ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire)
+            ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k)
             : $this;
     }
 
@@ -111,20 +129,26 @@ final readonly class Story
 
     public function withPaused(bool $paused): self
     {
-        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire);
+        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k);
     }
 
     public function withZombies(bool $zombies): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire);
+        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire, $this->k);
+    }
+
+    public function withK(float $k): self
+    {
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $k);
     }
 
     /**
-     * A new round starts the story over; the pause stays, it is about the room rather than the story.
+     * A new round starts the story over; the pause and the threshold multiplier stay, they are about the room rather
+     * than the story.
      */
     public function restarted(): self
     {
-        return new self(paused: $this->paused);
+        return new self(paused: $this->paused, k: $this->k);
     }
 
     public function cursed(): bool
@@ -138,7 +162,7 @@ final readonly class Story
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 5>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null}
+     * @return array{ready: int<0, max>|null, finale: int<0, 5>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float}
      */
     public function toArray(): array
     {
@@ -149,6 +173,7 @@ final readonly class Story
             'zombies' => $this->zombies,
             'lastPumpkin' => $this->lastPumpkin,
             'bonfire' => $this->bonfire,
+            'k' => $this->k,
         ];
     }
 }

@@ -24,7 +24,7 @@ final class TransitionHandlerTest
 
         Assert::true($ritual->transitions->pumpkin(1, 'pumpkin-1', 1));
 
-        Assert::equals($ritual->store->snapshot()->pumpkin('pumpkin-1'), new Pumpkin('pumpkin-1', 1, 0, 3));
+        Assert::equals($ritual->store->snapshot()->pumpkin('pumpkin-1'), new Pumpkin('pumpkin-1', 1, 0, 3, 2));
         Assert::same($ritual->broadcast->ofType('pumpkin'), [
             ['type' => 'pumpkin', 'round' => 1, 'element' => 'pumpkin-1', 'stage' => 1],
         ]);
@@ -68,7 +68,7 @@ final class TransitionHandlerTest
 
         Assert::false($ritual->transitions->pumpkin(1, 'pumpkin-1', 1));
 
-        Assert::equals($ritual->store->snapshot()->pumpkin('pumpkin-1'), new Pumpkin('pumpkin-1', 1, 1, 3));
+        Assert::equals($ritual->store->snapshot()->pumpkin('pumpkin-1'), new Pumpkin('pumpkin-1', 1, 1, 3, 2));
         Assert::count($ritual->broadcast->ofType('pumpkin'), 1);
         Assert::same($ritual->counters()[RitualMetrics::TRANSITIONS . '{pumpkin}'], 1.0);
     }

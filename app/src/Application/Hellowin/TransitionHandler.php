@@ -37,7 +37,10 @@ final readonly class TransitionHandler
      */
     public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null): bool
     {
-        $moved = $this->store->advancePumpkin($round, $pumpkin, $toStage);
+        // The threshold in force when the job runs is what the transition takes; the reveal counts the rest as burned
+        $type = $this->store->typeOf($pumpkin);
+        $cost = $this->policy->threshold($type, $this->store->story()->k);
+        $moved = $this->store->advancePumpkin($round, $pumpkin, $toStage, $cost);
         if ($moved === null) {
             return false;
         }
@@ -46,7 +49,6 @@ final readonly class TransitionHandler
         $this->publisher->pumpkin($round, $moved, $finisher);
 
         $ritual = $this->store->snapshot();
-        $type = $ritual->typeOf($moved->id);
         $this->metrics->moved($type, $moved);
         if ($ritual->round !== $round) {
             return true;

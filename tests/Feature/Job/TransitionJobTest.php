@@ -40,7 +40,7 @@ final class TransitionJobTest extends TestCase
     {
         $this->consume(TransitionPumpkin::class, self::pumpkinPayload(1, 'pumpkin-1', 1));
 
-        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0]);
+        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0, 'spent' => 0]);
         Assert::same($this->broadcast->ofType('pumpkin'), [
             ['type' => 'pumpkin', 'round' => 1, 'element' => 'pumpkin-1', 'stage' => 1],
         ]);
@@ -67,7 +67,7 @@ final class TransitionJobTest extends TestCase
 
         $this->consume(TransitionPumpkin::class, self::pumpkinPayload(2, 'pumpkin-1', 1));
 
-        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0]);
+        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0, 'spent' => 0]);
         Assert::same(\array_column($this->broadcast->ofType('pumpkin'), 'round'), [1, 2]);
     }
 

@@ -7,6 +7,7 @@ namespace App\Application\Story;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Walk\WalkService;
+use App\Domain\Element\Element;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
@@ -111,6 +112,30 @@ final readonly class StoryService
     {
         [$before] = $this->store->updateStory(static fn(Story $story): Story => $story->withPaused($on));
         $before->paused === $on or $this->publisher->pause($this->store->round(), $on);
+    }
+
+    /**
+     * Scales every click threshold to the room. An element that already has the clicks of its new threshold moves
+     * with its next click: the policy compares the clicks with the threshold in force on every click.
+     *
+     * @return array{k: float, thresholds: array<Element::TYPE_*, positive-int>} The multiplier and the thresholds in
+     *         force after the call.
+     * @throws StoryRefusedException
+     * @throws RitualBusyException
+     */
+    public function thresholds(mixed $k): array
+    {
+        Story::isK($k) or throw new StoryRefusedException('invalid k');
+        $k = (float) $k;
+
+        [$before] = $this->store->updateStory(static fn(Story $story): Story => $story->withK($k));
+        $thresholds = [];
+        foreach ([Element::TYPE_PUMPKIN, ...Element::CENTREPIECES] as $type) {
+            $thresholds[$type] = $this->policy->threshold($type, $k);
+        }
+        $before->k === $k or $this->publisher->thresholds($this->store->round(), $k, $thresholds);
+
+        return ['k' => $k, 'thresholds' => $thresholds];
     }
 
     /**

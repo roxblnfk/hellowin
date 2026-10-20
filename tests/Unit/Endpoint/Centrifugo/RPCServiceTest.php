@@ -120,6 +120,8 @@ final class RPCServiceTest
             'ready' => false,
             'finale' => null,
             'paused' => false,
+            'k' => 1.0,
+            'online' => 0,
             'zombies' => false,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
@@ -367,11 +369,12 @@ final class RPCServiceTest
     #[DataSet(['flyer.special'])]
     #[DataSet(['pause'])]
     #[DataSet(['zombies'])]
+    #[DataSet(['thresholds'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
         $ritual = new RitualHarness();
 
-        Assert::same($this->call($ritual, $method, ['on' => true, 'scene' => 0, 'step' => 1, 'text' => 'Hi'], self::PLAYER), ['ok' => false, 'error' => 'forbidden']);
+        Assert::same($this->call($ritual, $method, ['on' => true, 'scene' => 0, 'step' => 1, 'text' => 'Hi', 'k' => 2], self::PLAYER), ['ok' => false, 'error' => 'forbidden']);
         Assert::blank($ritual->broadcast->published);
     }
 
@@ -506,6 +509,45 @@ final class RPCServiceTest
         Assert::same($ritual->broadcast->ofType('pause'), [['type' => 'pause', 'round' => 1, 'on' => true]]);
         Assert::true($this->call($ritual, 'state', [])['state']['paused']);
         Assert::same($this->call($ritual, 'pause', ['on' => 1], moderator: true), ['ok' => false, 'error' => 'invalid on']);
+    }
+
+    public function thresholdsAnswerTheThresholdsInForce(): void
+    {
+        $ritual = new RitualHarness(threshold: 4);
+
+        $response = $this->call($ritual, 'thresholds', ['k' => 2], moderator: true);
+        $this->call($ritual, 'thresholds', ['k' => 2.0], moderator: true);
+
+        $thresholds = ['pumpkin' => 8, 'bonfire' => 6, 'circle' => 6];
+        // JSON drops the zero fraction: the client gets the number 2
+        Assert::same($response, ['ok' => true, 'k' => 2, 'thresholds' => $thresholds]);
+        Assert::same($ritual->broadcast->ofType('thresholds'), [['type' => 'thresholds', 'round' => 1, 'k' => 2, 'thresholds' => $thresholds]]);
+        Assert::same($this->call($ritual, 'state', [])['state']['k'], 2);
+    }
+
+    #[DataSet([[]], 'missing')]
+    #[DataSet([['k' => '2']], 'a string')]
+    #[DataSet([['k' => true]], 'a bool')]
+    #[DataSet([['k' => 0.09]], 'below the range')]
+    #[DataSet([['k' => 10.5]], 'above the range')]
+    public function thresholdsNeedAMultiplierInRange(array $params): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'thresholds', $params, moderator: true), ['ok' => false, 'error' => 'invalid k']);
+        Assert::blank($ritual->broadcast->published);
+    }
+
+    public function onlineCountsTheCharactersOnTheLawn(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'register', ['name' => 'Ghost'], '0123456789abcdee');
+
+        $ritual->leaderboard->build();
+
+        Assert::same($this->call($ritual, 'state', [])['state']['online'], 1);
+        Assert::same(\array_column($ritual->broadcast->ofType('leaderboard'), 'online'), [1]);
     }
 
     public function moderatorLaunchesAWitchEvenOnAPause(): void

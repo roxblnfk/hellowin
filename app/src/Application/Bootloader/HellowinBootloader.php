@@ -149,6 +149,7 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 ChannelPublisher $publisher,
                 PlayMetrics $metrics,
+                WalkerStore $walkers,
             ): LeaderboardService => new LeaderboardService(
                 $store,
                 $ritual,
@@ -156,6 +157,7 @@ final class HellowinBootloader extends Bootloader
                 $publisher,
                 $metrics,
                 $players->getLeaderboardSize(),
+                $walkers,
             ),
             FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(
                 $flyers->getDepths(),

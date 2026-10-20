@@ -15,19 +15,24 @@ use App\Domain\Element\Element;
  * bonfire is lit after the pumpkins: in a scene that takes it further, it accepts clicks only once every pumpkin is
  * done, and the scene is ready once the bonfire is done too. The magic circle is drawn in the final scene before the
  * first finale step; the final scene is ready once the circle is closed.
+ *
+ * Every threshold is a base one scaled by the moderator's multiplier `k` (`Story::$k`): the moderator fits the
+ * ritual to the room without restarting it.
  */
 interface RitualPolicy
 {
     /**
+     * @param float $k Threshold multiplier in force.
      * @return int<1, max>|null Stage the pumpkin may move to now, null when it stays.
      */
-    public function pumpkinTransition(Pumpkin $pumpkin, int $scene): ?int;
+    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0): ?int;
 
     /**
      * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
+     * @param float $k Threshold multiplier in force.
      * @return int<1, max>|null Stage the centrepiece may move to now, null when it stays.
      */
-    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene): ?int;
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0): ?int;
 
     /**
      * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
@@ -49,9 +54,10 @@ interface RitualPolicy
 
     /**
      * @param Element::TYPE_* $type
-     * @return positive-int Clicks an element of the type needs to move.
+     * @param float $k Threshold multiplier in force.
+     * @return positive-int Clicks an element of the type needs to move: `max(1, round(base × k))`.
      */
-    public function threshold(string $type = Element::TYPE_PUMPKIN): int;
+    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0): int;
 
     /**
      * @return positive-int The scene where the pumpkins stop moving and the finale begins.

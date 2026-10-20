@@ -12,10 +12,12 @@ final readonly class ClickOutcome
     /**
      * @param positive-int $round
      * @param int<0, max> $scene
+     * @param float $k Threshold multiplier in force.
      */
     public function __construct(
         public int $round,
         public int $scene,
         public Pumpkin $pumpkin,
+        public float $k = 1.0,
     ) {}
 }

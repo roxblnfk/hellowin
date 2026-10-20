@@ -48,25 +48,25 @@ final class RitualStoreTest
         $store->click('a');
         $store->click('a');
 
-        $moved = $store->advancePumpkin(1, 'a', 1);
+        $moved = $store->advancePumpkin(1, 'a', 1, 1);
 
-        Assert::equals($moved, new Pumpkin('a', 1, 0, 2));
-        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 0, 2));
+        Assert::equals($moved, new Pumpkin('a', 1, 0, 2, 1));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 0, 2, 1));
     }
 
     public function repeatedPumpkinTransitionIsRejected(): void
     {
         $store = self::store();
-        $store->advancePumpkin(1, 'a', 1);
+        $store->advancePumpkin(1, 'a', 1, 1);
         $store->click('a');
 
-        Assert::null($store->advancePumpkin(1, 'a', 1));
+        Assert::null($store->advancePumpkin(1, 'a', 1, 1));
         Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 1, 1));
     }
 
     public function pumpkinCannotSkipAStage(): void
     {
-        Assert::null(self::store()->advancePumpkin(1, 'a', 2));
+        Assert::null(self::store()->advancePumpkin(1, 'a', 2, 1));
     }
 
     public function transitionOfAnotherRoundIsRejected(): void
@@ -74,7 +74,7 @@ final class RitualStoreTest
         $store = self::store();
         $store->reset(1);
 
-        Assert::null($store->advancePumpkin(1, 'a', 1));
+        Assert::null($store->advancePumpkin(1, 'a', 1, 1));
         Assert::false($store->advanceScene(1, 1));
         Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a'));
     }
@@ -93,7 +93,7 @@ final class RitualStoreTest
     {
         $store = self::store();
         $store->click('a');
-        $store->advancePumpkin(1, 'b', 1);
+        $store->advancePumpkin(1, 'b', 1, 1);
         $store->advanceScene(1, 1);
 
         $round = $store->reset(1);
@@ -194,7 +194,7 @@ final class RitualStoreTest
         $store = self::store($lock);
 
         $store->click('a');
-        $store->advancePumpkin(1, 'a', 1);
+        $store->advancePumpkin(1, 'a', 1, 1);
         $store->advanceScene(1, 1);
         $store->reset(1);
 
@@ -224,10 +224,10 @@ final class RitualStoreTest
         }
         unset($lock->held['bonfire']);
         $store->click('fire');
-        $store->advancePumpkin(1, 'fire', 1);
+        $store->advancePumpkin(1, 'fire', 1, 1);
 
-        Assert::same($storage->get('hellowin:bonfire'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1]);
-        Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire', 1, 0, 1));
+        Assert::same($storage->get('hellowin:bonfire'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1, 'spent' => 1]);
+        Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire', 1, 0, 1, 1));
         Assert::equals($store->snapshot()->pumpkins, [new Pumpkin('a')]);
     }
 
@@ -246,10 +246,10 @@ final class RitualStoreTest
         $store->click('fire');
         unset($lock->held['circle']);
         $store->click('ring');
-        $store->advancePumpkin(1, 'ring', 1);
+        $store->advancePumpkin(1, 'ring', 1, 1);
 
-        Assert::same($storage->get('hellowin:circle'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1]);
-        Assert::equals($store->snapshot()->circle, new Pumpkin('ring', 1, 0, 1));
+        Assert::same($storage->get('hellowin:circle'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1, 'spent' => 1]);
+        Assert::equals($store->snapshot()->circle, new Pumpkin('ring', 1, 0, 1, 1));
         Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire', 0, 1, 1));
 
         $store->reset(1);

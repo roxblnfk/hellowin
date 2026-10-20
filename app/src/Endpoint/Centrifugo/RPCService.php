@@ -37,7 +37,7 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  */
 final readonly class RPCService implements ServiceInterface
 {
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -81,6 +81,7 @@ final readonly class RPCService implements ServiceInterface
             'flyer.special' => $this->special($request->getData()),
             'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
             'zombies' => $this->toggle($request->getData(), $this->story->zombies(...)),
+            'thresholds' => ['ok' => true] + $this->story->thresholds($request->getData()['k'] ?? null),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),

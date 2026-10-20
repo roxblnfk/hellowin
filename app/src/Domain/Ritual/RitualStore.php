@@ -79,10 +79,10 @@ final readonly class RitualStore
             }
 
             $current = $this->readPumpkin($id);
-            $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1);
+            $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1, $current->spent);
             $this->writePumpkin($pumpkin);
 
-            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin);
+            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin, $this->readStory()->k);
         });
     }
 
@@ -90,20 +90,21 @@ final readonly class RitualStore
      * Moves a pumpkin or a centrepiece to the stage if it is still one stage behind it in the same round; clicks start
      * over.
      *
+     * @param int<0, max> $cost The threshold in force: the transition takes up to as many clicks, the rest are burned.
      * @return Pumpkin|null The moved element, null when the transition is stale or already done.
      * @throws RitualBusyException
      */
-    public function advancePumpkin(int $round, string $id, int $toStage): ?Pumpkin
+    public function advancePumpkin(int $round, string $id, int $toStage, int $cost): ?Pumpkin
     {
         $id = $this->known($id);
 
-        return $this->locked([$this->lockOf($id)], function () use ($round, $id, $toStage): ?Pumpkin {
+        return $this->locked([$this->lockOf($id)], function () use ($round, $id, $toStage, $cost): ?Pumpkin {
             $current = $this->readPumpkin($id);
             if ($toStage < 1 || $this->readRound() !== $round || $current->stage !== $toStage - 1) {
                 return null;
             }
 
-            $pumpkin = new Pumpkin($id, $toStage, 0, $current->accepted);
+            $pumpkin = new Pumpkin($id, $toStage, 0, $current->accepted, $current->spent + \min($current->clicks, $cost));
             $this->writePumpkin($pumpkin);
 
             return $pumpkin;
@@ -231,6 +232,22 @@ final readonly class RitualStore
     }
 
     /**
+     * Current story without taking locks, for the console switches outside the ritual.
+     */
+    public function story(): Story
+    {
+        return $this->readStory();
+    }
+
+    /**
+     * @return Element::TYPE_* The type of a known element: a pumpkin unless it is a centrepiece.
+     */
+    public function typeOf(string $id): string
+    {
+        return $this->centrepieces[$id] ?? Element::TYPE_PUMPKIN;
+    }
+
+    /**
      * Current state without taking locks: it may lag a concurrent click or transition.
      */
     public function snapshot(): RitualSnapshot
@@ -284,6 +301,7 @@ final readonly class RitualStore
                 self::toCount($value['stage'] ?? null),
                 self::toCount($value['clicks'] ?? null),
                 self::toCount($value['accepted'] ?? null),
+                self::toCount($value['spent'] ?? null),
             )
             : new Pumpkin($id);
     }
@@ -366,7 +384,7 @@ final readonly class RitualStore
     {
         $this->storage->set(
             $this->keyOf($pumpkin->id),
-            ['stage' => $pumpkin->stage, 'clicks' => $pumpkin->clicks, 'accepted' => $pumpkin->accepted],
+            ['stage' => $pumpkin->stage, 'clicks' => $pumpkin->clicks, 'accepted' => $pumpkin->accepted, 'spent' => $pumpkin->spent],
         );
     }
 

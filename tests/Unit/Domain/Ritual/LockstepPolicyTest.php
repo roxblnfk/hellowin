@@ -189,6 +189,32 @@ final class LockstepPolicyTest
         );
     }
 
+    #[DataSet([1.0, [5, 20, 15]], 'as configured')]
+    #[DataSet([0.5, [3, 10, 8]], 'halves round half up')]
+    #[DataSet([0.1, [1, 2, 2]], 'never below one click')]
+    #[DataSet([1.25, [6, 25, 19]], 'one step up')]
+    #[DataSet([10.0, [50, 200, 150]], 'the most')]
+    public function multiplierScalesEveryThreshold(float $k, array $expected): void
+    {
+        $policy = self::policy();
+
+        Assert::same(
+            [$policy->threshold(k: $k), $policy->threshold(Element::TYPE_BONFIRE, $k), $policy->threshold(Element::TYPE_CIRCLE, $k)],
+            $expected,
+        );
+    }
+
+    public function lowerThresholdLetsTheGatheredClicksMove(): void
+    {
+        $policy = self::policy();
+        $pumpkin = new Pumpkin('p', 0, 3);
+
+        Assert::null($policy->pumpkinTransition($pumpkin, 0));
+        Assert::same($policy->pumpkinTransition($pumpkin, 0, 0.5), 1);
+        Assert::same($policy->centrepieceTransition(Element::TYPE_BONFIRE, new Pumpkin('f', 0, 10), 1, 0.5), 1);
+        Assert::null($policy->centrepieceTransition(Element::TYPE_BONFIRE, new Pumpkin('f', 0, 10), 1, 0.6));
+    }
+
     private static function policy(): LockstepPolicy
     {
         return new LockstepPolicy(

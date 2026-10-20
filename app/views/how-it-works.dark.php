@@ -1114,7 +1114,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
             <p>
                 <code>RPCService</code> читает роль из meta и на методы пульта (<code>scene.next</code>,
                 <code>finale.step</code>, <code>owl.say</code>, <code>flyer.special</code>, <code>pause</code>,
-                <code>zombies</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
+                <code>zombies</code>, <code>thresholds</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
+                <code>thresholds {k}</code> умножает все пороги кликов на <code>k</code> — подогнать ритуал под зал на ходу;
+                <code>k</code> лежит в сюжете и, как пауза, переживает сброс.
                 Роль — не в <code>user</code>: модератор может быть и игроком со своим секретом, а <code>user</code> — это
                 публичный id игрока в событиях и presence. Каждый метод пульта безопасно повторить:
                 <code>StoryService</code> меняет сюжет <code>hellowin:story</code> под локом <code>scene</code>, сравнивает
@@ -1378,7 +1380,7 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                     <tbody>
                     <tr><td><code>clicks</code> — обработанные клики</td><td>Σ <code>accepted</code> по <code>hellowin:pumpkin:{id}</code></td><td><code>accepted</code> растёт под тем же локом, что и <code>clicks</code>, но не обнуляется при переходе</td></tr>
                     <tr><td><code>jobs</code> — задачи, прошедшие очередь</td><td>Σ <code>stage</code> + <code>scene</code></td><td>каждая стадия и каждая сцена — ровно одна выполненная задача перехода</td></tr>
-                    <tr><td><code>burned</code> — сгоревшие клики</td><td><code>clicks</code> − <code>HELLOWIN_CLICKS_PER_STAGE</code> × Σ <code>stage</code> − Σ min(<code>clicks</code> тыквы, порог)</td><td>переход тратит ровно порог; остальное отбросила идемпотентность или пришло после готовности тыквы, кроме кликов, ещё копящихся к переходу</td></tr>
+                    <tr><td><code>burned</code> — сгоревшие клики</td><td><code>clicks</code> − Σ <code>spent</code> − Σ min(<code>clicks</code> тыквы, порог)</td><td>переход тратит ровно порог, действовавший при его выполнении, и прибавляет его к <code>spent</code> тыквы; остальное отбросила идемпотентность или пришло после готовности тыквы, кроме кликов, ещё копящихся к переходу</td></tr>
                     <tr><td><code>shot</code> — сбитые летуны и зомби</td><td><code>hellowin:shot</code> — <code>{round, count}</code> под локом <code>shot</code></td><td>единственный отдельный счётчик: выстрелы редки, лок не мешает; счёт другого раунда читается как 0</td></tr>
                     <tr><td><code>lastPumpkin</code> — кто добил последнюю тыкву</td><td><code>lastPumpkin</code> в <code>hellowin:story</code></td><td>игрок из задачи, которая отметила готовность сцены; <code>null</code>, если клик был анонимным или сцену переключили <code>force</code></td></tr>
                     </tbody>

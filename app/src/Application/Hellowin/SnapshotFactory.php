@@ -31,6 +31,8 @@ use App\Domain\Walk\WalkerStore;
  *     ready: bool,
  *     finale: array{step: int, reveal?: array}|null,
  *     paused: bool,
+ *     k: float,
+ *     online: int<0, max>,
  *     zombies: bool,
  *     startedAt: int,
  *     now: int
@@ -59,6 +61,8 @@ final readonly class SnapshotFactory
     public function create(): array
     {
         $ritual = $this->store->snapshot();
+        $k = $ritual->story->k;
+        $walkers = $this->walkers?->all() ?? [];
 
         $item = $this->items->forScene($ritual->scene);
         $elements = [];
@@ -69,7 +73,7 @@ final readonly class SnapshotFactory
                 'clicks' => $pumpkin?->clicks ?? 0,
             ];
             $element->centrepiece() and $state += [
-                'threshold' => $this->policy->threshold($element->type),
+                'threshold' => $this->policy->threshold($element->type, $k),
                 'stageMax' => $this->policy->stageMax($ritual->scene, $element->type),
             ];
             $elements[] = $state;
@@ -80,16 +84,18 @@ final readonly class SnapshotFactory
             'scene' => $ritual->scene,
             'sceneStages' => $this->policy->finalScene(),
             'stageMax' => $this->policy->stageMax($ritual->scene),
-            'threshold' => $this->policy->threshold(),
+            'threshold' => $this->policy->threshold(k: $k),
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
             'walkers' => \array_values(\array_map(
                 static fn(Walker $walker): array => $walker->toArray($item),
-                $this->walkers?->all() ?? [],
+                $walkers,
             )),
             'ready' => $ritual->ready(),
             'finale' => $this->reveal?->finale($ritual),
             'paused' => $ritual->story->paused,
+            'k' => $k,
+            'online' => \count($walkers),
             'zombies' => $ritual->story->zombies,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now

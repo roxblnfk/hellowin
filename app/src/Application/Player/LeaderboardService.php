@@ -10,6 +10,7 @@ use App\Domain\Player\Leaderboard;
 use App\Domain\Player\Player;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\WalkerStore;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -24,6 +25,7 @@ final readonly class LeaderboardService
 
     /**
      * @param positive-int $size
+     * @param WalkerStore|null $walkers Characters on the lawn: the event carries how many players are online.
      */
     public function __construct(
         private PlayerStore $players,
@@ -32,6 +34,7 @@ final readonly class LeaderboardService
         private ChannelPublisher $publisher,
         private PlayMetrics $metrics,
         private int $size,
+        private ?WalkerStore $walkers = null,
     ) {}
 
     /**
@@ -43,7 +46,7 @@ final readonly class LeaderboardService
         $top = \array_map(static fn(Player $player): array => $player->toArray(), Leaderboard::top($players, $this->size));
 
         $this->storage->set(self::KEY, $top);
-        $this->publisher->leaderboard($this->ritual->round(), $top);
+        $this->publisher->leaderboard($this->ritual->round(), $top, \count($this->walkers?->all() ?? []));
         $this->metrics->players(
             \count($players),
             \count(\array_filter($players, static fn(Player $player): bool => $player->name !== null)),

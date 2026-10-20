@@ -108,10 +108,19 @@ final readonly class ChannelPublisher
 
     /**
      * @param list<array> $top Players as {@see Player::toArray()}, best first.
+     * @param int<0, max> $online Players with a character on the lawn.
      */
-    public function leaderboard(int $round, array $top): void
+    public function leaderboard(int $round, array $top, int $online = 0): void
     {
-        $this->publish(['type' => 'leaderboard', 'round' => $round, 'top' => $top]);
+        $this->publish(['type' => 'leaderboard', 'round' => $round, 'top' => $top, 'online' => $online]);
+    }
+
+    /**
+     * @param array<non-empty-string, positive-int> $thresholds Thresholds in force by element type.
+     */
+    public function thresholds(int $round, float $k, array $thresholds): void
+    {
+        $this->publish(['type' => 'thresholds', 'round' => $round, 'k' => $k, 'thresholds' => $thresholds]);
     }
 
     public function ready(int $round, int $scene): void

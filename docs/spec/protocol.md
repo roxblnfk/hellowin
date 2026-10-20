@@ -10,7 +10,8 @@
 реплики `bonfire-open` / `bonfire-done`) и `wobble` летучих мышей — тоже; магический круг (элемент `circle` в снимке,
 `circleStageMax` в `scene`, реплика `circle-done`, `force` и `not ready` у `finale.step`) и червяки (`worm`) — тоже;
 `startedAt` в снимке и разбегание фигурок (`move`) на шаге финала 2 — тоже; набор летунов проклятого мира и светлячки
-(`firefly`) — тоже.
+(`firefly`) — тоже; множитель порогов (RPC `thresholds`, событие `thresholds`, `k` и `online` в снимке, `online` в
+`leaderboard`) — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -59,7 +60,7 @@
 | `zombies` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `zombies` (при включении — и реплика `zombies`); зомби запускаются только в проклятом мире (`finale` = 5); `on` не bool — `invalid on` |
 | `pause` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `pause`; на паузе летуны и зомби не запускаются, уже запущенные долетают; `on` не bool — `invalid on` |
 | `reset` | как выше | сброс ритуала |
-| `thresholds` | `{k}` — множитель порогов, число от 0,1 до 10 | `{ok:true, k, thresholds: {pumpkin, bonfire, circle}}` — действующие пороги; событие `thresholds`; `k` вне диапазона или не число — `invalid k` (**запланировано**) |
+| `thresholds` | `{k}` — множитель порогов, число от 0,1 до 10 | `{ok:true, k, thresholds: {pumpkin, bonfire, circle}}` — действующие пороги; событие `thresholds` (при неизменном `k` — без события); `k` вне диапазона или не число (строка, bool, нет поля) — `invalid k`. `k` — JSON-число: `2.0` приходит как `2` |
 
 Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы или когда костёр уже на своей последней стадии сцены; по кругу — вне финальной сцены, после шага финала 0 или когда круг замкнут: клик не
 считается и не рассылается),
@@ -100,8 +101,8 @@
 | `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `bonfire-open`, `bonfire-done`, `circle-done`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
 | `pause` | `on` | модератор включил или снял паузу нечисти |
 | `zombies` | `on` | модератор включил или выключил зомби |
-| `thresholds` | `k`, `thresholds: {pumpkin, bonfire, circle}` | модератор сменил множитель порогов (**запланировано**): клиент обновляет `threshold` элементов и `data-ready`; следующие `click` несут новый порог |
-| `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
+| `thresholds` | `k`, `thresholds: {pumpkin, bonfire, circle}` | модератор сменил множитель порогов: клиент обновляет `threshold` элементов и `data-ready`; следующие `click` несут новый порог |
+| `leaderboard` | `top: [<Player>]` — лучшие первыми, `online` — игроков с персонажами на поле (как в снимке) | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
 `player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
 `emoji` сервер выбирает из набора emoji элемента — фронтенд
@@ -139,7 +140,7 @@
 {"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
 {"type":"move","round":1,"player":{"id":"3f9c0a7d12b4e856"},"walk":{"path":[{"x":40,"y":94},{"x":66,"y":90},{"x":82,"y":74}],"startedAt":1760900002000,"arrivesAt":1760900006100}}
 {"type":"leave","round":1,"player":{"id":"3f9c0a7d12b4e856"}}
-{"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","look":null,"clicks":42,"finished":3,"flyers":2,"points":5}]}
+{"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","look":null,"clicks":42,"finished":3,"flyers":2,"points":5}],"online":12}
 {"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3,"launchedAt":1760900000000,"expiresAt":1760900009000}
 {"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1,"launchedAt":1760900002000,"expiresAt":1760900006000}
 {"type":"flyer","round":1,"flyer":"f-1c0de5a7","kind":"bat","depth":1,"from":{"x":108,"y":22.5},"to":{"x":-8,"y":14.1},"wobble":{"amp":5.4,"waves":3.7},"duration":6500,"points":2,"launchedAt":1760900003000,"expiresAt":1760900009500}
@@ -149,6 +150,7 @@
 {"type":"owl","round":1,"text":"Кто здесь?"}
 {"type":"finale","round":1,"step":4,"reveal":{"clicks":5230,"jobs":312,"burned":1720,"shot":87,"lastPumpkin":{"id":"3f9c0a7d12b4e856","name":"Jack"}}}
 {"type":"pause","round":1,"on":true}
+{"type":"thresholds","round":1,"k":0.5,"thresholds":{"pumpkin":3,"bonfire":10,"circle":10}}
 ```
 
 ## Снимок состояния (Snapshot)
@@ -183,8 +185,8 @@
 перезапуск RoadRunner (контейнера `app`) — сбрасывает: это аптайм сервера, а не стека с Valkey ([`engine.md`](engine.md), «Аптайм»).
 
 `ready` — сцена готова и ждёт модератора; `finale` — `null` вне финальной сцены, в ней `{step, reveal?}`;
-`k` — множитель порогов (**запланировано**; `threshold` в снимке и у элементов — уже умноженный), `online` — сколько
-игроков с персонажами сейчас на поле (**запланировано**; для пульта, ещё приходит в событии `leaderboard`); `paused`, `zombies` — переключатели пульта. `reveal` — числа вечера с начала раунда для экрана
+`k` — множитель порогов (`threshold` в снимке и у элементов — уже умноженный), `online` — сколько
+игроков с персонажами сейчас на поле (`walkers`; для пульта, ещё приходит в событии `leaderboard`); `paused`, `zombies` — переключатели пульта. `reveal` — числа вечера с начала раунда для экрана
 разоблачения: `{clicks, jobs, burned, shot, lastPumpkin: {id, name} | null}` — принятые клики, выполненные задачи
 перехода (переходы тыкв, костра и круга + переходы сцен), сгоревшие клики (сверх порога и после готовности тыквы;
 клики `locked` по костру и кругу не принимаются и сюда не входят), сбитые летуны (и зомби), кто добил последний элемент
@@ -192,8 +194,8 @@
 игрок прежней готовой сцены; `null`, если такого нет — добивали анонимно или сцены переключали `force`, не дождавшись;
 имя поля осталось `lastPumpkin`). Как считаются — [`engine.md`](engine.md), «Сюжет».
 
-Сброс (`reset`) возвращает и сюжет: `ready` — `false`, `finale` — `null`, `zombies` — `false`; `paused` сохраняется —
-пауза про зал, а не про сюжет. Клиент применяет это сам по событию `reset`, без RPC.
+Сброс (`reset`) возвращает и сюжет: `ready` — `false`, `finale` — `null`, `zombies` — `false`; `paused` и `k`
+сохраняются — они про зал, а не про сюжет. Клиент применяет это сам по событию `reset`, без RPC.
 
 `bush` — id куста, из которого взлетает летун (тогда `from` — его точка, а `depth` летуна — `depth` куста, см.
 [`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `wobble` (только у `kind: bat`, `worm` и `firefly`, у остальных поля нет) — кривая поверх базовой траектории: смещение поперёк пути
