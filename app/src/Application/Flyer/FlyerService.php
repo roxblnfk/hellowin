@@ -7,6 +7,7 @@ namespace App\Application\Flyer;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
+use App\Application\Story\OwlLine;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
@@ -23,6 +24,9 @@ use Psr\Log\NullLogger;
  */
 final readonly class FlyerService
 {
+    /** Kinds the moderator may launch by hand. */
+    public const SPECIAL = [Flyer::KIND_WITCH, Flyer::KIND_ROADRUNNER];
+
     public function __construct(
         private FlyerFactory $factory,
         private FlyerStore $store,
@@ -36,16 +40,40 @@ final readonly class FlyerService
     ) {}
 
     /**
+     * Launches a flyer of the current scene.
+     *
      * @param int $now Unix time in milliseconds.
      */
     public function launch(int $now): Flyer
     {
-        $flyer = $this->factory->launch($now);
-        $this->store->add($flyer);
-        $this->publisher->flyer($this->ritual->round(), $flyer);
-        $this->metrics->flyerLaunched($flyer);
+        $ritual = $this->ritual->snapshot();
 
-        return $flyer;
+        return $this->release($ritual->round, $this->factory->launch($now, $ritual->scene));
+    }
+
+    /**
+     * The ticker's launch: nothing while the moderator pauses the sky.
+     *
+     * @param int $now Unix time in milliseconds.
+     */
+    public function launchScheduled(int $now): ?Flyer
+    {
+        $ritual = $this->ritual->snapshot();
+
+        return $ritual->story->paused ? null : $this->release($ritual->round, $this->factory->launch($now, $ritual->scene));
+    }
+
+    /**
+     * The moderator's special flyer, launched even on a pause.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return Flyer|null Null for a kind that is not special.
+     */
+    public function launchSpecial(string $kind, int $now): ?Flyer
+    {
+        return \in_array($kind, self::SPECIAL, true)
+            ? $this->release($this->ritual->round(), $this->factory->special($kind, $now))
+            : null;
     }
 
     /**
@@ -67,6 +95,11 @@ final readonly class FlyerService
         $this->publisher->shot($round, $flyer, $shooter);
         $this->metrics->flyerShot($flyer);
         $this->count($round);
+        $flyer->kind === Flyer::KIND_WITCH and $this->publisher->owl(
+            $round,
+            OwlLine::WITCH_DOWN,
+            $shooter === null ? [] : ['player' => $shooter->ref()],
+        );
 
         return $flyer->points;
     }
@@ -84,6 +117,15 @@ final readonly class FlyerService
         }
 
         return $escaped;
+    }
+
+    private function release(int $round, Flyer $flyer): Flyer
+    {
+        $this->store->add($flyer);
+        $this->publisher->flyer($round, $flyer);
+        $this->metrics->flyerLaunched($flyer);
+
+        return $flyer;
     }
 
     /**

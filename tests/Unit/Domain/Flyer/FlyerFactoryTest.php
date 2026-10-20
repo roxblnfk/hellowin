@@ -93,11 +93,62 @@ final class FlyerFactoryTest
 
     public function everyKindIsLaunched(): void
     {
-        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), ['duck', 'chicken']);
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck', 'chicken']]);
         $kinds = \array_unique(\array_map(static fn(Flyer $f): string => $f->kind, self::flyers($factory, 50)));
         \sort($kinds);
 
         Assert::same($kinds, ['chicken', 'duck']);
+    }
+
+    public function kindsFollowTheScene(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck'], ['bat']]);
+
+        Assert::same($factory->launch(0, 0)->kind, 'duck');
+        Assert::same($factory->launch(0, 1)->kind, 'bat');
+        Assert::same($factory->launch(0, 5)->kind, 'bat');
+    }
+
+    public function rareFlyerOfTheSceneShowsUpByChance(): void
+    {
+        $factory = new FlyerFactory(
+            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
+            [],
+            0.0,
+            0.0,
+            new Randomizer(new Mt19937(7)),
+            [['duck']],
+            [null, 'witch'],
+            1.0,
+            25,
+        );
+
+        Assert::same($factory->launch(0, 0)->kind, 'duck');
+        $witch = $factory->launch(0, 1);
+        Assert::same([$witch->kind, $witch->points, $witch->bush], ['witch', 25, null]);
+        Assert::same($factory->launch(0, 3)->kind, 'witch');
+    }
+
+    public function roadrunnerRunsAlongTheHorizonForNothing(): void
+    {
+        $factory = new FlyerFactory(
+            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
+            [],
+            0.5,
+            0.5,
+            new Randomizer(new Mt19937(7)),
+            horizon: 41.5,
+        );
+
+        for ($i = 0; $i < 20; ++$i) {
+            $runner = $factory->special(Flyer::KIND_ROADRUNNER, 0);
+            Assert::same([$runner->depth, $runner->points, $runner->duration], [0, 0, 4000]);
+            Assert::same([$runner->from->y, $runner->to->y], [41.5, 41.5]);
+            Assert::true(self::offScreen($runner->from) && self::offScreen($runner->to));
+            Assert::null($runner->via);
+            Assert::false($runner->shootable());
+            Assert::equals(Flyer::fromArray($runner->toArray()), $runner);
+        }
     }
 
     public function flyerCarriesItsLaunchTimeAndAnId(): void

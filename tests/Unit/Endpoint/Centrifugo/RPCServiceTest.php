@@ -484,6 +484,58 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'pause', ['on' => 1], moderator: true), ['ok' => false, 'error' => 'invalid on']);
     }
 
+    public function moderatorLaunchesAWitchEvenOnAPause(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'pause', ['on' => true], moderator: true);
+
+        $response = $this->call($ritual, 'flyer.special', ['kind' => 'witch'], moderator: true);
+
+        $flyer = $ritual->broadcast->ofType('flyer')[0];
+        Assert::same($response, ['ok' => true, 'flyer' => $flyer['flyer']]);
+        Assert::same($flyer['kind'], 'witch');
+    }
+
+    #[DataSet([['kind' => 'duck']], 'ordinary kind')]
+    #[DataSet([['kind' => 42]], 'number')]
+    #[DataSet([[]], 'nothing')]
+    public function onlySpecialFlyersLaunchByHand(array $params): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'flyer.special', $params, moderator: true), ['ok' => false, 'error' => 'unknown kind']);
+        Assert::blank($ritual->broadcast->ofType('flyer'));
+    }
+
+    public function roadrunnerIsNeverHitAndTheOwlKeepsQuiet(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'flyer.special', ['kind' => 'roadrunner'], moderator: true);
+        $runner = $ritual->broadcast->ofType('flyer')[0];
+
+        $response = $this->call($ritual, 'shoot', ['flyer' => $runner['flyer']], self::PLAYER);
+
+        Assert::same($response, ['ok' => true, 'hit' => false]);
+        Assert::same($runner['points'], 0);
+        Assert::blank($ritual->broadcast->ofType('shot'));
+        Assert::blank($ritual->broadcast->ofType('owl'));
+        Assert::null($ritual->playerStore->find(self::PLAYER));
+    }
+
+    public function downedWitchMakesTheOwlNameTheShooter(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'flyer.special', ['kind' => 'witch'], moderator: true);
+        $witch = $ritual->broadcast->ofType('flyer')[0];
+
+        $response = $this->call($ritual, 'shoot', ['flyer' => $witch['flyer']], self::PLAYER);
+
+        Assert::same($response, ['ok' => true, 'hit' => true, 'points' => $witch['points']]);
+        Assert::same($ritual->broadcast->ofType('owl'), [
+            ['type' => 'owl', 'round' => 1, 'line' => 'witch-down', 'params' => ['player' => ['id' => self::PLAYER, 'name' => null]]],
+        ]);
+    }
+
     public function zombiesSwitchMakesTheOwlWarn(): void
     {
         $ritual = new RitualHarness();
@@ -515,6 +567,7 @@ final class RPCServiceTest
             $ritual->reset,
             $ritual->walks,
             $ritual->story,
+            $ritual->clock,
         );
         $service->handle(new RPC(
             worker: $this->worker,

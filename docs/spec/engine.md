@@ -71,11 +71,20 @@
   только край): из точки куста вверх и за верхний или боковой край через экран. Иначе — из-за левого или правого края
   (четверть — из верхнего угла) за противоположный, в небе. С вероятностью `HELLOWIN_FLYER_ARC_CHANCE` полёт — дуга
   через `via` (квадратичная кривая), иначе прямая. Точки за краем — `-8` / `108`. Генератор — `FlyerFactory`
-  с инъекцией `Randomizer`: в тестах траектории детерминированы.
+  с инъекцией `Randomizer`: в тестах траектории детерминированы. Вид — из набора текущей сцены (`HELLOWIN_FLYER_KINDS`).
+  На паузе модератора (`paused` в сюжете) тикер не запускает никого, расписание идёт дальше.
+- **Редкие и особые.** С вероятностью `HELLOWIN_FLYER_RARE_CHANCE` запуск тикера — редкий летун сцены
+  (`HELLOWIN_FLYER_RARE`); его же модератор запускает кнопкой (RPC `flyer.special`, виды `witch`, `roadrunner`, и на
+  паузе). `roadrunner` бежит по горизонту: `from`/`to` за левым и правым краем на высоте `horizon`
+  (`app/config/hellowin.php`), `depth` 0, без дуги и куста, время — как у ближней глубины (быстрый), `points` 0; выстрел
+  по нему всегда промах, ключ не удаляется — летун улетает и учитывается как улетевший. Остальные особые (`witch`) —
+  с края, на случайной глубине, очки `HELLOWIN_FLYER_RARE_POINTS`; сбитая ведьма — реплика `witch-down` с игроком.
 - **Хранение**: `hellowin:flyer:{id}` — летун со временем запуска, TTL = полёт + 10 с; индекс `hellowin:flyers`
-  (id → момент окончания полёта) пишет только тикер, поэтому без лока.
-- **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть и полёт не кончился → удалить ключ → попадание:
-  `flyers + 1`, `points + очки` игроку, одно событие `shot`, `hellowin_flyers_shot_total{depth}`. Иначе промах.
+  (id → момент окончания полёта) пишут тикер и RPC `flyer.special`, поэтому под RR-локом `flyers`; учёт улетевших
+  убирает из индекса только свои id, перечитав его под локом.
+- **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть, летуна можно сбить и полёт не кончился → удалить ключ → попадание:
+  `flyers + 1`, `points + очки` игроку, одно событие `shot`, `hellowin_flyers_shot_total{depth}`, `+1` в `hellowin:shot`
+  раунда (для разоблачения). Иначе промах.
   Выстрел принимается до 500 мс после конца полёта: клиент начинает рисовать летуна, когда событие дошло.
 - **Улетевшие** (тикер, каждый тик): летуны из индекса, чей полёт кончился больше 500 мс назад, — под тем же локом:
   ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}`; ключа нет — его сбили. Из индекса — в любом случае.
@@ -214,7 +223,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -259,7 +268,10 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
-| `HELLOWIN_FLYER_KINDS` | `duck,chicken` | виды летунов через запятую (`[a-z]+`), выбираются равновероятно |
+| `HELLOWIN_FLYER_KINDS` | `duck,chicken;crow,bat;ghost,bat;ghost,bat` | виды летунов по сценам: наборы через `;`, внутри набора через запятую (`[a-z]+`), выбираются равновероятно из набора текущей сцены; сцены за концом списка берут последний набор |
+| `HELLOWIN_FLYER_RARE` | `roadrunner;;witch;witch` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
+| `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
+| `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |

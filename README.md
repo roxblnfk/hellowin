@@ -54,7 +54,10 @@
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по тем же глубинам; длина как у `HELLOWIN_FLYER_DURATION` |
 | `HELLOWIN_FLYER_BUSH_CHANCE` | `0.4` | вероятность, что летун взлетает из куста, а не влетает из-за края |
 | `HELLOWIN_FLYER_ARC_CHANCE` | `0.5` | вероятность полёта дугой |
-| `HELLOWIN_FLYER_KINDS` | `duck,chicken` | виды летунов, сервер выбирает случайно |
+| `HELLOWIN_FLYER_KINDS` | `duck,chicken;crow,bat;ghost,bat;ghost,bat` | виды летунов по сценам (наборы через `;`), сервер выбирает случайно из набора текущей сцены |
+| `HELLOWIN_FLYER_RARE` | `roadrunner;;witch;witch` | редкий летун каждой сцены (пусто — нет) |
+| `HELLOWIN_FLYER_RARE_CHANCE` | `0.08` | вероятность, что запуск — редкий летун сцены |
+| `HELLOWIN_FLYER_RARE_POINTS` | `10` | очки за редкого летуна (птица-бегун — всегда 0, её не сбить) |
 | `HELLOWIN_WALK_SPEED` | `12` | скорость фигурок игроков, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | `5000` | сколько миллисекунд игрок может быть без подключений, прежде чем его фигурка уйдёт с поля |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |

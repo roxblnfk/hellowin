@@ -171,6 +171,10 @@ final class HellowinBootloader extends Bootloader
                 $flyers->getBushChance(),
                 $flyers->getArcChance(),
                 kinds: $flyers->getKinds(),
+                rare: $flyers->getRare(),
+                rareChance: $flyers->getRareChance(),
+                rarePoints: $flyers->getRarePoints(),
+                horizon: $config->getHorizon(),
             ),
             FlyerStore::class => static fn(
                 HellowinConfig $config,

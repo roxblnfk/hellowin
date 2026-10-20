@@ -15,6 +15,9 @@ use Random\Randomizer;
  * - From a bush: up from the bush and out across the screen through the top or a side edge, at the bush depth.
  *
  * Either way the flight is straight or, with the arc chance, a quadratic curve through `via`.
+ *
+ * Kinds come by scene. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
+ * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
  */
 final readonly class FlyerFactory
 {
@@ -32,7 +35,12 @@ final readonly class FlyerFactory
      * @param list<Bush> $bushes Each at one of the depths.
      * @param float $bushChance Probability to take off from a bush, when there are bushes.
      * @param float $arcChance Probability of a curved flight.
-     * @param non-empty-list<non-empty-string> $kinds Picked with equal chance.
+     * @param non-empty-list<non-empty-list<non-empty-string>> $kinds Kinds by scene, picked with equal chance; scenes
+     *        past the list take the last set.
+     * @param list<non-empty-string|null> $rare The rare flyer by scene, null for none; scenes past the list take the last.
+     * @param float $rareChance Probability that a launch is the rare flyer of the scene.
+     * @param positive-int $rarePoints Points for a rare flyer other than the roadrunner.
+     * @param float $horizon The line the roadrunner runs along, in percents from the top.
      */
     public function __construct(
         array $depths,
@@ -40,7 +48,11 @@ final readonly class FlyerFactory
         private float $bushChance,
         private float $arcChance,
         private Randomizer $random = new Randomizer(),
-        private array $kinds = [Flyer::KIND_DUCK],
+        private array $kinds = [[Flyer::KIND_DUCK]],
+        private array $rare = [],
+        private float $rareChance = 0.0,
+        private int $rarePoints = 10,
+        private float $horizon = 38.0,
     ) {
         foreach ($bushes as $bush) {
             $bush->depth < \count($depths) or throw new \InvalidArgumentException(\sprintf(
@@ -58,8 +70,14 @@ final readonly class FlyerFactory
     /**
      * @param int $now Unix time in milliseconds.
      */
-    public function launch(int $now): Flyer
+    public function launch(int $now, int $scene = 0): Flyer
     {
+        $rare = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
+        if ($rare !== null && $this->chance($this->rareChance)) {
+            return $this->special($rare, $now);
+        }
+
+        $kinds = $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)];
         $arc = $this->chance($this->arcChance);
 
         $bush = $this->bushes !== [] && $this->chance($this->bushChance)
@@ -82,7 +100,53 @@ final readonly class FlyerFactory
             duration: $settings->duration,
             points: $settings->points,
             launchedAt: $now,
-            kind: $this->kinds[$this->random->getInt(0, \count($this->kinds) - 1)],
+            kind: $kinds[$this->random->getInt(0, \count($kinds) - 1)],
+        );
+    }
+
+    /**
+     * A flyer of the given kind: the roadrunner runs along the horizon at the far depth as fast as the nearest
+     * flyers and brings no points; any other kind flies from the edge for the rare points.
+     *
+     * @param non-empty-string $kind
+     * @param int $now Unix time in milliseconds.
+     */
+    public function special(string $kind, int $now): Flyer
+    {
+        $id = 'f-' . \bin2hex($this->random->getBytes(4));
+
+        if ($kind === Flyer::KIND_ROADRUNNER) {
+            $leftToRight = $this->chance(0.5);
+
+            return new Flyer(
+                id: $id,
+                depth: 0,
+                from: new Point($leftToRight ? self::OUT[0] : self::OUT[1], $this->horizon),
+                to: new Point($leftToRight ? self::OUT[1] : self::OUT[0], $this->horizon),
+                via: null,
+                bush: null,
+                duration: $this->depths[\count($this->depths) - 1]->duration,
+                points: 0,
+                launchedAt: $now,
+                kind: $kind,
+            );
+        }
+
+        /** @var int<0, max> $depth */
+        $depth = $this->random->getInt(0, \count($this->depths) - 1);
+        [$from, $via, $to] = $this->fromEdge($this->chance($this->arcChance));
+
+        return new Flyer(
+            id: $id,
+            depth: $depth,
+            from: $from,
+            to: $to,
+            via: $via,
+            bush: null,
+            duration: $this->depths[$depth]->duration,
+            points: $this->rarePoints,
+            launchedAt: $now,
+            kind: $kind,
         );
     }
 

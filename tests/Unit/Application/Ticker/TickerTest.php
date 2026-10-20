@@ -57,6 +57,28 @@ final class TickerTest
         );
     }
 
+    public function pauseStopsTheLaunches(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::ticker($ritual);
+        $ritual->story->pause(true);
+
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+        $ritual->story->pause(false);
+        $ticker->tick(4_000);
+
+        Assert::count($ritual->broadcast->ofType('flyer'), 1);
+    }
+
+    public function flyersFollowTheScene(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->transitions->scene(1, 1);
+
+        Assert::same($ritual->flyers->launch(0)->kind, 'bat');
+    }
+
     public function escapedFlyerIsCountedOnceAfterItsFlight(): void
     {
         $ritual = new RitualHarness();

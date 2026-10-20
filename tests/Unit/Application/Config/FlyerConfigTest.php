@@ -61,20 +61,43 @@ final class FlyerConfigTest
         (new FlyerConfig(['arc_chance' => $value]))->getArcChance();
     }
 
-    public function kindsDefaultToDucksAndChickens(): void
+    public function kindsComeByScene(): void
     {
-        Assert::same((new FlyerConfig())->getKinds(), ['duck', 'chicken']);
-        Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), ['duck', 'bat']);
+        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], ['crow', 'bat'], ['ghost', 'bat'], ['ghost', 'bat']]);
+        Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), [['duck', 'bat']]);
+        Assert::same((new FlyerConfig(['kinds' => 'duck; bat ']))->getKinds(), [['duck'], ['bat']]);
     }
 
     #[DataSet([''], 'empty')]
     #[DataSet(['duck,'], 'trailing comma')]
+    #[DataSet(['duck;;bat'], 'empty scene')]
     #[DataSet(['Duck'], 'uppercase')]
+    #[DataSet([['duck']], 'array')]
     public function kindsRejectGarbage(mixed $value): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_KINDS');
 
         (new FlyerConfig(['kinds' => $value]))->getKinds();
+    }
+
+    public function rareFlyersComeByScene(): void
+    {
+        $config = new FlyerConfig();
+
+        Assert::same($config->getRare(), ['roadrunner', null, 'witch', 'witch']);
+        Assert::same($config->getRareChance(), 0.08);
+        Assert::same($config->getRarePoints(), 10);
+        Assert::same((new FlyerConfig(['rare' => '']))->getRare(), [null]);
+        Assert::same((new FlyerConfig(['rare_points' => '7']))->getRarePoints(), 7);
+    }
+
+    #[DataSet(['witch,bat'], 'two kinds')]
+    #[DataSet(['Witch'], 'uppercase')]
+    public function rareFlyerIsOneKind(string $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_RARE');
+
+        (new FlyerConfig(['rare' => $value]))->getRare();
     }
 
     public function chanceFromEnvString(): void

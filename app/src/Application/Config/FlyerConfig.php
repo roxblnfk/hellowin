@@ -22,7 +22,10 @@ final class FlyerConfig extends InjectableConfig
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
-        'kinds' => 'duck,chicken',
+        'kinds' => 'duck,chicken;crow,bat;ghost,bat;ghost,bat',
+        'rare' => 'roadrunner;;witch;witch',
+        'rare_chance' => 0.08,
+        'rare_points' => 10,
     ];
 
     /**
@@ -91,29 +94,74 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * Flyer kinds, picked at random for every launch.
+     * Flyer kinds by scene, picked at random for every launch: `"duck,chicken;crow,bat"` — sets separated by `;`, kinds
+     * within a set by `,`. Scenes past the list take its last set.
      *
-     * @return non-empty-list<non-empty-string>
+     * @return non-empty-list<non-empty-list<non-empty-string>>
      */
     public function getKinds(): array
     {
         /** @var mixed $value */
         $value = $this->config['kinds'] ?? null;
-        $error = self::invalid('kinds', 'HELLOWIN_FLYER_KINDS', 'a comma-separated list of lowercase words', $value);
-        $list = \is_string($value) ? \explode(',', $value) : $value;
-        \is_array($list) && $list !== [] or throw $error;
+        $error = self::invalid('kinds', 'HELLOWIN_FLYER_KINDS', 'comma-separated lowercase words, sets by scene separated by ";"', $value);
+        \is_string($value) or throw $error;
 
-        $kinds = [];
-        /** @var mixed $item */
-        foreach ($list as $item) {
-            $kind = \is_string($item) ? \trim($item) : '';
-            if ($kind === '' || \preg_match('/^[a-z]+$/', $kind) !== 1) {
-                throw $error;
+        $scenes = [];
+        foreach (\explode(';', $value) as $set) {
+            $kinds = [];
+            foreach (\explode(',', $set) as $item) {
+                $kind = self::kind($item) ?? throw $error;
+                $kinds[$kind] = $kind;
             }
-            $kinds[$kind] = $kind;
+            $scenes[] = \array_values($kinds);
         }
 
-        return \array_values($kinds);
+        return $scenes;
+    }
+
+    /**
+     * The rare flyer of each scene, by scene like the kinds: `"roadrunner;;witch"` — an empty item is a scene without
+     * one. Scenes past the list take its last item.
+     *
+     * @return non-empty-list<non-empty-string|null>
+     */
+    public function getRare(): array
+    {
+        /** @var mixed $value */
+        $value = $this->config['rare'] ?? null;
+        $error = self::invalid('rare', 'HELLOWIN_FLYER_RARE', 'lowercase words or nothing by scene, separated by ";"', $value);
+        \is_string($value) or throw $error;
+
+        return \array_map(
+            static fn(string $item): ?string => \trim($item) === '' ? null : self::kind($item) ?? throw $error,
+            \explode(';', $value),
+        );
+    }
+
+    /**
+     * Probability that a launch is the rare flyer of the scene, when the scene has one.
+     */
+    public function getRareChance(): float
+    {
+        return self::chance($this->config['rare_chance'] ?? null, 'rare_chance', 'HELLOWIN_FLYER_RARE_CHANCE');
+    }
+
+    /**
+     * @return positive-int Points for a rare flyer; the roadrunner is never hit and brings none.
+     */
+    public function getRarePoints(): int
+    {
+        return self::positiveInt($this->config['rare_points'] ?? null, 'rare_points', 'HELLOWIN_FLYER_RARE_POINTS');
+    }
+
+    /**
+     * @return non-empty-string|null
+     */
+    private static function kind(string $item): ?string
+    {
+        $kind = \trim($item);
+
+        return $kind !== '' && \preg_match('/^[a-z]+$/', $kind) === 1 ? $kind : null;
     }
 
     /**

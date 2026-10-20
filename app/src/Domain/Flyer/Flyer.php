@@ -12,13 +12,18 @@ final readonly class Flyer
 {
     public const KIND_DUCK = 'duck';
 
+    /** Runs along the horizon in the first scene as a hint: no points, and every shot misses. */
+    public const KIND_ROADRUNNER = 'roadrunner';
+
+    public const KIND_WITCH = 'witch';
+
     /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.
      * @param non-empty-string|null $bush Bush it takes off from; `from` is then the bush.
      * @param Point|null $via Control point of a quadratic curve; null for a straight flight.
      * @param positive-int $duration Milliseconds from `from` to `to`.
-     * @param positive-int $points
+     * @param int<0, max> $points
      * @param int $launchedAt Unix time in milliseconds.
      * @param non-empty-string $kind
      */
@@ -64,7 +69,7 @@ final readonly class Flyer
 
         if (!self::isId($id) || $from === null || $to === null || !\is_string($kind) || $kind === ''
             || !\is_int($depth) || $depth < 0 || !\is_int($duration) || $duration < 1
-            || !\is_int($points) || $points < 1 || !\is_int($launchedAt)) {
+            || !\is_int($points) || $points < 0 || !\is_int($launchedAt)) {
             return null;
         }
 
@@ -88,6 +93,11 @@ final readonly class Flyer
     public function expiresAt(): int
     {
         return $this->launchedAt + $this->duration;
+    }
+
+    public function shootable(): bool
+    {
+        return $this->kind !== self::KIND_ROADRUNNER;
     }
 
     /**

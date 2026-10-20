@@ -21,6 +21,13 @@ return [
     // Probability of a curved flight
     'arc_chance' => env('HELLOWIN_FLYER_ARC_CHANCE', 0.5),
 
-    // Kinds picked at random for every launch; how each kind looks is up to the frontend
-    'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken'),
+    // Kinds picked at random for every launch, a set per scene separated by ";"; how each kind looks is up to the
+    // frontend
+    'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken;crow,bat;ghost,bat;ghost,bat'),
+
+    // The rare flyer of each scene (empty — none), how often a launch is it, and its points. The roadrunner runs along
+    // the horizon and cannot be hit
+    'rare' => env('HELLOWIN_FLYER_RARE', 'roadrunner;;witch;witch'),
+    'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),
+    'rare_points' => env('HELLOWIN_FLYER_RARE_POINTS', 10),
 ];

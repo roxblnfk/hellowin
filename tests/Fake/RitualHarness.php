@@ -23,6 +23,7 @@ use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
+use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerDepth;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
@@ -119,6 +120,7 @@ final class RitualHarness
                 0.5,
                 0.5,
                 new Randomizer(new Mt19937(42)),
+                [[Flyer::KIND_DUCK], ['bat']],
             ),
             $this->flyerStore,
             $this->store,

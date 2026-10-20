@@ -17,6 +17,7 @@ use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
+use App\Domain\Clock\Clock;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
 use App\Domain\Ritual\RitualBusyException;
@@ -47,6 +48,7 @@ final readonly class RPCService implements ServiceInterface
         private ResetService $reset,
         private WalkService $walks,
         private StoryService $story,
+        private Clock $clock,
     ) {}
 
     #[\Override]
@@ -73,6 +75,7 @@ final readonly class RPCService implements ServiceInterface
             'scene.next' => $this->nextScene($request->getData()),
             'finale.step' => $this->finaleStep($request->getData()),
             'owl.say' => $this->say($request->getData()),
+            'flyer.special' => $this->special($request->getData()),
             'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
             'zombies' => $this->toggle($request->getData(), $this->story->zombies(...)),
             'me' => [
@@ -191,6 +194,15 @@ final readonly class RPCService implements ServiceInterface
             : $this->story->say($params['line'] ?? null, $params['params'] ?? null);
 
         return ['ok' => true];
+    }
+
+    private function special(array $params): array
+    {
+        /** @var mixed $kind */
+        $kind = $params['kind'] ?? null;
+        $flyer = \is_string($kind) ? $this->flyers->launchSpecial($kind, $this->clock->now()) : null;
+
+        return $flyer === null ? self::fail('unknown kind') : ['ok' => true, 'flyer' => $flyer->id];
     }
 
     /**
