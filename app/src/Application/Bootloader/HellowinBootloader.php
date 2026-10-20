@@ -162,6 +162,7 @@ final class HellowinBootloader extends Bootloader
                 rareChance: $flyers->getRareChance(),
                 rarePoints: $flyers->getRarePoints(),
                 horizon: $config->getHorizon(),
+                lawn: $config->getWalkZone(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),

@@ -63,7 +63,7 @@ final class FlyerConfigTest
 
     public function kindsComeByScene(): void
     {
-        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], [], ['bat'], ['bat']]);
+        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], [], ['bat'], ['worm']]);
         Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), [['duck', 'bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; bat ']))->getKinds(), [['duck'], ['bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; ;bat']))->getKinds(), [['duck'], [], ['bat']]);

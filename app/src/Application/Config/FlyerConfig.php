@@ -22,7 +22,7 @@ final class FlyerConfig extends InjectableConfig
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
-        'kinds' => 'duck,chicken;;bat;bat',
+        'kinds' => 'duck,chicken;;bat;worm',
         'rare' => 'roadrunner;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,

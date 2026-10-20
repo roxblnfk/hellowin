@@ -22,9 +22,9 @@ return [
     'arc_chance' => env('HELLOWIN_FLYER_ARC_CHANCE', 0.5),
 
     // Kinds picked at random for every launch, a set per scene separated by ";" (an empty set — no flyers in that
-    // scene); bats wobble across their path; how each kind looks is up to the
+    // scene); bats wobble across their path, worms crawl over the lawn; how each kind looks is up to the
     // frontend
-    'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken;;bat;bat'),
+    'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken;;bat;worm'),
 
     // The rare flyer of each scene (empty — none), how often a launch is it, and its points. The roadrunner runs along
     // the horizon and cannot be hit

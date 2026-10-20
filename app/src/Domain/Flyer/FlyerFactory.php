@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Flyer;
 
+use App\Domain\Walk\WalkZone;
 use Random\Randomizer;
 
 /**
@@ -16,6 +17,9 @@ use Random\Randomizer;
  *
  * Either way the flight is straight or, with the arc chance, a quadratic curve through `via`.
  * Bats also wobble across it: a random swing of {@see WOBBLE_AMP} percents and {@see WOBBLE_WAVES} waves.
+ *
+ * Worms are ground targets of a scene's set: they crawl at the middle depth from one point of the lawn to another
+ * beside it, out of the earth and back into it, never over the patch, wriggling by a small wobble.
  *
  * Kinds come by scene. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
@@ -30,6 +34,18 @@ final readonly class FlyerFactory
 
     /** Range of full swings over a bat's flight: few are zigzags, many with a large swing read as loops. */
     private const WOBBLE_WAVES = [2.0, 5.0];
+
+    /** Range of a worm's crawl, percents of the screen: it surfaces and burrows within one stretch of the lawn. */
+    private const WORM_LENGTH = [12.0, 25.0];
+
+    /** Range of a worm's wriggle across its crawl, percents of the screen. */
+    private const WORM_AMP = [0.8, 2.0];
+
+    /** Range of a worm's wriggles over its crawl. */
+    private const WORM_WAVES = [3.0, 6.0];
+
+    /** Attempts to find a crawl that stays on the lawn before falling back to one along its bottom. */
+    private const WORM_ATTEMPTS = 20;
 
     /** @var non-empty-list<FlyerDepth> */
     private array $depths;
@@ -48,6 +64,7 @@ final readonly class FlyerFactory
      * @param float $rareChance Probability that a launch is the rare flyer of the scene.
      * @param positive-int $rarePoints Points for a rare flyer other than the roadrunner.
      * @param float $horizon The line the roadrunner runs along, in percents from the top.
+     * @param WalkZone|null $lawn Where worms crawl; needed only when a scene's set has worms.
      */
     public function __construct(
         array $depths,
@@ -60,7 +77,12 @@ final readonly class FlyerFactory
         private float $rareChance = 0.0,
         private int $rarePoints = 10,
         private float $horizon = 38.0,
+        private ?WalkZone $lawn = null,
     ) {
+        $lawn !== null || !\in_array(Flyer::KIND_WORM, \array_merge(...$kinds), true) or throw new \InvalidArgumentException(
+            'Worms crawl over the lawn: pass the walk zone to the flyer factory.',
+        );
+
         foreach ($bushes as $bush) {
             $bush->depth < \count($depths) or throw new \InvalidArgumentException(\sprintf(
                 'Bush "%s" has depth %d, but flyers have only %d depths.',
@@ -102,6 +124,9 @@ final readonly class FlyerFactory
         [$from, $via, $to] = $bush === null ? $this->fromEdge($arc) : $this->fromBush($bush->at, $arc);
         $id = 'f-' . \bin2hex($this->random->getBytes(4));
         $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
+        if ($kind === Flyer::KIND_WORM) {
+            return $this->worm($id, $now);
+        }
 
         return new Flyer(
             id: $id,
@@ -200,6 +225,56 @@ final readonly class FlyerFactory
             : null;
 
         return [$bush, $via, $to];
+    }
+
+    /**
+     * @param non-empty-string $id
+     */
+    private function worm(string $id, int $now): Flyer
+    {
+        /** @var int<0, max> $depth */
+        $depth = \min(1, \count($this->depths) - 1);
+        [$from, $to] = $this->crawl();
+
+        return new Flyer(
+            id: $id,
+            depth: $depth,
+            from: $from,
+            to: $to,
+            via: null,
+            bush: null,
+            duration: $this->depths[$depth]->duration,
+            points: $this->depths[$depth]->points,
+            launchedAt: $now,
+            kind: Flyer::KIND_WORM,
+            wobble: new Wobble($this->float(...self::WORM_AMP), $this->float(...self::WORM_WAVES)),
+        );
+    }
+
+    /**
+     * Both ends on the lawn and the straight line between them clear of the patch, so the worm never leaves the lawn
+     * however it wriggles.
+     *
+     * @return array{Point, Point}
+     */
+    private function crawl(): array
+    {
+        $lawn = $this->lawn ?? throw new \LogicException('Worms need the lawn.');
+        for ($i = 0; $i < self::WORM_ATTEMPTS; ++$i) {
+            $from = new Point($this->float($lawn->x1, $lawn->x2), $this->float($lawn->y1, $lawn->y2));
+            $angle = $this->random->getFloat(0.0, 2.0 * \M_PI);
+            $length = $this->float(...self::WORM_LENGTH);
+            $to = new Point(\round($from->x + $length * \cos($angle), 1), \round($from->y + $length * \sin($angle), 1));
+
+            if ($lawn->contains($from) && $lawn->contains($to) && \count($lawn->route($from, $to)) === 2) {
+                return [$from, $to];
+            }
+        }
+
+        // Along the bottom of the lawn, under the patch
+        $y = \round($lawn->y2 - 2.0, 1);
+
+        return [new Point(\round($lawn->cx - 20.0, 1), $y), new Point(\round($lawn->cx - 5.0, 1), $y)];
     }
 
     private function wobble(): Wobble

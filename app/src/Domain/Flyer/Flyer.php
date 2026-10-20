@@ -23,6 +23,9 @@ final readonly class Flyer
     /** A ground target of the cursed world, walking out of the patch. */
     public const KIND_ZOMBIE = 'zombie';
 
+    /** A ground target of the final scene: crawls out of the lawn, wriggles across it and back into the earth. */
+    public const KIND_WORM = 'worm';
+
     /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.

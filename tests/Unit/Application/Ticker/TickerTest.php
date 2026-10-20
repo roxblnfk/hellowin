@@ -120,6 +120,22 @@ final class TickerTest
         Assert::same($ritual->flyers->launch(0)->kind, 'bat');
     }
 
+    public function wormsCrawlInTheFinalSceneWithoutTheCursedWorld(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->transitions->scene(1, 1);
+        $ritual->transitions->scene(1, 2);
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+
+        $worm = $ritual->broadcast->ofType('flyer')[0] ?? [];
+        Assert::same([$worm['kind'] ?? null, $worm['depth'] ?? null], ['worm', 1]);
+        Assert::false($ritual->store->snapshot()->story->zombies);
+        $ritual->clock->now = 3_000;
+        Assert::same($ritual->flyers->shoot($worm['flyer'], 'aaaaaaaaaaaaaaaa'), 2);
+    }
+
     public function escapedFlyerIsCountedOnceAfterItsFlight(): void
     {
         $ritual = new RitualHarness();
