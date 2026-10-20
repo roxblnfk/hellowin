@@ -18,6 +18,7 @@ use Tests\TestCase;
 
 #[Test]
 #[Config('cache.storages.hellowin', ['type' => 'array'])]
+#[Config('cache.storages.process', ['type' => 'array'])]
 final class CentrifugoWiringTest extends TestCase
 {
     public function servicesAreRegistered(): void

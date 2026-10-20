@@ -181,6 +181,33 @@ final readonly class WalkService
         $this->metrics->walkers($count);
     }
 
+    /**
+     * Every character on the lawn runs from the patch to the edge of the lawn, as a move of its own.
+     *
+     * @throws LockBusyException
+     */
+    public function scatter(): void
+    {
+        $now = $this->clock->now();
+        $moved = $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            function (array $walkers) use ($now): array {
+                foreach ($walkers as $id => $walker) {
+                    $from = self::rounded($walker->walk->positionAt($now));
+                    $to = self::rounded($this->zone->outward($from));
+                    $walkers[$id] = $walker->walking(Walk::along($this->zone->route($from, $to), $now, $this->speed));
+                }
+
+                return [$walkers, \array_values($walkers)];
+            },
+        );
+
+        $round = $this->ritual->round();
+        foreach ($moved as $walker) {
+            $this->publisher->move($round, $walker);
+        }
+    }
+
     private static function rounded(Point $point): Point
     {
         return new Point(\round($point->x, 2), \round($point->y, 2));

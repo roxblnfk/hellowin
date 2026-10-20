@@ -193,10 +193,37 @@ final class WalkServiceTest
         Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'id'), [self::A]);
     }
 
-    /**
-     * @param non-empty-string $id
-     * @param non-empty-string $name
-     */
+    public function charactersRunToTheEdgesWhenFrankenphpStandsRevealed(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->walks->enter(self::register($ritual, self::A, 'Jack'));
+        $ritual->walks->enter(self::register($ritual, self::B, 'Jill'));
+        $ritual->walks->move(self::B, 20, 55);
+        $ritual->transitions->scene(1, 1);
+        $ritual->story->finaleStep(1, force: true);
+        $ritual->broadcast->published = [];
+
+        $ritual->story->finaleStep(2);
+
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'owl', 'move', 'move']);
+        $zone = RitualHarness::walkZone();
+        foreach ($ritual->broadcast->ofType('move') as $move) {
+            $path = $move['walk']['path'];
+            $from = Point::fromArray($path[0]);
+            $to = Point::fromArray($path[\count($path) - 1]);
+            Assert::notNull($from);
+            Assert::notNull($to);
+            // Out to a side of the lawn, further from the patch than it was
+            Assert::true($to->x <= $zone->x1 || $to->x >= $zone->x2 || $to->y <= $zone->y1 || $to->y >= $zone->y2);
+            Assert::true(\hypot($to->x - 50, $to->y - 63) > \hypot($from->x - 50, $from->y - 63));
+        }
+
+        // Other steps leave the characters be
+        $ritual->broadcast->published = [];
+        $ritual->story->finaleStep(3);
+        Assert::blank($ritual->broadcast->ofType('move'));
+    }
+
     private static function register(RitualHarness $ritual, string $id, string $name, array $look = self::LOOK): Player
     {
         return $ritual->players->register($id, $name, $look);

@@ -73,6 +73,26 @@ final readonly class WalkZone
     }
 
     /**
+     * Where a lawn point runs to when it flees the patch: along the ray from the patch centre through the point to the
+     * edge of the rectangle. The centre itself runs down.
+     */
+    public function outward(Point $point): Point
+    {
+        $dx = $point->x - $this->cx;
+        $dy = $point->y - $this->cy;
+        \abs($dx) < self::EPSILON && \abs($dy) < self::EPSILON and $dy = 1.0;
+
+        // The ray is c + t·d: the exit is the nearest side of the rectangle ahead
+        $exit = \INF;
+        $dx > self::EPSILON and $exit = \min($exit, ($this->x2 - $this->cx) / $dx);
+        $dx < -self::EPSILON and $exit = \min($exit, ($this->x1 - $this->cx) / $dx);
+        $dy > self::EPSILON and $exit = \min($exit, ($this->y2 - $this->cy) / $dy);
+        $dy < -self::EPSILON and $exit = \min($exit, ($this->y1 - $this->cy) / $dy);
+
+        return $this->clamp(new Point($this->cx + $dx * $exit, $this->cy + $dy * $exit));
+    }
+
+    /**
      * A polyline from one lawn point to another. A straight line that crosses the patch is replaced by a walk around
      * it: along the tangent to the patch edge, along the edge, along the tangent to the target — on the shorter side
      * of the two that fit into the rectangle.

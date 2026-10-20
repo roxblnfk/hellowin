@@ -111,6 +111,7 @@ final class RPCServiceTest
             'finale' => null,
             'paused' => false,
             'zombies' => false,
+            'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);
     }

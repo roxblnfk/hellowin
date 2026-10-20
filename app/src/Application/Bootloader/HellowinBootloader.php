@@ -19,6 +19,7 @@ use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
+use App\Domain\Clock\StartTime;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -84,6 +85,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 WalkerStore $walkers,
                 RevealBuilder $reveal,
+                StartTime $startTime,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -93,7 +95,10 @@ final class HellowinBootloader extends Bootloader
                 $walkers,
                 $config->getItems(),
                 $reveal,
+                $startTime,
             ),
+            StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
+                => new StartTime($cache->storage('process'), new Locks($lock), $clock),
             ShotTally::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -212,6 +217,14 @@ final class HellowinBootloader extends Bootloader
         $play = $container->get(PlayMetrics::class);
         \assert($play instanceof PlayMetrics);
         $play->declare();
+        try {
+            // The first worker of the RoadRunner process notes when the server started
+            $start = $container->get(StartTime::class);
+            \assert($start instanceof StartTime);
+            $start->at();
+        } catch (\Throwable $e) {
+            $logger->warning('Start time is unavailable on boot: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+        }
         try {
             $metrics->state($store->snapshot());
         } catch (\Throwable $e) {

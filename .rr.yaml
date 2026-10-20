@@ -40,6 +40,10 @@ kv:
     config:
       addrs:
         - '${VALKEY_ADDR:-valkey:6379}'
+  # Lives as long as the RoadRunner process: the server start time for the uptime survives worker restarts only
+  process:
+    driver: memory
+    config: {}
 
 # Transition jobs. A memory pipeline loses queued jobs on restart; the next click over the threshold pushes again.
 jobs:

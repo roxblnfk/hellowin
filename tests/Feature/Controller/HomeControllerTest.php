@@ -5,17 +5,30 @@ declare(strict_types=1);
 namespace Tests\Feature\Controller;
 
 use App\Application\Config\HellowinConfig;
+use RoadRunner\Lock\LockInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Testing\Attribute\Config;
 use Spiral\Testing\Attribute\Env;
 use Testo\Assert;
+use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
+use Tests\Fake\FakeLock;
 use Tests\TestCase;
 
 #[Test]
 #[Config('cache.storages.hellowin', ['type' => 'array'])]
+#[Config('cache.storages.process', ['type' => 'array'])]
 final class HomeControllerTest extends TestCase
 {
+    /**
+     * The start time is noted under a RoadRunner lock: no RoadRunner here.
+     */
+    #[BeforeTest]
+    public function fakeLock(): void
+    {
+        $this->getContainer()->bindSingleton(LockInterface::class, new FakeLock());
+    }
+
     public function homePageRendersEveryElement(): void
     {
         $elements = $this->getContainer()->get(HellowinConfig::class)->getElements();

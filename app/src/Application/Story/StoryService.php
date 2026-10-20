@@ -6,6 +6,8 @@ namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Walk\WalkService;
+use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -26,6 +28,7 @@ final readonly class StoryService
         private TransitionQueue $queue,
         private ChannelPublisher $publisher,
         private RevealBuilder $reveal,
+        private ?WalkService $walks = null,
     ) {}
 
     /**
@@ -68,6 +71,7 @@ final readonly class StoryService
             $ritual = $this->store->snapshot();
             $this->publisher->finale($ritual->round, $after->finale, $this->reveal->finale($ritual)['reveal'] ?? null);
             $this->publisher->owl($ritual->round, OwlLine::finale($after->finale));
+            $after->finale === Story::SCATTER_STEP and $this->scatter();
         }
 
         return $after->finale;
@@ -124,5 +128,16 @@ final readonly class StoryService
         $round = $this->store->round();
         $this->publisher->zombies($round, $on);
         $on and $this->publisher->owl($round, OwlLine::ZOMBIES);
+    }
+
+    /**
+     * The characters run from FrankenPHP. The step has already moved, so a busy lawn only costs the run, not the step.
+     */
+    private function scatter(): void
+    {
+        try {
+            $this->walks?->scatter();
+        } catch (LockBusyException) {
+        }
     }
 }

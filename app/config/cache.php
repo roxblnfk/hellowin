@@ -16,6 +16,11 @@ return [
             'type' => 'roadrunner',
             'driver' => 'hellowin',
         ],
+        // In the memory of the RoadRunner process: gone with it, kept across worker restarts
+        'process' => [
+            'type' => 'roadrunner',
+            'driver' => 'process',
+        ],
     ],
     // `roadrunner` is appended by the RoadRunner bridge CacheBootloader
     'typeAliases' => [

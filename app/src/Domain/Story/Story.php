@@ -13,6 +13,9 @@ use App\Domain\Player\PlayerId;
  */
 final readonly class Story
 {
+    /** The finale step where FrankenPHP stands revealed and the characters run to the edges of the lawn. */
+    public const SCATTER_STEP = 2;
+
     /** The finale step that shows the reveal: the real numbers of the evening. */
     public const REVEAL_STEP = 4;
 

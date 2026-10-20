@@ -6,7 +6,8 @@
 модератора (сброс — только ему), костёр (элемент `bonfire`: порог и стадии по сценам, `locked`, реплики совы), летуны
 по сценам с пустыми наборами и `wobble` летучих мышей, магический круг финальной сцены (элемент `circle`: свой порог и
 стадии, `locked` вне шага финала 0, готовность финальной сцены, `not ready` и `force` у шага финала 1), червяки
-(`worm`) финальной сцены — наземные цели по лужайке.
+(`worm`) финальной сцены — наземные цели по лужайке, аптайм RoadRunner (`startedAt`) и разбегание фигурок на шаге
+финала 2.
 
 ## Классы
 
@@ -172,6 +173,17 @@
   `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
   нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
   только публикует.
+- **Разбегание** на шаге финала 2 (`Story::SCATTER_STEP`): после события `finale` и реплики `finale-2`
+  `WalkService::scatter` под локом `walkers` ведёт каждую фигурку с её текущей точки к краю лужайки — по лучу от центра
+  грядки через фигурку до стороны прямоугольника `walk` (`WalkZone::outward`), путь — тем же `WalkZone::route`, что у
+  RPC `move`, — и публикует обычный `move` каждой. Повтор шага ничего не меняет, поэтому и разбегание одно. Лок лужайки
+  занят — фигурки остаются на местах, шаг всё равно сделан (это украшение, а не состояние сюжета).
+- **Аптайм** (`Domain/Clock/StartTime`, `startedAt` в снимке): время запуска RoadRunner. Первый воркер при загрузке
+  (`HellowinBootloader::boot`) пишет текущее время в ключ `hellowin:started-at` KV-хранилища `process` — драйвер
+  `memory` RR, живёт в процессе RoadRunner — если ключа ещё нет, под RR-локом `started-at`; следующие только читают.
+  Поэтому перезапуск PHP-воркеров его не сбрасывает, а перезапуск RoadRunner (контейнера `app`) — сбрасывает. Не
+  Valkey: тот переживает перезапуск `app`, и аптайм считался бы от первого запуска стека. Отсчёт — от загрузки
+  первого воркера, а не от старта самого процесса RR: разница — секунды запуска пула.
 - **Разоблачение** (`Domain/Story/Reveal`, `Application/Story/RevealBuilder`) — числа раунда без отдельных счётчиков
   на клик: у каждой тыквы в записи `hellowin:pumpkin:{id}` есть `accepted` — принятые клики раунда, растёт под тем же
   локом `pumpkin:{id}`, что и `clicks`. Отсюда: `clicks` = Σ `accepted`; `jobs` = Σ `stage` + `scene` (каждая стадия
@@ -268,11 +280,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Что | Где | Через |
 |---|---|---|
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, `started-at`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза

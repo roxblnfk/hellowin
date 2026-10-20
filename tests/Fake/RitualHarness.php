@@ -20,6 +20,7 @@ use App\Application\Player\PlayerService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
 use App\Application\Walk\WalkService;
+use App\Domain\Clock\StartTime;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
@@ -74,6 +75,7 @@ final class RitualHarness
     public readonly ShotTally $shots;
     public readonly RevealBuilder $reveal;
     public readonly StoryService $story;
+    public readonly StartTime $startTime;
 
     /**
      * @param positive-int $threshold
@@ -120,8 +122,7 @@ final class RitualHarness
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock));
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
@@ -162,6 +163,7 @@ final class RitualHarness
             new Items([null, 'torch', 'pitchfork']),
             new Randomizer(new Mt19937(7)),
         );
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace App\Application\Hellowin;
 
 use App\Application\Story\RevealBuilder;
 use App\Domain\Clock\Clock;
+use App\Domain\Clock\StartTime;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
@@ -31,6 +32,7 @@ use App\Domain\Walk\WalkerStore;
  *     finale: array{step: int, reveal?: array}|null,
  *     paused: bool,
  *     zombies: bool,
+ *     startedAt: int,
  *     now: int
  * }
  */
@@ -48,6 +50,7 @@ final readonly class SnapshotFactory
         private ?WalkerStore $walkers = null,
         private Items $items = new Items(),
         private ?RevealBuilder $reveal = null,
+        private ?StartTime $startTime = null,
     ) {}
 
     /**
@@ -89,6 +92,8 @@ final readonly class SnapshotFactory
             'paused' => $ritual->story->paused,
             'zombies' => $ritual->story->zombies,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
+            // When the server started, ms: the uptime of the finale; without the record — now
+            'startedAt' => $this->startTime?->at() ?? $this->clock->now(),
             'now' => $this->clock->now(),
         ];
     }
