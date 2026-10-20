@@ -55,7 +55,8 @@
 | `pause` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `pause`; на паузе летуны и зомби не запускаются, уже запущенные долетают; `on` не bool — `invalid on` |
 | `reset` | как выше | сброс ритуала |
 
-Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
+Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы — **запланировано**),
+`busy` (не удалось взять лок), `internal error`; для `register` —
 `invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `anonymous`, `invalid point` (`x`/`y` не числа),
 `no character` (проверяются в этом порядке); для пульта — `forbidden` и коды из таблицы выше.
 
@@ -79,10 +80,10 @@
 | `type` | Поля | Когда |
 |---|---|---|
 | `click` | `element`, `emoji`, `clicks`, `threshold`, `stage`, `player?` | каждый принятый клик |
-| `pumpkin` | `element`, `stage`, `player?` | тыква перешла в новую стадию (ровно одно событие на переход) |
+| `pumpkin` | `element`, `stage`, `player?` | элемент — тыква или костёр (**запланировано**) — перешёл в новую стадию (ровно одно событие на переход) |
 | `scene` | `scene`, `stageMax`, `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
 | `reset` | `item` (предмет фигурок в сцене 0) | сброс; новый `round` в самом событии |
-| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
+| `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `wobble?:{amp,waves}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
 | `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` — в пределах секунды, или прошёл экран входа) или сменил вид / имя |
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
@@ -144,7 +145,8 @@
   "stageMax": 4,
   "threshold": 5,
   "bushes": [{"id":"bush-1","x":4,"y":66,"depth":2}],
-  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}],
+  "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2},
+               {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":40,"stageMax":0}],
   "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
   "ready": false,
   "finale": null,
@@ -165,9 +167,13 @@
 пауза про зал, а не про сюжет. Клиент применяет это сам по событию `reset`, без RPC.
 
 `bush` — id куста, из которого взлетает летун (тогда `from` — его точка, а `depth` летуна — `depth` куста, см.
-[`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `via` — контрольная точка дуги
+[`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `wobble` (**запланировано**, летучие мыши) — кривая поверх базовой траектории: смещение поперёк пути
+`amp · sin(2π · waves · t)` (`amp` — проценты экрана, `t` — доля полёта 0…1); без поля — без колебаний; петли — `waves`
+с большой `amp` или отдельное поле, если понадобится (согласовать). `via` — контрольная точка дуги
 (квадратичная кривая), без неё полёт прямой. `x`/`y` — проценты экрана (на узких экранах фронтенд растягивает раскладку тыкв по x от центра — `spreadX`
-в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l`; `sceneStages` — номер финальной сцены (длина списка
+в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l` (у тыкв); у костра (`type: bonfire`, **запланировано**) — свои `threshold`
+(`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`) и `stageMax` (последняя стадия костра в текущей сцене, из
+`HELLOWIN_BONFIRE_STAGE_MAX`), кликабелен, когда все тыквы на `stageMax` сцены; `sceneStages` — номер финальной сцены (длина списка
 `HELLOWIN_SCENE_STAGE_MAX`); `stageMax` — последняя стадия тыквы в текущей сцене, в финальной — та же, что в сцене
 перед ней (см. [`scenario.md`](scenario.md)). `clicks` — клики с момента перехода тыквы в текущую стадию. `walkers` — фигурки игроков на поле
 (`Walker`, см. «RPC»). Страница
