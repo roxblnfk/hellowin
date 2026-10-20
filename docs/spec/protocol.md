@@ -4,7 +4,9 @@
 (со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
 **реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) и летуны (RPC `shoot`, события `flyer`, `shot`,
 `bushes` в снимке) — тоже; персонаж и прогулка (`look` в `register` и `Player`, RPC `move`, события `walker`,
-`move`, `leave`, `walkers` в снимке) — **запланировано**.
+`move`, `leave`, `walkers` в снимке) — **запланировано**; модератор и сюжет (секрет модератора, RPC пульта, события
+`owl`, `ready`, `finale`, `pause`, `zombies`, летуны по сценам, `ready`/`finale`/`paused`/`zombies` в снимке) —
+**запланировано**.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -18,6 +20,10 @@
 4. В `data` подключения браузер передаёт `{playerSecret}` — секрет из `localStorage`
    (`new Centrifuge(url, {data: {playerSecret}})`). Сервер отвечает `user: publicId`; без секрета подключение анонимное.
    Подробности — [`players.md`](players.md).
+5. Модератор дополнительно передаёт `moderatorSecret` (`{playerSecret, moderatorSecret}`) — секрет из `localStorage`,
+   куда страница кладёт его из `?moderator=<секрет>` (и убирает параметр из адреса). Совпал с
+   `HELLOWIN_MODERATOR_SECRET` — подключение получает роль модератора (backend хранит её в meta/info подключения);
+   не совпал или в env пусто — обычное подключение, без ошибки. Роль сообщает `me` (`moderator: true`).
 
 ## RPC
 
@@ -28,10 +34,25 @@
 | `click` | `{element}` | `{ok:true}` | реализовано |
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
 | `register` | `{name, look?}` | `{ok:true, player: <Player>}`; с `look` игрок выходит на поле (событие `walker`) | реализовано; `look` — запланировано |
-| `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>]}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий | реализовано |
+| `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>], moderator}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий; `moderator` — `true` у подключения модератора | реализовано; `moderator` — запланировано |
 | `reset` | `{round}` — раунд, который клиент видит сейчас | `{ok:true, round}` — новый раунд; повторный вызов с тем же `round` сброс не повторяет (сравнение раунда под локами), а возвращает текущий раунд. Ошибки: `invalid round`, `reset disabled` (`HELLOWIN_RESET_RPC=false`) | реализовано |
 | `move` | `{x, y}` — куда идти, проценты экрана | `{ok:true, walk: <Walk>}`; без `look` — `no character` | запланировано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит, улетел или такого нет) | реализовано |
+
+### Модератор
+
+**Запланировано.** RPC пульта — только подключению модератора, остальным — `forbidden`. Каждый — с ответом
+`{ok:true, …}`; повтор с теми же данными безопасен (идемпотентен по текущему состоянию).
+
+| Метод | Данные | Ответ, эффект |
+|---|---|---|
+| `scene.next` | `{scene, force?}` — сцена, которую видит модератор | переход `scene` → `scene+1` и событие `scene`; без `force` — только из готовой сцены, иначе `not ready`; `scene` не текущая — ответ с текущей сценой без перехода; из финала — `final scene` |
+| `finale.step` | `{step}` — шаг, на который перейти (текущий + 1) | событие `finale`; шаг не следующий — ответ с текущим без изменений; вне финальной сцены — `not final` |
+| `owl.say` | `{line, params?}` или `{text}` | событие `owl`; `line` — id из каталога ([`scenario.md`](scenario.md), «Модератор и сова»; сервер проверяет формат slug, не список), `text` — 1–200 символов после обрезки, иначе `invalid text` |
+| `flyer.special` | `{kind}` — `witch`, `roadrunner` | запуск летуна этого вида сейчас (событие `flyer`), даже на паузе |
+| `zombies` | `{on}` | событие `zombies`; зомби запускаются только в проклятом мире (`finale` = 5) |
+| `pause` | `{on}` | событие `pause`; на паузе летуны и зомби не запускаются, уже запущенные долетают |
+| `reset` | как выше | становится RPC пульта; `HELLOWIN_RESET_RPC` уходит |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
 `invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `invalid point`, `anonymous`,
@@ -65,11 +86,22 @@
 | `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` или прошёл экран входа) или сменил вид |
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
 | `leave` | `player: {id}` | у игрока не осталось подключений — фигурка уходит |
+| `ready` | `scene` | все тыквы сцены дошли до `stageMax` — сцена ждёт модератора (ровно одно событие на сцену) |
+| `finale` | `step`, `reveal?` | шаг финала; на шаге 4 и дальше — `reveal` (см. ниже) |
+| `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line` + `params`, например `{player: {id, name}}`) или свободный текст модератора (`text`) |
+| `pause` | `on` | модератор включил или снял паузу нечисти |
+| `zombies` | `on` | модератор включил или выключил зомби |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
 `player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
 `emoji` сервер выбирает из набора emoji элемента — фронтенд
 может использовать его или игнорировать.
+
+Особые летуны (**запланировано**): `roadrunner` — бежит по горизонту (`depth` 0, `from`/`to` на линии горизонта
+`horizon` из `app/config/hellowin.php`), `points` 0, выстрел по нему всегда `hit:false` (сервер шлёт сове `meep` с
+игроком); `witch` — редкий, очки `HELLOWIN_FLYER_RARE_POINTS`; `zombie` — наземная цель проклятого мира: путь по
+лужайке (зона `walk`) от края грядки наружу, `depth` 1, `via` нет, очки `HELLOWIN_ZOMBIE_POINTS`, частота
+`HELLOWIN_ZOMBIE_INTERVAL`.
 
 Летун: `flyer` — id вида `f-` + 8 hex, его же клиент шлёт в `shoot`; `depth` — от 0 (дальний) до N−1, где N — длина
 `HELLOWIN_FLYER_DURATION` (по умолчанию 3); `duration` — мс от `from` до `to`, отсчёт — от `launchedAt` (см. «Время летунов»); `kind` —
@@ -108,9 +140,18 @@
   "bushes": [{"id":"bush-1","x":4,"y":66,"depth":2}],
   "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}],
   "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
+  "ready": false,
+  "finale": null,
+  "paused": false,
+  "zombies": false,
   "now": 1760900001500
 }
 ```
+
+`ready` — сцена готова и ждёт модератора; `finale` — `null` вне финальной сцены, в ней `{step, reveal?}`;
+`paused`, `zombies` — переключатели пульта (**запланировано**). `reveal` — числа вечера с начала раунда для экрана
+разоблачения: `{clicks, jobs, burned, shot, lastPumpkin: {id, name} | null}` — принятые клики, выполненные задачи
+перехода, сгоревшие клики (сверх порога и после готовности тыквы), сбитые летуны, кто добил последнюю тыкву.
 
 `bush` — id куста, из которого взлетает летун (тогда `from` — его точка, а `depth` летуна — `depth` куста, см.
 [`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `via` — контрольная точка дуги
