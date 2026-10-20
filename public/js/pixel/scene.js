@@ -4,10 +4,12 @@ import {
     Graphics,
     RenderTexture,
     Sprite,
+    Text,
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
 import { ROOT, spreadLeft, spreadX } from '../layout.js';
+import { POSES, characterFrame } from './characters.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
@@ -28,6 +30,14 @@ function rng(seed) {
         t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
+}
+
+// Integer hash of two numbers: a walker's seed and a time slot give the same idle move on every client.
+function mix(a, b) {
+    let h = Math.imul(a ^ Math.imul(b, 0x9e3779b1), 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    return (h ^ (h >>> 16)) >>> 0;
 }
 
 function canvas(w, h) {
@@ -76,7 +86,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, perch: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -143,7 +153,10 @@ export async function createScene(rootEl, snapshot) {
 
     let target = null;
     const display = new Sprite();
-    app.stage.addChild(display);
+    // Name labels are drawn over the blown-up world at screen resolution: text rasterised into the art texture
+    // would turn into blocky smudges, and a pixel font of our own would not cover Cyrillic names.
+    const labelLayer = new Container();
+    app.stage.addChild(display, labelLayer);
 
     const art = new Map();
     const artTexture = (key, make) => {
@@ -185,6 +198,9 @@ export async function createScene(rootEl, snapshot) {
         bushes: snapshot.bushes ?? [],
     };
     const pumpkins = new Map();
+    // Players' characters by player id: the Walker of protocol.md plus the sprite and label drawn for it.
+    const walkers = new Map();
+    let meId = null;
     const particles = [];
     let clouds = [];
     const flyers = new Map();
@@ -766,6 +782,7 @@ export async function createScene(rootEl, snapshot) {
         placeBugs();
         placeBushes();
         buildPumpkins();
+        buildWalkers();
         for (const particle of particles.splice(0)) particle.sprite.destroy();
         publishHitZones();
         veil.width = layout.artW;
@@ -1047,6 +1064,203 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    // Characters (docs/spec/frontend.md, «Экран входа и персонажи»). Walk coordinates are config percents like the
+    // pumpkins, so they take the same patch spread; a phone screen cuts the lawn's far left and right off, and
+    // walkers there are held at the screen edge instead of vanishing.
+    const WALKER_MARGIN = 10;
+    const IDLE_SLOT_MS = 3500;
+    // Facing per idle slot: mostly toward the camera, sometimes sideways or away.
+    const IDLE_FACING = [['front', false], ['front', false], ['side', false], ['side', true], ['back', false], ['front', false]];
+    const poseOf = (pose) => POSES[pose] ?? { frames: 1, ms: 500 };
+    const frameTextures = new WeakMap();
+    const frameTexture = (c) => {
+        if (!frameTextures.has(c)) frameTextures.set(c, texture(c));
+        return frameTextures.get(c);
+    };
+
+    // Topmost opaque row of a character frame: frames keep headroom for tall hats, the label goes over the real head.
+    const frameTops = new WeakMap();
+    function frameTop(c) {
+        if (!frameTops.has(c)) {
+            const { data } = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+            let top = 0;
+            while (top < c.height && !data.slice(top * c.width * 4, (top + 1) * c.width * 4).some((v, i) => i % 4 === 3 && v > 0)) top++;
+            frameTops.set(c, top);
+        }
+        return frameTops.get(c);
+    }
+
+    function walkerArt(p) {
+        const at = toArt(p);
+        return { x: clamp(at.x, WALKER_MARGIN, layout.artW - WALKER_MARGIN), y: at.y };
+    }
+
+    // Front, back or side (mirrored for left) by the screen direction of a step.
+    function facing(from, to) {
+        const a = walkerArt(from);
+        const b = walkerArt(to);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        if (Math.abs(dx) >= Math.abs(dy) * 0.8) return ['side', dx < 0];
+        return dy > 0 ? ['front', false] : ['back', false];
+    }
+
+    /**
+     * Where a walk is at server time `now`: constant speed along the polyline, measured in config units like the
+     * server's HELLOWIN_WALK_SPEED. Returns the point, the segment it is on and whether it is still moving.
+     */
+    function walkAt(walk, now) {
+        const path = walk?.path?.length ? walk.path : [{ x: ROOT.x, y: 94 }];
+        const lengths = path.slice(1).map((p, i) => Math.hypot(p.x - path[i].x, p.y - path[i].y));
+        const total = lengths.reduce((a, b) => a + b, 0);
+        const span = (walk?.arrivesAt ?? 0) - (walk?.startedAt ?? 0);
+        const t = total > 0 && span > 0 ? clamp((now - walk.startedAt) / span, 0, 1) : 1;
+        let left = t * total;
+        for (let i = 0; i < lengths.length; i++) {
+            if (left <= lengths[i] || i === lengths.length - 1) {
+                const k = lengths[i] > 0 ? clamp(left / lengths[i], 0, 1) : 1;
+                const a = path[i];
+                const b = path[i + 1];
+                return { at: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }, from: a, to: b, moving: t < 1 };
+            }
+            left -= lengths[i];
+        }
+        return { at: path[0], from: path[0], to: path[0], moving: false };
+    }
+
+    function walkerLabel(w) {
+        const label = new Text({
+            text: w.name || '???',
+            style: {
+                fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace',
+                fontSize: 12,
+                fontWeight: '700',
+                fill: w.id === meId ? PALETTE.sun : PALETTE.cream,
+                stroke: { color: PALETTE.outline, width: 3, join: 'round' },
+            },
+        });
+        label.anchor.set(0.5, 1);
+        labelLayer.addChild(label);
+        return label;
+    }
+
+    function addWalkerSprites(w) {
+        w.sprite = new Sprite();
+        groundLayer.addChild(w.sprite);
+        w.label?.destroy();
+        w.label = walkerLabel(w);
+    }
+
+    function dropWalkerSprites(w) {
+        w.sprite?.destroy();
+        w.label?.destroy();
+        w.sprite = null;
+        w.label = null;
+    }
+
+    function buildWalkers() {
+        // Sprites went with groundLayer; labels live outside it and are made again with the new layout.
+        for (const w of walkers.values()) addWalkerSprites(w);
+        animateWalkers();
+    }
+
+    function setWalker(data) {
+        const old = walkers.get(data.id);
+        const w = { shoot: null, ...old, ...data, seed: seedOf(data.id) };
+        if (!old) {
+            walkers.set(w.id, w);
+            addWalkerSprites(w);
+        } else {
+            walkers.set(w.id, w);
+            if (old.name !== w.name) {
+                w.label?.destroy();
+                w.label = walkerLabel(w);
+            }
+        }
+    }
+
+    /**
+     * Pose of a standing walker. Time runs in slots of a few seconds, shifted per walker by crc32(id); each slot
+     * hashes to a facing and maybe a fidget. Both inputs are shared, so every client shows the same move.
+     */
+    function idleOf(w, s, now) {
+        const slotMs = IDLE_SLOT_MS + (w.seed % 2000);
+        const shifted = now + (w.seed % slotMs);
+        const slot = Math.floor(shifted / slotMs);
+        const into = shifted - slot * slotMs;
+        const frame = (pose) => Math.floor((now + w.seed) / poseOf(pose).ms) % poseOf(pose).frames;
+        // Until the first slot that starts after arrival the walker keeps facing the way it came.
+        if (now - into < (w.walk?.arrivesAt ?? 0)) {
+            const [dir, flip] = s.from === s.to ? ['front', false] : facing(s.from, s.to);
+            return { dir, flip, pose: 'idle', frame: frame('idle') };
+        }
+        const h = mix(w.seed, slot);
+        const [dir, flip] = IDLE_FACING[h % IDLE_FACING.length];
+        const fidget = poseOf('fidget');
+        if ((h >>> 8) % 3 === 0 && into < fidget.frames * fidget.ms * 2) {
+            return { dir, flip, pose: 'fidget', frame: Math.floor(into / fidget.ms) % fidget.frames };
+        }
+        return { dir, flip, pose: 'idle', frame: frame('idle') };
+    }
+
+    function animateWalkers() {
+        const now = serverNow();
+        for (const w of walkers.values()) {
+            if (!w.sprite) continue;
+            const s = walkAt(w.walk, now);
+            const at = walkerArt(s.at);
+            let view;
+            if (s.moving) {
+                const [dir, flip] = facing(s.from, s.to);
+                const walk = poseOf('walk');
+                view = { dir, flip, pose: 'walk', frame: Math.floor((now - w.walk.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
+            } else if (w.shoot && clock < w.shoot.until) {
+                const shoot = poseOf('shoot');
+                view = { ...w.shoot, pose: 'shoot', frame: Math.floor((clock - w.shoot.at) / shoot.ms) % shoot.frames, item: 'pistol' };
+            } else {
+                w.shoot = null;
+                view = { ...idleOf(w, s, now), item: w.item ?? null };
+            }
+            if (reduced && !s.moving) view.frame = 0;
+            const f = characterFrame(w.look, view);
+            w.sprite.texture = frameTexture(f.canvas);
+            w.sprite.anchor.set(f.anchor.x / f.canvas.width, f.anchor.y / f.canvas.height);
+            w.sprite.scale.x = view.flip ? -1 : 1;
+            w.sprite.position.set(Math.round(at.x), Math.round(at.y));
+            w.sprite.zIndex = depthKey(at.x, at.y);
+            // The label stays whole on screen even when its walker is held at the edge.
+            const half = w.label.width / 2 + 2;
+            w.label.position.set(Math.round(clamp(Math.round(at.x) * layout.cssPx, half, layout.width - half)), Math.round((Math.round(at.y) - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
+        }
+    }
+
+    // A walker whose player shot a flyer turns toward it and fires; one already walking does not stop for it.
+    function walkerShot(event) {
+        const w = walkers.get(event.player?.id);
+        if (!w || !w.sprite) return;
+        if (walkAt(w.walk, serverNow()).moving) return;
+        const f = flyers.get(event.flyer);
+        const me = walkerArt(walkAt(w.walk, serverNow()).at);
+        const dx = f ? f.pos.x - me.x : 0;
+        // The sky is beyond the patch: a bird straight ahead means turning away from the camera.
+        const [dir, flip] = Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
+        const shoot = poseOf('shoot');
+        w.shoot = { dir, flip, at: clock, until: clock + Math.max(600, shoot.frames * shoot.ms * 2) };
+    }
+
+    /** Config coordinates of a screen point on the ground (inverse patch spread); null over the sky. */
+    function groundAt(clientX, clientY) {
+        const rect = app.canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        if (x < 0 || y < 0 || x > rect.width || y > rect.height || y / layout.cssPx < layout.horizon + 2) return null;
+        const left = (x / rect.width) * 100;
+        return {
+            x: Math.round((ROOT.x + (left - ROOT.x) / spreadX(layout.width)) * 10) / 10,
+            y: Math.round((y / rect.height) * 1000) / 10,
+        };
+    }
+
     function tick(ticker) {
         const dt = Math.min(ticker.deltaMS, 50);
         clock += dt;
@@ -1082,6 +1296,7 @@ export async function createScene(rootEl, snapshot) {
         }
 
         animateFlyers();
+        animateWalkers();
         drawHits();
 
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -1103,6 +1318,7 @@ export async function createScene(rootEl, snapshot) {
         app.renderer.render({ container: world, target, clear: true });
     }
 
+    for (const w of snapshot.walkers ?? []) setWalker(w);
     rebuild();
     app.ticker.add(tick);
 
@@ -1142,6 +1358,12 @@ export async function createScene(rootEl, snapshot) {
                 elements: next.elements ?? [],
                 bushes: next.bushes ?? state.bushes,
             };
+            // Walkers outlive rounds (players.md, «На поле»): the snapshot's list replaces ours as a whole.
+            if (next.walkers) {
+                for (const w of walkers.values()) dropWalkerSprites(w);
+                walkers.clear();
+                for (const w of next.walkers) walkers.set(w.id, { shoot: null, ...w, seed: seedOf(w.id) });
+            }
             rebuild();
         },
 
@@ -1181,7 +1403,45 @@ export async function createScene(rootEl, snapshot) {
 
         /** Channel event `shot`: hit frame, tumble, feathers and points; unknown or gone flyers are ignored. */
         shot(event) {
+            walkerShot(event);
             down(event);
+        },
+
+        /** Channel event `walker`: a character entered the field or changed its look or name. */
+        walker(w) {
+            setWalker(w);
+        },
+
+        /** Channel event `move`: the walker follows the new path on the server clock. */
+        move(id, walk) {
+            const w = walkers.get(id);
+            if (!w) return;
+            w.walk = walk;
+            w.shoot = null;
+        },
+
+        /** Channel event `leave`: the player has no connections left. */
+        leave(id) {
+            const w = walkers.get(id);
+            if (!w) return;
+            dropWalkerSprites(w);
+            walkers.delete(id);
+        },
+
+        /** Marks this browser's own character: its name is drawn in another colour. */
+        setMe(id) {
+            if (id === meId) return;
+            meId = id ?? null;
+            for (const w of walkers.values()) {
+                if (!w.sprite) continue;
+                w.label?.destroy();
+                w.label = walkerLabel(w);
+            }
+        },
+
+        /** Config coordinates (percent, inverse patch spread) of the ground under a screen point, or null. */
+        groundAt(clientX, clientY) {
+            return groundAt(clientX, clientY);
         },
 
         flyerAt(clientX, clientY) {

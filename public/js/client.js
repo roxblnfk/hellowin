@@ -11,7 +11,7 @@ const int = (value, fallback = 0) => {
     return Number.isNaN(n) ? fallback : n;
 };
 
-function parseBushes(json) {
+function parseList(json) {
     try {
         const list = JSON.parse(json || '[]');
         return Array.isArray(list) ? list : [];
@@ -30,7 +30,8 @@ export function readSnapshot(root) {
         sceneStages: int(root.dataset.sceneStages, 1),
         stageMax: int(root.dataset.stageMax, DEFAULT_STAGE_MAX),
         threshold: int(root.dataset.threshold, 1),
-        bushes: parseBushes(root.dataset.bushes),
+        bushes: parseList(root.dataset.bushes),
+        walkers: parseList(root.dataset.walkers),
         now: int(root.dataset.now, 0),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
             id: el.dataset.element,
@@ -50,7 +51,7 @@ export function readSnapshot(root) {
  * @param {{requestState: () => Promise<object>}} transport  resolves with a fresh snapshot (RPC `state`)
  */
 export function createClient(root, scene, { requestState, now = () => Date.now() }) {
-    const model = readSnapshot(root);
+    const model = { ...readSnapshot(root), me: null };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     let syncing = null;
@@ -107,6 +108,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             stageMax: snapshot.stageMax ?? stageMaxByScene.get(snapshot.scene) ?? DEFAULT_STAGE_MAX,
             threshold: snapshot.threshold,
             bushes: snapshot.bushes ?? model.bushes,
+            walkers: snapshot.walkers ?? model.walkers,
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         const known = new Map(model.elements.map((e) => [e.id, e]));
@@ -116,7 +118,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
     }
 
     function snapshotOf() {
-        return { ...model, elements: model.elements.map((e) => ({ ...e })) };
+        return { ...model, elements: model.elements.map((e) => ({ ...e })), walkers: model.walkers.map((w) => ({ ...w })) };
     }
 
     /** Re-reads the whole state over RPC; events arriving meanwhile are dropped, the snapshot covers them. */
@@ -154,6 +156,27 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             scene?.shot(event);
         },
 
+        // Characters on the field survive a reset: they live in the snapshot's `walkers`, not in the round.
+        walker(event) {
+            const w = event.walker;
+            if (!w?.id) return;
+            model.walkers = [...model.walkers.filter((x) => x.id !== w.id), w];
+            scene?.walker(w);
+        },
+
+        move(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (!w || !event.walk) return;
+            w.walk = event.walk;
+            scene?.move(w.id, w.walk);
+        },
+
+        leave(event) {
+            const id = event.player?.id;
+            model.walkers = model.walkers.filter((x) => x.id !== id);
+            scene?.leave(id);
+        },
+
         pumpkin(event) {
             const element = findElement(event.element);
             if (!element) return;
@@ -170,6 +193,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             stageMaxByScene.set(model.scene, model.stageMax);
             paintAll();
             scene?.setScene(model.scene, model.stageMax);
+            handOut(event);
         },
 
         reset(event) {
@@ -181,15 +205,36 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
                 e.clicks = 0;
             });
             paintAll();
+            handOut(event);
             scene?.render(snapshotOf());
             if (!stageMaxByScene.has(0)) resync();
         },
     };
 
+    // The item in every walker's hand follows the scene: `scene` and `reset` carry it instead of a walker event each.
+    function handOut(event) {
+        if (!('item' in event)) return;
+        model.walkers.forEach((w) => {
+            w.item = event.item;
+            scene?.walker({ ...w });
+        });
+    }
+
     return {
         model,
         load,
         resync,
+
+        /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
+        setMe(id) {
+            model.me = id ?? null;
+            scene?.setMe(model.me);
+        },
+
+        /** Whether this browser has a character on the field and may send `move`. */
+        canWalk() {
+            return model.me !== null && model.walkers.some((w) => w.id === model.me);
+        },
 
         /** Refreshes the clock offset from RPC `state` without touching the scene (after the tab comes back). */
         syncClock() {
@@ -216,6 +261,9 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
     };
 }
 
+// Controls laid over the scene: a press on them is never a shot or a step.
+const UI = '[data-debug-panel], .help-link, .hud, [data-join]';
+
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
  * phase: a press on a flyer is a shot and the click that follows it is swallowed before it reaches a pumpkin
@@ -228,7 +276,7 @@ export function bindShooting(root, scene, shoot) {
     let swallowClick = false;
     root.addEventListener('pointerdown', (event) => {
         swallowClick = false;
-        if (event.target.closest('[data-debug-panel], .help-link')) return;
+        if (event.target.closest(UI)) return;
         const flyer = scene.flyerAt(event.clientX, event.clientY);
         if (!flyer) return;
         swallowClick = true;
@@ -242,4 +290,20 @@ export function bindShooting(root, scene, shoot) {
         event.preventDefault();
         event.stopPropagation();
     }, { capture: true });
+}
+
+/**
+ * Walking: a click on the ground — not on a pumpkin, not on a control, and not on a flyer (bindShooting swallows
+ * those in the capture phase) — asks the server to walk there. Nothing moves locally; the `move` event does it.
+ *
+ * @param {() => boolean} canWalk  whether this browser has a character on the field
+ * @param {(point: {x: number, y: number}) => void} move  sends RPC `move` in config coordinates
+ */
+export function bindWalking(root, scene, canWalk, move) {
+    if (!scene) return;
+    root.addEventListener('click', (event) => {
+        if (event.defaultPrevented || event.target.closest(`[data-element], ${UI}`) || !canWalk()) return;
+        const point = scene.groundAt(event.clientX, event.clientY);
+        if (point) move(point);
+    });
 }

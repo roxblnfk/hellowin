@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — персонажи</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; padding: 8px; background: #5cac3c; }
+        .row.soil { background: #96623a; }
+        .row.sky { background: #8ccff0; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .cell span { font-size: 10px; color: #123; white-space: nowrap; }
+        .head { width: 110px; align-self: center; color: #102; font-weight: bold; }
+        .mixer { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+        .mixer form { display: grid; grid-template-columns: auto auto; gap: 4px 8px; align-items: center; }
+        .mixer select, .mixer button { font: inherit; }
+        code { color: #fd8; }
+    </style>
+</head>
+<body>
+<p>Параметры: <code>?look=body,cloak,face,eyes,hat</code> <code>?item=beer|broom|pistol</code>
+    <code>?t=мс</code> (стоп-кадр) <code>?zoom=N</code> <code>?only=mixer|frames|body|cloak|face|eyes|hat|item</code> <code>?parts=id,id</code> (строки раздела)</p>
+<div id="out"></div>
+<script type="module">
+    import { CATALOG, ITEMS, DEFAULT_LOOK, DIRS, POSES, FRAME, normalizeLook, randomLook, characterFrame } from '../js/pixel/characters.js';
+
+    const params = new URLSearchParams(location.search);
+    const zoom = Math.max(1, Math.round(Number(params.get('zoom')) || 3));
+    const fixed = params.get('t');
+    const only = params.get('only');
+    const parts = params.get('parts')?.split(',');
+    const slots = Object.keys(DEFAULT_LOOK);
+    const fromParam = (params.get('look') ?? '').split(',');
+    const base = normalizeLook(Object.fromEntries(slots.map((s, i) => [s, fromParam[i]])));
+    const baseItem = params.get('item');
+    const out = document.getElementById('out');
+
+    // Every animated cell redraws from the shared clock, so a frozen ?t= gives the same picture each time.
+    const cells = [];
+
+    function cell(spec, label, scale = zoom) {
+        const box = document.createElement('div');
+        box.className = 'cell';
+        const c = document.createElement('canvas');
+        c.width = FRAME.w;
+        c.height = FRAME.h;
+        c.style.width = `${FRAME.w * scale}px`;
+        c.style.height = `${FRAME.h * scale}px`;
+        box.append(c);
+        if (label) {
+            const s = document.createElement('span');
+            s.textContent = label;
+            box.append(s);
+        }
+        cells.push({ ctx: c.getContext('2d'), spec });
+        return box;
+    }
+
+    function section(id, title, rows, bg = '') {
+        if (only && only !== id) return;
+        const h = document.createElement('h2');
+        h.textContent = title;
+        out.append(h);
+        for (const [head, items, id] of rows) {
+            if (parts && id && !parts.includes(id)) continue;
+            const row = document.createElement('div');
+            row.className = `row ${bg}`;
+            if (head) {
+                const t = document.createElement('div');
+                t.className = 'head';
+                t.textContent = head;
+                row.append(t);
+            }
+            row.append(...items);
+            out.append(row);
+        }
+    }
+
+    const POSE_NAMES = Object.keys(POSES);
+    const allPoses = (look, item) => DIRS.flatMap((dir) => POSE_NAMES.map((pose) => cell(() => ({ look, dir, pose, item }), `${dir} ${pose}`)));
+
+    // Mixer: a big preview turning front → side → back while walking, as the join screen will show it.
+    if (!only || only === 'mixer') {
+        const h = document.createElement('h2');
+        h.textContent = 'Миксер';
+        const wrap = document.createElement('div');
+        wrap.className = 'mixer';
+        const form = document.createElement('form');
+        const state = { look: { ...base }, item: baseItem };
+        for (const slot of slots) {
+            const sel = document.createElement('select');
+            sel.dataset.part = slot;
+            for (const p of CATALOG[slot]) sel.add(new Option(p.label, p.id));
+            sel.value = state.look[slot];
+            sel.onchange = () => { state.look[slot] = sel.value; };
+            form.append(Object.assign(document.createElement('label'), { textContent: slot }), sel);
+        }
+        const itemSel = document.createElement('select');
+        itemSel.add(new Option('—', ''));
+        for (const it of ITEMS) itemSel.add(new Option(it.label, it.id));
+        itemSel.value = state.item ?? '';
+        itemSel.onchange = () => { state.item = itemSel.value || null; };
+        form.append(Object.assign(document.createElement('label'), { textContent: 'item' }), itemSel);
+        const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Случайно' });
+        btn.onclick = () => {
+            state.look = randomLook();
+            form.querySelectorAll('select[data-part]').forEach((s) => { s.value = state.look[s.dataset.part]; });
+        };
+        form.append(btn);
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.append(
+            cell((t) => ({ look: state.look, dir: DIRS[Math.floor(t / 2400) % 3], pose: 'walk', item: state.item }), 'превью', zoom * 2),
+            ...DIRS.map((dir) => cell(() => ({ look: state.look, dir, pose: 'idle', item: state.item }), dir, zoom * 2)),
+            cell(() => ({ look: state.look, dir: 'side', pose: 'shoot' }), 'shoot', zoom * 2),
+        );
+        wrap.append(form, row);
+        out.append(h, wrap);
+    }
+
+    section('frames', 'Все кадры (статично): направление × поза × кадр', DIRS.map((dir) => [dir, POSE_NAMES.flatMap((pose) =>
+        Array.from({ length: POSES[pose].frames }, (_, frame) => cell(() => ({ look: base, dir, pose, frame, item: baseItem }), `${pose} ${frame}`))), dir]));
+    section('body', 'Тела: направление × поза', CATALOG.body.map((p) => [p.label, allPoses({ ...base, body: p.id }, baseItem), p.id]));
+    section('cloak', 'Накидки: walk и idle по направлениям', CATALOG.cloak.map((p) => [p.label, DIRS.flatMap((dir) => ['walk', 'idle'].map((pose) =>
+        cell(() => ({ look: { ...base, cloak: p.id }, dir, pose }), `${dir} ${pose}`))), p.id]));
+    section('face', 'Лица (спереди и сбоку) на разных телах', CATALOG.face.map((p) => [p.label, CATALOG.body.flatMap((b) => ['front', 'side'].map((dir) =>
+        cell(() => ({ look: { ...base, body: b.id, hat: 'none', face: p.id }, dir, pose: 'idle' }), `${b.id} ${dir}`))), p.id]));
+    section('eyes', 'Цвет глаз', [[null, CATALOG.eyes.flatMap((e) => ['smile', 'skull', 'cyclops'].map((face) =>
+        cell(() => ({ look: { ...base, hat: 'none', face, eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${face}`)))]]);
+    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire'].flatMap((body) => DIRS.map((dir) =>
+        cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
+    section('item', 'Предметы: idle / walk / fidget по направлениям', ITEMS.map((it) => [it.label, DIRS.flatMap((dir) => ['idle', 'walk', 'fidget'].map((pose) =>
+        cell(() => ({ look: base, dir, pose, item: it.id }), `${dir} ${pose}`))), it.id]));
+    section('mix', 'Случайные', [0, 1, 2].map((k) => [null, Array.from({ length: 10 }, (_, i) => {
+        // Seeded so a screenshot of the sheet is reproducible.
+        let s = (k * 10 + i + 1) * 2654435761 >>> 0;
+        const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+        rnd();
+        rnd();
+        const look = randomLook(rnd);
+        const item = [null, ...ITEMS.map((x) => x.id)][Math.floor(rnd() * (ITEMS.length + 1))];
+        return cell(() => ({ look, dir: DIRS[i % 3], pose: 'walk', item }), Object.values(look).join(','));
+    })]), 'soil');
+
+    function draw(t) {
+        for (const { ctx, spec } of cells) {
+            const { look, dir, pose, item = null, frame } = spec(t);
+            const p = POSES[pose];
+            const { canvas } = characterFrame(look, { dir, pose, frame: frame ?? Math.floor(t / p.ms) % p.frames, item });
+            ctx.clearRect(0, 0, FRAME.w, FRAME.h);
+            ctx.drawImage(canvas, 0, 0);
+        }
+    }
+
+    if (fixed !== null) {
+        draw(Number(fixed));
+    } else {
+        const loop = (now) => {
+            draw(now);
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+</script>
+</body>
+</html>

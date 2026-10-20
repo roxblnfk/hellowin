@@ -16,6 +16,9 @@
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
   ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
+  Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
+  your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
+  the ?flyers=1 shot one of the first walker. The "выстрел" button launches a bird that a walker shoots down.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -29,6 +32,7 @@
         <button type="button" class="debug__button" data-lab-duck>утка</button>
         <button type="button" class="debug__button" data-lab-click>клик</button>
         <button type="button" class="debug__button" data-lab-auto aria-pressed="false">авто</button>
+        <button type="button" class="debug__button" data-lab-shot>выстрел</button>
         <select data-lab-stage aria-label="стадия">
             <option value="">стадия…</option>
             <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
@@ -39,11 +43,40 @@
         <span class="hud__item">Раунд <b data-hud-round>1</b></span>
         <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
         <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
+        <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
     </footer>
 </main>
+<dialog class="join" data-join aria-labelledby="join-title">
+    <form class="join__form" method="dialog">
+        <h2 class="join__title" id="join-title">Кто идёт на поле?</h2>
+        <div class="join__body">
+            <canvas class="join__preview" data-join-preview width="48" height="48" aria-hidden="true"></canvas>
+            <div class="join__fields">
+                <label class="join__label" for="join-name">Имя</label>
+                <input class="join__name" id="join-name" data-join-name name="name" maxlength="24" autocomplete="nickname"
+                       autofocus spellcheck="false" aria-describedby="join-error">
+                <p class="join__error" id="join-error" data-join-error role="alert"></p>
+                <div class="join__parts">
+                    <div class="join__part" data-part="body"><span class="join__part-name">Тело</span><button type="button" class="join__step" data-step="-1" aria-label="Тело: назад">‹</button><output class="join__value" data-part-value aria-live="polite"></output><button type="button" class="join__step" data-step="1" aria-label="Тело: дальше">›</button></div>
+                    <div class="join__part" data-part="cloak"><span class="join__part-name">Накидка</span><button type="button" class="join__step" data-step="-1" aria-label="Накидка: назад">‹</button><output class="join__value" data-part-value aria-live="polite"></output><button type="button" class="join__step" data-step="1" aria-label="Накидка: дальше">›</button></div>
+                    <div class="join__part" data-part="face"><span class="join__part-name">Лицо</span><button type="button" class="join__step" data-step="-1" aria-label="Лицо: назад">‹</button><output class="join__value" data-part-value aria-live="polite"></output><button type="button" class="join__step" data-step="1" aria-label="Лицо: дальше">›</button></div>
+                    <div class="join__part" data-part="eyes"><span class="join__part-name">Глаза</span><button type="button" class="join__step" data-step="-1" aria-label="Глаза: назад">‹</button><output class="join__value join__value--swatch" data-part-value aria-live="polite"></output><button type="button" class="join__step" data-step="1" aria-label="Глаза: дальше">›</button></div>
+                    <div class="join__part" data-part="hat"><span class="join__part-name">Шапка</span><button type="button" class="join__step" data-step="-1" aria-label="Шапка: назад">‹</button><output class="join__value" data-part-value aria-live="polite"></output><button type="button" class="join__step" data-step="1" aria-label="Шапка: дальше">›</button></div>
+                </div>
+                <button type="button" class="join__button join__button--quiet" data-join-random>🎲 Случайно</button>
+            </div>
+        </div>
+        <div class="join__actions">
+            <button type="button" class="join__button join__button--quiet" data-join-watch>Просто смотреть</button>
+            <button type="submit" class="join__button" data-join-submit>На поле</button>
+        </div>
+    </form>
+</dialog>
 <script type="module">
-    import { bindShooting, createClient, readSnapshot } from '/js/client.js';
+    import { bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
     import { initDebugPanel } from '/js/debug.js';
+    import { initJoin, storedLook } from '/js/join.js';
+    import { ITEMS, randomLook } from '/js/pixel/characters.js';
     import { createScene } from '/js/pixel/scene.js';
 
     const params = new URLSearchParams(location.search);
@@ -94,6 +127,95 @@
     const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
     const clientTime = () => serverTime() + skew;
     root.dataset.now = String(serverTime());
+
+    // Walking of players.md («На поле»): the zone of app/config/hellowin.php (`walk`), the lawn rectangle minus the
+    // patch ellipse, and HELLOWIN_WALK_SPEED in percents per second along the path.
+    const WALK = { area: { x1: 3, y1: 44, x2: 97, y2: 97 }, patch: { cx: 50, cy: 63, rx: 31, ry: 25 } };
+    const WALK_SPEED = 12;
+    const ME = 'lab-me-0000000001';
+    const round1 = (p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 });
+    const ellipse = (p) => Math.hypot((p.x - WALK.patch.cx) / WALK.patch.rx, (p.y - WALK.patch.cy) / WALK.patch.ry);
+    const angleOf = (p) => Math.atan2((p.y - WALK.patch.cy) / WALK.patch.ry, (p.x - WALK.patch.cx) / WALK.patch.rx);
+    const rim = (a, k) => ({ x: WALK.patch.cx + Math.cos(a) * WALK.patch.rx * k, y: WALK.patch.cy + Math.sin(a) * WALK.patch.ry * k });
+    const lengthOf = (path) => path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0);
+
+    function walkPoint(walk, now) {
+        const path = walk.path;
+        const total = lengthOf(path);
+        const span = walk.arrivesAt - walk.startedAt;
+        let left = (total > 0 && span > 0 ? Math.min(1, Math.max(0, (now - walk.startedAt) / span)) : 1) * total;
+        for (let i = 1; i < path.length; i++) {
+            const d = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+            if (left <= d) {
+                const k = d > 0 ? left / d : 1;
+                return { x: path[i - 1].x + (path[i].x - path[i - 1].x) * k, y: path[i - 1].y + (path[i].y - path[i - 1].y) * k };
+            }
+            left -= d;
+        }
+        return path[path.length - 1];
+    }
+
+    // Outside the rectangle — to its edge; inside the patch — out to the rim, sideways where the rim is off the lawn.
+    function clampToZone(p) {
+        const { x1, y1, x2, y2 } = WALK.area;
+        let q = { x: Math.min(x2, Math.max(x1, p.x)), y: Math.min(y2, Math.max(y1, p.y)) };
+        const r = ellipse(q);
+        if (r < 1.02) {
+            q = r > 0 ? rim(angleOf(q), 1.02) : rim(Math.PI / 2, 1.02);
+            if (q.y < y1) {
+                const half = WALK.patch.rx * 1.02 * Math.sqrt(Math.max(0, 1 - ((y1 - WALK.patch.cy) / (WALK.patch.ry * 1.02)) ** 2));
+                q = { x: q.x < WALK.patch.cx ? WALK.patch.cx - half : WALK.patch.cx + half, y: y1 };
+            }
+        }
+        return round1(q);
+    }
+
+    // A straight line when it misses the patch, else along the rim on the shorter side that stays on the lawn (the
+    // far rim is beyond the lawn's top edge, so in practice around the near side).
+    function route(from, to) {
+        const blocked = Array.from({ length: 31 }, (_, i) => i / 30)
+            .some((t) => ellipse({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }) < 1);
+        if (!blocked) return [from, to];
+        const a0 = angleOf(from);
+        const a1 = angleOf(to);
+        const turn = 2 * Math.PI;
+        const arcs = [1, -1].map((sign) => {
+            const delta = sign > 0 ? (((a1 - a0) % turn) + turn) % turn : -((((a0 - a1) % turn) + turn) % turn);
+            const steps = Math.max(1, Math.ceil(Math.abs(delta) / (Math.PI / 12)));
+            const points = Array.from({ length: steps + 1 }, (_, i) => round1(rim(a0 + (delta * i) / steps, 1.06)));
+            return [from, ...points, to];
+        });
+        const onLawn = (path) => path.every((p) => p.y >= WALK.area.y1 - 0.01 && p.x >= WALK.area.x1 && p.x <= WALK.area.x2);
+        const valid = arcs.filter(onLawn);
+        return (valid.length ? valid : arcs).sort((a, b) => lengthOf(a) - lengthOf(b))[0];
+    }
+
+    // Seeded randomness for the bots' looks, so a reload shows the same crowd.
+    const seeded = (seed) => () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const BOT_NAMES = ['Jack', 'Тыквоед', 'Ведьма Ира', 'Graf_Drak', 'Мумия', 'Bones', 'Кот-Баюн', 'Zed.13'];
+    const botCount = Math.max(0, Math.min(BOT_NAMES.length, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
+    const standing = (p, at) => ({ path: [p], startedAt: at, arrivesAt: at });
+    const spawnPoint = (random = Math.random) => clampToZone({ x: 8 + random() * 84, y: 91 + random() * 5 });
+    const startWalkers = [];
+    for (let i = 0; i < botCount; i++) {
+        const random = seeded(1000 + i);
+        startWalkers.push({
+            id: `lab-bot-${String(i).padStart(9, '0')}`,
+            name: BOT_NAMES[i],
+            look: randomLook(random),
+            item: i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
+            walk: standing(spawnPoint(random), serverTime()),
+        });
+    }
+    if (params.get('me') === '1') {
+        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk: standing({ x: 50, y: 93 }, serverTime()) });
+    }
+    root.dataset.walkers = JSON.stringify(startWalkers);
 
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
     const engine = readSnapshot(root);
@@ -163,12 +285,56 @@
         return id;
     }
 
-    function engineShoot(id) {
+    function engineShoot(id, player = null) {
         const f = live.get(id);
         if (!f || f.shot || serverTime() > f.until) return { ok: true, hit: false };
         f.shot = true;
-        deliver({ type: 'shot', flyer: id, points: f.points });
+        deliver({ type: 'shot', flyer: id, points: f.points, ...(player ? { player: { id: player.id, name: player.name } } : {}) });
         return { ok: true, hit: true, points: f.points };
+    }
+
+    // Characters: `register` with a look puts the player on the field, `move` sends it along a route.
+    function engineWalker(walker) {
+        const old = engine.walkers.find((w) => w.id === walker.id);
+        const next = { ...walker, walk: old?.walk ?? walker.walk };
+        engine.walkers = [...engine.walkers.filter((w) => w.id !== walker.id), next];
+        deliver({ type: 'walker', walker: structuredClone(next) });
+    }
+
+    function engineMove(id, target) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        const now = serverTime();
+        const path = route(round1(walkPoint(w.walk, now)), clampToZone(target));
+        w.walk = { path, startedAt: now, arrivesAt: now + Math.round((lengthOf(path) / WALK_SPEED) * 1000) };
+        deliver({ type: 'move', player: { id }, walk: structuredClone(w.walk) });
+        return { ok: true, walk: w.walk };
+    }
+
+    // Name rules of players.md: trimmed, 1–24 letters, digits, single spaces, _ . -, at least one letter or digit.
+    async function engineRegister(rawName, look) {
+        const name = rawName.trim();
+        if (!/^(?=.*[\p{L}\p{N}])(?!.*  )[\p{L}\p{N} _.-]{1,24}$/u.test(name)) throw new Error('invalid name');
+        engineWalker({ id: ME, name, look, item: null, walk: standing(spawnPoint(), serverTime()) });
+        client.setMe(ME);
+        return { id: ME, name, look };
+    }
+
+    const wanderers = () => engine.walkers.filter((w) => w.id !== ME);
+    const randomTarget = (random = Math.random) => ({ x: 3 + random() * 94, y: 44 + random() * 53 });
+    function wander(id) {
+        later(() => {
+            if (!engine.walkers.some((w) => w.id === id)) return;
+            engineMove(id, randomTarget());
+            wander(id);
+        }, 3000 + Math.random() * 6000);
+    }
+
+    // A bird that one of the walkers (you first, if you are on the field) shoots down a moment later.
+    function engineShotByWalker() {
+        const shooter = engine.walkers.find((w) => w.id === ME) ?? engine.walkers[Math.floor(Math.random() * engine.walkers.length)];
+        const id = engineFlyer({ depth: 1, bush: false });
+        later(() => engineShoot(id, shooter ?? null), 1500);
     }
 
     // Stages past 4 belong to later scenes: the jump moves the scene along with them.
@@ -184,6 +350,15 @@
     if (params.has('hits')) scene?.showHits(true);
     const client = createClient(root, scene, { requestState: async () => engineSnapshot(), now: clientTime });
     client.start();
+    if (params.get('me') === '1') client.setMe(ME);
+    bindWalking(root, scene, () => client.canWalk(), (point) => engineMove(ME, point));
+    const join = initJoin(document.querySelector('[data-join]'), { register: engineRegister });
+    root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
+    if (params.get('join') === '1') join.open();
+    root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
+    if (!simulated) wanderers().forEach((w) => wander(w.id));
+    // Handle for scripted checks from the console or a test page.
+    window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);
 
     const randomId = () => engine.elements[Math.floor(Math.random() * engine.elements.length)].id;
@@ -251,7 +426,13 @@
                     engineFlyer({ depth: 2, bush: 'bush-1' })];
                 target = launched[Math.min(2, Math.max(0, Number.parseInt(params.get('shoot') ?? '1', 10) || 0))];
             }
-            if (flyersOn && simTime === shotAt) engineShoot(target);
+            if (flyersOn && simTime === shotAt) engineShoot(target, params.get('shooter') === '1' ? engine.walkers[0] : null);
+            // Frozen bots all set off at the start, so a screenshot catches them on the way.
+            if (simTime === 0) {
+                const random = seeded(99);
+                // The ?shooter=1 walker stays put: a walker on the way does not stop to shoot.
+                wanderers().filter((w, i) => !(i === 0 && params.get('shooter') === '1')).forEach((w) => engineMove(w.id, randomTarget(random)));
+            }
             queue.sort((a, b) => a.at - b.at);
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);

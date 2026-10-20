@@ -1,9 +1,34 @@
-import { bindShooting, createClient, readSnapshot } from './client.js';
+import { bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 
 const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
 
 const root = document.getElementById('app');
+const SECRET_KEY = 'hellowin.secret';
+
+/**
+ * The player's secret (players.md, «Идентификация»): generated once, kept in localStorage, sent only in the
+ * connect data. Without storage it lives for this page only, which still gives a working, if forgetful, player.
+ */
+function playerSecret() {
+    const make = () => crypto.randomUUID?.() ?? [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    try {
+        let secret = localStorage.getItem(SECRET_KEY);
+        if (!secret || !/^[A-Za-z0-9-]{16,128}$/.test(secret)) {
+            secret = make();
+            localStorage.setItem(SECRET_KEY, secret);
+        }
+        return secret;
+    } catch {
+        return make();
+    }
+}
+
+// Unwraps an RPC reply: {ok: true, …} resolves with the data, {ok: false, error} rejects with Error(error).
+const answer = ({ data }) => {
+    if (!data?.ok) throw new Error(data?.error ?? 'bad response');
+    return data;
+};
 
 function websocketUrl(url) {
     if (/^wss?:\/\//.test(url)) {
@@ -33,12 +58,9 @@ async function main() {
         return;
     }
 
-    const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl));
+    const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl), { data: { playerSecret: playerSecret() } });
     const client = createClient(root, scene, {
-        requestState: () => centrifuge.rpc('state', {}).then(({ data }) => {
-            if (!data?.ok) throw new Error(data?.error ?? 'bad state response');
-            return data.state;
-        }),
+        requestState: () => centrifuge.rpc('state', {}).then(answer).then((data) => data.state),
     });
     client.start();
 
@@ -56,6 +78,10 @@ async function main() {
         setStatus('connected');
         if (connectedOnce) client.resync();
         connectedOnce = true;
+        // Who this browser is: the walker with this id is ours and may be sent around the patch.
+        centrifuge.rpc('me', {}).then(answer)
+            .then((data) => client.setMe(data.player?.id ?? null))
+            .catch((error) => console.warn('me rpc failed', error));
     });
 
     // The server subscribes the client on connect (server-side subscription), so publications arrive on the
@@ -86,11 +112,26 @@ async function main() {
         })
         .catch((error) => console.warn('shoot rpc failed', error)));
 
+    // The character appears when the channel's `walker` event comes back, like everything else.
+    // Lazy like the scene: without the character sprites the page still clicks pumpkins and shoots.
+    const joinModule = await import('./join.js').catch((error) => console.warn('join screen failed to load', error));
+    const join = joinModule?.initJoin(document.querySelector('[data-join]'), {
+        register: (name, look) => centrifuge.rpc('register', { name, look }).then(answer)
+            .then((data) => client.setMe(data.player?.id ?? null)),
+    });
+    root.querySelector('[data-join-open]')?.addEventListener('click', () => join?.open());
+    if (join && !joinModule.storedLook()) join.open();
+
+    // A step is drawn only when the channel's `move` event arrives.
+    bindWalking(root, scene, () => client.canWalk(), (point) => centrifuge.rpc('move', point)
+        .then(({ data }) => {
+            if (data?.ok === false) console.warn('move rejected', data.error);
+        })
+        .catch((error) => console.warn('move rpc failed', error)));
+
     // Restart and "click every pumpkin" draw nothing either: the channel's `reset` / `click` events do.
     initDebugPanel(root.querySelector('[data-debug-panel]'), {
-        reset: () => centrifuge.rpc('reset', { round: client.model.round }).then(({ data }) => {
-            if (!data?.ok) throw new Error(data?.error ?? 'bad reset response');
-        }),
+        reset: () => centrifuge.rpc('reset', { round: client.model.round }).then(answer),
         // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
         clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
     });
