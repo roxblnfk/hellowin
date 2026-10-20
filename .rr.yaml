@@ -7,21 +7,48 @@ server:
   command: 'php app.php'
   relay: pipes
 
+# RoadRunner faces the browser itself, with no proxy in front: it serves the static files, compresses, sets the
+# security headers and limits requests by IP. Middleware wrap each other from left to right, so http_metrics counts
+# everything, the headers and gzip cover the static files too, and rate_limiter after static guards only the PHP pages.
 http:
   address: '0.0.0.0:8080'
+  max_request_size: 1
   middleware:
     - http_metrics
+    - headers
     - gzip
     - static
+    - rate_limiter
+  headers:
+    response:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      Referrer-Policy: strict-origin-when-cross-origin
+      Permissions-Policy: 'camera=(), microphone=(), geolocation=()'
+      # No script-src or style-src: the pages load Pixi from a CDN and style SVG inline
+      Content-Security-Policy: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
   static:
     dir: public
     forbid:
       - .php
       - .htaccess
+    calculate_etag: true
+    response:
+      # File names carry no hash: the browser revalidates every file by its ETag and gets 304 while it is unchanged
+      Cache-Control: no-cache
+  # A token bucket per client IP: `burst` requests at once, then `rate` per second; over it — 429 with Retry-After
+  rate_limiter:
+    key: ip
+    rate: 5
+    burst: 20
   pool:
     num_workers: 2
+    allocate_timeout: 10s
+    max_queue_size: 100
+    destroy_timeout: 10s
     supervisor:
       max_worker_memory: 100
+      exec_ttl: 30s
 
 # Centrifugo proxies connect/subscribe/rpc requests here; the app publishes back through its gRPC API.
 centrifuge:
@@ -29,6 +56,9 @@ centrifuge:
   grpc_api_address: '${CENTRIFUGO_GRPC_API:-centrifugo:10000}'
   pool:
     num_workers: 2
+    # Centrifugo stops waiting for a proxy answer after 3s (docker/centrifugo/config.json)
+    allocate_timeout: 3s
+    destroy_timeout: 10s
 
 metrics:
   address: '0.0.0.0:2112'
