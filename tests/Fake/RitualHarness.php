@@ -136,6 +136,8 @@ final class RitualHarness
                 new Randomizer(new Mt19937(42)),
                 [[Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
                 lawn: self::walkZone(),
+                cursed: [Flyer::KIND_FIREFLY],
+                fireflyPoints: 1,
             ),
             $this->flyerStore,
             $this->store,

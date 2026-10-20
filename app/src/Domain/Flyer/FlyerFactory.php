@@ -21,7 +21,10 @@ use Random\Randomizer;
  * Worms are ground targets of a scene's set: they crawl at the middle depth from one point of the lawn to another
  * beside it, out of the earth and back into it, never over the patch, wriggling by a small wobble.
  *
- * Kinds come by scene. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
+ * Fireflies fly like the others but only at the middle and near depths ({@see FIREFLY_DEPTHS}), wobble sluggishly
+ * ({@see FIREFLY_AMP}, {@see FIREFLY_WAVES}) and bring their own points instead of the depth's.
+ *
+ * Kinds come by scene; the cursed world has a set of its own instead of its scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
  */
 final readonly class FlyerFactory
@@ -34,6 +37,15 @@ final readonly class FlyerFactory
 
     /** Range of full swings over a bat's flight: few are zigzags, many with a large swing read as loops. */
     private const WOBBLE_WAVES = [2.0, 5.0];
+
+    /** Depths a firefly flies at, clamped to the depths there are. */
+    private const FIREFLY_DEPTHS = [1, 2];
+
+    /** Range of a firefly's swing across its path, percents of the screen: smaller than a bat's. */
+    private const FIREFLY_AMP = [2.0, 5.0];
+
+    /** Range of a firefly's full swings over its flight: fewer than a bat's, so it drifts rather than darts. */
+    private const FIREFLY_WAVES = [1.5, 3.0];
 
     /** Range of a worm's crawl, percents of the screen: it surfaces and burrows within one stretch of the lawn. */
     private const WORM_LENGTH = [12.0, 25.0];
@@ -64,7 +76,10 @@ final readonly class FlyerFactory
      * @param float $rareChance Probability that a launch is the rare flyer of the scene.
      * @param positive-int $rarePoints Points for a rare flyer other than the roadrunner.
      * @param float $horizon The line the roadrunner runs along, in percents from the top.
-     * @param WalkZone|null $lawn Where worms crawl; needed only when a scene's set has worms.
+     * @param WalkZone|null $lawn Where worms crawl; needed only when a set has worms.
+     * @param list<non-empty-string> $cursed Kinds of the cursed world in place of its scene's set; an empty set
+     *        launches no flyers there but the rare one of the scene.
+     * @param positive-int $fireflyPoints Points for a firefly at any depth.
      */
     public function __construct(
         array $depths,
@@ -78,8 +93,10 @@ final readonly class FlyerFactory
         private int $rarePoints = 10,
         private float $horizon = 38.0,
         private ?WalkZone $lawn = null,
+        private array $cursed = [],
+        private int $fireflyPoints = 1,
     ) {
-        $lawn !== null || !\in_array(Flyer::KIND_WORM, \array_merge(...$kinds), true) or throw new \InvalidArgumentException(
+        $lawn !== null || !\in_array(Flyer::KIND_WORM, \array_merge($cursed, ...$kinds), true) or throw new \InvalidArgumentException(
             'Worms crawl over the lawn: pass the walk zone to the flyer factory.',
         );
 
@@ -98,16 +115,17 @@ final readonly class FlyerFactory
 
     /**
      * @param int $now Unix time in milliseconds.
-     * @return Flyer|null Null when the scene has no flyers and this launch is not its rare one.
+     * @param bool $cursed The cursed world: its own set of kinds, the rare flyer still of the scene.
+     * @return Flyer|null Null when the set has no flyers and this launch is not the rare one.
      */
-    public function launch(int $now, int $scene = 0): ?Flyer
+    public function launch(int $now, int $scene = 0, bool $cursed = false): ?Flyer
     {
         $rare = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
         if ($rare !== null && $this->chance($this->rareChance)) {
             return $this->special($rare, $now);
         }
 
-        $kinds = $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)];
+        $kinds = $cursed ? $this->cursed : $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)];
         if ($kinds === []) {
             return null;
         }
@@ -126,6 +144,9 @@ final readonly class FlyerFactory
         $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
         if ($kind === Flyer::KIND_WORM) {
             return $this->worm($id, $now);
+        }
+        if ($kind === Flyer::KIND_FIREFLY) {
+            return $this->firefly($id, $now, $bush, $arc, $from, $via, $to);
         }
 
         return new Flyer(
@@ -225,6 +246,40 @@ final readonly class FlyerFactory
             : null;
 
         return [$bush, $via, $to];
+    }
+
+    /**
+     * Keeps the path drawn for the launch unless it starts at a bush outside the firefly depths: then it comes from
+     * the edge instead.
+     *
+     * @param non-empty-string $id
+     */
+    private function firefly(string $id, int $now, ?Bush $bush, bool $arc, Point $from, ?Point $via, Point $to): Flyer
+    {
+        $last = \count($this->depths) - 1;
+        $min = \min(self::FIREFLY_DEPTHS[0], $last);
+        $max = \min(self::FIREFLY_DEPTHS[1], $last);
+
+        if ($bush !== null && ($bush->depth < $min || $bush->depth > $max)) {
+            $bush = null;
+            [$from, $via, $to] = $this->fromEdge($arc);
+        }
+        /** @var int<0, max> $depth */
+        $depth = $bush?->depth ?? $this->random->getInt($min, $max);
+
+        return new Flyer(
+            id: $id,
+            depth: $depth,
+            from: $from,
+            to: $to,
+            via: $via,
+            bush: $bush?->id,
+            duration: $this->depths[$depth]->duration,
+            points: $this->fireflyPoints,
+            launchedAt: $now,
+            kind: Flyer::KIND_FIREFLY,
+            wobble: new Wobble($this->float(...self::FIREFLY_AMP), $this->float(...self::FIREFLY_WAVES)),
+        );
     }
 
     /**

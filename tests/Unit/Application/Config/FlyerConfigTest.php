@@ -81,6 +81,33 @@ final class FlyerConfigTest
         (new FlyerConfig(['kinds' => $value]))->getKinds();
     }
 
+    public function cursedWorldHasOneSetOfItsOwn(): void
+    {
+        Assert::same((new FlyerConfig())->getCursedKinds(), ['worm', 'bat', 'firefly']);
+        Assert::same((new FlyerConfig(['kinds_cursed' => ' bat , bat,firefly']))->getCursedKinds(), ['bat', 'firefly']);
+        Assert::same((new FlyerConfig(['kinds_cursed' => ' ']))->getCursedKinds(), []);
+    }
+
+    #[DataSet(['bat;worm'], 'sets by scene')]
+    #[DataSet(['bat,'], 'trailing comma')]
+    #[DataSet(['Bat'], 'uppercase')]
+    #[DataSet([['bat']], 'array')]
+    public function cursedKindsRejectGarbage(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_KINDS_CURSED');
+
+        (new FlyerConfig(['kinds_cursed' => $value]))->getCursedKinds();
+    }
+
+    public function fireflyPointsArePositive(): never
+    {
+        Assert::same((new FlyerConfig())->getFireflyPoints(), 1);
+        Assert::same((new FlyerConfig(['firefly_points' => '3']))->getFireflyPoints(), 3);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_FIREFLY_POINTS');
+        (new FlyerConfig(['firefly_points' => 0]))->getFireflyPoints();
+    }
+
     public function rareFlyersComeByScene(): void
     {
         $config = new FlyerConfig();

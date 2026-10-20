@@ -42,7 +42,7 @@ final readonly class FlyerService
     ) {}
 
     /**
-     * Launches a flyer of the current scene.
+     * Launches a flyer of the current scene, or of the cursed world's own set once it has come.
      *
      * @param int $now Unix time in milliseconds.
      * @return Flyer|null Null when the scene has no flyers and the launch did not turn out its rare one.
@@ -50,7 +50,7 @@ final readonly class FlyerService
     public function launch(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
-        $flyer = $this->factory->launch($now, $ritual->scene);
+        $flyer = $this->factory->launch($now, $ritual->scene, $ritual->story->cursed());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
@@ -63,7 +63,7 @@ final readonly class FlyerService
     public function launchScheduled(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
-        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene);
+        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene, $ritual->story->cursed());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }

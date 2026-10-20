@@ -26,6 +26,11 @@ return [
     // frontend
     'kinds' => env('HELLOWIN_FLYER_KINDS', 'duck,chicken;;bat;worm'),
 
+    // The cursed world (the last finale step) takes this one set instead of its scene's; fireflies fly at the middle
+    // and near depths, wobble sluggishly and bring these points at any depth
+    'kinds_cursed' => env('HELLOWIN_FLYER_KINDS_CURSED', 'worm,bat,firefly'),
+    'firefly_points' => env('HELLOWIN_FLYER_FIREFLY_POINTS', 1),
+
     // The rare flyer of each scene (empty — none), how often a launch is it, and its points. The roadrunner runs along
     // the horizon and cannot be hit
     'rare' => env('HELLOWIN_FLYER_RARE', 'roadrunner;;;'),

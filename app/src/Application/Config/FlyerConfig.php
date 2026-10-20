@@ -23,6 +23,8 @@ final class FlyerConfig extends InjectableConfig
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
         'kinds' => 'duck,chicken;;bat;worm',
+        'kinds_cursed' => 'worm,bat,firefly',
+        'firefly_points' => 1,
         'rare' => 'roadrunner;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
@@ -120,17 +122,30 @@ final class FlyerConfig extends InjectableConfig
         $error = self::invalid('kinds', 'HELLOWIN_FLYER_KINDS', 'comma-separated lowercase words, sets by scene separated by ";"', $value);
         \is_string($value) or throw $error;
 
-        $scenes = [];
-        foreach (\explode(';', $value) as $set) {
-            $kinds = [];
-            foreach (\trim($set) === '' ? [] : \explode(',', $set) as $item) {
-                $kind = self::kind($item) ?? throw $error;
-                $kinds[$kind] = $kind;
-            }
-            $scenes[] = \array_values($kinds);
-        }
+        return \array_map(static fn(string $set): array => self::set($set, $error), \explode(';', $value));
+    }
 
-        return $scenes;
+    /**
+     * Flyer kinds of the cursed world in place of its scene's set, one set: `"worm,bat,firefly"`.
+     *
+     * @return list<non-empty-string> Empty is a cursed world without flyers.
+     */
+    public function getCursedKinds(): array
+    {
+        /** @var mixed $value */
+        $value = $this->config['kinds_cursed'] ?? null;
+        $error = self::invalid('kinds_cursed', 'HELLOWIN_FLYER_KINDS_CURSED', 'comma-separated lowercase words', $value);
+        \is_string($value) or throw $error;
+
+        return self::set($value, $error);
+    }
+
+    /**
+     * @return positive-int Points for a firefly at any depth.
+     */
+    public function getFireflyPoints(): int
+    {
+        return self::positiveInt($this->config['firefly_points'] ?? null, 'firefly_points', 'HELLOWIN_FLYER_FIREFLY_POINTS');
     }
 
     /**
@@ -188,6 +203,20 @@ final class FlyerConfig extends InjectableConfig
 
         /** @var positive-int $max */
         return [$min, $max];
+    }
+
+    /**
+     * @return list<non-empty-string> Kinds of a comma-separated set, each once.
+     */
+    private static function set(string $set, \InvalidArgumentException $error): array
+    {
+        $kinds = [];
+        foreach (\trim($set) === '' ? [] : \explode(',', $set) as $item) {
+            $kind = self::kind($item) ?? throw $error;
+            $kinds[$kind] = $kind;
+        }
+
+        return \array_values($kinds);
     }
 
     /**

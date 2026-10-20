@@ -136,6 +136,28 @@ final class TickerTest
         Assert::same($ritual->flyers->shoot($worm['flyer'], 'aaaaaaaaaaaaaaaa'), 2);
     }
 
+    public function cursedWorldLaunchesItsOwnSetUntilPaused(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        for ($step = 1; $step <= 4; ++$step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+        Assert::same($ritual->flyers->launch(0)->kind, 'bat', 'the scene\'s set before the last step');
+
+        $ritual->story->finaleStep(5, force: true);
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+        $ritual->story->pause(true);
+        $ticker->tick(4_000);
+
+        $flyers = $ritual->broadcast->ofType('flyer');
+        Assert::count($flyers, 2);
+        Assert::same([$flyers[1]['kind'] ?? null, $flyers[1]['points'] ?? null], ['firefly', 1]);
+        Assert::false($ritual->store->snapshot()->story->zombies);
+    }
+
     public function escapedFlyerIsCountedOnceAfterItsFlight(): void
     {
         $ritual = new RitualHarness();

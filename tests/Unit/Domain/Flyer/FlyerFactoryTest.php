@@ -143,6 +143,66 @@ final class FlyerFactoryTest
         }
     }
 
+    public function cursedWorldTakesItsOwnSetInsteadOfTheScenes(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck'], ['worm']], lawn: self::lawn(), cursed: ['bat', 'firefly']);
+
+        Assert::same($factory->launch(0, 1)?->kind, 'worm');
+        $kinds = \array_unique(\array_map(static fn(int $_): ?string => $factory->launch(0, 1, true)?->kind, \range(1, 50)));
+        \sort($kinds);
+        Assert::same($kinds, ['bat', 'firefly']);
+    }
+
+    public function cursedWorldWithoutKindsLaunchesOnlyTheRareFlyerOfTheScene(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck']], [null, 'witch'], 1.0);
+
+        Assert::null($factory->launch(0, 0, true));
+        Assert::same($factory->launch(0, 1, true)?->kind, 'witch');
+    }
+
+    public function firefliesWobbleSluggishlyAtTheMiddleAndNearDepthsForTheirOwnPoints(): void
+    {
+        $depths = \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS);
+        $factory = new FlyerFactory(
+            $depths,
+            [new Bush('bush-far', new Point(4, 86), 0), new Bush('bush-near', new Point(96, 66), 2)],
+            0.5,
+            0.5,
+            new Randomizer(new Mt19937(7)),
+            [['firefly']],
+            fireflyPoints: 4,
+        );
+
+        $flyers = self::flyers($factory, 200);
+        foreach ($flyers as $firefly) {
+            Assert::same($firefly->kind, 'firefly');
+            Assert::true(\in_array($firefly->depth, [1, 2], true), 'never at the far depth');
+            Assert::same([$firefly->duration, $firefly->points], [self::DEPTHS[$firefly->depth][0], 4]);
+            Assert::notSame($firefly->bush, 'bush-far');
+            $firefly->bush === null and Assert::true(self::offScreen($firefly->from) && self::offScreen($firefly->to));
+            Assert::numeric($firefly->wobble?->amp)->between(2, 5);
+            Assert::numeric($firefly->wobble?->waves)->between(1.5, 3);
+            Assert::equals(Flyer::fromArray($firefly->toArray()), $firefly);
+        }
+        Assert::count(\array_unique(\array_map(static fn(Flyer $f): int => $f->depth, $flyers)), 2);
+        Assert::notBlank(\array_filter($flyers, static fn(Flyer $f): bool => $f->bush === 'bush-near'));
+    }
+
+    public function firefliesKeepToTheDepthsThereAre(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 3)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['firefly']]);
+
+        Assert::same($factory->launch(0)?->depth, 0);
+    }
+
+    public function cursedWormsNeedTheLawnToo(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk zone');
+
+        new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, cursed: ['worm']);
+    }
+
     public function wormsNeedTheLawn(): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk zone');
@@ -219,6 +279,11 @@ final class FlyerFactoryTest
             $arcChance,
             new Randomizer(new Mt19937(42)),
         );
+    }
+
+    private static function lawn(): WalkZone
+    {
+        return new WalkZone(3, 44, 97, 97, 50, 63, 31, 25);
     }
 
     /**

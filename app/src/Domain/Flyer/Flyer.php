@@ -26,6 +26,9 @@ final readonly class Flyer
     /** A ground target of the final scene: crawls out of the lawn, wriggles across it and back into the earth. */
     public const KIND_WORM = 'worm';
 
+    /** A small flyer of the cursed world: a sluggish wobble at the middle and near depths, its own few points. */
+    public const KIND_FIREFLY = 'firefly';
+
     /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.
