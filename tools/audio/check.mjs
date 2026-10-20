@@ -122,7 +122,7 @@ console.log(`all buffers sha256 ${all.digest('hex')}`);
     }
     for (const p of plays) {
         const ch = buffers.get(`${p.name}#${p.v}`)[0];
-        const gain = SFX[p.name].bus === 'ui' ? 0.7 : 0.9;
+        const gain = SFX[p.name].bus === 'ui' ? 0.4 : 0.5;
         for (let i = p.at; i < Math.min(p.end, p.at + ch.length, len); i++) out[i] += ch[i - p.at] * gain;
     }
     const ceiling = 10 ** (-1 / 20);

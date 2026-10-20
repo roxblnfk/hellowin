@@ -8,10 +8,12 @@ import { SFX } from './synth/sfx.js';
 
 const STORAGE_KEY = 'hellowin.audio';
 const BUSES = ['music', 'sfx', 'ui'];
-const DEFAULT_VOLUME = { master: 1, music: 0.5, sfx: 0.9, ui: 0.7 };
+const DEFAULT_VOLUME = { master: 1, music: 0.5, sfx: 0.5, ui: 0.4 };
+// Version of the default mix: volumes saved under another one are dropped, so a retuned mix reaches everyone.
+const MIX = 2;
 const CEILING = 10 ** (-1 / 20);
 const MAX_VOICES = 32;
-const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.085 }, franken: { sound: 'franken.grumble', gap: 0.13 } };
+const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
 /** Which track a scene state plays: by scene, and in the final scene by the finale step. */
 export function trackOf({ scene = 0, sceneStages = 3, finale = null } = {}) {
@@ -62,7 +64,7 @@ function saveSettings(settings) {
  */
 export function createAudio({ context = null, musicRate = (globalThis.navigator?.deviceMemory ?? 8) <= 4 ? 2 : 1.5 } = {}) {
     const settings = loadSettings();
-    const volume = { ...DEFAULT_VOLUME, ...(settings.volume ?? {}) };
+    const volume = { ...DEFAULT_VOLUME, ...(settings.mix === MIX ? settings.volume : {}) };
     let muted = settings.muted === true;
     let ctx = null;
     let offline = false;
@@ -90,7 +92,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
     };
 
     const emit = () => listeners.forEach((fn) => fn(api.state()));
-    const save = () => saveSettings({ muted, volume });
+    const save = () => saveSettings({ mix: MIX, muted, volume });
 
     // ---------------------------------------------------------------- rendering
 
@@ -529,13 +531,13 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
             if (!speaker) return;
             const utterance = ++utterances;
             const words = String(text ?? '').trim();
-            const count = Math.max(2, Math.min(14, Math.round(words.replace(/\s+/g, '').length / 4)));
+            const count = Math.max(2, Math.min(9, Math.round(words.replace(/\s+/g, '').length / 7)));
             const question = words.endsWith('?');
             const shout = words.endsWith('!');
             for (let k = 0; k < count; k++) {
                 const last = k >= count - 2;
-                const pitch = (question && last ? 3 + k - count + 2 : 0) - (!question && last ? 1.5 : 0) + (rand() - 0.5) * 2;
-                playVoice(speaker.sound, { pan, pitch, volume: vol * (shout ? 1.2 : 1), delay: Math.max(0, delay) + k * speaker.gap + rand() * 0.02 }, utterance);
+                const pitch = (question && last ? 1.5 : 0) - (!question && last ? 0.8 : 0) + (rand() - 0.5) * 0.8;
+                playVoice(speaker.sound, { pan, pitch, volume: vol * (shout ? 1.05 : 1), delay: Math.max(0, delay) + k * speaker.gap + rand() * 0.02 }, utterance);
             }
         },
 

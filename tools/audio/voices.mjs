@@ -111,7 +111,7 @@ check(`${carve.voices * 3} carves at once`, () => {
 
 // A line of beep-speech: every syllable sounds.
 check('a long owl line', () => audio.speak('owl', 'RoadRunner мёртв… Ритуал на тыквах вернёт его, если постараться!'),
-    (got, all) => got === all && all >= 10);
+    (got, all) => got === all && all >= 6);
 
 // The same burst scheduled ahead: voices not started yet count too.
 check(`${carve.voices * 3} carves at once, half a second ahead`, () => {

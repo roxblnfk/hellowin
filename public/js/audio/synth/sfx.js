@@ -1,7 +1,7 @@
 import { SVF, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
 import {
-    bell, blip, brass, chip, choir, crackle, heart, impact, kick, musicbox, noiseSweep, partials, pizz, riser, theremin,
-    toll, tom, vox, xylo,
+    bell, blip, brass, chip, choir, crackle, heart, impact, kick, murmur, musicbox, noiseSweep, partials, pizz, riser,
+    theremin, toll, tom, vox, xylo,
 } from './instruments.js';
 
 /**
@@ -56,7 +56,7 @@ const fx = (def) => ({ variants: 1, voices: 4, bus: 'sfx', level: -6, jitter: 0.
 export const SFX = {
     // ---------------------------------------------------------------- pumpkins, scene 0
     'pumpkin.carve': fx({
-        dur: 0.35, variants: 5, voices: 6, level: -7,
+        dur: 0.35, variants: 5, voices: 6, level: -10,
         render(r, out) {
             const p = (r.rnd() - 0.5) * 0.4;
             thump(r, out, 0, { f0: 380 + r.rnd() * 180, f1: 110, dur: 0.08, amp: 0.7, pan: p });
@@ -65,7 +65,7 @@ export const SFX = {
         },
     }),
     'pumpkin.scoop': fx({
-        dur: 0.6, variants: 5, voices: 5, level: -8,
+        dur: 0.6, variants: 5, voices: 5, level: -11,
         render(r, out) {
             const p = (r.rnd() - 0.5) * 0.4;
             noiseSweep(r, out, 0, 0.12, { from: 300, to: 1400, q: 5, amp: 0.55, pan: p, curve: 0.5 });
@@ -75,7 +75,7 @@ export const SFX = {
         },
     }),
     'pumpkin.burned': fx({
-        dur: 0.15, variants: 3, voices: 4, level: -18,
+        dur: 0.15, variants: 3, voices: 4, level: -20,
         render(r, out) {
             thump(r, out, 0, { f0: 260 + r.rnd() * 60, f1: 160, dur: 0.06, amp: 0.6 });
             noiseSweep(r, out, 0, 0.03, { from: 900, to: 600, q: 1, amp: 0.3, mode: 'lp' });
@@ -83,7 +83,7 @@ export const SFX = {
     }),
     // A stage done: a wooden pop and two happy chip notes climbing.
     'pumpkin.stage': fx({
-        dur: 0.9, variants: 3, voices: 4, level: -6, jitter: 0,
+        dur: 0.9, variants: 3, voices: 4, level: -10, jitter: 0,
         render(r, out, v) {
             thump(r, out, 0, { f0: 500, f1: 150, dur: 0.07, amp: 0.6 });
             const root = [72, 74, 76][v];
@@ -95,7 +95,7 @@ export const SFX = {
 
     // ---------------------------------------------------------------- scene 1: fire
     'pumpkin.ignite': fx({
-        dur: 0.6, variants: 5, voices: 5, level: -9,
+        dur: 0.6, variants: 5, voices: 5, level: -12,
         render(r, out) {
             noiseSweep(r, out, 0, 0.09, { from: 2500, to: 5000, q: 1.5, amp: 0.4, mode: 'hp', grain: 8 });
             noiseSweep(r, out, 0.06, 0.35, { from: 200, to: 900, q: 0.8, amp: 0.7, mode: 'lp', attack: 0.06, curve: 1.5 });
@@ -104,7 +104,7 @@ export const SFX = {
     }),
     // Stage of the lit pumpkin: a «whoomph» of flame catching.
     'pumpkin.lit': fx({
-        dur: 1.2, variants: 3, voices: 3, level: -6,
+        dur: 1.2, variants: 3, voices: 3, level: -14,
         render(r, out) {
             noiseSweep(r, out, 0, 0.9, { from: 180, to: 2200, q: 0.7, amp: 0.9, mode: 'lp', attack: 0.08, curve: 2 });
             thump(r, out, 0.02, { f0: 120, f1: 45, dur: 0.35, amp: 0.7 });
@@ -114,7 +114,7 @@ export const SFX = {
 
     // ---------------------------------------------------------------- scene 2: magic
     'pumpkin.enchant': fx({
-        dur: 0.9, variants: 5, voices: 5, level: -9,
+        dur: 0.9, variants: 5, voices: 5, level: -12,
         render(r, out) {
             const scale = [74, 77, 79, 81, 84, 86, 89];
             for (let k = 0; k < 3; k++) {
@@ -126,7 +126,7 @@ export const SFX = {
     }),
     // Stage of the enchanted pumpkin: a magic swell gliding up into a chime.
     'pumpkin.charged': fx({
-        dur: 1.8, variants: 3, voices: 3, level: -6,
+        dur: 1.8, variants: 3, voices: 3, level: -11,
         render(r, out, v) {
             const sr = r.sr;
             const n = Math.round(0.6 * sr);
@@ -148,14 +148,14 @@ export const SFX = {
 
     // ---------------------------------------------------------------- bonfire
     'bonfire.click': fx({
-        dur: 0.5, variants: 5, voices: 6, level: -9,
+        dur: 0.5, variants: 5, voices: 6, level: -12,
         render(r, out) {
             crackle(r, out, 0, 0.35, { rate: 60, amp: 0.5, tone: 1400 });
             tom(r, out, 0, { amp: 0.4, tone: 110 + r.rnd() * 40, send: 0.1 });
         },
     }),
     'bonfire.stage': fx({
-        dur: 1.8, variants: 3, voices: 2, level: -5,
+        dur: 1.8, variants: 3, voices: 2, level: -14,
         render(r, out) {
             noiseSweep(r, out, 0, 1.5, { from: 250, to: 2500, q: 0.6, amp: 1, mode: 'lp', attack: 0.15, curve: 1.6 });
             thump(r, out, 0, { f0: 90, f1: 40, dur: 0.6, amp: 0.8 });
@@ -163,25 +163,25 @@ export const SFX = {
         },
     }),
     'bonfire.explode': fx({
-        stereo: true, dur: 4.5, voices: 1, level: -2, duck: 3, jitter: 0,
+        stereo: true, dur: 4.5, voices: 1, level: -7, duck: 3, jitter: 0,
         render(r, out) {
             impact(r, out, 0, { amp: 1, dur: 3.5, low: 28 });
             noiseSweep(r, out, 0, 3.5, { from: 3000, to: 120, q: 0.6, amp: 0.8, mode: 'lp', curve: 1.3, send: 0.5 });
-            crackle(r, out, 0.2, 3.5, { rate: 50, amp: 0.4, tone: 2000, width: 1 });
-            crackle(r, out, 0.05, 1.2, { rate: 120, amp: 0.5, tone: 1200, width: 1 });
+            crackle(r, out, 0.2, 3.5, { rate: 50, amp: 0.25, tone: 2000, width: 1 });
+            crackle(r, out, 0.05, 1.2, { rate: 120, amp: 0.3, tone: 1200, width: 1 });
         },
     }),
 
     // ---------------------------------------------------------------- magic circle
     'circle.click': fx({
-        group: 'finale', dur: 0.5, variants: 5, voices: 6, level: -10,
+        group: 'finale', dur: 0.5, variants: 5, voices: 6, level: -13,
         render(r, out) {
             noiseSweep(r, out, 0, 0.16, { from: 2500 + r.rnd() * 1500, to: 3500, q: 3, amp: 0.5, grain: 30, pan: (r.rnd() - 0.5) * 0.5 });
             blip(r, out, 0, 110, 98, 0.3, { amp: 0.4, wave: 'square', send: 0.4 });
         },
     }),
     'circle.stage': fx({
-        group: 'finale', dur: 2.6, variants: 3, voices: 2, level: -5,
+        group: 'finale', dur: 2.6, variants: 3, voices: 2, level: -9,
         render(r, out, v) {
             const chords = [[49, 56, 61, 64], [50, 57, 62, 65], [52, 56, 61, 64]];
             choir(r, out, 0, 0.9, chords[v].map((m) => m + 12), { amp: 0.25, vowel: 'a', attack: 0.05, release: 0.9, send: 0.9 });
@@ -189,7 +189,7 @@ export const SFX = {
         },
     }),
     'circle.done': fx({
-        stereo: true, group: 'finale', dur: 4, voices: 1, level: -3, duck: 2.5, jitter: 0,
+        stereo: true, group: 'finale', dur: 4, voices: 1, level: -7, duck: 2.5, jitter: 0,
         render(r, out) {
             choir(r, out, 0, 2.2, [49, 56, 61, 64, 68, 73], { amp: 0.25, vowel: 'o', attack: 0.3, release: 1.2, send: 0.9 });
             for (let k = 0; k < 8; k++) heart(r, out, k * 0.25, { amp: 0.4 * (1 - k / 10), gap: 0.1 });
@@ -199,15 +199,15 @@ export const SFX = {
 
     // ---------------------------------------------------------------- flyers and ground targets
     'duck.quack': fx({
-        dur: 0.45, variants: 4, voices: 3, level: -8,
+        dur: 0.45, variants: 4, voices: 3, level: -18,
         render(r, out) {
             const m = 61 + r.rnd() * 4;
-            vox(r, out, 0, 0.13, m, { vowel: 'a', to: 'e', duty: 0.4, glide: -3, drive: 3, amp: 0.5, breath: 0.2 });
-            if (r.rnd() < 0.7) vox(r, out, 0.18, 0.12, m - 1, { vowel: 'a', to: 'e', duty: 0.4, glide: -4, drive: 3, amp: 0.45, breath: 0.2 });
+            vox(r, out, 0, 0.13, m, { vowel: 'a', to: 'e', duty: 0.4, glide: -3, drive: 1.8, amp: 0.5, breath: 0.1 });
+            if (r.rnd() < 0.7) vox(r, out, 0.18, 0.12, m - 1, { vowel: 'a', to: 'e', duty: 0.4, glide: -4, drive: 1.8, amp: 0.45, breath: 0.1 });
         },
     }),
     'chicken.cluck': fx({
-        dur: 0.8, variants: 4, voices: 3, level: -8,
+        dur: 0.8, variants: 4, voices: 3, level: -19,
         render(r, out) {
             const m = 68 + r.rnd() * 3;
             for (let k = 0; k < 3; k++) vox(r, out, k * 0.11, 0.05, m, { vowel: 'u', to: 'a', duty: 0.3, drive: 2, amp: 0.5 });
@@ -215,17 +215,17 @@ export const SFX = {
         },
     }),
     'bat.squeak': fx({
-        dur: 0.3, variants: 4, voices: 3, level: -12,
+        dur: 0.3, variants: 4, voices: 3, level: -19,
         render(r, out) {
             for (let k = 0; k < 3; k++) {
-                const f = 5500 + r.rnd() * 2500;
-                blip(r, out, k * 0.06, f, f * 0.7, 0.025, { amp: 0.4, send: 0.2 });
+                const f = 3200 + r.rnd() * 1600;
+                blip(r, out, k * 0.06, f, f * 0.75, 0.035, { amp: 0.4, send: 0.2 });
             }
         },
     }),
     // «Кар-кар»: a hoarse, buzzing «a», a narrow pulse overdriven with breath.
     'crow.caw': fx({
-        dur: 0.9, variants: 4, voices: 3, level: -14,
+        dur: 0.9, variants: 4, voices: 3, level: -18,
         render(r, out) {
             const m = 50 + r.rnd() * 4;
             const caws = 2 + Math.floor(r.rnd() * 2);
@@ -236,7 +236,7 @@ export const SFX = {
     }),
     // «У-у-у»: a ghost gliding up and sinking back, a wide slow vibrato over a breath of air.
     'ghost.wail': fx({
-        dur: 2.4, variants: 3, voices: 2, level: -12,
+        dur: 2.4, variants: 3, voices: 2, level: -15,
         render(r, out) {
             const m = 64 + r.rnd() * 5;
             theremin(r, out, [[0, m, 0.5], [0.5, m + 7, 0.6], [1.1, m - 2, 0.8]], { amp: 0.3, glide: 0.18, vib: 0.7, vibRate: 4.2, send: 0.8 });
@@ -244,14 +244,14 @@ export const SFX = {
         },
     }),
     'worm.squelch': fx({
-        dur: 0.5, variants: 4, voices: 3, level: -10,
+        dur: 0.5, variants: 4, voices: 3, level: -13,
         render(r, out) {
             noiseSweep(r, out, 0, 0.25, { from: 200, to: 900, q: 6, amp: 0.6, curve: 1 });
             bubbles(r, out, 0.05, 3, { spread: 0.25, low: 150, high: 400, amp: 0.4 });
         },
     }),
     'firefly.ding': fx({
-        dur: 0.9, variants: 4, voices: 3, level: -14,
+        dur: 0.9, variants: 4, voices: 3, level: -17,
         render(r, out) {
             const m = [93, 96, 98, 100][Math.floor(r.rnd() * 4)];
             bell(r, out, 0, m, { amp: 0.3, decay: 4, dur: 0.85, pan: (r.rnd() - 0.5) * 0.6 });
@@ -259,31 +259,31 @@ export const SFX = {
     }),
     // «Хе-хе-хе-хе»: syllables falling and speeding up, a nasal «e».
     'witch.cackle': fx({
-        dur: 1.6, variants: 2, voices: 1, level: -6,
+        dur: 1.6, variants: 2, voices: 1, level: -16,
         render(r, out) {
             let t = 0;
             for (let k = 0; k < 7; k++) {
                 const d = 0.11 - k * 0.006;
-                vox(r, out, t, d, 79 - k * 0.8 + r.rnd(), { vowel: 'e', to: 'a', duty: 0.2, drive: 3, amp: 0.45, glide: -2, breath: 0.3, send: 0.4 });
+                vox(r, out, t, d, 79 - k * 0.8 + r.rnd(), { vowel: 'e', to: 'a', duty: 0.2, drive: 1.8, amp: 0.45, glide: -2, breath: 0.2, send: 0.4 });
                 t += d + 0.04;
             }
         },
     }),
     'zombie.groan': fx({
-        dur: 1.8, variants: 3, voices: 2, level: -8,
+        dur: 1.8, variants: 3, voices: 2, level: -17,
         render(r, out) {
             vox(r, out, 0, 1.4, 38 + r.rnd() * 4, { vowel: 'u', to: 'o', duty: 0.15, glide: -3, drive: 4, amp: 0.5, breath: 0.25, send: 0.4 });
         },
     }),
     // RoadRunner far on the horizon: a quiet patter crossing.
     'runner.steps': fx({
-        dur: 1.6, variants: 2, voices: 1, level: -20,
+        dur: 1.6, variants: 2, voices: 1, level: -22,
         render(r, out) {
             steps(r, out, 0, 16, 0.085, { amp: 0.3, tone: 1200 });
         },
     }),
     'bush.rustle': fx({
-        dur: 0.6, variants: 4, voices: 3, level: -12,
+        dur: 0.6, variants: 4, voices: 3, level: -15,
         render(r, out) {
             noiseSweep(r, out, 0, 0.5, { from: 3000, to: 1800, q: 0.8, amp: 0.5, mode: 'hp', grain: 40, attack: 0.03, curve: 0.8 });
         },
@@ -291,22 +291,22 @@ export const SFX = {
 
     // ---------------------------------------------------------------- shots by the item in hand
     'shot.pistol': fx({
-        dur: 0.7, variants: 4, voices: 4, level: -5,
+        dur: 0.7, variants: 4, voices: 4, level: -4,
         render(r, out) {
-            noiseSweep(r, out, 0, 0.12, { from: 4000, to: 900, q: 0.7, amp: 1, mode: 'lp', curve: 3 });
+            noiseSweep(r, out, 0, 0.12, { from: 2800, to: 800, q: 0.7, amp: 0.9, mode: 'lp', curve: 3, attack: 0.004 });
             thump(r, out, 0, { f0: 180, f1: 50, dur: 0.15, amp: 0.9, send: 0.3 });
             noiseSweep(r, out, 0.02, 0.5, { from: 900, to: 300, q: 0.7, amp: 0.15, mode: 'lp', send: 0.6 });
         },
     }),
     'shot.candle': fx({
-        dur: 0.6, variants: 4, voices: 4, level: -7,
+        dur: 0.6, variants: 4, voices: 4, level: -2,
         render(r, out) {
             noiseSweep(r, out, 0, 0.35, { from: 300, to: 2500, q: 1, amp: 0.8, mode: 'lp', attack: 0.04, curve: 1.6, pan1: 0.3 });
             crackle(r, out, 0.05, 0.25, { rate: 50, amp: 0.3 });
         },
     }),
     'shot.book': fx({
-        dur: 0.9, variants: 4, voices: 4, level: -6,
+        dur: 0.9, variants: 4, voices: 4, level: -5,
         render(r, out) {
             const sr = r.sr;
             const n = Math.round(0.3 * sr);
@@ -322,14 +322,14 @@ export const SFX = {
     }),
     // Beer: a short burp and bubbles flying at the target.
     'shot.beer': fx({
-        dur: 0.8, variants: 4, voices: 3, level: -6,
+        dur: 0.8, variants: 4, voices: 3, level: -12,
         render(r, out) {
             vox(r, out, 0, 0.22 + r.rnd() * 0.1, 40 + r.rnd() * 5, { vowel: 'o', to: 'a', duty: 0.2, glide: -2, drive: 5, amp: 0.6, breath: 0.4 });
             bubbles(r, out, 0.15, 6, { spread: 0.35, amp: 0.25 });
         },
     }),
     'shot.redflame': fx({
-        dur: 0.6, variants: 4, voices: 4, level: -7,
+        dur: 0.6, variants: 4, voices: 4, level: -5,
         render(r, out) {
             noiseSweep(r, out, 0, 0.25, { from: 3000, to: 7000, q: 1, amp: 0.5, mode: 'hp', grain: 20 });
             blip(r, out, 0, 600, 1800, 0.25, { amp: 0.35, wave: 'pulse', send: 0.4 });
@@ -338,37 +338,30 @@ export const SFX = {
 
     // ---------------------------------------------------------------- hits and score
     'flyer.hit': fx({
-        dur: 0.3, variants: 4, voices: 4, level: -6,
+        dur: 0.3, variants: 4, voices: 4, level: -12,
         render(r, out) {
             thump(r, out, 0, { f0: 700, f1: 200, dur: 0.07, amp: 0.7 });
             noiseSweep(r, out, 0, 0.08, { from: 2000, to: 800, q: 1, amp: 0.5, curve: 2 });
         },
     }),
     'flyer.fall': fx({
-        dur: 1.1, variants: 3, voices: 3, level: -9,
+        dur: 1.1, variants: 3, voices: 3, level: -14,
         render(r, out) {
             blip(r, out, 0, 1600 + r.rnd() * 300, 280, 0.7, { amp: 0.25, wave: 'pulse', send: 0.2 });
             thump(r, out, 0.72, { f0: 160, f1: 60, dur: 0.15, amp: 0.7 });
             noiseSweep(r, out, 0.72, 0.15, { from: 900, to: 300, amp: 0.4, mode: 'lp' });
         },
     }),
-    'points': fx({
-        dur: 0.4, variants: 3, voices: 4, level: -12, jitter: 0, bus: 'ui',
-        render(r, out, v) {
-            const root = 84 + v * 2;
-            [0, 4, 7, 12].forEach((d, k) => chip(r, out, k * 0.04, 0.05, root + d, { duty: 0.5, amp: 0.25, send: 0.15 }));
-        },
-    }),
 
     // ---------------------------------------------------------------- walkers and the cursed tavern
     'walk.step': fx({
-        dur: 0.12, variants: 5, voices: 6, level: -22,
+        dur: 0.12, variants: 5, voices: 6, level: -24,
         render(r, out) {
             steps(r, out, 0, 1, 0, { amp: 0.4, tone: 600 + r.rnd() * 300 });
         },
     }),
     'clink.glass': fx({
-        dur: 1.2, variants: 4, voices: 3, level: -6,
+        dur: 1.2, variants: 4, voices: 3, level: -11,
         render(r, out) {
             const f = 1900 + r.rnd() * 400;
             partials(r, out, 0, f, [[1, 1, 7], [2.32, 0.6, 9], [4.25, 0.35, 12], [6.63, 0.2, 18]], { amp: 0.3, dur: 1.0, send: 0.3 });
@@ -378,7 +371,7 @@ export const SFX = {
     }),
     // «Ура!»: a small crowd gliding «u» → «a», each voice its own pitch.
     'clink.cheer': fx({
-        dur: 1.2, variants: 3, voices: 2, level: -7,
+        dur: 1.2, variants: 3, voices: 2, level: -13,
         render(r, out) {
             for (let k = 0; k < 5; k++) {
                 vox(r, out, r.rnd() * 0.08, 0.6 + r.rnd() * 0.25, 55 + r.rnd() * 12, { vowel: 'u', to: 'a', duty: 0.35, glide: 3 + r.rnd() * 2, drive: 1.5, amp: 0.25, pan: (r.rnd() - 0.5) * 1.2, breath: 0.2, send: 0.35 });
@@ -388,7 +381,7 @@ export const SFX = {
 
     // ---------------------------------------------------------------- voices
     'owl.hoot': fx({
-        dur: 1.5, variants: 2, voices: 1, level: -6,
+        dur: 1.5, variants: 2, voices: 1, level: -14,
         render(r, out) {
             for (const [t, d, m] of [[0, 0.3, 66], [0.42, 0.55, 65]]) {
                 const sr = r.sr;
@@ -407,26 +400,24 @@ export const SFX = {
             }
         },
     }),
-    // One syllable of the owl's beep-speech; the engine strings them under a line (speak).
+    // One syllable of the owl's muffled murmur; the engine strings them under a line (speak).
     'owl.babble': fx({
-        dur: 0.14, variants: 6, voices: 2, level: -12, bus: 'ui', jitter: 0.06,
+        dur: 0.2, variants: 6, voices: 2, level: -17, bus: 'ui', jitter: 0.03,
         render(r, out) {
-            const m = 74 + Math.floor(r.rnd() * 8);
-            vox(r, out, 0, 0.09 + r.rnd() * 0.03, m, { vowel: ['o', 'u', 'a'][Math.floor(r.rnd() * 3)], duty: 0.5, glide: (r.rnd() - 0.5) * 4, amp: 0.4, send: 0.1 });
+            murmur(r, out, 0, 0.13 + r.rnd() * 0.05, 64 + r.rnd() * 4, { glide: (r.rnd() - 0.5) * 1.5, cutoff: 1100, amp: 0.4 });
         },
     }),
     'franken.grumble': fx({
-        dur: 0.2, variants: 6, voices: 2, level: -9, bus: 'ui', jitter: 0.06,
+        dur: 0.26, variants: 6, voices: 2, level: -21, bus: 'ui', jitter: 0.03,
         render(r, out) {
-            const m = 40 + Math.floor(r.rnd() * 6);
-            vox(r, out, 0, 0.13 + r.rnd() * 0.05, m, { vowel: ['o', 'a', 'u'][Math.floor(r.rnd() * 3)], duty: 0.2, glide: (r.rnd() - 0.5) * 3, drive: 4, amp: 0.45, breath: 0.15, send: 0.1 });
+            murmur(r, out, 0, 0.17 + r.rnd() * 0.07, 40 + r.rnd() * 4, { glide: (r.rnd() - 0.5) * 1.5, cutoff: 520, growl: 0.8, breath: 0.08, amp: 0.45 });
         },
     }),
 
     // ---------------------------------------------------------------- finale stingers
     // Step 1: the circle flares, the ground shakes for T.rumble, a riser into the rising silhouette.
     'finale.wake': fx({
-        stereo: true, group: 'finale', dur: 4, voices: 1, level: -3, duck: 3, jitter: 0,
+        stereo: true, group: 'finale', dur: 4, voices: 1, level: -6, duck: 3, jitter: 0,
         render(r, out) {
             riser(r, out, 0, 2.4, { amp: 0.6, from: 120, to: 5000 });
             noiseSweep(r, out, 0, 3, { from: 60, to: 90, q: 0.7, amp: 1.2, mode: 'lp', attack: 0.3, curve: 0.7, grain: 6, send: 0.2 });
@@ -436,7 +427,7 @@ export const SFX = {
     }),
     // Step 2: one strike of lightning with thunder; the step plays three at T.strikes.
     'finale.strike': fx({
-        stereo: true, group: 'finale', dur: 3, variants: 3, voices: 3, level: -3, duck: 2, jitter: 0.03,
+        stereo: true, group: 'finale', dur: 3, variants: 3, voices: 3, level: -7, duck: 2, jitter: 0.03,
         render(r, out) {
             noiseSweep(r, out, 0, 0.18, { from: 8000, to: 2000, q: 0.6, amp: 1, mode: 'hp', curve: 2, grain: 80 });
             crackle(r, out, 0, 0.25, { rate: 300, amp: 0.8, tone: 3000, width: 0.8 });
@@ -445,7 +436,7 @@ export const SFX = {
     }),
     // Step 2, under FrankenPHP's reveal: a brass «ta-daa» that sags at the end — triumphant, and not quite.
     'finale.tada': fx({
-        stereo: true, group: 'finale', dur: 2.6, voices: 1, level: -3, duck: 2.2, jitter: 0,
+        stereo: true, group: 'finale', dur: 2.6, voices: 1, level: -6, duck: 2.2, jitter: 0,
         render(r, out) {
             for (const m of [60, 64, 67]) brass(r, out, 0, 0.14, m, { amp: 0.25, bright: 1.2 });
             for (const m of [65, 69, 72, 77]) brass(r, out, 0.2, 1.5, m, { amp: 0.25, bright: 1.1, sag: 1.6, vib: 0.25 });
@@ -455,7 +446,7 @@ export const SFX = {
     }),
     // Step 3: RoadRunner's run from the horizon down to the front, steps getting closer for T.run.
     'finale.run': fx({
-        stereo: true, group: 'finale', dur: 5, voices: 1, level: -6, jitter: 0,
+        stereo: true, group: 'finale', dur: 5, voices: 1, level: -9, jitter: 0,
         render(r, out) {
             steps(r, out, 0, 48, 0.098, { amp: 0.12, tone: 1100, crescendo: 6, accel: 0.999 });
             noiseSweep(r, out, 3.9, 0.8, { from: 600, to: 3000, q: 0.7, amp: 0.4, mode: 'lp', attack: 0.4, curve: 2 });
@@ -463,7 +454,7 @@ export const SFX = {
     }),
     // Step 3: «мип-мип» — two bright chirped tones, the second a fourth up; our own signal.
     'finale.meep': fx({
-        stereo: true, group: 'finale', dur: 0.8, voices: 1, level: -3, jitter: 0, duck: 0.8,
+        stereo: true, group: 'finale', dur: 0.8, voices: 1, level: -9, jitter: 0, duck: 0.8,
         render(r, out) {
             for (const [t, m] of [[0, 88], [0.2, 93]]) {
                 vox(r, out, t, 0.14, m, { vowel: 'i', duty: 0.3, glide: 1.5, drive: 2, amp: 0.4, send: 0.2 });
@@ -473,7 +464,7 @@ export const SFX = {
     }),
     // Step 4: the reveal fanfare — brass climbing into a bright choir chord with a bell.
     'finale.reveal': fx({
-        stereo: true, group: 'finale', dur: 4.5, voices: 1, level: -2, duck: 3.5, jitter: 0,
+        stereo: true, group: 'finale', dur: 4.5, voices: 1, level: -5, duck: 3.5, jitter: 0,
         render(r, out) {
             [60, 64, 67, 72].forEach((m, k) => brass(r, out, k * 0.12, 0.13, m, { amp: 0.22, bright: 1.2 }));
             for (const m of [72, 76, 79, 84]) brass(r, out, 0.5, 1.8, m, { amp: 0.18, bright: 1.3, vib: 0.18 });
@@ -485,7 +476,7 @@ export const SFX = {
     }),
     // Step 5: the owl flies off — wing beats moving right and away, one last hoot fading.
     'finale.owlAway': fx({
-        stereo: true, group: 'finale', dur: 3.5, voices: 1, level: -5, jitter: 0,
+        stereo: true, group: 'finale', dur: 3.5, voices: 1, level: -9, jitter: 0,
         render(r, out) {
             for (let k = 0; k < 10; k++) {
                 const t = k * 0.2;
@@ -504,7 +495,7 @@ export const SFX = {
         },
     }),
     'ui.join': fx({
-        dur: 1.4, voices: 1, level: -8, bus: 'ui', jitter: 0,
+        dur: 1.4, voices: 1, level: -10, bus: 'ui', jitter: 0,
         render(r, out) {
             [72, 76, 79, 84].forEach((m, k) => musicbox(r, out, k * 0.07, m + 12, { amp: 0.25, dur: 1.1 }));
             chip(r, out, 0.28, 0.4, 84, { duty: 0.125, amp: 0.15, decay: 5, send: 0.4 });
@@ -512,7 +503,7 @@ export const SFX = {
     }),
     // The scene is ready, waiting for the host: a two-note «ding-dong».
     'ui.ready': fx({
-        stereo: true, dur: 3, voices: 1, level: -6, bus: 'ui', jitter: 0,
+        stereo: true, dur: 3, voices: 1, level: -9, bus: 'ui', jitter: 0,
         render(r, out) {
             toll(r, out, 0, 72, { amp: 0.25, dur: 2.5 });
             toll(r, out, 0.5, 67, { amp: 0.25, dur: 2.5 });
@@ -520,7 +511,7 @@ export const SFX = {
     }),
     // The ritual is reset: a tape rewinding down.
     'ui.reset': fx({
-        dur: 1.4, voices: 1, level: -6, bus: 'ui', jitter: 0,
+        dur: 1.4, voices: 1, level: -9, bus: 'ui', jitter: 0,
         render(r, out) {
             blip(r, out, 0, 1500, 120, 0.9, { amp: 0.3, wave: 'square', send: 0.3 });
             noiseSweep(r, out, 0, 0.9, { from: 6000, to: 300, q: 2, amp: 0.3, grain: 40 });

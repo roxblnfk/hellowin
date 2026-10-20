@@ -39,18 +39,23 @@ export function chip(r, out, t, dur, midi, { duty = 0.25, amp = 0.2, pan = 0, se
     }
 }
 
-/** NES triangle bass: no volume control on the real chip, so only a short gate. */
+/**
+ * NES triangle bass: no volume control on the real chip, so only a short gate. The staircase rings at 32× the
+ * pitch — five octaves up, a whistle over the bass — so it is low-passed at a few harmonics: the grit of the steps
+ * stays in the low harmonics, the whistle goes.
+ */
 export function tri(r, out, t, dur, midi, { amp = 0.35, slide = 0, send = 0 } = {}) {
     const sr = r.sr;
     const i0 = r.at(t);
     const n = Math.round(dur * sr);
     const osc = new StepTriangle(sr, 0);
-    const g = Math.round(0.004 * sr);
+    const lp = new SVF(sr).set(clamp(6 * mtof(midi), 300, 2400), 0.5);
+    const g = Math.round(0.006 * sr);
     for (let i = 0; i < n + g; i++) {
         const s = i / sr;
         const m = midi + (slide ? slide * Math.exp(-s * 30) : 0);
         const e = Math.min(1, i / g) * (i < n ? 1 : 1 - (i - n) / g);
-        const v = osc.next(mtof(m)) * e * amp;
+        const v = lp.tick(osc.next(mtof(m))) * e * amp;
         out.put(i0 + i, v, v, send);
     }
 }
@@ -61,9 +66,11 @@ export function chipKick(r, out, t, { amp = 0.6 } = {}) {
     const i0 = r.at(t);
     const n = Math.round(0.18 * sr);
     const osc = new StepTriangle(sr, 0.75);
+    // The same staircase whistle as the bass, here sweeping down from ~10 kHz.
+    const lp = new SVF(sr).set(1600, 0.5);
     for (let i = 0; i < n; i++) {
         const s = i / sr;
-        const v = osc.next(55 + 260 * Math.exp(-s * 35)) * steps16(Math.exp(-s * 18)) * amp;
+        const v = lp.tick(osc.next(55 + 260 * Math.exp(-s * 35)) * steps16(Math.exp(-s * 18))) * amp;
         out.put(i0 + i, v, v);
     }
 }
@@ -574,6 +581,27 @@ export function vox(r, out, t, dur, midi, { amp = 0.2, vowel = 'a', to = null, d
         }
         const e = Math.min(1, s / 0.008) * Math.min(1, (n - i) / (0.02 * sr));
         const v = Math.tanh(y * drive) * e * amp;
+        out.put(i0 + i, v * pl, v * pr, send);
+    }
+}
+
+/**
+ * A murmured syllable for speech under a bubble: a sine with a little second harmonic (`growl` adds a soft
+ * overdrive), low-passed, in a smooth hump of an envelope — no edge to the attack, nothing bright to grate.
+ */
+export function murmur(r, out, t, dur, midi, { amp = 0.3, glide = 0, cutoff = 900, growl = 0, breath = 0.04, pan = 0, send = 0.15 } = {}) {
+    const sr = r.sr;
+    const i0 = r.at(t);
+    const n = Math.round(dur * sr);
+    const lp = new SVF(sr).set(cutoff, 0.6);
+    const [pl, pr] = panLR(pan);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+        const k = i / n;
+        ph += mtof(midi + glide * k) / sr;
+        let x = Math.sin(TAU * ph) + 0.3 * Math.sin(2 * TAU * ph) + breath * r.noise();
+        if (growl) x = Math.tanh(x * (1 + growl)) / Math.tanh(1 + growl);
+        const v = lp.tick(x) * Math.sin(Math.PI * k) ** 2 * amp;
         out.put(i0 + i, v * pl, v * pr, send);
     }
 }
