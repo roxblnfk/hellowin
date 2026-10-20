@@ -139,6 +139,86 @@ export const OWL = {
     hoot: frame({ rows: EYES.hoot, wide: PUFF, patches: TUFTS_UP }),
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// Flight (the finale's step 5: the owl leaves its branch). The body stays the perched drawing; the wings open out of
+// it, behind the body, from the shoulders. Frames are 53 × 22 with the anchor on the talons like the perched ones, so
+// the take-off starts exactly where the owl sat.
+
+const FLY_PAD_X = 20;
+const FLY_PAD_Y = 4;
+const FLY_W = 13 + FLY_PAD_X * 2;
+const FLY_H = 22;
+
+// The right wing (viewer's right) per pose, from the shoulder: leading edge out to the tip, then the trailing edge
+// back. The left wing mirrors it.
+const WING_POSES = {
+    half: [[0, -1], [6, -7], [9, -9], [10, -6], [7, 0], [4, 3], [0, 4]],
+    up: [[0, -1], [8, -8], [13, -12], [15, -11], [14, -6], [11, -1], [6, 3], [0, 4]],
+    mid: [[0, -1], [8, -3], [15, -3], [19, 0], [17, 2], [13, 4], [7, 6], [0, 4]],
+    down: [[0, -1], [7, 2], [12, 5], [14, 8], [10, 8.5], [6, 7.5], [2, 6], [0, 4]],
+};
+
+const inPolygon = (pts, x, y) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i];
+        const [xj, yj] = pts[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+};
+
+function flightFrame(pose, { crouch = 0 } = {}) {
+    const grid = Array.from({ length: FLY_H }, () => Array(FLY_W).fill('.'));
+    const top = FLY_PAD_Y + crouch;
+    const wings = Array.from({ length: FLY_H }, () => Array(FLY_W).fill('.'));
+    const sx = FLY_PAD_X + 11.5;
+    const sy = top + 9;
+    const pts = WING_POSES[pose];
+    const tip = Math.max(...pts.map(([x, y]) => Math.hypot(x, y)));
+    for (let y = 0; y < FLY_H; y++) {
+        for (let x = 0; x < FLY_W; x++) {
+            for (const m of [1, -1]) {
+                const dx = m * (x + 0.5 - (FLY_PAD_X + 6.5)) - 5;
+                const dy = y + 0.5 - sy;
+                if (!inPolygon(pts, dx, dy)) continue;
+                // Coverts near the body, barred dark primaries out at the tip, a light leading edge.
+                const t = Math.hypot(dx, dy) / tip;
+                const lead = !inPolygon(pts, dx, dy - 1.2);
+                wings[y][x] = lead ? 'L' : t > 0.62 ? ((x + y) % 3 === 0 ? 'L' : 'D') : 'M';
+            }
+        }
+    }
+    // Outline the wings, then lay the body over them.
+    for (let y = 0; y < FLY_H; y++) {
+        for (let x = 0; x < FLY_W; x++) {
+            if (wings[y][x] !== '.') grid[y][x] = wings[y][x];
+            else if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (wings[y + b]?.[x + a] ?? '.') !== '.')) grid[y][x] = 'O';
+        }
+    }
+    const legs = crouch ? ['...aa...aa...'] : ['....a...a....', '...aa...aa...'];
+    [...BASE.slice(0, 16), ...legs].forEach((row, r) => [...row].forEach((ch, c) => {
+        if (ch !== '.' && grid[top + r]) grid[top + r][FLY_PAD_X + c] = ch;
+    }));
+    return {
+        w: FLY_W,
+        h: FLY_H,
+        rows: grid.map((r) => r.join('')),
+        legend: LEGEND,
+        anchor: { x: FLY_PAD_X + 6, y: FLY_H - 1 },
+    };
+}
+
+/**
+ * The owl taking off and flying away, front view, 53 × 22, anchor (26, 21) on the talons — the perch point, as for
+ * OWL. takeOff: crouched on the branch with the wings half open (~150 ms, then lift off); fly: 4 wingbeat frames
+ * [up, mid, down, mid] (~90 ms each), talons hanging. Works with glowing() at night.
+ */
+export const OWL_FLIGHT = {
+    takeOff: flightFrame('half', { crouch: 1 }),
+    fly: [flightFrame('up'), flightFrame('mid'), flightFrame('down'), flightFrame('mid')],
+};
+
 /** The same frame with glowing eyes, for the night scenes. */
 export function glowing(sprite) {
     return { ...sprite, legend: NIGHT_LEGEND };

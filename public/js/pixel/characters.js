@@ -121,8 +121,8 @@ function stroke(g, [x1, y1], [x2, y2], color) {
     }
 }
 
-// Effects (muzzle flash, smoke) glow without an outline.
-const isFx = (key) => key === 'fxFlash' || key === 'fxCore' || key === 'fxSmoke';
+// Effects (muzzle flash, smoke, the ritual's palm lights) glow without an outline.
+const isFx = (key) => key === 'fxFlash' || key === 'fxCore' || key === 'fxSmoke' || key === 'fxPalm' || key === 'fxPalmCore';
 
 function outlined(g) {
     const out = g.slice();
@@ -184,6 +184,10 @@ function rig(dir, pose, frame) {
     } else if (pose === 'shoot') {
         // The recoil frame rocks the hips back, away from the shot.
         sx = side ? -frame : dir === 'front' ? frame : -frame;
+    } else if (pose === 'ritual') {
+        // Swaying from side to side over planted feet: left, centre, right, centre.
+        sx = [-1, 0, 1, 0][frame];
+        sway = frame & 1;
     }
 
     const top = TORSO_TOP + bob;
@@ -230,6 +234,20 @@ function rig(dir, pose, frame) {
             r.aim = aim;
             r.itemArm = 0;
         }
+    }
+    if (pose === 'ritual') {
+        // Arms raised overhead, a little higher on the centre frames. From the front they spread in a V clear of the
+        // head and the hat brims; from the side they reach up along the front of the face, past the eyes.
+        const up = -23 - (frame & 1);
+        r.arms = side
+            ? [
+                { sh: [sx, sh], elbow: [3 + sx, -13], hand: [4 + sx, up - 1], far: true },
+                { sh: [-1 + sx, sh], elbow: [4 + sx, -13], hand: [6 + sx, up], far: false },
+            ]
+            : [
+                { sh: [-7 + sx, sh], hand: [-12 + sx, up], far: false },
+                { sh: [5 + sx, sh], hand: [10 + sx, up], far: false },
+            ];
     }
     return r;
 }
@@ -915,7 +933,8 @@ function compose(look, dir, pose, frame, item) {
     const body = BODIES[look.body];
     const r = rig(dir, pose, frame);
     const shoot = pose === 'shoot';
-    const holding = !shoot && ITEM_DEFS[item];
+    const ritual = pose === 'ritual';
+    const holding = !shoot && !ritual && ITEM_DEFS[item];
     const cloak = CLOAKS[look.cloak];
     const out = blank();
     const layer = (paint) => {
@@ -952,8 +971,17 @@ function compose(look, dir, pose, frame, item) {
         });
         layer((g) => drawArm(g, body, { ...arm, far: false }));
     }
+    if (ritual) {
+        // A small light over each palm, in the eye colour; on odd frames a spark flickers off it.
+        r.arms.forEach(({ hand: [hx, hy] }, i) => {
+            put(fx, hx, hy - 2, 'fxPalmCore');
+            put(fx, hx + 1, hy - 2, 'fxPalmCore');
+            [[-1, -2], [2, -2], [0, -3], [1, -3], [0, -1], [1, -1]].forEach(([dx, dy]) => put(fx, hx + dx, hy + dy, 'fxPalm'));
+            if (frame & 1) put(fx, i ? hx + 2 : hx - 1, hy - 4, 'fxPalm');
+        });
+    }
     over(out, fx);
-    return out;
+    return ritual ? { out, glow: fx } : out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1014,6 +1042,7 @@ export const POSES = {
     fidget: { frames: 2, ms: 450 },
     walk: { frames: 4, ms: 150 },
     shoot: { frames: 2, ms: 180 },
+    ritual: { frames: 4, ms: 380 },
 };
 
 /** Canvas size shared by every frame and the anchor inside it (bottom centre, between the feet). */
@@ -1031,9 +1060,32 @@ function makeCanvas() {
 
 const frameCache = new Map();
 
+const mixWhite = (c, t) => [16, 8, 0].reduce((acc, sh) => {
+    const v = (c >> sh) & 0xff;
+    return acc | (Math.round(v + (255 - v) * t) << sh);
+}, 0);
+
+function paintGrid(grid, colorOf) {
+    const canvas = makeCanvas();
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(W, H);
+    grid.forEach((k, i) => {
+        if (!k) return;
+        const color = colorOf(k);
+        if (color === undefined) return;
+        img.data[i * 4] = (color >> 16) & 0xff;
+        img.data[i * 4 + 1] = (color >> 8) & 0xff;
+        img.data[i * 4 + 2] = color & 0xff;
+        img.data[i * 4 + 3] = 255;
+    });
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+}
+
 /**
  * One composed frame, cached by its arguments. Unknown dir/pose fall back to front/idle, frame wraps around the pose,
- * an unknown item is no item. anchor — canvas pixels.
+ * an unknown item is no item. anchor — canvas pixels. The ritual pose ignores the item and adds `glow`: a canvas of
+ * the same size with only the palm lights, to draw unlit over the relit frame (the lights are in `canvas` too).
  */
 export function characterFrame(look, { dir, pose, frame = 0, item = null } = {}) {
     const full = normalizeLook(look);
@@ -1046,22 +1098,13 @@ export function characterFrame(look, { dir, pose, frame = 0, item = null } = {})
     const cached = frameCache.get(key);
     if (cached) return cached;
 
-    const grid = compose(full, d, p, f, it);
+    const composed = compose(full, d, p, f, it);
+    const grid = p === 'ritual' ? composed.out : composed;
     const eye = PALETTE[EYES.find((e) => e.id === full.eyes).key];
-    const canvas = makeCanvas();
-    const ctx = canvas.getContext('2d');
-    const img = ctx.createImageData(W, H);
-    grid.forEach((k, i) => {
-        if (!k) return;
-        const color = k === 'eye' ? eye : FX_COLORS[k] ?? PALETTE[k];
-        if (color === undefined) return;
-        img.data[i * 4] = (color >> 16) & 0xff;
-        img.data[i * 4 + 1] = (color >> 8) & 0xff;
-        img.data[i * 4 + 2] = color & 0xff;
-        img.data[i * 4 + 3] = 255;
-    });
-    ctx.putImageData(img, 0, 0);
-    const result = { canvas, anchor: { x: AX, y: AY } };
+    const palm = { fxPalm: eye, fxPalmCore: mixWhite(eye, 0.6) };
+    const colorOf = (k) => (k === 'eye' ? eye : palm[k] ?? FX_COLORS[k] ?? PALETTE[k]);
+    const result = { canvas: paintGrid(grid, colorOf), anchor: { x: AX, y: AY } };
+    if (p === 'ritual') result.glow = paintGrid(composed.glow, colorOf);
     frameCache.set(key, result);
     return result;
 }

@@ -49,12 +49,15 @@ const GREENISH = { l: 'eyeGreen', o: 'eerieDark', d: 'eerieDeep', f: 'leafShine'
 const MAGIC = {
     green: { w: 'magicCore', s: 'eerieHot', l: 'eyeGreen', o: 'eerieDark', d: 'eerieDeep', f: 'leafShine' },
     violet: { w: 'violetHot', s: 'eyeViolet', l: 'violetGlow', o: 'violet', d: 'violetDark', f: 'violetLight' },
+    // The cursed world after the finale: FrankenPHP's lime.
+    franken: { w: 'frankenGlowCore', s: 'frankenGlowHot', l: 'frankenGlow', o: 'frankenGlowDark', d: 'frankenGlowDeep', f: 'frankenGlowHot' },
 };
 // Fire chars core → edge: w s l d D, plus smoke g G. The same flames burn warm, green or violet.
 const FIRE = {
     warm: { '.': null, w: 'flameCore', s: 'pumpkinShine', l: 'pumpkinLight', d: 'pumpkinDark', D: 'pumpkinDeep', g: 'grayLight', G: 'gray' },
     green: { '.': null, w: 'magicCore', s: 'eyeGreen', l: 'eerieMid', d: 'eerieDark', D: 'eerieDeep', g: 'ecto', G: 'eerieDark' },
     violet: { '.': null, w: 'violetHot', s: 'eyeViolet', l: 'violetGlow', d: 'violet', D: 'violetDark', g: 'violetLight', G: 'violet' },
+    franken: { '.': null, w: 'frankenGlowCore', s: 'frankenGlowHot', l: 'frankenGlow', d: 'frankenGlowDark', D: 'frankenGlowDeep', g: 'frankenGlowHot', G: 'frankenGlowDark' },
 };
 
 // A pumpkin is assembled per size from a generated body (lobes, skin ramp, silhouette tweak) and hand-drawn masks
@@ -429,7 +432,8 @@ const layersCache = new Map();
  * Stages 5+ add (null where a stage has none): layers.fire — flames and smoke over everything, light; layers.aura —
  * magic light around the silhouette, under everything; glowFrames[3], fireFrames[4], auraFrames[3] to animate them;
  * the stem slot holds the stage-8 cap, named in `cap`. From stage 7 the sprite is padded (LIT), so w×h grow; the
- * anchor stays at the foot. tone 'green' | 'violet' colours the magic of stages 9+ (violet: the blood moon).
+ * anchor stays at the foot. tone 'green' | 'violet' | 'franken' colours the magic of stages 9+ (violet: the blood moon,
+ * franken: the cursed world's lime).
  */
 export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
     const def = PUMPKIN_SIZES[size] ?? PUMPKIN_SIZES.m;

@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — финал</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px; background: #2a2630; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cell span { font-size: 11px; color: #ccc; }
+        .swatch { width: 120px; height: 28px; display: flex; align-items: flex-end; padding: 2px 4px; font-size: 10px; color: #000; }
+    </style>
+</head>
+<!--
+  Art for the finale: FrankenPHP, the bird-like silhouette, RoadRunner, the effects, the ritual pose, the owl's flight,
+  the cursed-world pumpkins and a mock of the finale steps. Query: ?t=ms freezes the clock (the mock steps loop, so a
+  frozen t picks a moment of each), ?zoom=N scales the sheets (default 3), ?only=id,id shows only those sections
+  (mock, mock1x, franken, silhouette, runner, fx, ritual, owl, pumpkins, palette).
+  Light sources (FINALE_EMISSIVE, plus night.js EMISSIVE) are baked unlit here, as the scene will once it adds them.
+-->
+<body>
+<h2>Финал (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,mock1x,franken,silhouette,runner,fx,ritual,owl,pumpkins,palette)</h2>
+<div id="out"></div>
+<script type="module">
+    import { PALETTE } from '../js/pixel/palette.js';
+    import { DECOR, PUMPKIN_SHADOW, bake, pumpkinLayers, seedOf } from '../js/pixel/sprites.js';
+    import { ASH } from '../js/pixel/bonfire.js';
+    import { EMISSIVE, LIT_PALETTE, NIGHT, halo, paintSky, relightCanvas } from '../js/pixel/night.js';
+    import { characterFrame, randomLook } from '../js/pixel/characters.js';
+    import { OWL, OWL_FLIGHT, glowing } from '../js/pixel/owl.js';
+    import { FRANKEN, SILHOUETTE, RUNNER, FX, FINALE_EMISSIVE, frankenHalo } from '../js/pixel/finale.js';
+
+    const params = new URLSearchParams(location.search);
+    const frozen = params.has('t') ? Number(params.get('t')) : null;
+    const zoom = Math.max(1, Math.round(Number(params.get('zoom')) || 3));
+    const only = params.get('only')?.split(',');
+    const out = document.getElementById('out');
+    const now = () => frozen ?? performance.now();
+    const css = (c) => `#${c.toString(16).padStart(6, '0')}`;
+    const animated = [];
+
+    function section(id, title, items, bg = '#2a2630') {
+        if (only && !only.includes(id)) return;
+        const h = document.createElement('h2');
+        h.textContent = title;
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.background = bg;
+        row.append(...items());
+        out.append(h, row);
+    }
+
+    function cell(w, h, scale, draw, label) {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        c.style.width = `${w * scale}px`;
+        c.style.height = `${h * scale}px`;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const paint = (t) => {
+            ctx.clearRect(0, 0, w, h);
+            draw(ctx, t);
+        };
+        paint(now());
+        animated.push(paint);
+        const box = document.createElement('div');
+        box.className = 'cell';
+        box.append(c);
+        if (label) {
+            const s = document.createElement('span');
+            s.textContent = label;
+            box.append(s);
+        }
+        return box;
+    }
+
+    // bakeLit with the finale's light sources kept unlit too.
+    const UNLIT = new Set([...EMISSIVE, ...FINALE_EMISSIVE]);
+    const baked = new WeakMap();
+    function bakeFinale(sprite, lighting = 'day') {
+        const key = lighting;
+        if (!baked.has(sprite)) baked.set(sprite, new Map());
+        const per = baked.get(sprite);
+        if (per.has(key)) return per.get(key);
+        const c = document.createElement('canvas');
+        c.width = sprite.w;
+        c.height = sprite.h;
+        const ctx = c.getContext('2d');
+        const img = ctx.createImageData(sprite.w, sprite.h);
+        for (let y = 0; y < sprite.h; y++) {
+            for (let x = 0; x < sprite.w; x++) {
+                const k = sprite.legend[sprite.rows[y][x]];
+                if (!k) continue;
+                const color = UNLIT.has(k) || lighting === 'day' ? PALETTE[k] : LIT_PALETTE[lighting][k];
+                const i = (y * sprite.w + x) * 4;
+                img.data[i] = (color >> 16) & 255;
+                img.data[i + 1] = (color >> 8) & 255;
+                img.data[i + 2] = color & 255;
+                img.data[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        per.set(key, c);
+        return c;
+    }
+    const light = (sprite) => bakeFinale(sprite, 'day');
+    const frameAt = (t, n, ms) => Math.floor(t / ms) % n;
+    const stamp = (ctx, canvas, def, x, y) => ctx.drawImage(canvas, Math.round(x - def.anchor.x), Math.round(y - def.anchor.y));
+    const additive = (ctx, canvas, def, x, y, alpha) => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha;
+        stamp(ctx, canvas, def, x, y);
+        ctx.restore();
+    };
+    const mirrored = (ctx, canvas, def, x, y) => {
+        ctx.save();
+        ctx.translate(Math.round(x), 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(canvas, Math.round(-(def.w - def.anchor.x)), Math.round(y - def.anchor.y));
+        ctx.restore();
+    };
+    const BG = { blood: css(LIT_PALETTE.blood.soil), night: css(LIT_PALETTE.night.soil) };
+    const looks = Array.from({ length: 6 }, (_, i) => randomLook(((s) => () => ((s = (s * 16807) % 2147483647) / 2147483647))(41 + i * 13)));
+
+    // FrankenPHP's own clock: breathing, a spark burst every ~2.4 s.
+    function frankenAt(t) {
+        const s = t % 2400;
+        if (s > 2000 && s < 2270) return FRANKEN.spark[Math.floor((s - 2000) / 90)];
+        return FRANKEN.idle[frameAt(t, 2, 700)];
+    }
+
+    // ------------------------------------------------------------------ mock of the finale steps
+    const MW = 320;
+    const MH = 180;
+    const HORIZON = 62;
+    const CENTRE = { x: 166, y: 124 };
+    const RING = [
+        [-70, -18, 'm', 'pumpkin-1'], [-38, -30, 's', 'pumpkin-2'], [6, -34, 's', 'pumpkin-3'], [44, -28, 'm', 'pumpkin-5'],
+        [78, -12, 's', 'pumpkin-6'], [96, 14, 'l', 'pumpkin-7'], [60, 38, 'm', 'pumpkin-8'], [14, 46, 'l', 'pumpkin-10'],
+        [-34, 44, 'm', 'pumpkin-11'], [-80, 26, 'l', 'pumpkin-13'], [-100, 0, 's', 'pumpkin-14'],
+    ];
+    const TREE_AT = { x: 34, y: 118 };
+    // The closed circle pulses between its own red and a dark red.
+    const DIM_CIRCLE = { ...ASH.circle[7], legend: { ...ASH.circle[7].legend, r: 'runeDark' } };
+    const glowCache = new WeakMap();
+    const lit = (s) => glowCache.get(s) ?? glowCache.set(s, glowing(s)).get(s);
+    const PERCH = { x: TREE_AT.x - DECOR.tree.anchor.x + DECOR.tree.perch[0], y: TREE_AT.y - DECOR.tree.anchor.y + DECOR.tree.perch[1] };
+
+    function lawn() {
+        const c = document.createElement('canvas');
+        c.width = MW;
+        c.height = MH;
+        const ctx = c.getContext('2d');
+        let seed = 9;
+        const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        for (let x = 0; x < MW; x += DECOR.hills.w) ctx.drawImage(bake(DECOR.hills), x, HORIZON - DECOR.hills.h);
+        for (let y = HORIZON; y < MH; y++) {
+            for (let x = 0; x < MW; x++) {
+                const d = Math.hypot((x - CENTRE.x) / 132, (y - CENTRE.y + 4) / 52);
+                let k;
+                if (d < 0.9 || (d < 1 && (x + y) % 2 === 0)) {
+                    const lane = ((((x - CENTRE.x) / (y - HORIZON + 30)) * 9) % 1 + 1) % 1;
+                    k = lane < 0.2 ? 'soilDark' : lane < 0.3 ? 'soilLight' : 'soil';
+                } else {
+                    const n = r();
+                    k = n < 0.06 ? 'leafLight' : n < 0.18 ? 'leafDark' : 'leaf';
+                }
+                ctx.fillStyle = css(PALETTE[k]);
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+        stamp(ctx, bake(DECOR.tree), DECOR.tree, TREE_AT.x, TREE_AT.y);
+        return c;
+    }
+    const LAWN = lawn();
+    const GROUND = { blood: relightCanvas(LAWN, 'blood'), night: relightCanvas(LAWN, 'night') };
+
+    // Walkers stand around the circle in step 0–1 and flee to the edges from step 2.
+    const AROUND = [[-58, 8], [58, 8], [-34, 30], [34, 30], [0, 38], [-74, -10]];
+    const EDGES = [[-140, 40], [140, 36], [-120, 54], [124, 52], [40, 56], [-150, 0]];
+    function walker(ctx, i, x, y, lighting, pose, t) {
+        const dx = CENTRE.x - x;
+        const dir = Math.abs(dx) < 20 ? 'back' : 'side';
+        const f = characterFrame(looks[i], { dir, pose, frame: frameAt(t + i * 170, pose === 'ritual' ? 4 : 2, pose === 'ritual' ? 380 : 600) });
+        const lit = relightCanvas(f.canvas, lighting);
+        const draw = (canvas) => {
+            if (dir === 'side' && dx < 0) {
+                ctx.save();
+                ctx.translate(Math.round(x), 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(canvas, -f.anchor.x, Math.round(y - f.anchor.y));
+                ctx.restore();
+            } else {
+                ctx.drawImage(canvas, Math.round(x - f.anchor.x), Math.round(y - f.anchor.y));
+            }
+        };
+        draw(lit);
+        if (f.glow) draw(f.glow);
+    }
+
+    function pumpkin(ctx, i, x, y, lighting, tone, float, t) {
+        const [, , size, id] = RING[i];
+        const L = pumpkinLayers(11, size, seedOf(id), tone);
+        if (float > 0) {
+            const sh = PUMPKIN_SHADOW[size][Math.min(2, Math.floor(float / 3))];
+            ctx.globalAlpha = 0.5;
+            stamp(ctx, bake(sh), sh, x, y - 1);
+            ctx.globalAlpha = 1;
+        }
+        const h = tone === 'franken' ? frankenHalo(size === 'l' ? 16 : size === 'm' ? 13 : 10, size === 's' ? 4 : 5) : halo(size === 'l' ? 16 : 13, 5, 'violet');
+        additive(ctx, light(h), h, x, y, 0.4);
+        const at = (list, ms) => list[frameAt(t + i * 97, list.length, ms)];
+        const yy = y - float;
+        if (L.auraFrames) stamp(ctx, light(at(L.auraFrames, 160)), L, x, yy);
+        stamp(ctx, bakeFinale(L.layers.back, lighting), L, x, yy);
+        if (L.glowFrames) stamp(ctx, light(at(L.glowFrames, 120)), L, x, yy);
+        stamp(ctx, bakeFinale(L.layers.body, lighting), L, x, yy);
+        stamp(ctx, bakeFinale(L.layers.rim, lighting), L, x, yy);
+        if (L.layers.stem) stamp(ctx, bakeFinale(L.layers.stem, lighting), L, x, yy);
+        if (L.fireFrames) stamp(ctx, light(at(L.fireFrames, 110)), L, x, yy);
+    }
+
+    // step: 0 circle & ritual, 1 awakening, 2 lightning → FrankenPHP, 3 meep-meep, 5 cursed world. Each loops.
+    const LOOPS = { 0: 3000, 1: 5000, 2: 5000, 3: 6000, 5: 6000 };
+    function mockStep(step) {
+        return (ctx, t0) => {
+            const t = t0 % LOOPS[step];
+            const strikes = step === 2 && t < 1200;
+            const lighting = step <= 1 || strikes ? 'blood' : 'night';
+            paintSky(ctx, MW, HORIZON + 1, lighting, { seed: 5 });
+            const [moon, ring] = lighting === 'blood' ? [NIGHT.bloodMoon, NIGHT.bloodMoonHalo] : [NIGHT.moon, NIGHT.moonHalo];
+            stamp(ctx, bake(ring), ring, 250, 22);
+            stamp(ctx, bake(moon), moon, 250, 22);
+            ctx.drawImage(GROUND[lighting], 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h);
+
+            // RoadRunner on the horizon: step 3 runs in, step 5 runs back out and keeps running along it.
+            if (step === 5) {
+                const x = ((t / 6000) * (MW + 40)) - 20;
+                stamp(ctx, light(RUNNER.far[frameAt(t, 4, 100)]), RUNNER.far[0], x, HORIZON + 1);
+            }
+
+            const items = [];
+            const pit = ASH.pit;
+            items.push({ y: CENTRE.y - 6, draw: () => {
+                stamp(ctx, bakeFinale(pit, lighting), pit, CENTRE.x, CENTRE.y);
+                const circle = ASH.circle[7];
+                if (step === 0 || step === 1 || step === 2 || frameAt(t, 2, 600)) stamp(ctx, light(circle), circle, CENTRE.x, CENTRE.y);
+                else stamp(ctx, light(DIM_CIRCLE), circle, CENTRE.x, CENTRE.y);
+                if (step === 1 && t < 270) {
+                    const fl = FX.flash[Math.floor(t / 90)];
+                    stamp(ctx, light(fl), fl, CENTRE.x, CENTRE.y);
+                }
+            } });
+
+            // Pumpkins: floating (0), circling the circle (1), falling (2), lying (3), floating green (5).
+            RING.forEach(([dx, dy], i) => {
+                let x = CENTRE.x + dx;
+                let y = CENTRE.y + dy;
+                let float = 4 + Math.round(2 * Math.sin(t / 420 + i));
+                if (step === 1) {
+                    const a = (i / RING.length) * Math.PI * 2 + t / 900;
+                    const pull = Math.min(1, t / 1500);
+                    x = x + (CENTRE.x + Math.cos(a) * 84 - x) * pull;
+                    y = y + (CENTRE.y + 6 + Math.sin(a) * 30 - y) * pull;
+                    float = 10 + Math.round(3 * Math.sin(t / 200 + i));
+                } else if (step === 2) {
+                    float = strikes ? float : Math.max(0, Math.round(float * (1 - (t - 1200) / 300)));
+                } else if (step === 3) {
+                    float = 0;
+                }
+                const tone = step === 5 ? 'franken' : 'violet';
+                items.push({ y, draw: () => pumpkin(ctx, i, x, y, lighting, tone, float, t) });
+            });
+
+            // Walkers.
+            const ritual = step <= 1 || strikes;
+            (ritual ? AROUND : EDGES).forEach(([dx, dy], i) => {
+                const x = CENTRE.x + dx;
+                const y = CENTRE.y + dy;
+                items.push({ y, draw: () => walker(ctx, i, Math.max(8, Math.min(MW - 8, x)), y, lighting, ritual ? 'ritual' : 'idle', t) });
+            });
+
+            // The figure in the middle.
+            items.push({ y: CENTRE.y, draw: () => {
+                if (step === 0) return;
+                if (step === 1) {
+                    const col = FX.column[frameAt(t, 4, 90)];
+                    if (t > 180) additive(ctx, light(col), col, CENTRE.x, CENTRE.y + 2, 0.55);
+                    const rise = t < 600 ? null : t < 2200 ? SILHOUETTE.rise[Math.min(3, Math.floor((t - 600) / 400))] : SILHOUETTE.idle[frameAt(t, 2, 500)];
+                    const cloud = FX.smoke.cloud[frameAt(t, 4, 220)];
+                    stamp(ctx, bakeFinale(cloud, 'blood'), cloud, CENTRE.x, CENTRE.y + 4);
+                    if (rise) stamp(ctx, light(rise), rise, CENTRE.x, CENTRE.y);
+                    const front = FX.smoke.cloud[(frameAt(t, 4, 220) + 2) % 4];
+                    ctx.globalAlpha = 0.85;
+                    stamp(ctx, bakeFinale(front, 'blood'), front, CENTRE.x, CENTRE.y + 10);
+                    ctx.globalAlpha = 1;
+                    return;
+                }
+                if (step === 2) {
+                    let fig;
+                    if (t < 1200) fig = SILHOUETTE.idle[frameAt(t, 2, 500)];
+                    else if (t < 1650) fig = SILHOUETTE.reveal[Math.floor((t - 1200) / 150)];
+                    else fig = frankenAt(t);
+                    stamp(ctx, bakeFinale(fig, lighting), fig, CENTRE.x, CENTRE.y);
+                    if (t < 1200) {
+                        const cloud = FX.smoke.cloud[frameAt(t, 4, 220)];
+                        stamp(ctx, bakeFinale(cloud, 'blood'), cloud, CENTRE.x, CENTRE.y + 10);
+                    }
+                    return;
+                }
+                const fig = step === 5 ? FRANKEN.talk[frameAt(t, 2, 180) + (t % 3000 > 2400 ? 1 : 0)] : frankenAt(t);
+                stamp(ctx, bakeFinale(fig, lighting), fig, CENTRE.x, CENTRE.y);
+            } });
+
+            // RoadRunner coming in on step 3: along the horizon, then down to the front, growing.
+            if (step === 3) {
+                items.push({ y: 999, draw: () => {
+                    if (t < 1500) {
+                        stamp(ctx, light(RUNNER.far[frameAt(t, 4, 100)]), RUNNER.far[0], 20 + (t / 1500) * 140, HORIZON + 1);
+                        return;
+                    }
+                    const p = Math.min(1, (t - 1500) / 2500);
+                    const size = p < 0.15 ? 's' : p < 0.4 ? 'm' : p < 0.7 ? 'l' : 'xl';
+                    const x = 160 + p * 70;
+                    const y = HORIZON + 4 + p * (MH - 12 - HORIZON - 4);
+                    const set = RUNNER[size];
+                    const fr = t < 4000 ? set.run[frameAt(t, 4, 70)] : t < 4500 ? set.stop : set.meep;
+                    stamp(ctx, bakeFinale(fr, lighting), fr, x, y);
+                } });
+            }
+
+            // The owl: perched, then on step 5 it lifts off and flies out over the top left.
+            items.push({ y: 1000, draw: () => {
+                const g = (s) => (lighting === 'day' ? s : lit(s));
+                if (step !== 5 || t < 1000) {
+                    const s = OWL.idle[frameAt(t, 2, 700)];
+                    stamp(ctx, bakeFinale(g(s), lighting), s, PERCH.x, PERCH.y);
+                    return;
+                }
+                const f = t < 1250 ? OWL_FLIGHT.takeOff : OWL_FLIGHT.fly[frameAt(t, 4, 90)];
+                const k = Math.max(0, (t - 1250) / 2500);
+                stamp(ctx, bakeFinale(g(f), lighting), f, PERCH.x - k * 90, PERCH.y - k * 110 - (k > 0 ? 2 : 0));
+            } });
+
+            // Creeping smoke after the lightning.
+            if ((step === 2 && t > 1300) || step === 3) {
+                items.push({ y: CENTRE.y + 2, draw: () => {
+                    [[-60, 6, 0], [10, 10, 2], [70, 2, 1], [-20, 22, 3]].forEach(([dx, dy, ph]) => {
+                        const s = FX.smoke.creep[(frameAt(t, 4, 300) + ph) % 4];
+                        ctx.globalAlpha = 0.8;
+                        stamp(ctx, bakeFinale(s, lighting), s, CENTRE.x + dx, CENTRE.y + dy);
+                        ctx.globalAlpha = 1;
+                    });
+                } });
+            }
+
+            items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+
+            // Lightning on top of everything, with a white flash of the whole frame on each strike.
+            if (strikes) {
+                for (let k = 0; k < 3; k++) {
+                    const s = t - k * 380;
+                    if (s < 0 || s >= 180) continue;
+                    const f = Math.floor(s / 60);
+                    const bolt = FX.lightning[k][f];
+                    stamp(ctx, light(bolt), bolt, CENTRE.x + (k - 1) * 3, CENTRE.y - 52);
+                    if (f === 0) {
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.fillStyle = 'rgba(160, 170, 255, 0.25)';
+                        ctx.fillRect(0, 0, MW, MH);
+                        ctx.globalCompositeOperation = 'source-over';
+                    }
+                }
+            }
+        };
+    }
+    const STEPS = [
+        [0, 'шаг 0 — круг замкнут, ритуальная поза, кровавая луна'],
+        [1, 'шаг 1 — вспышка круга, красный столб, силуэт-«птица» в дыму, тыквы кружат'],
+        [2, 'шаг 2 — три молнии, силуэт → FrankenPHP, луна обычная, дым по земле, тыквы упали'],
+        [3, 'шаг 3 — RoadRunner прибегает с горизонта на передний план, «мип-мип»'],
+        [5, 'шаг 5 — проклятый мир: зелёные тыквы, сова улетает, RoadRunner на горизонте'],
+    ];
+    for (const [step, title] of STEPS) section('mock', `${title} (цикл ${LOOPS[step]} мс)`, () => [cell(MW, MH, Math.max(2, zoom - 1), mockStep(step))]);
+    section('mock1x', 'Шаги в 1× (масштаб сцены)', () => STEPS.map(([step]) => cell(MW, MH, 1, mockStep(step), `шаг ${step}`)));
+
+    // ------------------------------------------------------------------ FrankenPHP
+    const FR = [
+        ['idle0', FRANKEN.idle[0]], ['idle1', FRANKEN.idle[1]], ['spark0', FRANKEN.spark[0]], ['spark1', FRANKEN.spark[1]],
+        ['spark2', FRANKEN.spark[2]], ['talk0', FRANKEN.talk[0]], ['talk1', FRANKEN.talk[1]], ['talk2', FRANKEN.talk[2]],
+    ];
+    const sheet = (list, lighting, scale) => list.map(([label, s]) => cell(s.w, s.h, scale, (ctx) => {
+        ctx.fillStyle = BG[lighting] ?? '#5c8a84';
+        ctx.fillRect(0, 0, s.w, s.h);
+        stamp(ctx, bakeFinale(s, lighting), s, s.anchor.x, s.anchor.y);
+    }, label));
+    const live = (lighting, pick, def, scale) => cell(def.w, def.h, scale, (ctx, t) => {
+        ctx.fillStyle = BG[lighting] ?? '#5c8a84';
+        ctx.fillRect(0, 0, def.w, def.h);
+        const s = pick(t);
+        stamp(ctx, bakeFinale(s, lighting), s, def.anchor.x, def.anchor.y);
+    }, 'live');
+    section('franken', `FrankenPHP ${FRANKEN.w}×${FRANKEN.h}, день (цвета логотипа), ${zoom}×`, () => [...sheet(FR, 'day', zoom), live('day', frankenAt, FRANKEN, zoom)], '#5c8a84');
+    section('franken', 'FrankenPHP, ночь', () => [...sheet(FR, 'night', zoom), live('night', frankenAt, FRANKEN, zoom)]);
+    section('franken', 'FrankenPHP, кровавая луна', () => sheet(FR, 'blood', zoom));
+    section('franken', 'FrankenPHP: подъём из земли (rise) и 1×', () => [
+        ...sheet(FRANKEN.rise.map((s, i) => [`rise${i}`, s]), 'night', Math.max(1, zoom - 1)),
+        ...sheet([['1× idle', FRANKEN.idle[0]], ['1× talk', FRANKEN.talk[2]]], 'night', 1),
+        ...sheet([['1× day', FRANKEN.idle[0]]], 'day', 1),
+    ]);
+
+    // ------------------------------------------------------------------ silhouette
+    const SIL = [
+        ['idle0', SILHOUETTE.idle[0]], ['idle1', SILHOUETTE.idle[1]],
+        ...SILHOUETTE.rise.map((s, i) => [`rise${i}`, s]),
+        ...SILHOUETTE.reveal.map((s, i) => [`reveal${i}`, s]),
+        ['→ idle', FRANKEN.idle[0]],
+    ];
+    section('silhouette', 'Силуэт-«птица» (шаг 1) и переход в FrankenPHP после молний, кровавая луна', () => sheet(SIL, 'blood', zoom));
+    section('silhouette', 'Силуэт, ночь, и 1×', () => [...sheet(SIL.slice(0, 2), 'night', zoom), ...sheet(SIL, 'blood', 1)]);
+
+    // ------------------------------------------------------------------ RoadRunner
+    for (const lighting of ['day', 'night', 'blood']) {
+        section('runner', `RoadRunner: s/m/l/xl — бег ×4, стоп, мип-мип; горизонт (flyers.js) — ${lighting}`, () => [
+            ...RUNNER.far.map((s, i) => sheet([[`far${i}`, s]], lighting, zoom)[0]),
+            ...['s', 'm', 'l', 'xl'].flatMap((size) => [
+                ...RUNNER[size].run.map((s, i) => sheet([[`${size} run${i}`, s]], lighting, zoom)[0]),
+                sheet([[`${size} stop`, RUNNER[size].stop]], lighting, zoom)[0],
+                sheet([[`${size} meep`, RUNNER[size].meep]], lighting, zoom)[0],
+            ]),
+        ], lighting === 'day' ? '#5cac3c' : '#2a2630');
+    }
+    section('runner', 'RoadRunner в 1× — far, s, m, l, xl (бег) и xl meep', () => [
+        live('night', (t) => RUNNER.far[frameAt(t, 4, 100)], RUNNER.far[0], 1),
+        ...['s', 'm', 'l', 'xl'].map((size) => live('night', (t) => RUNNER[size].run[frameAt(t, 4, 70)], RUNNER[size].run[0], 1)),
+        ...sheet([['xl meep', RUNNER.xl.meep]], 'night', 1),
+    ]);
+
+    // ------------------------------------------------------------------ effects
+    section('fx', 'Эффекты: столб (4 кадра), вспышка круга (3), молнии ×3 (по 3 кадра)', () => [
+        ...FX.column.map((s, i) => sheet([[`column${i}`, s]], 'day', 2)[0]),
+        ...FX.flash.map((s, i) => sheet([[`flash${i}`, s]], 'day', 2)[0]),
+        ...FX.lightning.flatMap((strike, k) => strike.map((s, i) => sheet([[`bolt${k}.${i}`, s]], 'day', 2)[0])),
+    ], '#1a0a12');
+    section('fx', 'Дым: клубы 5/8/12 ×4, облако силуэта ×4, стелющийся ×4 — кровавая луна и ночь', () => ['blood', 'night'].flatMap((lighting) => [
+        ...FX.smoke.puff.flatMap((frames, k) => frames.map((s, i) => sheet([[`puff${k}.${i}`, s]], lighting, zoom)[0])),
+        ...FX.smoke.cloud.map((s, i) => sheet([[`cloud${i}`, s]], lighting, zoom)[0]),
+        ...FX.smoke.creep.map((s, i) => sheet([[`creep${i}`, s]], lighting, zoom)[0]),
+    ]));
+    section('fx', 'Зелёные искры проклятого мира', () => FX.motes.map((s, i) => sheet([[`mote${i}`, s]], 'night', zoom * 2)[0]));
+
+    // ------------------------------------------------------------------ ritual pose
+    for (const lighting of ['blood', 'night']) {
+        section('ritual', `Ритуальная поза (4 кадра × front / side / back), огоньки — цвет глаз, без освещения — ${lighting}`, () => looks.flatMap((look, i) => ['front', 'side', 'back'].flatMap((dir) => [0, 1, 2, 3].map((frame) => cell(32, 40, zoom, (ctx) => {
+            ctx.fillStyle = BG[lighting];
+            ctx.fillRect(0, 0, 32, 40);
+            const f = characterFrame(look, { dir, pose: 'ritual', frame });
+            ctx.drawImage(relightCanvas(f.canvas, lighting), 0, 0);
+            ctx.drawImage(f.glow, 0, 0);
+        }, `${i} ${dir[0]}${frame}`)))));
+    }
+
+    // ------------------------------------------------------------------ owl
+    const OF = [['perched', OWL.idle[0]], ['takeOff', OWL_FLIGHT.takeOff], ...OWL_FLIGHT.fly.map((s, i) => [`fly${i}`, s])];
+    section('owl', `Сова улетает: взлёт и 4 кадра взмаха, день / ночь (глаза светятся), ${zoom}×`, () => [
+        ...sheet(OF, 'day', zoom),
+        ...sheet(OF.map(([l, s]) => [l, glowing(s)]), 'night', zoom),
+        live('night', (t) => glowing(OWL_FLIGHT.fly[frameAt(t, 4, 90)]), OWL_FLIGHT.fly[0], zoom),
+    ], '#5c8a84');
+
+    // ------------------------------------------------------------------ cursed-world pumpkins
+    const SHOW = { l: 'pumpkin-7', m: 'pumpkin-1', s: 'pumpkin-2' };
+    section('pumpkins', "Тыквы проклятого мира: tone 'franken', стадии 9–11, ночь (рядом — 'violet' для сравнения)", () => ['l', 'm', 's'].flatMap((size) => [9, 10, 11, 'v'].map((st) => {
+        const big = pumpkinLayers(11, size, seedOf(SHOW[size]));
+        const L = st === 'v' ? pumpkinLayers(11, size, seedOf(SHOW[size]), 'violet') : pumpkinLayers(st, size, seedOf(SHOW[size]), 'franken');
+        return cell(big.w, big.h, zoom, (ctx, t) => {
+            ctx.fillStyle = BG.night;
+            ctx.fillRect(0, 0, big.w, big.h);
+            const at = (list, ms) => list[frameAt(t, list.length, ms)];
+            const x = big.w >> 1;
+            const y = big.h;
+            if (L.auraFrames) stamp(ctx, light(at(L.auraFrames, 160)), L, x, y);
+            stamp(ctx, bakeFinale(L.layers.back, 'night'), L, x, y);
+            if (L.glowFrames) stamp(ctx, light(at(L.glowFrames, 120)), L, x, y);
+            stamp(ctx, bakeFinale(L.layers.body, 'night'), L, x, y);
+            stamp(ctx, bakeFinale(L.layers.rim, 'night'), L, x, y);
+            if (L.layers.stem) stamp(ctx, bakeFinale(L.layers.stem, 'night'), L, x, y);
+            if (L.fireFrames) stamp(ctx, light(at(L.fireFrames, 110)), L, x, y);
+        }, `${size} ${st === 'v' ? 'violet 11' : st}`);
+    })));
+
+    // ------------------------------------------------------------------ palette
+    const KEYS = Object.keys(PALETTE).slice(Object.keys(PALETTE).indexOf('frankenLight'));
+    section('palette', 'Новые цвета палитры (день / ночь)', () => KEYS.map((k) => {
+        const box = document.createElement('div');
+        box.className = 'swatch';
+        const unlit = UNLIT.has(k);
+        box.style.background = `linear-gradient(90deg, ${css(PALETTE[k])} 50%, ${css(unlit ? PALETTE[k] : LIT_PALETTE.night[k])} 50%)`;
+        box.textContent = `${k}${unlit ? ' ☼' : ''}`;
+        return box;
+    }));
+
+    if (frozen === null) {
+        const loop = () => {
+            const t = now();
+            animated.forEach((paint) => paint(t));
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+</script>
+</body>
+</html>

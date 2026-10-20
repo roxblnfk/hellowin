@@ -154,4 +154,29 @@ export const PALETTE = {
     bloodMoonLight: 0xff9a74,
     bloodMoon: 0xd8402c,
     bloodMoonShade: 0x8a1c20,
+
+    // The finale. FrankenPHP in its logo colours: the lime green (franken = the logo's #b3d133), the deep purple ink
+    // of its outline and flat-top hair, lavender bolts. The cursed-world glow repeats the lime as a light source; its
+    // keys sit a step off the skin values, so relighting by colour never mistakes FrankenPHP's skin for a glow.
+    frankenLight: 0xd4ea5c,
+    franken: 0xb3d133,
+    frankenDark: 0x8aa626,
+    frankenDeep: 0x5c7418,
+    frankenInk: 0x3a0a72,
+    frankenInkLight: 0x5e2ea0,
+    frankenBoltShine: 0xece4f6,
+    frankenBolt: 0xc3b2d3,
+    frankenBoltDark: 0x9280b2,
+    frankenGlowCore: 0xf6ffd4,
+    frankenGlowHot: 0xe0f47a,
+    frankenGlow: 0xb2d236,
+    frankenGlowDark: 0x7c9a1c,
+    frankenGlowDeep: 0x48600e,
+    // Smoke of the summoning, a step lighter than smokeDark; lightning white-blue; the hot core of the red column.
+    smoke: 0x6c6474,
+    smokeLight: 0x9c94a4,
+    lightningCore: 0xfaf8ff,
+    lightning: 0xc4d4ff,
+    lightningEdge: 0x7c8cf0,
+    columnCore: 0xffe0d0,
 };
