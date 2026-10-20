@@ -32,16 +32,19 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
+  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment, ?kind=<id> the kind — the sunset has none of its own), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
   Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
   your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
-  the ?flyers=1 shot one of the first walker. The "выстрел" button launches a bird that a walker shoots down.
+  the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene. The "выстрел" button
+  launches a bird that a walker shoots down.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
   step N (a fake `reveal` from step 4), ?paused=1 / ?zombies=1 start with the switch on, ?owl=<line id> or
   ?say=<text> has the owl speak at the start, ?specials=1 launches a witch, a road-runner and a zombie at the start
   (?zshot=ms shoots the zombie). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS (worms in the final scene, with
-  a small wobble); ?worms=1 sends three worms over the lawn at the start in any scene (?wshot=ms shoots the first one);
+  a small wobble; the cursed world flies worms, bats and fireflies); ?worms=1 sends three worms over the lawn at the start
+  in any scene (?wshot=ms shoots the first one); ?fireflies=1 launches three fireflies at the start (?fshot=ms shoots a
+  near one);
   zombies walk only at finale step 5 with zombies on and no pause; the scene is ready when every pumpkin is done, and
   waits for «Следующая сцена».
   Bonfire (scenes 1–2): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
@@ -59,6 +62,10 @@
   reveal's from step 4). ?finale=N starts settled at step N (bots stand around the circle and do not wander until
   step 2); ?play=ms with ?freeze presses «Шаг финала» (forced) at that frozen-clock moment, so ?finale=1&play=0&freeze=1600
   captures the lightning of step 2 mid-way; ?ritual=1 starts at step 0 with the circle closed.
+  Thresholds (docs/spec/scenario.md «Множитель порогов»): the console's «Пороги» multiply the base values (pumpkins 5,
+  the bonfire ?bclicks, the circle ?cclicks) by k, max(1, round(base × k)), k from 0.1 to 10 kept across a reset;
+  ?k=N starts with that multiplier. `online` is the number of walkers, in the snapshot and in a `leaderboard` event
+  every 5 s (with an empty `top`).
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -190,6 +197,16 @@
         b.innerHTML = '<span class="element__emoji" aria-hidden="true">⭕</span>';
         root.insertBefore(b, root.querySelector('.hud'));
     }
+    // The base thresholds of app/config/hellowin.php; the moderator's k multiplies all three.
+    const BASE_THRESHOLDS = { pumpkin: Number.parseInt(root.dataset.threshold, 10), bonfire: BONFIRE_CLICKS, circle: CIRCLE_CLICKS };
+    const thresholdsFor = (k) => Object.fromEntries(Object.entries(BASE_THRESHOLDS).map(([type, base]) => [type, Math.max(1, Math.round(base * k))]));
+    {
+        const k = Math.min(10, Math.max(0.1, Number.parseFloat(params.get('k') ?? '1') || 1));
+        const start = thresholdsFor(k);
+        root.dataset.k = String(k);
+        root.dataset.threshold = String(start.pumpkin);
+        root.querySelectorAll('.bonfire, .circle').forEach((b) => { b.dataset.threshold = String(start[b.dataset.type]); });
+    }
     if (params.has('hits')) root.classList.add('show-hits');
 
     // With ?freeze the lab runs on its own clock: headless screenshots get no animation frames, so time is stepped
@@ -312,7 +329,8 @@
     const SCENE_STAGE_MAX = [4, 8, 11, 11];
     // Stand-in for the `items` of app/config/hellowin.php (what the walkers hold in each scene); an id without art
     // yet shows an empty hand.
-    const ITEM_BY_SCENE = ['pistol', 'candle', 'book', 'book'];
+    // ?item=<id> makes every scene hand out that item (a candle at night, say).
+    const ITEM_BY_SCENE = params.has('item') ? Array(4).fill(params.get('item')) : ['pistol', 'candle', 'book', 'book'];
     const LAST_STEP = 5;
     const moderator = params.get('mod') === '1';
     // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
@@ -325,7 +343,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone(engine), now: serverTime() });
+    const engineSnapshot = () => ({ ...structuredClone(engine), online: engine.walkers.length, now: serverTime() });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
@@ -482,6 +500,20 @@
         return { ok: true, on };
     }
 
+    // Like the server: the event only when k changes; a pending transition goes ahead whatever the new threshold.
+    function engineThresholds({ k }) {
+        if (typeof k !== 'number' || !(k >= 0.1 && k <= 10)) throw new Error('invalid k');
+        const thresholds = thresholdsFor(k);
+        if (engine.k !== k) {
+            engine.k = k;
+            engine.threshold = thresholds.pumpkin;
+            engineBonfire().threshold = thresholds.bonfire;
+            if (engineCircle()) engineCircle().threshold = thresholds.circle;
+            deliver({ type: 'thresholds', k, thresholds });
+        }
+        return { ok: true, k, thresholds };
+    }
+
     // Console RPCs (protocol.md, «Модератор»): `forbidden` before anything else for a non-moderator.
     async function engineCall(method, data) {
         if (!moderator) throw new Error('forbidden');
@@ -494,6 +526,7 @@
                 return { ok: true, flyer: engineFlyer({ kind: data.kind }) };
             case 'zombies': return engineSwitch('zombies', data);
             case 'pause': return engineSwitch('paused', data);
+            case 'thresholds': return engineThresholds(data);
             case 'reset':
                 if (data.round === engine.round) engineReset();
                 return { ok: true, round: engine.round };
@@ -507,6 +540,9 @@
     const POINTS = [3, 2, 1];
     // HELLOWIN_FLYER_KINDS and HELLOWIN_FLYER_RARE by scene, the rare one at a 1-in-8 chance; the sunset has none.
     const KINDS = [['duck', 'chicken'], [], ['bat'], ['worm']];
+    // HELLOWIN_FLYER_KINDS_CURSED: the cursed world (finale step 5) flies its own set.
+    const CURSED_KINDS = ['worm', 'bat', 'firefly'];
+    const FIREFLY_POINTS = 1;
     const RARE = ['roadrunner', null, null, null];
     const RARE_POINTS = 5;
     const HORIZON = 38;
@@ -564,11 +600,14 @@
 
     function engineFlyer({ kind = null, depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
         const rare = RARE[engine.scene];
-        kind ??= rare && Math.random() < 0.125 ? rare : pick(KINDS[engine.scene] ?? KINDS[0]);
+        const cursed = engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= 5;
+        kind ??= rare && Math.random() < 0.125 ? rare : pick(cursed ? CURSED_KINDS : KINDS[engine.scene] ?? KINDS[0]);
         if (!kind) return null;
         if (kind === 'roadrunner') return engineRoadrunner(ltr);
         if (kind === 'worm') return engineWorm();
         if (kind === 'witch') depth = Math.max(1, depth);
+        // Fireflies keep to depths 1–2 (FIREFLY_DEPTHS); the lab's bushes are all near ones.
+        if (kind === 'firefly') depth = depth === 0 ? 1 + Math.floor(Math.random() * 2) : depth;
         const id = nextId();
         let path;
         if (bush) {
@@ -587,7 +626,10 @@
         }
         // Bats sway across their path (protocol.md, `wobble`).
         if (kind === 'bat') path.wobble = { amp: 3 + Math.random() * 4, waves: 2 + Math.random() * 3 };
-        return launchFlyer(id, kind, depth, DURATION[depth], kind === 'witch' ? RARE_POINTS : POINTS[depth], path);
+        // Fireflies sway lazily: smaller and slower (engine.md, FIREFLY_AMP, FIREFLY_WAVES).
+        if (kind === 'firefly') path.wobble = { amp: Math.round((2 + Math.random() * 3) * 10) / 10, waves: Math.round((1.5 + Math.random() * 1.5) * 10) / 10 };
+        const points = kind === 'witch' ? RARE_POINTS : kind === 'firefly' ? FIREFLY_POINTS : POINTS[depth];
+        return launchFlyer(id, kind, depth, DURATION[depth], points, path);
     }
 
     function engineShoot(id, player = null) {
@@ -726,7 +768,11 @@
             engineRoadrunner(false);
             zombie = engineZombie(Math.PI * 0.62);
         }
-        return { zombie, worm: worms[0] ?? null };
+        // ?fireflies=1: three fireflies right away, one far-ish and two near (one out of a bush).
+        const fireflies = params.get('fireflies') === '1'
+            ? [engineFlyer({ kind: 'firefly', depth: 1, bush: false, ltr: true }), engineFlyer({ kind: 'firefly', depth: 2, bush: false, ltr: false }), engineFlyer({ kind: 'firefly', depth: 2, bush: 'bush-1' })]
+            : [];
+        return { zombie, worm: worms[0] ?? null, firefly: fireflies[1] ?? null };
     }
 
     const scene = await createScene(root, readSnapshot(root));
@@ -792,6 +838,7 @@
         zombieLater();
     }, 4000 + Math.random() * 5000);
     if (!simulated) {
+        setInterval(() => deliver({ type: 'leaderboard', top: [], online: engine.walkers.length }), 5000);
         launchLater();
         zombieLater();
         later(startEvents, 500);
@@ -834,6 +881,8 @@
         let target = null;
         let zombie = null;
         let worm = null;
+        let firefly = null;
+        const fireflyShotAt = Math.round((Number.parseInt(params.get('fshot') ?? '-1', 10)) / 16) * 16;
         const zombieShotAt = Math.round((Number.parseInt(params.get('zshot') ?? '-1', 10)) / 16) * 16;
         const wormShotAt = Math.round((Number.parseInt(params.get('wshot') ?? '-1', 10)) / 16) * 16;
         for (simTime = 0; simTime < freeze; simTime += 16) {
@@ -846,13 +895,15 @@
             if (simTime === playAt && engine.finale) engineFinaleStep({ step: engine.finale.step + 1, force: true });
             // ?flyers=1: one flyer per depth right away (the near one from a bush); ?shoot=N (default 1) is shot at ?shotAt=ms (default 896, a multiple of 16).
             if (flyersOn && simTime === 0) {
-                const launched = [engineFlyer({ depth: 0, bush: false, ltr: true }),
-                    engineFlyer({ depth: 1, bush: false, ltr: false }),
-                    engineFlyer({ depth: 2, bush: 'bush-1' })];
+                const kind = params.get('kind') ?? undefined;
+                const launched = [engineFlyer({ kind, depth: 0, bush: false, ltr: true }),
+                    engineFlyer({ kind, depth: 1, bush: false, ltr: false }),
+                    engineFlyer({ kind, depth: 2, bush: 'bush-1' })];
                 target = launched[Math.min(2, Math.max(0, Number.parseInt(params.get('shoot') ?? '1', 10) || 0))];
             }
             if (flyersOn && simTime === shotAt) engineShoot(target, params.get('shooter') === '1' ? engine.walkers[0] : null);
-            if (simTime === 0) ({ zombie, worm } = startEvents());
+            if (simTime === 0) ({ zombie, worm, firefly } = startEvents());
+            if (firefly && simTime === fireflyShotAt) engineShoot(firefly, engine.walkers[0] ?? null);
             if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             if (worm && simTime === wormShotAt) engineShoot(worm, engine.walkers[0] ?? null);
             // Frozen bots all set off at the start, so a screenshot catches them on the way.

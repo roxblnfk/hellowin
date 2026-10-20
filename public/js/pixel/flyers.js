@@ -751,6 +751,101 @@ function wormSet() {
     return [set, set, set];
 }
 
+// A firefly of the cursed world, drawn by hand per depth (a speck, ~8 px, ~12 px): side view, head to the right, a
+// red shield behind the head, dark wing cases, pale wings beating over them, the lantern at the tail. The body is
+// drawn as it is like any flyer; the lantern's light is a separate layer in FrankenPHP's lime (finale.js glow keys,
+// night.js EMISSIVE) to draw over it — `glow`: [dim, mid, bright] frames on the same grid; a shot firefly's lantern
+// shows dull, unlit. `halo` — the lantern point for the scene's soft light around it.
+const FIREFLY_LEGEND = {
+    '.': null, O: 'outline', k: 'barkDark', b: 'bark', x: 'crimson', X: 'crimsonDark', w: 'ghost', W: 'ghostShade',
+    a: 'frankenDeep', A: 'frankenDark', L: 'frankenGlowCore', l: 'frankenGlowHot', g: 'frankenGlow', G: 'frankenGlowDark',
+};
+const FIREFLY = [
+    {
+        anchor: { x: 1, y: 1 },
+        body: ['.wk', 'Akx'],
+        wings: [['.w.', '...'], ['...', '...'], ['...', '.w.'], ['...', '...']],
+        hit: ['w.w', 'Akx'],
+        glow: [['...', 'G..'], ['...', 'g..'], ['...', 'L..']],
+        lantern: [0, 1],
+    },
+    {
+        anchor: { x: 4, y: 3 },
+        body: [
+            '........',
+            '........',
+            '..Okkxx.',
+            'OAAkkxXO',
+            '.OaO.O..',
+        ],
+        wings: [
+            ['...ww...', '..wW....'],
+            ['........', '...ww...'],
+            ['........', '........'],
+            ['........', '...ww...'],
+        ],
+        down: ['........', '........', '..Okkxx.', 'OAAkWxXO', '.OaWwO..'],
+        hit: ['.w...w..', '..w.w...', '..Okkxx.', 'OAAkkxXO', '.OaO.O..'],
+        glow: [
+            ['........', '........', '........', '.G......', '..G.....'],
+            ['........', '........', '........', '.gG.....', '..G.....'],
+            ['........', '........', '........', '.lL.....', '..l.....'],
+        ],
+        lantern: [1, 3],
+    },
+    {
+        anchor: { x: 6, y: 5 },
+        body: [
+            '............',
+            '............',
+            '............',
+            '....OOOOO...',
+            '..OObkkkxxO.',
+            '.OAAkkkkxXxO',
+            'OAaAkkkbOOOO',
+            '.OaaOOOO.O..',
+            '..OO..O.O...',
+        ],
+        wings: [
+            ['......ww....', '.....wWw....', '....wWw.....', '............'],
+            ['............', '............', '...wwWw.....', '..wWww......'],
+            ['............', '............', '............', '............'],
+            ['............', '............', '...wwWw.....', '..wWww......'],
+        ],
+        down: [
+            '............', '............', '............', '....OOOOO...', '..OObkkkxxO.',
+            '.OAAkWWwxXxO', 'OAaAWwwbOOOO', '.OaaOwwO.O..', '..OO..O.O...',
+        ],
+        hit: [
+            '..w......w..', '...w....w...', '....w..w....', '....OOOOO...', '..OObkkkxxO.',
+            '.OAAkkkkxXxO', 'OAaAkkkbOOOO', '.OaaOOOO.O..', '..OO..O.O...',
+        ],
+        glow: [
+            ['', '', '', '', '', '..G.........', '.GgG........', '..GG........'],
+            ['', '', '', '', '', '..g.........', '.glg........', '..gG........'],
+            ['', '', '', '', '', '..lg........', '.lLl........', '..ll........'],
+        ],
+        lantern: [2, 6],
+    },
+];
+
+function fireflySet() {
+    return FIREFLY.map((d) => {
+        const w = d.body[0].length;
+        const make = (rows) => {
+            const full = d.body.map((_, i) => (rows[i] || '').padEnd(w, '.'));
+            return { w, h: full.length, rows: full, legend: FIREFLY_LEGEND, anchor: { ...d.anchor } };
+        };
+        // Wings over the body rows; the down stroke has the wing over the wing case (`down`).
+        const fly = d.wings.map((wing, i) => make(i === 2 && d.down ? d.down : d.body.map((row, y) => {
+            const over = wing[y];
+            return over ? [...row].map((ch, x) => (over[x] && over[x] !== '.' ? over[x] : ch)).join('') : row;
+        })));
+        const hit = make(d.hit);
+        return { fly, hit, fall: [rotate90(hit), rotate180(hit)], glow: d.glow.map(make), lantern: d.lantern };
+    });
+}
+
 function poseSet(def, kind, { post = (s) => s } = {}) {
     return DEPTH_W.map((w, depth) => {
         if (depth === 0) return farSet(kind);
@@ -788,6 +883,8 @@ const FEATHER_LEGEND = {
  * fall frames collapse in place (kneel, then flat) instead of tumbling. `worm` crawls on the lawn too: one 16×9 set at
  * every depth, anchor on the ground under its middle, `box` — the opaque bounds; besides the crawl it has `emerge` (3
  * frames, out of a mound) and `burrow` (2, into one), its `hit` writhes and `fall` sinks it into the ground in place.
+ * `firefly` adds `glow` (its lantern: dim, mid, bright, on the same grid, to draw unlit over the body) and `lantern` —
+ * the lantern pixel, for the halo.
  */
 export const FLYERS = {
     duck: flyerSet(DUCK),
@@ -799,6 +896,7 @@ export const FLYERS = {
     roadrunner: poseSet(ROADRUNNER, 'roadrunner'),
     zombie: zombieSet(),
     worm: wormSet(),
+    firefly: fireflySet(),
     // Each feather knows whose it is, so a burst can pick the right ones.
     feathers: [
         { ...sprite(['.G', 'Gg', 'g.'], FEATHER_LEGEND), kind: 'duck' },
@@ -826,6 +924,10 @@ export const FLYERS = {
         { ...sprite(['lo.', 'oOO'], FEATHER_LEGEND), kind: 'worm' },
         { ...sprite(['o'], FEATHER_LEGEND), kind: 'worm' },
         { ...sprite(['.P.', 'P.P'], FEATHER_LEGEND), kind: 'worm' },
+        // A firefly bursts into lime sparks of its lantern.
+        { ...sprite(['L'], FIREFLY_LEGEND), kind: 'firefly' },
+        { ...sprite(['.g.', 'gLg', '.g.'], FIREFLY_LEGEND), kind: 'firefly' },
+        { ...sprite(['l.', '.G'], FIREFLY_LEGEND), kind: 'firefly' },
     ],
 };
 

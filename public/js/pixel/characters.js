@@ -121,8 +121,9 @@ function stroke(g, [x1, y1], [x2, y2], color) {
     }
 }
 
-// Effects (muzzle flash, smoke, the ritual's palm lights) glow without an outline.
-const isFx = (key) => key === 'fxFlash' || key === 'fxCore' || key === 'fxSmoke' || key === 'fxPalm' || key === 'fxPalmCore';
+// Effects (muzzle flash, smoke, the ritual's palm lights, the candle flame) glow without an outline.
+const FX_KEYS = new Set(['fxFlash', 'fxCore', 'fxSmoke', 'fxPalm', 'fxPalmCore', 'fxFlame', 'fxFlameHot', 'fxFlameCore']);
+const isFx = (key) => FX_KEYS.has(key);
 
 function outlined(g) {
     const out = g.slice();
@@ -730,7 +731,8 @@ const CLOAKS = {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Items: per direction, rows plus the grip — the item pixel under the top-left of the 2×2 hand. The back view mirrors
-// the front. muzzle — where the flash goes.
+// the front. muzzle — where the flash goes, barrel — which way it fires; flame — the item pixel the flame stands on;
+// fx — where the item's own shot effect starts when it is aimed (shoot pose).
 
 const ITEM_LEGEND = {
     w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', g: 'grayLight', a: 'gray', k: 'barkDark',
@@ -754,8 +756,8 @@ const BROOM = [
 const ITEM_DEFS = {
     beer: {
         label: 'Пиво',
-        front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3] },
-        side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3] },
+        front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3], fx: [2, 0] },
+        side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], fx: [2, 0] },
     },
     broom: {
         label: 'Метла',
@@ -767,17 +769,18 @@ const ITEM_DEFS = {
         front: { rows: ['.a..', '.g..', '.g..', '.g..', '.ga.', 'Bbb.', '.Bb.', '..b.'], grip: [1, 5] },
         side: { rows: ['..a.', '..g.', '..g.', '..g.', '.ag.', '.bbB', '.bB.', '.b..'], grip: [1, 5] },
     },
-    // A wax candle on a tin dish, carried at dusk: the flame stays static like the torch's, white core in yellow.
+    // A wax candle on a tin dish, carried at dusk. The flame is not in the rows: it is light, drawn over the frame in
+    // its own flicker frames (CANDLE_FLAME), standing on the pixel above the wax.
     candle: {
         label: 'Свеча',
-        front: { rows: ['..Y..', '.YwY.', '..y..', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7] },
-        side: { rows: ['..Y..', '.YwY.', '..y..', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7] },
+        front: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
+        side: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
     },
     // An open spell book held up in front, its lines glowing green, two motes rising off the pages.
     book: {
         label: 'Магическая книга',
-        front: { rows: ['.E...E.', '.cc.cc.', 'ceeveEc', 'cEevcec', 'ceeveec', 'vvvvvvv'], grip: [3, 5] },
-        side: { rows: ['.E..', 'vcc.', 'veE.', 'vee.', 'vce.', 'vvvv'], grip: [1, 5] },
+        front: { rows: ['.E...E.', '.cc.cc.', 'ceeveEc', 'cEevcec', 'ceeveec', 'vvvvvvv'], grip: [3, 5], fx: [3, 1] },
+        side: { rows: ['.E..', 'vcc.', 'veE.', 'vee.', 'vce.', 'vvvv'], grip: [1, 5], fx: [2, 1] },
     },
     // Items have no frames of their own, so the flame is static: a white-hot core in a lopsided tongue of fire over
     // a rag wrapping, so it reads as a flame and not as a lollipop. Gripped low, the flame clears the head.
@@ -786,10 +789,12 @@ const ITEM_DEFS = {
         front: {
             rows: ['..Y..', '.YY..', '.YyY.', 'YywyY', 'YwwyY', '.ywy.', 'HhHhH', '.HhH.', '..B..', '..b..', '..b..', '..b..', '..b..', '..b..', '..k..'],
             grip: [1, 12],
+            fx: [2, 0],
         },
         side: {
             rows: ['...Y.', '..YY.', '.YyY.', 'YywyY', 'YwwyY', '.ywy.', 'HhHhH', '.HhH.', '..B..', '..b..', '..b..', '..b..', '..b..', '..b..', '..k..'],
             grip: [1, 12],
+            fx: [3, 0],
         },
     },
     // Three grey tines on a long shaft; from the side it leans forward like the broom, so it clears the face.
@@ -813,26 +818,144 @@ const ITEM_DEFS = {
     },
 };
 
-// Shooting always shows the pistol, aimed: [fire, recoil] per direction.
+// Shooting always shows the pistol, aimed: [fire, recoil] per direction; barrel — the firing direction, a vector.
 const AIM = {
     side: [
-        { rows: ['..a....', 'bbggggg', 'Bb.....', 'b......'], grip: [0, 1], muzzle: [7, 1] },
-        { rows: ['......g', '....gg.', '..agg..', 'bbg....', 'Bb.....', 'b......'], grip: [0, 3], muzzle: [7, -1] },
+        { rows: ['..a....', 'bbggggg', 'Bb.....', 'b......'], grip: [0, 1], muzzle: [7, 1], barrel: [1, 0] },
+        { rows: ['......g', '....gg.', '..agg..', 'bbg....', 'Bb.....', 'b......'], grip: [0, 3], muzzle: [7, -1], barrel: [2, -1] },
     ],
     front: [
-        { rows: ['g....', '.g...', '..ga.', '...bb', '...Bb', '....b'], grip: [3, 3], muzzle: [-1, -1] },
-        { rows: ['.g...', '.g...', '..ga.', '..bb.', '..Bb.', '...b.'], grip: [2, 3], muzzle: [1, -2] },
+        { rows: ['g....', '.g...', '..ga.', '...bb', '...Bb', '....b'], grip: [3, 3], muzzle: [-1, -1], barrel: [-1, -1] },
+        { rows: ['.g...', '.g...', '..ga.', '..bb.', '..Bb.', '...b.'], grip: [2, 3], muzzle: [1, -2], barrel: [-1, -3] },
     ],
 };
 
+// The candle flame's flicker: steady, stretched tall, bent and low. The last row stands on the item's flame pixel.
+const FLAME_LEGEND = { Y: 'fxFlame', y: 'fxFlameHot', w: 'fxFlameCore' };
+const CANDLE_FLAME = [
+    ['...', '.Y.', 'YwY', '.y.'],
+    ['.Y.', '.Y.', 'YwY', '.y.'],
+    ['...', 'Y..', 'ywY', '.y.'],
+];
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot effects the scene plays over a shooting walker (docs/spec/frontend.md, «Выстрел»). Sprites in the sprites.js
+// format ({ w, h, rows, legend, anchor }); the flash is light — bake it as is, the smoke takes the scene's lighting.
+
+const FX_BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+const fxDither = (x, y) => (FX_BAYER[y & 3][x & 3] + 0.5) / 16;
+const FLASH_LEGEND = { '.': null, W: 'flameCore', s: 'pumpkinShine', Y: 'pumpkinLight', o: 'pumpkin', r: 'ember' };
+const FLASH_R = 7;
+
+/**
+ * A muzzle flash along the barrel (dx, dy), anchored on the muzzle: 0 — the bang, a white-hot tongue with a star of
+ * short rays; 1 — the tongue torn off the muzzle, sparks flying on; 2 — the last orange wisps.
+ */
+function flashSprite(dx, dy, frame) {
+    const len = Math.hypot(dx, dy) || 1;
+    const [ux, uy] = [dx / len, dy / len];
+    const n = 2 * FLASH_R + 1;
+    const rows = [];
+    for (let y = -FLASH_R; y <= FLASH_R; y++) {
+        let row = '';
+        for (let x = -FLASH_R; x <= FLASH_R; x++) {
+            const a = x * ux + y * uy;
+            const c = Math.abs(-x * uy + y * ux);
+            const ang = Math.atan2(c, a);
+            const d = Math.hypot(x, y);
+            let k = '.';
+            if (frame === 0) {
+                const w = a >= -0.5 && a <= 6.5 ? 0.7 + 1.9 * Math.sin((Math.PI * (a + 0.5)) / 7.5) : -1;
+                if (c <= w) k = a < 2.5 && c < 1.1 ? 'W' : c > w - 0.8 ? (a > 4.5 ? 'o' : 'Y') : 's';
+                else if (d <= 1.5) k = 'Y';
+                // Four rays fanning out of the muzzle, two forward and two thrown back.
+                else if ([1.0, 2.1].some((r) => Math.abs(ang - r) < 0.2) && d < (ang < 1.5 ? 4.6 : 3.6)) k = d < 2.6 ? 's' : 'Y';
+            } else if (frame === 1) {
+                const w = a >= 2 && a <= 7 ? 0.5 + 1.3 * Math.sin((Math.PI * (a - 2)) / 5) : -1;
+                if (c <= w) k = c < 0.7 && a < 5 ? 's' : a > 5.5 ? 'o' : 'Y';
+                else if (Math.abs(ang - 0.95) < 0.13 && Math.abs(d - 5.5) < 0.6) k = 's';
+                else if (Math.abs(ang - 2.2) < 0.15 && Math.abs(d - 4) < 0.6) k = 'Y';
+            } else {
+                const w = a >= 4 && a <= 8 ? 0.4 + 1.1 * Math.sin((Math.PI * (a - 4)) / 4) : -1;
+                if (c <= w && fxDither(x + 8, y + 8) < 0.55) k = a > 6.5 ? 'r' : 'o';
+                else if (Math.abs(ang - 0.9) < 0.12 && Math.abs(d - 6.5) < 0.6) k = 'Y';
+            }
+            row += k;
+        }
+        rows.push(row);
+    }
+    return { w: n, h: n, rows, legend: FLASH_LEGEND, anchor: { x: FLASH_R, y: FLASH_R } };
+}
+
+const SMOKE_LEGEND = { '.': null, w: 'white', g: 'grayLight', a: 'gray' };
+
+// Each puff is a lumpy cloud: a main ball and two smaller ones, mirrored for the second variant.
+const PUFF_LUMPS = [[0, 0, 1], [-0.75, 0.35, 0.6], [0.7, 0.45, 0.55]];
+
+/**
+ * A smoke puff of radius r, variant v: a lumpy cloud lit from above — pale crown, grey body, a shade underneath — its
+ * rim dithered half and half, the whole thinned to `density` by a Bayer step (1 — solid).
+ */
+function puffSprite(r, density, v) {
+    const n = 2 * r + 3;
+    const c = r + 1;
+    const lumps = PUFF_LUMPS.map(([lx, ly, k]) => [c + (v ? -lx : lx) * r, c + ly * r, Math.max(0.6, k * r)]);
+    const rows = [];
+    for (let y = 0; y < n; y++) {
+        let row = '';
+        for (let x = 0; x < n; x++) {
+            const depth = Math.max(...lumps.map(([lx, ly, lr]) => lr + 0.35 - Math.hypot(x - lx, y - ly)));
+            const rim = depth < 0.9 && r > 1 && (x + y) % 2 === 1;
+            if (depth < 0 || rim || fxDither(x, y) >= density) {
+                row += '.';
+                continue;
+            }
+            const dy = (y - c) / r;
+            row += dy > 0.7 ? 'a' : dy < -0.45 && r > 1 && depth > 0.9 ? 'w' : 'g';
+        }
+        rows.push(row);
+    }
+    return { w: n, h: n, rows, legend: SMOKE_LEGEND, anchor: { x: c, y: c } };
+}
+
+const SPELL_LEGEND = { '.': null, M: 'magicCore', h: 'eerieHot', n: 'eyeGreen' };
+const BUBBLE_LEGEND = { '.': null, w: 'white', W: 'hazeLight' };
+const fxSprite = (rows, legend) => ({ w: rows[0].length, h: rows.length, rows, legend, anchor: { x: rows[0].length >> 1, y: rows.length >> 1 } });
+const flashCache = new Map();
+const PUFF_SIZES = [1, 2, 3, 4];
+const PUFF_DENSITY = [1, 0.62, 0.38, 0.18];
+
+export const SHOT_FX = {
+    /** Flash frames (3) for a barrel direction, as characterFrame returns it; cached per direction. */
+    flash([dx, dy]) {
+        const key = `${dx},${dy}`;
+        if (!flashCache.has(key)) flashCache.set(key, [0, 1, 2].map((f) => flashSprite(dx, dy, f)));
+        return flashCache.get(key);
+    },
+    // Smoke puffs: [size][fade][variant], radius 1..4, each thinner in four Bayer steps, two mirrored variants.
+    puffs: PUFF_SIZES.map((r) => PUFF_DENSITY.map((d) => [0, 1].map((v) => puffSprite(r, d, v)))),
+    // The candle's fireball: a white-hot ball in two flickering shapes, light like the flash.
+    fireball: [
+        fxSprite(['..YsY..', '.YsWsY.', 'YsWWWsY', 'sWWWWWs', 'YsWWWsY', '.YsWsY.', '..YsY..'], FLASH_LEGEND),
+        fxSprite(['...Y...', '.YssY..', 'YsWWsY.', 'sWWWWsY', '.sWWWs.', '.YssYo.', '..o....'], FLASH_LEGEND),
+    ],
+    // The spell book's flash at the pages: a green four-point star, light.
+    spark: fxSprite(['...n...', '...h...', '..nhn..', 'nhhMhhn', '..nhn..', '...h...', '...n...'], SPELL_LEGEND),
+    // Beer bubbles: a ring with a shine in two sizes; the pop of one — four dots flying apart.
+    bubbles: [
+        fxSprite(['.w.', 'w.W', '.W.'], BUBBLE_LEGEND),
+        fxSprite(['.ww.', 'w..W', 'w..W', '.WW.'], BUBBLE_LEGEND),
+    ],
+    pop: fxSprite(['w...w', '.....', '.....', '.....', 'W...W'], BUBBLE_LEGEND),
+};
+
+/** Stamps the item; returns a mapper from item pixels to local coordinates (the flip mirrors the columns). */
 function placeItem(g, spr, hand, flip) {
     const w = Math.max(...spr.rows.map((s) => s.length));
     const [gx, gy] = spr.grip;
     const x0 = flip ? hand[0] + 2 - w + gx : hand[0] - gx;
     stamp(g, x0, hand[1] - gy, spr.rows, ITEM_LEGEND, flip);
-    if (!spr.muzzle) return null;
-    const [mx, my] = spr.muzzle;
-    return [flip ? x0 + w - 1 - mx : x0 + mx, hand[1] - gy + my];
+    return ([x, y]) => [flip ? x0 + w - 1 - x : x0 + x, hand[1] - gy + y];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -934,7 +1057,11 @@ function compose(look, dir, pose, frame, item) {
     const r = rig(dir, pose, frame);
     const shoot = pose === 'shoot';
     const ritual = pose === 'ritual';
-    const holding = !shoot && !ritual && ITEM_DEFS[item];
+    // Shooting aims what the hand holds: the pistol has its own aimed sprites, any other item is held out on the aimed
+    // arm, an empty hand points.
+    const gun = shoot && item === 'pistol';
+    const held = !ritual && !gun && ITEM_DEFS[item];
+    const holding = !shoot && held;
     const cloak = CLOAKS[look.cloak];
     const out = blank();
     const layer = (paint) => {
@@ -954,17 +1081,36 @@ function compose(look, dir, pose, frame, item) {
     layer((g) => cloak.paint(g, r, 'front'));
 
     const fx = blank();
+    const result = { out };
     if (shoot || holding) {
         const arm = shoot ? r.aim : r.hold;
         layer((g) => {
             const flip = dir === 'back';
-            const spr = shoot ? AIM[dir === 'side' ? 'side' : 'front'][frame] : ITEM_DEFS[item][dir === 'side' ? 'side' : 'front'];
-            const muzzle = placeItem(g, spr, arm.hand, flip);
-            if (shoot && muzzle && frame === 0) {
+            const spr = gun ? AIM[dir === 'side' ? 'side' : 'front'][frame] : held ? ITEM_DEFS[item][dir === 'side' ? 'side' : 'front'] : null;
+            if (!spr) {
+                // The fingertip past the pointing hand.
+                result.muzzle = [dir === 'front' ? arm.hand[0] - 1 : arm.hand[0] + 2, arm.hand[1]];
+                return;
+            }
+            const at = placeItem(g, spr, arm.hand, flip);
+            const muzzle = spr.muzzle ? at(spr.muzzle) : shoot && spr.fx ? at(spr.fx) : null;
+            if (muzzle) result.muzzle = muzzle;
+            if (spr.barrel) result.barrel = flip ? [-spr.barrel[0], spr.barrel[1]] : spr.barrel;
+            if (spr.flame) {
+                // Flicker frames of the flame; the frame itself carries none, so relighting the frame never dims it.
+                const [bx, by] = at(spr.flame);
+                result.flames = CANDLE_FLAME.map((rows) => {
+                    const fl = blank();
+                    stamp(fl, bx - 1, by - rows.length + 1, rows, FLAME_LEGEND, flip);
+                    return fl;
+                });
+                result.flame = [bx, by - 1];
+            }
+            if (gun && muzzle && frame === 0) {
                 const [mx, my] = muzzle;
                 [[0, 0, 'fxCore'], [1, 0, 'fxFlash'], [-1, 0, 'fxFlash'], [0, 1, 'fxFlash'], [0, -1, 'fxFlash']]
                     .forEach(([dx, dy, k]) => put(fx, mx + dx, my + dy, k));
-            } else if (shoot && muzzle) {
+            } else if (gun && muzzle) {
                 put(fx, muzzle[0], muzzle[1] - 1, 'fxSmoke');
                 put(fx, muzzle[0] + (flip ? -1 : 1), muzzle[1] - 2, 'fxSmoke');
             }
@@ -981,13 +1127,21 @@ function compose(look, dir, pose, frame, item) {
         });
     }
     over(out, fx);
-    return ritual ? { out, glow: fx } : out;
+    if (ritual || gun) result.glow = fx;
+    return result;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Public API.
 
-const FX_COLORS = { fxCore: PALETTE.white, fxFlash: PALETTE.pumpkinShine, fxSmoke: PALETTE.grayLight };
+const FX_COLORS = {
+    fxCore: PALETTE.white,
+    fxFlash: PALETTE.pumpkinShine,
+    fxSmoke: PALETTE.grayLight,
+    fxFlame: PALETTE.pumpkinLight,
+    fxFlameHot: PALETTE.pumpkinShine,
+    fxFlameCore: PALETTE.flameCore,
+};
 
 const EYES = [
     { id: 'amber', label: 'Янтарные', key: 'eyeAmber' },
@@ -1084,8 +1238,13 @@ function paintGrid(grid, colorOf) {
 
 /**
  * One composed frame, cached by its arguments. Unknown dir/pose fall back to front/idle, frame wraps around the pose,
- * an unknown item is no item. anchor — canvas pixels. The ritual pose ignores the item and adds `glow`: a canvas of
- * the same size with only the palm lights, to draw unlit over the relit frame (the lights are in `canvas` too).
+ * an unknown item is no item. anchor and the points below — canvas pixels. Light comes as `glow`: a canvas of the
+ * same size to draw unlit over the relit frame. The ritual pose ignores the item; its glow is the palm lights. The
+ * shoot pose aims the item: the pistol's own aimed sprites (glow — its flash or smoke pixels, `barrel` — the firing
+ * direction, a vector), any other item held out on the aimed arm, an empty hand pointing; `muzzle` is where the
+ * scene's shot effect starts (the muzzle, the item's `fx` pixel, the fingertip). Both poses have their lights in
+ * `canvas` too. A held candle has its flame only in the
+ * glow: `flames` — its flicker frames (`glow` is the first), `flame` — the flame's core.
  */
 export function characterFrame(look, { dir, pose, frame = 0, item = null } = {}) {
     const full = normalizeLook(look);
@@ -1099,12 +1258,21 @@ export function characterFrame(look, { dir, pose, frame = 0, item = null } = {})
     if (cached) return cached;
 
     const composed = compose(full, d, p, f, it);
-    const grid = p === 'ritual' ? composed.out : composed;
     const eye = PALETTE[EYES.find((e) => e.id === full.eyes).key];
     const palm = { fxPalm: eye, fxPalmCore: mixWhite(eye, 0.6) };
     const colorOf = (k) => (k === 'eye' ? eye : palm[k] ?? FX_COLORS[k] ?? PALETTE[k]);
-    const result = { canvas: paintGrid(grid, colorOf), anchor: { x: AX, y: AY } };
-    if (p === 'ritual') result.glow = paintGrid(composed.glow, colorOf);
+    const result = { canvas: paintGrid(composed.out, colorOf), anchor: { x: AX, y: AY } };
+    const toCanvas = ([x, y]) => [AX + x, AY + y];
+    if (composed.glow) result.glow = paintGrid(composed.glow, colorOf);
+    if (composed.muzzle) {
+        result.muzzle = toCanvas(composed.muzzle);
+        result.barrel = composed.barrel;
+    }
+    if (composed.flames) {
+        result.flames = composed.flames.map((g) => paintGrid(g, colorOf));
+        result.glow = result.flames[0];
+        result.flame = toCanvas(composed.flame);
+    }
     frameCache.set(key, result);
     return result;
 }

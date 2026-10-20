@@ -336,13 +336,15 @@ const HALO_TONES = {
     candle: { a: 'pumpkinLight', b: 'pumpkinDark' },
     green: { a: 'eyeGreen', b: 'eerieDark' },
     violet: { a: 'violetGlow', b: 'violet' },
+    franken: { a: 'frankenGlowHot', b: 'frankenGlowDark' },
 };
 const haloCache = new Map();
 
 /**
  * A dithered ground light rx × ry (flattened like the ground): two tones in Bayer steps, dense in the middle and
  * sparse at the edge. Meant for an additive blend at alpha ~0.5–0.7 over the night ground. Tones: 'warm' (the
- * bonfire), 'candle' (a walker's candle, lighter), 'green' (scene 2 magic), 'violet' (blood moon).
+ * bonfire), 'candle' (a walker's candle, lighter), 'green' (scene 2 magic), 'violet' (blood moon), 'franken' (the
+ * cursed world's lime: a firefly's lantern).
  */
 export function halo(rx, ry, tone = 'warm') {
     const key = `${rx}:${ry}:${tone}`;

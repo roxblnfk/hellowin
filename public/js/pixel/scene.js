@@ -10,7 +10,7 @@ import {
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
 import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
-import { POSES, characterFrame } from './characters.js';
+import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { frankenHalo } from './finale.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
@@ -1352,7 +1352,10 @@ export async function createScene(rootEl, snapshot) {
             f.sprite = new Sprite();
             groundLayer.addChild(f.sprite);
         }
-        for (const particle of particles.splice(0)) particle.sprite.destroy();
+        for (const particle of particles.splice(0)) {
+            particle.sprite.destroy();
+            particle.done?.();
+        }
         publishHitZones();
         veil.width = layout.artW;
         veil.height = layout.artH;
@@ -1472,7 +1475,11 @@ export async function createScene(rootEl, snapshot) {
     const EMERGE_MS = 130;
     const BURROW_MS = 150;
     // Single-pixel feathers of a shot far flyer.
-    const SPECK = { chicken: 'white', crow: 'crowDark', bat: 'bat', ghost: 'ghost', witch: 'violetDark', zombie: 'zombie' };
+    const SPECK = { chicken: 'white', crow: 'crowDark', bat: 'bat', ghost: 'ghost', witch: 'violetDark', zombie: 'zombie', firefly: 'frankenGlowHot' };
+    // A firefly's lantern blinks every LANTERN_MS; its halo per depth and its alpha per glow level (dim, mid, bright).
+    const LANTERN_MS = 1700;
+    const LANTERN_HALO = [halo(2, 2, 'franken'), halo(4, 3, 'franken'), halo(6, 5, 'franken')];
+    const LANTERN_ALPHA = [0.12, 0.35, 0.6];
 
     // Zombie and worm paths are on the lawn in config coordinates (the walk zone), so they take the patch spread like
     // walkers. A worm meanders: `wobble` sways it across the path, in config percents.
@@ -1511,7 +1518,7 @@ export async function createScene(rootEl, snapshot) {
                 // A flyer stamped a few ms ahead of our clock estimate must not index frames with a negative time.
                 const local = Math.max(0, now - f.launchedAt);
                 if (now >= f.expiresAt) {
-                    f.sprite.destroy();
+                    dropFlyer(f);
                     flyers.delete(id);
                     continue;
                 }
@@ -1527,7 +1534,7 @@ export async function createScene(rootEl, snapshot) {
                 const since = clock - f.shotAt;
                 const collapse = COLLAPSE[f.kind] ?? COLLAPSE.zombie;
                 if (since >= collapse.gone) {
-                    f.sprite.destroy();
+                    dropFlyer(f);
                     flyers.delete(id);
                     continue;
                 }
@@ -1545,7 +1552,7 @@ export async function createScene(rootEl, snapshot) {
                     ? Math.max(ridge[clamp(Math.round(f.pos.x), 0, ridge.length - 1)] ?? layout.horizon, f.shotPos.y + 2)
                     : layout.artH + 30;
                 if (f.pos.y > floor) {
-                    f.sprite.destroy();
+                    dropFlyer(f);
                     flyers.delete(id);
                     continue;
                 }
@@ -1557,11 +1564,44 @@ export async function createScene(rootEl, snapshot) {
             f.sprite.position.set(Math.round(f.pos.x), Math.round(f.pos.y));
             if (f.ground) f.sprite.zIndex = depthKey(f.pos.x, f.pos.y);
             f.art = art;
+            if (f.glow) lantern(f, set, art, flip);
         }
         for (const bush of bushes.values()) {
             const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length], false, bush.lit) : bush.idle;
             bush.sprite.texture = art.texture;
         }
+    }
+
+    function dropFlyer(f) {
+        f.sprite.destroy();
+        f.glow?.destroy();
+        f.halo?.destroy();
+    }
+
+    /**
+     * A firefly's lantern (flyers.js, `glow`): unlit over the body, with a soft additive halo, pulsing on its own beat
+     * — a slow blink, bright for a moment, flickering while bright, then dim; out for good once the firefly is shot.
+     */
+    function lantern(f, set, art, flip) {
+        const lit = f.shotAt === null;
+        f.glow.visible = lit;
+        f.halo.visible = lit;
+        if (!lit) return;
+        const beat = (clock + f.phase) % LANTERN_MS;
+        const level = reduced ? 1 : beat < 120 || (beat >= 600 && beat < 720) ? 1 : beat < 600 ? (mix(f.phase, Math.floor(clock / 90)) % 5 ? 2 : 1) : 0;
+        const glow = flyerArt(set.glow[level]);
+        f.glow.texture = glow.texture;
+        f.glow.anchor.set(glow.ax, glow.ay);
+        f.glow.scale.x = flip ? -1 : 1;
+        f.glow.position.copyFrom(f.sprite.position);
+        const { def } = art;
+        const [lx, ly] = set.lantern;
+        const x = Math.round(f.pos.x) + (flip ? def.anchor.x - lx - 1 : lx - def.anchor.x);
+        const y = Math.round(f.pos.y) + ly - def.anchor.y;
+        const h = LANTERN_HALO[clamp(f.depth, 0, 2)];
+        f.halo.texture = defTexture(h);
+        f.halo.alpha = LANTERN_ALPHA[level];
+        f.halo.position.set(x - h.anchor.x, y - h.anchor.y);
     }
 
     // Flights run on server time, so every player sees a bird at the same spot and a late event picks the flight
@@ -1574,7 +1614,17 @@ export async function createScene(rootEl, snapshot) {
         if (now >= expiresAt) return;
         const sprite = new Sprite();
         const ground = GROUND.has(event.kind);
-        (ground ? groundLayer : [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)]).addChild(sprite);
+        const layer = ground ? groundLayer : [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)];
+        // A firefly's halo goes under its body, the lantern's light over it.
+        const lit = !ground && FLYERS[event.kind]?.[0]?.glow;
+        const halo = lit ? new Sprite() : null;
+        if (halo) {
+            halo.blendMode = 'add';
+            layer.addChild(halo);
+        }
+        layer.addChild(sprite);
+        const glow = lit ? new Sprite() : null;
+        if (glow) layer.addChild(glow);
         flyers.set(event.flyer, {
             ground,
             kind: event.kind,
@@ -1588,6 +1638,9 @@ export async function createScene(rootEl, snapshot) {
             expiresAt,
             flip: event.to.x < event.from.x,
             sprite,
+            glow,
+            halo,
+            phase: seedOf(event.flyer) % LANTERN_MS,
             shotAt: null,
             pos: ground ? walkerArt(event.from) : toScreenArt(event.from),
         });
@@ -1688,12 +1741,19 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
-    /** One particle; `kind` names a PARTICLES set or is a list of textures to pick from. */
+    /**
+     * One particle; `kind` names a PARTICLES set or is a list of textures to pick from. Returns it, so a caller can
+     * add `anim(p)` (the texture for its age; such a particle fades by its own frames instead of blinking out),
+     * `drag` (1/s, slows it down), `wind` (sideways acceleration, px/s²), `tick(p)` (every frame, after the move) and
+     * `done()` (called when it dies).
+     */
     function spawn(kind, x, y, vx, vy, gravity, life) {
         const textures = Array.isArray(kind) ? kind : particleArt(kind);
         const sprite = new Sprite(textures[Math.floor(Math.random() * textures.length)]);
         particleLayer.addChild(sprite);
-        particles.push({ sprite, x, y, vx, vy, gravity, life, age: 0 });
+        const particle = { sprite, x, y, vx, vy, gravity, life, age: 0 };
+        particles.push(particle);
+        return particle;
     }
 
     // Where a pumpkin's sprite point is now: it moves with the jump and floats up with its lift.
@@ -1873,6 +1933,36 @@ export async function createScene(rootEl, snapshot) {
     };
     // A candle casts a small warm circle at dusk and at night; the spell book a faint green one after dark.
     const BOOK_LIGHT = halo(8, 3, 'green');
+    // A shot (docs/spec/frontend.md, «Выстрел»), ms from the event: the flash frames end at FLASH_MS, the recoil frame
+    // comes in at RECOIL_MS and jolts the figure until KICK_MS, the smoking pistol is held up until SHOT_MS. Smoke
+    // puffs: [ms, off the raised barrel] — the first ones are blown out of the muzzle. After dark the flash lights the
+    // ground and the air around the muzzle for its first frames.
+    const FLASH_MS = [50, 110, 170];
+    const RECOIL_MS = 110;
+    const KICK_MS = 230;
+    const SHOT_MS = 1200;
+    const PUFFS = [[110, false], [120, false], [140, false], [170, false], [260, true], [430, true], [650, true], [900, true]];
+    const SHOT_GROUND = halo(16, 6, 'warm');
+    const SHOT_GROUND_ALPHA = [0.9, 0.6, 0.3];
+    const SHOT_AIR = halo(6, 5, 'warm');
+    const SHOT_AIR_ALPHA = [0.8, 0.45];
+    // Other items: how long the aimed pose holds, the book's bolt and flash, the beer's bubbles (ms after the shot).
+    const ITEM_SHOT_MS = 900;
+    const BOLT_MS = 260;
+    const BOOK_FLASH = halo(6, 5, 'green');
+    const BUBBLES = [80, 150, 230, 320, 420, 540];
+    // A held candle: its flicker frame changes on FLAME_MS slots (mostly the steady one), the ground light and the halo
+    // round the flame breathe with it. Its trail: an ember every EMBER_MS walking, every EMBER_IDLE_MS standing, at
+    // most EMBER_CAP alive per walker.
+    const FLAME_MS = 90;
+    const FLICKER = [0, 0, 1, 0, 2, 1];
+    const CANDLE_ALPHA = [0.55, 0.62, 0.48];
+    const FLAME_HALO = halo(5, 4, 'candle');
+    const HALO_ALPHA = [0.34, 0.42, 0.26];
+    const EMBER_MS = [110, 170];
+    const EMBER_IDLE_MS = [1200, 3200];
+    const EMBER_CAP = 7;
+    const EMBER_COLORS = ['flameCore', 'pumpkinShine', 'pumpkinLight', 'pumpkin', 'ember'];
 
     // Topmost opaque row of a character frame: frames keep headroom for tall hats, the label goes over the real head.
     const frameTops = new WeakMap();
@@ -1989,9 +2079,13 @@ export async function createScene(rootEl, snapshot) {
         w.glow.anchor.set(0.5);
         w.glow.blendMode = 'add';
         lightLayer.addChild(w.glow);
-        // The ritual's palm lights, drawn unlit over the relit frame (characters.js, `glow`).
-        w.palms = new Sprite();
-        groundLayer.addChild(w.palms);
+        // The frame's own light — the ritual's palm lights, the candle flame — drawn unlit over the relit frame
+        // (characters.js, `glow`); a soft additive halo around it; the muzzle flash of a shot.
+        w.lights = new Sprite();
+        w.halo = new Sprite();
+        w.halo.blendMode = 'add';
+        w.flash = new Sprite();
+        groundLayer.addChild(w.lights, w.halo, w.flash);
         w.label?.destroy();
         w.label = walkerLabel(w);
     }
@@ -2000,8 +2094,10 @@ export async function createScene(rootEl, snapshot) {
         w.sprite?.destroy();
         w.glow?.destroy();
         w.glow = null;
-        w.palms?.destroy();
-        w.palms = null;
+        for (const key of ['lights', 'halo', 'flash']) {
+            w[key]?.destroy();
+            w[key] = null;
+        }
         w.label?.destroy();
         w.sprite = null;
         w.label = null;
@@ -2064,9 +2160,16 @@ export async function createScene(rootEl, snapshot) {
         return dy < 0 ? ['back', false] : ['front', false];
     }
 
+    // A canvas point of a character frame drawn with its anchor at (x, y), mirrored or not, in art px.
+    const framePoint = ([cx, cy], x, y, flip) => ({
+        x: flip ? x + FRAME.anchor.x - cx - 1 : x - FRAME.anchor.x + cx,
+        y: y - FRAME.anchor.y + cy,
+    });
+
     function animateWalkers() {
         const now = serverNow();
         const ritual = inFinale() && ritualOf(finale.step, finale.ready, sinceStep());
+        const dark = lighting !== 'day';
         for (const w of walkers.values()) {
             if (!w.sprite) continue;
             const s = walkAt(w.track, clock);
@@ -2078,8 +2181,8 @@ export async function createScene(rootEl, snapshot) {
                 const walk = poseOf('walk');
                 view = { dir, flip, pose: 'walk', frame: Math.floor((clock - w.track.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
             } else if (w.shoot && clock < w.shoot.until) {
-                const shoot = poseOf('shoot');
-                view = { ...w.shoot, pose: 'shoot', frame: Math.floor((clock - w.shoot.at) / shoot.ms) % shoot.frames, item: 'pistol' };
+                // One shot with what the hand holds: the aimed frame, then the follow-through (the pistol's recoil).
+                view = { dir: w.shoot.dir, flip: w.shoot.flip, pose: 'shoot', frame: clock - w.shoot.at < RECOIL_MS ? 0 : 1, item: w.shoot.item };
             } else if (ritual) {
                 // Hands up toward the circle, swaying on their own beat; a walker on the way walks normally and joins in
                 // once it stands.
@@ -2091,35 +2194,343 @@ export async function createScene(rootEl, snapshot) {
                 w.shoot = null;
                 view = { ...idleOf(w, s, now), item: w.item ?? null };
             }
-            if (reduced && !s.moving) view.frame = 0;
+            if (reduced && !s.moving && view.pose !== 'shoot') view.frame = 0;
             const f = characterFrame(w.look, view);
+            const x = Math.round(at.x);
+            const y = Math.round(at.y);
             w.sprite.texture = frameTexture(f.canvas, lightAt(at.x, at.y));
-            const light = lighting === 'day' ? null : view.item === 'candle' ? NIGHT.candleLight : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
+            w.sprite.anchor.set(f.anchor.x / f.canvas.width, f.anchor.y / f.canvas.height);
+            w.sprite.scale.x = view.flip ? -1 : 1;
+            w.sprite.position.set(x, y);
+            w.sprite.zIndex = depthKey(at.x, at.y);
+            w.flash.visible = false;
+            w.halo.visible = false;
+            const light = !dark ? null : view.item === 'candle' ? NIGHT.candleLight : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
             w.glow.visible = Boolean(light);
             if (light) {
                 w.glow.texture = defTexture(light);
                 w.glow.alpha = light === BOOK_LIGHT ? 0.4 : 0.55;
-                w.glow.position.set(Math.round(at.x), Math.round(at.y));
+                w.glow.position.set(x, y);
             }
-            w.sprite.anchor.set(f.anchor.x / f.canvas.width, f.anchor.y / f.canvas.height);
-            w.sprite.scale.x = view.flip ? -1 : 1;
-            w.sprite.position.set(Math.round(at.x), Math.round(at.y));
-            w.sprite.zIndex = depthKey(at.x, at.y);
-            w.palms.visible = Boolean(f.glow);
-            if (f.glow) {
-                w.palms.texture = frameTexture(f.glow);
-                w.palms.anchor.copyFrom(w.sprite.anchor);
-                w.palms.scale.x = w.sprite.scale.x;
-                w.palms.position.copyFrom(w.sprite.position);
-                w.palms.zIndex = w.sprite.zIndex + 0.5;
+            let glow = f.glow;
+            if (f.flames) {
+                // The candle: a flicker frame by a hash of short slots, the same on every client; the ground light
+                // and the halo breathe with it and stand under and around the flame, wherever the hand carries it.
+                const k = reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / FLAME_MS)) % FLICKER.length];
+                glow = f.flames[k];
+                const flame = framePoint(f.flame, x, y, view.flip);
+                if (light) {
+                    w.glow.alpha = CANDLE_ALPHA[k];
+                    w.glow.position.set(flame.x, y);
+                }
+                if (dark) placeHalo(w, FLAME_HALO, flame, HALO_ALPHA[k] * (lighting === 'sunset' ? 1 : 1.4));
+                candleTrail(w, flame, s.moving, view);
+            }
+            if (view.pose === 'shoot') shotFx(w, view, x, y);
+            w.lights.visible = Boolean(glow);
+            if (glow) {
+                w.lights.texture = frameTexture(glow);
+                w.lights.anchor.copyFrom(w.sprite.anchor);
+                w.lights.scale.x = w.sprite.scale.x;
+                w.lights.position.copyFrom(w.sprite.position);
+                w.lights.zIndex = w.sprite.zIndex + 0.5;
             }
             // The label stays whole on screen even when its walker is held at the edge.
             const half = w.label.width / 2 + 2;
-            w.label.position.set(Math.round(clamp(Math.round(at.x) * layout.cssPx, half, layout.width - half)), Math.round((Math.round(at.y) - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
+            w.label.position.set(Math.round(clamp(x * layout.cssPx, half, layout.width - half)), Math.round((y - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
         }
     }
 
-    // A walker whose player shot a flyer turns toward it and fires; one already walking does not stop for it.
+    /** An additive halo of a halo() sprite centred on an art point, over the walker. */
+    function placeHalo(w, def, at, alpha) {
+        w.halo.visible = true;
+        w.halo.texture = defTexture(def);
+        w.halo.alpha = alpha;
+        w.halo.position.set(at.x - def.anchor.x, at.y - def.anchor.y);
+        w.halo.zIndex = w.sprite.zIndex + 0.6;
+    }
+
+    // Embers: 1-px light that cools from white-hot to red as it lives, a step cooler on some frames — a flicker.
+    const emberTextures = () => EMBER_COLORS.map((key) => artTexture(`ember-px:${key}`, () => {
+        const c = canvas(1, 1);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = css(PALETTE[key]);
+        ctx.fillRect(0, 0, 1, 1);
+        return texture(c);
+    }));
+    function emberAnim(p) {
+        const t = p.age / p.life;
+        const flick = Math.floor(p.age * 24 + p.phase) % 4 === 0 ? 1 : 0;
+        p.sprite.visible = t < 0.75 || Math.floor(p.age * 20) % 2 === 0;
+        return p.frames[Math.min(p.frames.length - 1, Math.floor(p.heat + t * (p.frames.length - 1)) + flick)];
+    }
+    function ember(x, y, vx, vy, gravity, life, heat) {
+        const frames = emberTextures();
+        const p = spawn([frames[0]], x, y, vx, vy, gravity, life);
+        Object.assign(p, { frames, heat, phase: Math.random() * 4, anim: emberAnim });
+        return p;
+    }
+
+    /**
+     * Smouldering bits off a walking candle: one every EMBER_MS, drifting up and back from the flame; standing, one
+     * now and then. At most EMBER_CAP alive per walker; none with reduced motion.
+     */
+    function candleTrail(w, flame, moving, view) {
+        if (reduced) return;
+        const [min, max] = moving ? EMBER_MS : EMBER_IDLE_MS;
+        // Setting off cuts the long wait of a standing candle short.
+        w.emberAt = Math.min(w.emberAt ?? clock + between(min, max), clock + max);
+        if (clock < w.emberAt) return;
+        w.emberAt = clock + between(min, max);
+        if ((w.embers ?? 0) >= EMBER_CAP) return;
+        const back = moving && view.dir === 'side' ? (view.flip ? 1 : -1) : 0;
+        w.embers = (w.embers ?? 0) + 1;
+        const p = ember(flame.x + Math.round(between(-1, 1)), flame.y - 2, back * between(5, 12) + between(-3, 3), -between(6, 14), -4, between(0.5, 0.95), Math.random() * 1.5);
+        p.drag = 0.6;
+        p.done = () => w.embers--;
+    }
+
+    /**
+     * The shot's effect by the item in hand (docs/spec/frontend.md, «Выстрел»), from the item's point toward where the
+     * target was at the shot: the pistol fires, the candle (and a torch) throws a fireball, the spell book strikes with
+     * green lightning, the beer mug burps bubbles. Anything else — an empty hand pointing, a broom — has no effect.
+     */
+    function shotFx(w, view, x, y) {
+        const item = w.shoot.item;
+        if (item === 'pistol') {
+            gunFx(w, view, x, y);
+            return;
+        }
+        const t = clock - w.shoot.at;
+        const from = framePoint(characterFrame(w.look, { ...view, frame: 0 }).muzzle, x, y, view.flip);
+        const to = w.shoot.target ?? { x: from.x + (view.flip ? -60 : 60), y: from.y - 60 };
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const dark = lighting !== 'day';
+        if (item === 'candle' || item === 'torch') {
+            // A flare off the flame toward the target, then the fireball.
+            const k = FLASH_MS.findIndex((ms) => t < ms);
+            if (k >= 0) {
+                const a = Math.round((Math.atan2(dy, dx) / Math.PI) * 8) * (Math.PI / 8);
+                showFlash(w, SHOT_FX.flash([Math.round(Math.cos(a) * 8), Math.round(Math.sin(a) * 8)])[k], from);
+                if (dark && k < 2) placeHalo(w, SHOT_AIR, from, SHOT_AIR_ALPHA[k]);
+            }
+            if (!w.shoot.fired && t >= 40) {
+                w.shoot.fired = 1;
+                fireball(from, to, len);
+            }
+        } else if (item === 'book') {
+            if (t < 120) {
+                showFlash(w, SHOT_FX.spark, from);
+                if (dark) placeHalo(w, BOOK_FLASH, from, t < 60 ? 0.8 : 0.45);
+            }
+            if (!w.shoot.fired) {
+                w.shoot.fired = 1;
+                bolt(from, to);
+            }
+        } else if (item === 'beer') {
+            const bubbles = reduced ? BUBBLES.slice(0, 1) : BUBBLES;
+            while (w.shoot.fired < bubbles.length && t >= bubbles[w.shoot.fired]) {
+                w.shoot.fired++;
+                bubble(from, to, len);
+            }
+        }
+    }
+
+    function showFlash(w, def, at) {
+        w.flash.visible = true;
+        w.flash.texture = defTexture(def);
+        w.flash.position.set(at.x - def.anchor.x, at.y - def.anchor.y);
+        w.flash.zIndex = w.sprite.zIndex + 0.7;
+    }
+
+    // A ball of the candle's fire flying at the target with embers trailing off it; it bursts into embers where it
+    // ends. With reduced motion only the flare at the candle stays.
+    function fireball(from, to, len) {
+        if (reduced) return;
+        const speed = 520;
+        const frames = SHOT_FX.fireball.map((def) => defTexture(def));
+        const p = spawn([frames[0]], from.x, from.y, ((to.x - from.x) / len) * speed, ((to.y - from.y) / len) * speed, 0, Math.min(1.2, len / speed));
+        p.sprite.pivot.set(3, 3);
+        p.anim = (q) => frames[Math.floor(q.age * 20) % frames.length];
+        let trail = 0;
+        p.tick = (q) => {
+            if (q.age < trail) return;
+            trail = q.age + 0.012;
+            ember(Math.round(q.x - q.vx * 0.012), Math.round(q.y - q.vy * 0.012), between(-6, 6), between(-10, 2), -8, between(0.25, 0.45), between(0.5, 1.5));
+        };
+        p.done = () => {
+            for (let i = 0; i < 5; i++) {
+                const a = (i / 5) * Math.PI * 2 + between(0, 1);
+                ember(Math.round(p.x), Math.round(p.y), Math.cos(a) * between(20, 40), Math.sin(a) * between(20, 40) - 10, 40, between(0.3, 0.5), 0);
+            }
+        };
+    }
+
+    /**
+     * Green lightning from the book to the target: three jagged variants of the bolt, 50 ms each, then a thinner one as
+     * it dies; a few motes of magic where it strikes. Art pixels drawn into a Graphics that lives as a particle.
+     */
+    function bolt(from, to) {
+        const paths = [0, 1, 2].map(() => boltPixels(from, to));
+        const g = new Graphics();
+        particleLayer.addChild(g);
+        let shown = -1;
+        const tick = (q) => {
+            const k = reduced ? 0 : Math.min(3, Math.floor(q.age / 0.05));
+            if (k === shown) return;
+            shown = k;
+            g.clear();
+            const { core, glow } = paths[Math.min(2, k)];
+            if (k < 3) {
+                for (const [x, y] of glow) g.rect(x, y, 1, 1);
+                g.fill(PALETTE.eyeGreen);
+            }
+            core.forEach(([x, y], i) => (k < 3 || i % 2 === 0) && g.rect(x, y, 1, 1));
+            g.fill(k < 3 ? PALETTE.magicCore : PALETTE.eerieHot);
+        };
+        particles.push({ sprite: g, x: 0, y: 0, vx: 0, vy: 0, gravity: 0, life: reduced ? 0.15 : BOLT_MS / 1000, age: 0, tick });
+        if (!reduced) for (let i = 0; i < 4; i++) spawn('magic', to.x, to.y, sign() * between(6, 22), -between(10, 40), -10, between(0.5, 0.9));
+    }
+
+    // Pixels of one bolt: a polyline jittered across its way every ~7 px plus a short fork, and glow beside the core.
+    function boltPixels(from, to) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const n = Math.max(3, Math.round(len / 7));
+        const jag = Math.min(4, len * 0.08);
+        const pts = Array.from({ length: n + 1 }, (_, i) => {
+            const t = i / n;
+            const off = i === 0 || i === n ? 0 : between(-jag, jag);
+            return [Math.round(from.x + dx * t - (dy / len) * off), Math.round(from.y + dy * t + (dx / len) * off)];
+        });
+        const core = new Map();
+        const line = ([x0, y0], [x1, y1]) => {
+            const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+            for (let i = 0; i <= steps; i++) {
+                const x = Math.round(x0 + ((x1 - x0) * i) / steps);
+                const y = Math.round(y0 + ((y1 - y0) * i) / steps);
+                core.set(x * 8192 + y, [x, y]);
+            }
+        };
+        pts.slice(1).forEach((p, i) => line(pts[i], p));
+        const at = pts[1 + Math.floor(Math.random() * Math.max(1, n - 2))];
+        const a = Math.atan2(dy, dx) + sign() * between(0.5, 1);
+        const fork = between(4, 9);
+        line(at, [Math.round(at[0] + Math.cos(a) * fork), Math.round(at[1] + Math.sin(a) * fork)]);
+        const glow = [];
+        for (const [x, y] of core.values()) {
+            for (const [gx, gy] of [[x + 1, y], [x, y + 1]]) {
+                if (!core.has(gx * 8192 + gy) && (gx + gy) % 2 === 0) glow.push([gx, gy]);
+            }
+        }
+        return { core: [...core.values()], glow };
+    }
+
+    // A burp bubble: floats from the mug at the target, wobbling, slower than a shot, and pops where it ends. Drawn as
+    // is — a shiny film catches whatever light there is, and a relit one would vanish at night; with reduced motion one
+    // pop at the mug.
+    function bubble(from, to, len) {
+        const pop = defTexture(SHOT_FX.pop);
+        if (reduced) {
+            spawn([pop], from.x - 2, from.y - 4, 0, 0, 0, 0.2);
+            return;
+        }
+        const def = SHOT_FX.bubbles[Math.random() < 0.5 ? 0 : 1];
+        const speed = between(70, 110);
+        const a = Math.atan2(to.y - from.y, to.x - from.x) + between(-0.25, 0.25);
+        const p = spawn([defTexture(def)], from.x, from.y - 1, Math.cos(a) * speed, Math.sin(a) * speed, 0, Math.min(1.6, len / speed) * between(0.6, 1));
+        p.sprite.pivot.set(def.anchor.x, def.anchor.y);
+        const phase = Math.random() * 6;
+        p.tick = (q) => {
+            q.y += Math.sin(q.age * 12 + phase) * 0.35;
+        };
+        p.anim = (q) => q.sprite.texture;
+        p.done = () => {
+            const q = spawn([pop], Math.round(p.x), Math.round(p.y), 0, 0, 0, 0.12);
+            q.sprite.pivot.set(2, 2);
+        };
+    }
+
+    /**
+     * The pistol's effects: the muzzle flash in three frames along the barrel, sparks, a warm light on the ground and
+     * in the air after dark, the recoil kick, and smoke puffs — first blown out of the muzzle, then wisps off the
+     * raised barrel — that rise, drift, grow and thin out.
+     */
+    function gunFx(w, view, x, y) {
+        const t = clock - w.shoot.at;
+        const flip = view.flip;
+        const fire = characterFrame(w.look, { ...view, frame: 0 });
+        const muzzle = framePoint(fire.muzzle, x, y, flip);
+        const barrel = [flip ? -fire.barrel[0] : fire.barrel[0], fire.barrel[1]];
+        const len = Math.hypot(barrel[0], barrel[1]);
+        const [ux, uy] = [barrel[0] / len, barrel[1] / len];
+        const k = FLASH_MS.findIndex((ms) => t < ms);
+        if (k >= 0) {
+            showFlash(w, SHOT_FX.flash(barrel)[k], muzzle);
+            if (lighting !== 'day') {
+                w.glow.visible = true;
+                w.glow.texture = defTexture(SHOT_GROUND);
+                w.glow.alpha = SHOT_GROUND_ALPHA[k];
+                w.glow.position.set(Math.round((x + muzzle.x) / 2), y);
+                if (k < 2) placeHalo(w, SHOT_AIR, muzzle, SHOT_AIR_ALPHA[k]);
+            }
+        }
+        // The kick: the whole figure jolts one art pixel back from the shot as the recoil frame comes in.
+        if (t >= RECOIL_MS && t < KICK_MS) w.sprite.x -= Math.sign(ux) || 0;
+        if (!w.shoot.sparked) {
+            w.shoot.sparked = true;
+            if (!reduced) {
+                for (let i = 0; i < 4; i++) {
+                    const a = Math.atan2(uy, ux) + between(-0.5, 0.5);
+                    const v = between(50, 95);
+                    const p = ember(muzzle.x + Math.round(ux * 3), muzzle.y + Math.round(uy * 3), Math.cos(a) * v, Math.sin(a) * v, 90, between(0.2, 0.35), 0);
+                    p.drag = 2;
+                }
+            }
+        }
+        const puffs = reduced ? PUFFS.slice(0, 1) : PUFFS;
+        while ((w.shoot.puffs ?? 0) < puffs.length && t >= puffs[w.shoot.puffs ?? 0][0]) {
+            const [, raised] = puffs[w.shoot.puffs ?? 0];
+            w.shoot.puffs = (w.shoot.puffs ?? 0) + 1;
+            const from = raised ? framePoint(characterFrame(w.look, { ...view, frame: 1 }).muzzle, x, y, flip) : muzzle;
+            puff(from, [ux, uy], !raised);
+        }
+    }
+
+    // One smoke puff in the light where it starts: it grows to its size over the first part of its life, then thins
+    // out in Bayer steps; a blown one flies out along the barrel and slows down, every one rises and drifts.
+    function puff(at, [ux, uy], blown) {
+        const lit = lightAt(at.x, at.y);
+        const size = blown ? 2 + Math.floor(Math.random() * 2) : 1;
+        const variant = Math.random() < 0.5 ? 0 : 1;
+        const first = SHOT_FX.puffs[0][0][variant];
+        let p;
+        if (reduced) {
+            p = spawn([defTexture(first, lit)], at.x, at.y - 1, 0, 0, 0, 0.9);
+        } else if (blown) {
+            const v = between(10, 18);
+            p = spawn([defTexture(first, lit)], at.x + ux * 2, at.y + uy * 2, ux * v + between(-3, 3), uy * v - between(7, 11), -14, between(2, 3));
+            p.drag = 1;
+        } else {
+            p = spawn([defTexture(first, lit)], at.x, at.y - 1, ux * 3 + between(-2, 2), -between(4, 8), -12, between(1.5, 2.4));
+            p.drag = 0.9;
+        }
+        p.wind = reduced ? 0 : 1.5;
+        p.anim = (q) => {
+            const t = q.age / q.life;
+            const grown = Math.min(size, (blown ? 1 : 0) + Math.floor(Math.min(1, t / 0.6) * size));
+            const fade = t < 0.35 ? 0 : Math.min(3, 1 + Math.floor(((t - 0.35) / 0.65) * 3));
+            const def = SHOT_FX.puffs[reduced ? 1 : grown][fade][variant];
+            q.sprite.pivot.set(def.anchor.x, def.anchor.y);
+            return defTexture(def, lit);
+        };
+    }
+
+    // A walker whose player shot a flyer turns toward it and shoots with what it holds; one already walking does not
+    // stop for it.
     function walkerShot(event) {
         const w = walkers.get(event.player?.id);
         if (!w || !w.sprite) return;
@@ -2129,8 +2540,9 @@ export async function createScene(rootEl, snapshot) {
         const dx = f ? f.pos.x - me.x : 0;
         // The sky is beyond the patch: a bird straight ahead means turning away from the camera.
         const [dir, flip] = Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
-        const shoot = poseOf('shoot');
-        w.shoot = { dir, flip, at: clock, until: clock + Math.max(600, shoot.frames * shoot.ms * 2) };
+        const item = w.item ?? null;
+        const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
+        w.shoot = { dir, flip, item, target: f ? { ...f.pos } : null, at: clock, until, sparked: false, puffs: 0, fired: 0 };
     }
 
     /** Config coordinates of a screen point on the ground (inverse patch spread); null over the sky. */
@@ -2203,12 +2615,24 @@ export async function createScene(rootEl, snapshot) {
             if (particle.age >= particle.life) {
                 particle.sprite.destroy();
                 particles.splice(i, 1);
+                particle.done?.();
                 continue;
             }
             particle.vy += particle.gravity * seconds;
+            if (particle.wind) particle.vx += particle.wind * seconds;
+            if (particle.drag) {
+                const k = Math.max(0, 1 - particle.drag * seconds);
+                particle.vx *= k;
+                particle.vy *= k;
+            }
             particle.x += particle.vx * seconds;
             particle.y += particle.vy * seconds;
+            particle.tick?.(particle);
             particle.sprite.position.set(Math.round(particle.x), Math.round(particle.y));
+            if (particle.anim) {
+                particle.sprite.texture = particle.anim(particle);
+                continue;
+            }
             // Blink out instead of fading: alpha blending would add colors outside the palette.
             particle.sprite.visible = particle.age < particle.life * 0.7 || Math.floor(particle.age * 20) % 2 === 0;
         }
@@ -2319,7 +2743,7 @@ export async function createScene(rootEl, snapshot) {
     return {
         render(next) {
             // Flyers live seconds and are not in the snapshot: a full render (state, reset) starts without them.
-            for (const f of flyers.values()) f.sprite.destroy();
+            for (const f of flyers.values()) dropFlyer(f);
             flyers.clear();
             if (!reduced && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
                 veilStart = clock;

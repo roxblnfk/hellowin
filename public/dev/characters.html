@@ -148,9 +148,11 @@
         for (const { ctx, spec } of cells) {
             const { look, dir, pose, item = null, frame } = spec(t);
             const p = POSES[pose];
-            const { canvas } = characterFrame(look, { dir, pose, frame: frame ?? Math.floor(t / p.ms) % p.frames, item });
+            const { canvas, flames } = characterFrame(look, { dir, pose, frame: frame ?? Math.floor(t / p.ms) % p.frames, item });
             ctx.clearRect(0, 0, FRAME.w, FRAME.h);
             ctx.drawImage(canvas, 0, 0);
+            // The candle flame lives only in the light layer; it flickers on its own clock.
+            if (flames) ctx.drawImage(flames[Math.floor(t / 90) % flames.length], 0, 0);
         }
     }
 

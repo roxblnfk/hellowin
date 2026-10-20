@@ -38,10 +38,12 @@
     const baked = new Map();
     const tex = (s) => baked.get(s) ?? baked.set(s, bake(s)).get(s);
 
-    function view(sprite, scale, label, lit = 'day') {
+    function view(sprite, scale, label, lit = 'day', glow = null) {
         const cell = document.createElement('div');
         cell.className = 'cell';
         const c = lit === 'day' ? bake(sprite) : relightCanvas(bake(sprite), lit);
+        // A light layer (the firefly's lantern) goes over the body unlit.
+        if (glow) c.getContext('2d').drawImage(bake(glow), 0, 0);
         c.style.width = `${sprite.w * scale}px`;
         c.style.height = `${sprite.h * scale}px`;
         cell.append(c);
@@ -73,6 +75,7 @@
         roadrunner: ['sky', 'grass'],
         zombie: ['grass', 'night'],
         worm: ['grass', 'night', 'blood'],
+        firefly: ['night', 'blood'],
     };
     const only = params.get('only')?.split(',');
     for (const [kind, bgs] of Object.entries(BACKDROPS)) {
@@ -84,6 +87,8 @@
                 ...(set.emerge ?? []).map((s, i) => view(s, zoom, `d${depth} emerge${i}`, lit)),
                 ...set.fly.map((s, i) => view(s, zoom, `d${depth} fly${i}`, lit)),
                 ...(set.burrow ?? []).map((s, i) => view(s, zoom, `d${depth} burrow${i}`, lit)),
+                // The firefly's lantern levels (dim, mid, bright) over the mid-stroke frame.
+                ...(set.glow ?? []).map((g, i) => view(set.fly[1], zoom, `d${depth} glow${i}`, lit, g)),
                 view(set.hit, zoom, `d${depth} hit`, lit),
                 ...set.fall.map((s, i) => view(s, zoom, `d${depth} fall${i}`, lit)),
             ])));
@@ -132,7 +137,16 @@
             // Worms meander across the lawn (wobble), out of the ground and back into it; the second one is shot.
             { kind: 'worm', depth: 1, ground: true, walk: 150, from: { x: 70, y: 90 }, to: { x: 50, y: 88 }, wobble: { amp: 1.5, waves: 4 }, start: 1000, duration: 6500 },
             { kind: 'worm', depth: 1, ground: true, walk: 150, from: { x: 8, y: 82 }, to: { x: 28, y: 86 }, wobble: { amp: 1.2, waves: 3.5 }, start: 5000, duration: 6500, shotAt: 9000, points: 2 },
+            // Fireflies of the cursed world drift on lazy loops, their lanterns blinking; the second one is shot.
+            { kind: 'firefly', depth: 1, from: { x: -8, y: 30 }, to: { x: 108, y: 22 }, wobble: { amp: 4, waves: 2 }, start: 500, duration: 6500 },
+            { kind: 'firefly', depth: 2, from: { x: 108, y: 40 }, via: { x: 50, y: 20 }, to: { x: -8, y: 30 }, wobble: { amp: 3, waves: 2.5 }, start: 3000, duration: 4000, shotAt: 5200, points: 1 },
         ],
+    };
+    // The lantern's blink as in scene.js: dim most of the time, bright for a moment (flickering), mid in between.
+    const LANTERN_MS = 1700;
+    const lanternLevel = (t) => {
+        const beat = t % LANTERN_MS;
+        return beat < 120 || (beat >= 600 && beat < 720) ? 1 : beat < 600 ? (Math.floor(t / 90) % 5 ? 2 : 1) : 0;
     };
     const FLAP = [180, 130, 90];
 
@@ -146,6 +160,16 @@
         };
     }
     const toArt = (p) => ({ x: (p.x / 100) * W, y: (p.y / 100) * H });
+    // A flyer's `wobble` sway across its path, as in scene.js (pathAt).
+    function swayed(f, t) {
+        const p = pointAt(f, t);
+        if (!f.wobble) return p;
+        const dx = f.to.x - f.from.x;
+        const dy = f.to.y - f.from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const off = f.wobble.amp * Math.sin(2 * Math.PI * f.wobble.waves * t);
+        return { x: p.x - (dy / len) * off, y: p.y + (dx / len) * off };
+    }
     // The worm's clock as in scene.js: it emerges at `from`, crawls the path in between, burrows at `to`.
     const EMERGE_MS = 3 * 130;
     const BURROW_MS = 2 * 150;
@@ -203,7 +227,7 @@
                 const flip = f.to.x < f.from.x;
                 if (f.shotAt && t >= f.shotAt) {
                     const fall = t - f.shotAt;
-                    const p0 = toArt(f.wobble ? wormAt(f, f.shotAt - f.start).p : pointAt(f, (f.shotAt - f.start) / f.duration));
+                    const p0 = toArt(f.kind === 'worm' ? wormAt(f, f.shotAt - f.start).p : swayed(f, (f.shotAt - f.start) / f.duration));
                     if (f.kind === 'worm') {
                         // The worm writhes side to side, then sinks into the ground.
                         if (fall < 1300) draw(fall < 450 ? set.hit : set.fall[fall < 850 ? 0 : 1], p0.x, p0.y, fall < 450 ? (Math.floor(fall / 90) % 2 ? !flip : flip) : flip);
@@ -236,9 +260,10 @@
                     draw(frame, p.x, p.y, flip);
                     continue;
                 }
-                const p = toArt(pointAt(f, local / f.duration));
+                const p = toArt(swayed(f, local / f.duration));
                 const period = f.walk ?? (f.kind === 'roadrunner' ? 70 : FLAP[f.depth]);
                 draw(set.fly[Math.floor(local / period) % 4], p.x, p.y, flip);
+                if (set.glow) draw(set.glow[lanternLevel(t + f.start * 7)], p.x, p.y, flip);
             }
             if (bushSprite) draw(bushSprite, bp.x, bp.y);
         };
