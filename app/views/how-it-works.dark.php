@@ -13,7 +13,7 @@
         <header>
             <div class="how__nav">
                 <a href="/">← к тыквам</a>
-                <a href="/grafana/">Дашборд в Grafana →</a>
+                <a href="{{ $grafanaUrl }}">Дашборд в Grafana →</a>
             </div>
             <h1>Как это работает</h1>
             <p class="how__lead">
@@ -1499,7 +1499,7 @@ sum by (kind) (hellowin_transition_jobs_pushed_total) - sum by (kind) (hellowin_
 
 # p95 задержки proxy-вызовов Centrifugo → RoadRunner
 histogram_quantile(0.95, sum by (le, type) (rate(centrifugo_proxy_duration_seconds_histogram_bucket[1m])))</code></pre>
-            <p><a href="/grafana/">Открыть дашборд в Grafana</a> · <a href="/">Вернуться к тыквам</a></p>
+            <p><a href="{{ $grafanaUrl }}">Открыть дашборд в Grafana</a> · <a href="/">Вернуться к тыквам</a></p>
         </section>
     </main>
 </define:body>

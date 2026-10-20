@@ -12,8 +12,10 @@ return [
     // Cache storage (app/config/cache.php) that keeps the ritual: round, scene, pumpkin stages and clicks
     'storage' => 'hellowin',
 
-    // WebSocket endpoint for centrifuge-js; a path is resolved against the page host
-    'centrifugo_url' => env('CENTRIFUGO_WS_URL', '/connection/websocket'),
+    // WebSocket endpoint for centrifuge-js and the Grafana dashboard: ":<port>/path" is completed with the host the
+    // page was opened by (\App\Application\Web\ServiceUrl), a full URL or a path is used as is
+    'centrifugo_url' => env('CENTRIFUGO_WS_URL', ':8000/connection/websocket'),
+    'grafana_url' => env('GRAFANA_URL', ':3000/'),
 
     // Clicks on a pumpkin that move it to its next stage
     'clicks_per_stage' => env('HELLOWIN_CLICKS_PER_STAGE', 5),

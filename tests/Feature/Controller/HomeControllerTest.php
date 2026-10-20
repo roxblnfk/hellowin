@@ -73,11 +73,26 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-clicks="3"');
     }
 
-    public function centrifugoUrlDefaultsToRelativePath(): void
+    public function centrifugoUrlFollowsThePageHost(): void
     {
-        $this->fakeHttp()->get('/')
+        $this->fakeHttp()->get('http://192.168.1.5:8080/')
             ->assertOk()
-            ->assertBodyContains('data-centrifugo-url="/connection/websocket"');
+            ->assertBodyContains('data-centrifugo-url="ws://192.168.1.5:8000/connection/websocket"');
+    }
+
+    public function grafanaLinkFollowsThePageHost(): void
+    {
+        $this->fakeHttp()->get('http://127.0.0.1:8080/how-it-works')
+            ->assertOk()
+            ->assertBodyContains('href="http://127.0.0.1:3000/"');
+    }
+
+    #[Env('GRAFANA_URL', 'https://grafana.example.com/d/hellowin')]
+    public function grafanaLinkComesFromEnv(): void
+    {
+        $this->fakeHttp()->get('/how-it-works')
+            ->assertOk()
+            ->assertBodyContains('href="https://grafana.example.com/d/hellowin"');
     }
 
     #[Env('CENTRIFUGO_WS_URL', 'wss://ws.example.com/connection/websocket')]

@@ -21,7 +21,8 @@ final class HellowinConfig extends InjectableConfig
     protected array $config = [
         'channel' => 'hellowin',
         'storage' => 'hellowin',
-        'centrifugo_url' => '/connection/websocket',
+        'centrifugo_url' => ':8000/connection/websocket',
+        'grafana_url' => ':3000/',
         'clicks_per_stage' => 5,
         'moderator_secret' => '',
         'scene_stage_max' => '4,8,11',
@@ -65,9 +66,20 @@ final class HellowinConfig extends InjectableConfig
         return self::nonEmptyString($this->config['storage'] ?? null, 'storage');
     }
 
+    /**
+     * @return non-empty-string A full URL, a path or `:<port>/path`: see {@see \App\Application\Web\ServiceUrl}.
+     */
     public function getCentrifugoUrl(): string
     {
         return self::nonEmptyString($this->config['centrifugo_url'] ?? null, 'centrifugo_url');
+    }
+
+    /**
+     * @return non-empty-string The Grafana dashboard, in the forms of {@see getCentrifugoUrl()}.
+     */
+    public function getGrafanaUrl(): string
+    {
+        return self::nonEmptyString($this->config['grafana_url'] ?? null, 'grafana_url');
     }
 
     /**

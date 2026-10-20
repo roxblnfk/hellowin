@@ -6,6 +6,8 @@ namespace App\Endpoint\Web;
 
 use App\Application\Config\HellowinConfig;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Application\Web\ServiceUrl;
+use Psr\Http\Message\ServerRequestInterface;
 use Spiral\Router\Annotation\Route;
 use Spiral\Views\ViewsInterface;
 
@@ -18,19 +20,21 @@ final readonly class HomeController
     ) {}
 
     #[Route(route: '/', name: 'index', methods: ['GET'])]
-    public function index(): string
+    public function index(ServerRequestInterface $request): string
     {
         return $this->views->render('home', $this->snapshot->create() + [
-            'centrifugoUrl' => $this->config->getCentrifugoUrl(),
+            'centrifugoUrl' => ServiceUrl::resolve($this->config->getCentrifugoUrl(), $request->getUri(), websocket: true),
+            'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
         ]);
     }
 
     #[Route(route: '/how-it-works', name: 'how-it-works', methods: ['GET'])]
-    public function howItWorks(): string
+    public function howItWorks(ServerRequestInterface $request): string
     {
         return $this->views->render('how-it-works', [
             'channel' => $this->config->getChannel(),
             'clicksPerStage' => $this->config->getClicksPerStage(),
+            'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
         ]);
     }
 }
