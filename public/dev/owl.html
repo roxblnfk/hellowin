@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — сова</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 10px; }
+        .neutral { background: #5c8a84; }
+        .night { background: #1a1834; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cell span { font-size: 11px; color: #eee; }
+        code { color: #fd8; }
+    </style>
+</head>
+<body>
+<p>Параметры: <code>?t=мс</code> (стоп-кадр) <code>?zoom=N</code> (масштаб, по умолчанию 6). Свет сцены здесь — только
+    подкрашенный фон и умножение цвета на спрайтах; ночью глаза светятся (<code>glowing()</code>).</p>
+<div id="out"></div>
+<script type="module">
+    import { OWL, glowing } from '../js/pixel/owl.js';
+    import { DECOR, bake } from '../js/pixel/sprites.js';
+
+    const params = new URLSearchParams(location.search);
+    const zoom = Math.max(1, Math.round(Number(params.get('zoom')) || 6));
+    const fixed = params.get('t');
+    const out = document.getElementById('out');
+
+    function heading(text) {
+        const h = document.createElement('h2');
+        h.textContent = text;
+        out.append(h);
+    }
+
+    function row(cls, items) {
+        const r = document.createElement('div');
+        r.className = `row ${cls}`;
+        r.append(...items);
+        out.append(r);
+    }
+
+    function cell(canvas, scale, label) {
+        const box = document.createElement('div');
+        box.className = 'cell';
+        canvas.style.width = `${canvas.width * scale}px`;
+        canvas.style.height = `${canvas.height * scale}px`;
+        box.append(canvas);
+        const s = document.createElement('span');
+        s.textContent = label;
+        box.append(s);
+        return box;
+    }
+
+    const FRAMES = [
+        ['idle0', OWL.idle[0]], ['idle1', OWL.idle[1]], ['blink', OWL.blink],
+        ['turnLeft0', OWL.turnLeft[0]], ['turnLeft1', OWL.turnLeft[1]],
+        ['turnRight0', OWL.turnRight[0]], ['turnRight1', OWL.turnRight[1]], ['back', OWL.back],
+        ['talk0', OWL.talk[0]], ['talk1', OWL.talk[1]], ['talk2', OWL.talk[2]], ['hoot', OWL.hoot],
+    ];
+    heading(`Кадры ${zoom}× (19×18, якорь — когти)`);
+    row('neutral', FRAMES.map(([label, s]) => cell(bake(s), zoom, label)));
+    row('night', FRAMES.map(([label, s]) => cell(bake(glowing(s)), zoom, label)));
+
+    // A 14 s loop: idle with a blink, a swivel each way and all the way round, talking with a gesture, a hoot.
+    const SCRIPT = [
+        [0, () => 'idle'], [1500, () => OWL.blink], [1620, () => 'idle'],
+        [3000, () => OWL.turnLeft[0]], [3150, () => OWL.turnLeft[1]], [4200, () => OWL.turnLeft[0]], [4350, () => 'idle'],
+        [5000, () => OWL.turnRight[0]], [5150, () => OWL.turnRight[1]], [6200, () => OWL.turnRight[0]], [6350, () => 'idle'],
+        [6600, () => OWL.blink], [6720, () => 'idle'],
+        [7000, () => OWL.turnLeft[0]], [7150, () => OWL.turnLeft[1]], [7300, () => OWL.back],
+        [8300, () => OWL.turnRight[1]], [8450, () => OWL.turnRight[0]], [8600, () => 'idle'],
+        [9000, (t) => OWL.talk[Math.floor(t / 160) % 2]],
+        [10000, (t) => (Math.floor(t / 160) % 2 ? OWL.talk[2] : OWL.talk[1])],
+        [10600, (t) => OWL.talk[Math.floor(t / 160) % 2]],
+        [11500, () => OWL.hoot],
+        [12800, () => 'idle'],
+    ];
+    const LOOP = 14000;
+    function owlAt(now) {
+        const t = now % LOOP;
+        let pick = SCRIPT[0][1];
+        for (const [start, fn] of SCRIPT) if (t >= start) pick = fn;
+        const f = pick(t);
+        return f === 'idle' ? OWL.idle[Math.floor(t / 700) % 2] : f;
+    }
+
+    // Crop of the tree around its branch tip, with the owl's anchor on the perch.
+    const tree = bake(DECOR.tree);
+    const [px, py] = DECOR.tree.perch;
+    const CROP = { x: px - 32, y: py - 28, w: 48, h: 42 };
+    const LIGHTS = [
+        { id: 'day', label: 'день', sky: ['#8ccff0', '#c8ecf8'], tint: null },
+        { id: 'sunset', label: 'закат', sky: ['#5a4a8c', '#f0a05a'], tint: [255, 196, 160] },
+        { id: 'night', label: 'ночь', sky: ['#0e0c22', '#2a2850'], tint: [92, 96, 156], glow: true },
+    ];
+    const bakedOwl = new Map();
+    const owlCanvas = (s) => bakedOwl.get(s) ?? bakedOwl.set(s, bake(s)).get(s);
+    // Night: only the eye pixels, drawn again after the tint so they stay at full brightness.
+    const eyeCanvas = new Map();
+    function eyesOnly(s) {
+        if (!eyeCanvas.has(s)) {
+            const rows = s.rows.map((r) => r.replace(/[^E]/g, '.'));
+            eyeCanvas.set(s, bake(glowing({ ...s, rows })));
+        }
+        return eyeCanvas.get(s);
+    }
+
+    const scenes = LIGHTS.map((light) => {
+        const c = document.createElement('canvas');
+        c.width = CROP.w;
+        c.height = CROP.h;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const small = document.createElement('canvas');
+        small.width = CROP.w;
+        small.height = CROP.h;
+        const sctx = small.getContext('2d');
+        return { light, c, ctx, small, sctx };
+    });
+    heading(`На ветке: день / закат / ночь — ${zoom}× и 1× (как в сцене при cssPx = 1)`);
+    row('neutral', scenes.flatMap((s) => [cell(s.c, zoom, s.light.label), cell(s.small, 1, `${s.light.label} 1×`)]));
+
+    function draw(now) {
+        const owl = owlAt(now);
+        for (const { light, ctx, sctx } of scenes) {
+            const sky = ctx.createLinearGradient(0, 0, 0, CROP.h);
+            sky.addColorStop(0, light.sky[0]);
+            sky.addColorStop(1, light.sky[1]);
+            ctx.fillStyle = sky;
+            ctx.fillRect(0, 0, CROP.w, CROP.h);
+            const layer = document.createElement('canvas');
+            layer.width = CROP.w;
+            layer.height = CROP.h;
+            const l = layer.getContext('2d');
+            l.drawImage(tree, -CROP.x, -CROP.y);
+            const ox = px - CROP.x - owl.anchor.x;
+            const oy = py - CROP.y - owl.anchor.y;
+            l.drawImage(owlCanvas(owl), ox, oy);
+            if (light.tint) {
+                const img = l.getImageData(0, 0, CROP.w, CROP.h);
+                for (let i = 0; i < img.data.length; i += 4) {
+                    for (let k = 0; k < 3; k++) img.data[i + k] = Math.round((img.data[i + k] * light.tint[k]) / 255);
+                }
+                l.putImageData(img, 0, 0);
+            }
+            if (light.glow) l.drawImage(eyesOnly(owl), ox, oy);
+            ctx.drawImage(layer, 0, 0);
+            sctx.clearRect(0, 0, CROP.w, CROP.h);
+            sctx.drawImage(ctx.canvas, 0, 0);
+        }
+    }
+
+    if (fixed !== null) {
+        draw(Number(fixed));
+    } else {
+        const loop = (now) => {
+            draw(now);
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+</script>
+</body>
+</html>

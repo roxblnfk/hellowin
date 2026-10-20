@@ -10,20 +10,27 @@
         .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px; }
         .sky { background: #8ccff0; }
         .grass { background: #2e7a34; }
+        .dusk { background: #c86a5a; }
+        .night { background: #1a1834; }
+        .night .cell span, .dusk .cell span { color: #eee; }
         .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .cell span { font-size: 11px; color: #123; }
         .grass .cell span { color: #eee; }
     </style>
 </head>
 <body>
-<h2>Живая сцена 3× (параметр ?t=мс — стоп-кадр)</h2>
+<h2>Живая сцена 3× (параметры: ?t=мс — стоп-кадр, ?zoom=N — масштаб листов, ?only=kind,kind, ?live=0 — без сцен)</h2>
 <div id="live"></div>
+<h2>Ночь: вороны, мыши, призраки, ведьма, бегун на горизонте, зомби на лужайке</h2>
+<div id="live-night"></div>
 <div id="out"></div>
 <script type="module">
     import { FLYERS, BUSH, DIGITS, digitsSprite, feathersOf, bake } from '../js/pixel/flyers.js';
     import { PALETTE } from '../js/pixel/palette.js';
 
     const out = document.getElementById('out');
+    const params = new URLSearchParams(location.search);
+    const zoom = Math.max(1, Math.round(Number(params.get('zoom')) || 3));
     const css = (key) => `#${PALETTE[key].toString(16).padStart(6, '0')}`;
     const baked = new Map();
     const tex = (s) => baked.get(s) ?? baked.set(s, bake(s)).get(s);
@@ -52,12 +59,25 @@
         out.append(h, row);
     }
 
-    for (const kind of ['duck', 'chicken']) {
-        for (const bg of ['sky', 'grass']) {
-            section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, 3× (${bg})`, bg, FLYERS[kind].flatMap((set, depth) => [
-                ...set.fly.map((s, i) => view(s, 3, `d${depth} fly${i}`)),
-                view(set.hit, 3, `d${depth} hit`),
-                ...set.fall.map((s, i) => view(s, 3, `d${depth} fall${i}`)),
+    // Backdrops per kind: the night flyers must also read on the sunset and night skies; ground runners on grass.
+    const BACKDROPS = {
+        duck: ['sky', 'grass'],
+        chicken: ['sky', 'grass'],
+        crow: ['sky', 'dusk', 'night'],
+        bat: ['dusk', 'night'],
+        ghost: ['sky', 'night'],
+        witch: ['sky', 'dusk', 'night'],
+        roadrunner: ['sky', 'grass'],
+        zombie: ['grass', 'night'],
+    };
+    const only = params.get('only')?.split(',');
+    for (const [kind, bgs] of Object.entries(BACKDROPS)) {
+        if (only && !only.includes(kind)) continue;
+        for (const bg of bgs) {
+            section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, ${zoom}× (${bg})`, bg, FLYERS[kind].flatMap((set, depth) => [
+                ...set.fly.map((s, i) => view(s, zoom, `d${depth} fly${i}`)),
+                view(set.hit, zoom, `d${depth} hit`),
+                ...set.fall.map((s, i) => view(s, zoom, `d${depth} fall${i}`)),
             ]));
         }
     }
@@ -73,24 +93,36 @@
     const W = 320;
     const H = 180;
     const HORIZON = 70;
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = H;
-    canvas.style.width = `${W * 3}px`;
-    canvas.style.height = `${H * 3}px`;
-    document.getElementById('live').append(canvas);
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-
     const PERIOD = 3000 * 4;
     const BUSH_AT = { x: 14, y: 88 };
-    const flights = [
-        { kind: 'duck', depth: 0, from: { x: -8, y: 18.4 }, to: { x: 108, y: 10.2 }, start: 0, duration: 9000 },
-        { kind: 'chicken', depth: 1, from: { x: 108, y: 30 }, to: { x: -8, y: 14 }, start: 500, duration: 6000 },
-        { kind: 'duck', depth: 2, bush: true, from: BUSH_AT, via: { x: 30, y: 18 }, to: { x: 75, y: -8 }, start: 1500, duration: 4000, shotAt: 2600, points: 1 },
-        { kind: 'chicken', depth: 2, from: { x: -8, y: 40 }, via: { x: 50, y: 5 }, to: { x: 108, y: 30 }, start: 3000, duration: 5000, shotAt: 5200, points: 2 },
-        { kind: 'duck', depth: 1, from: { x: 108, y: 22 }, to: { x: -8, y: 30 }, start: 6000, duration: 6000, shotAt: 8000, points: 3 },
-    ];
+    const DAY = {
+        el: 'live',
+        sky: 'sky',
+        bush: true,
+        flights: [
+            { kind: 'duck', depth: 0, from: { x: -8, y: 18.4 }, to: { x: 108, y: 10.2 }, start: 0, duration: 9000 },
+            { kind: 'chicken', depth: 1, from: { x: 108, y: 30 }, to: { x: -8, y: 14 }, start: 500, duration: 6000 },
+            { kind: 'duck', depth: 2, bush: true, from: BUSH_AT, via: { x: 30, y: 18 }, to: { x: 75, y: -8 }, start: 1500, duration: 4000, shotAt: 2600, points: 1 },
+            { kind: 'chicken', depth: 2, from: { x: -8, y: 40 }, via: { x: 50, y: 5 }, to: { x: 108, y: 30 }, start: 3000, duration: 5000, shotAt: 5200, points: 2 },
+            { kind: 'duck', depth: 1, from: { x: 108, y: 22 }, to: { x: -8, y: 30 }, start: 6000, duration: 6000, shotAt: 8000, points: 3 },
+            // The road-runner hint: it runs along the horizon line, never shot.
+            { kind: 'roadrunner', depth: 0, ground: true, from: { x: 108, y: (HORIZON / H) * 100 }, to: { x: -8, y: (HORIZON / H) * 100 }, start: 7000, duration: 3500 },
+        ],
+    };
+    const NIGHT = {
+        el: 'live-night',
+        sky: 'night',
+        flights: [
+            { kind: 'crow', depth: 0, from: { x: -8, y: 20 }, to: { x: 108, y: 12 }, start: 0, duration: 9000 },
+            { kind: 'bat', depth: 1, from: { x: 108, y: 26 }, to: { x: -8, y: 16 }, start: 300, duration: 5000 },
+            { kind: 'ghost', depth: 2, from: { x: -8, y: 30 }, via: { x: 40, y: 10 }, to: { x: 108, y: 24 }, start: 1000, duration: 6000, shotAt: 3800, points: 2 },
+            { kind: 'witch', depth: 1, from: { x: 108, y: 12 }, via: { x: 50, y: 4 }, to: { x: -8, y: 18 }, start: 4500, duration: 5000, shotAt: 7400, points: 10 },
+            { kind: 'crow', depth: 2, from: { x: 108, y: 34 }, to: { x: -8, y: 20 }, start: 6000, duration: 4500, shotAt: 8200, points: 1 },
+            { kind: 'bat', depth: 2, from: { x: -8, y: 16 }, via: { x: 50, y: 30 }, to: { x: 108, y: 8 }, start: 8000, duration: 3500 },
+            { kind: 'roadrunner', depth: 0, ground: true, from: { x: -8, y: (HORIZON / H) * 100 }, to: { x: 108, y: (HORIZON / H) * 100 }, start: 2000, duration: 3500 },
+            { kind: 'zombie', depth: 1, ground: true, walk: 150, from: { x: 30, y: 72 }, to: { x: 80, y: 74 }, start: 0, duration: 11000, shotAt: 9800, points: 3 },
+        ],
+    };
     const FLAP = [180, 130, 90];
 
     const lerp = (a, b, t) => a + (b - a) * t;
@@ -104,67 +136,93 @@
     }
     const toArt = (p) => ({ x: (p.x / 100) * W, y: (p.y / 100) * H });
 
-    function draw(sprite, x, y, flip = false, alpha = 1) {
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.translate(Math.round(x), Math.round(y));
-        if (flip) ctx.scale(-1, 1);
-        ctx.drawImage(tex(sprite), -sprite.anchor.x, -sprite.anchor.y);
-        ctx.restore();
-    }
+    function live(cfg) {
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        canvas.style.width = `${W * 3}px`;
+        canvas.style.height = `${H * 3}px`;
+        document.getElementById(cfg.el).append(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
 
-    function frame(now) {
-        const t = now % PERIOD;
-        ctx.fillStyle = css('sky');
-        ctx.fillRect(0, 0, W, HORIZON);
-        ctx.fillStyle = css('leaf');
-        ctx.fillRect(0, HORIZON, W, H - HORIZON);
-        ctx.fillStyle = css('soil');
-        ctx.fillRect(0, HORIZON + 30, W, H - HORIZON - 30);
-
-        const bushFlyer = flights.find((f) => f.bush);
-        const rustling = t >= bushFlyer.start - 600 && t < bushFlyer.start + 300;
-        const bushSprite = rustling ? BUSH.rustle[Math.floor(t / 90) % 3] : BUSH.idle[0];
-        const bp = toArt(BUSH_AT);
-        draw(BUSH.idle[1], bp.x + 220, bp.y + 4);
-
-        for (const f of [...flights].sort((a, b) => a.depth - b.depth)) {
-            const set = FLYERS[f.kind][f.depth];
-            const local = t - f.start;
-            if (local < 0) continue;
-            if (f.shotAt && t >= f.shotAt) {
-                const fall = t - f.shotAt;
-                const p0 = toArt(pointAt(f, (f.shotAt - f.start) / f.duration));
-                const flip = f.to.x < f.from.x;
-                const y = p0.y + 0.00012 * fall * fall;
-                if (y < H + 20) {
-                    const sprite = fall < 160 ? set.hit : set.fall[Math.floor(fall / 120) % 2];
-                    draw(sprite, p0.x, y, flip);
-                }
-                feathersOf(f.kind).concat(feathersOf(f.kind)).forEach((feather, i) => {
-                    if (fall > 1400) return;
-                    const a = (i / 4) * Math.PI * 2 + 0.6;
-                    const s = fall / 1000;
-                    draw(feather, p0.x + Math.cos(a) * 26 * s, p0.y + Math.sin(a) * 14 * s + 22 * s * s, false, 1 - fall / 1400);
-                });
-                if (fall < 1200) {
-                    draw(digitsSprite(`+${f.points}`), p0.x, p0.y - set.hit.h / 2 - 6 - fall * 0.012, false, Math.min(1, 2 - fall / 600));
-                }
-                continue;
-            }
-            if (local > f.duration) continue;
-            const p = toArt(pointAt(f, local / f.duration));
-            draw(set.fly[Math.floor(local / FLAP[f.depth]) % 4], p.x, p.y, f.to.x < f.from.x);
+        function draw(sprite, x, y, flip = false, alpha = 1) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(Math.round(x), Math.round(y));
+            if (flip) ctx.scale(-1, 1);
+            ctx.drawImage(tex(sprite), -sprite.anchor.x, -sprite.anchor.y);
+            ctx.restore();
         }
-        draw(bushSprite, bp.x, bp.y);
+
+        return (now) => {
+            const t = now % PERIOD;
+            ctx.fillStyle = cfg.sky === 'night' ? '#1a1834' : css('sky');
+            ctx.fillRect(0, 0, W, HORIZON);
+            ctx.fillStyle = css(cfg.sky === 'night' ? 'leafDark' : 'leaf');
+            ctx.fillRect(0, HORIZON, W, H - HORIZON);
+            ctx.fillStyle = css(cfg.sky === 'night' ? 'soilDark' : 'soil');
+            ctx.fillRect(0, HORIZON + 30, W, H - HORIZON - 30);
+
+            const bp = toArt(BUSH_AT);
+            let bushSprite = null;
+            const bushFlyer = cfg.flights.find((f) => f.bush);
+            if (bushFlyer) {
+                const rustling = t >= bushFlyer.start - 600 && t < bushFlyer.start + 300;
+                bushSprite = rustling ? BUSH.rustle[Math.floor(t / 90) % 3] : BUSH.idle[0];
+                draw(BUSH.idle[1], bp.x + 220, bp.y + 4);
+            }
+
+            for (const f of [...cfg.flights].sort((a, b) => a.depth - b.depth)) {
+                const set = FLYERS[f.kind][f.depth];
+                const local = t - f.start;
+                if (local < 0) continue;
+                const flip = f.to.x < f.from.x;
+                if (f.shotAt && t >= f.shotAt) {
+                    const fall = t - f.shotAt;
+                    const p0 = toArt(pointAt(f, (f.shotAt - f.start) / f.duration));
+                    if (f.ground) {
+                        // A ground target collapses where it stands.
+                        if (fall < 1600) draw(fall < 160 ? set.hit : set.fall[fall < 420 ? 0 : 1], p0.x, p0.y, flip, Math.min(1, 2 - fall / 800));
+                    } else {
+                        const y = p0.y + 0.00012 * fall * fall;
+                        if (y < H + 20) draw(fall < 160 ? set.hit : set.fall[Math.floor(fall / 120) % 2], p0.x, y, flip);
+                    }
+                    feathersOf(f.kind).concat(feathersOf(f.kind)).forEach((feather, i, all) => {
+                        if (fall > 1400) return;
+                        const a = (i / all.length) * Math.PI * 2 + 0.6;
+                        const s = fall / 1000;
+                        const cy = f.ground ? p0.y - set.hit.h / 2 : p0.y;
+                        draw(feather, p0.x + Math.cos(a) * 26 * s, cy + Math.sin(a) * 14 * s + 22 * s * s, false, 1 - fall / 1400);
+                    });
+                    if (fall < 1200) {
+                        const top = f.ground ? p0.y - set.hit.h - 4 : p0.y - set.hit.h / 2 - 6;
+                        draw(digitsSprite(`+${f.points}`), p0.x, top - fall * 0.012, false, Math.min(1, 2 - fall / 600));
+                    }
+                    continue;
+                }
+                if (local > f.duration) continue;
+                const p = toArt(pointAt(f, local / f.duration));
+                const period = f.walk ?? (f.kind === 'roadrunner' ? 70 : FLAP[f.depth]);
+                draw(set.fly[Math.floor(local / period) % 4], p.x, p.y, flip);
+            }
+            if (bushSprite) draw(bushSprite, bp.x, bp.y);
+        };
     }
 
-    const fixed = new URLSearchParams(location.search).get('t');
+    if (params.get('live') === '0') {
+        for (const id of ['live', 'live-night']) {
+            document.getElementById(id).previousElementSibling.remove();
+            document.getElementById(id).remove();
+        }
+    }
+    const frames = params.get('live') === '0' ? [] : [live(DAY), live(NIGHT)];
+    const fixed = params.get('t');
     if (fixed !== null) {
-        frame(Number(fixed));
+        frames.forEach((frame) => frame(Number(fixed)));
     } else {
         const loop = (now) => {
-            frame(now);
+            frames.forEach((frame) => frame(now));
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);

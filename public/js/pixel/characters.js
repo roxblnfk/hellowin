@@ -747,6 +747,38 @@ const ITEM_DEFS = {
         front: { rows: ['.a..', '.g..', '.g..', '.g..', '.ga.', 'Bbb.', '.Bb.', '..b.'], grip: [1, 5] },
         side: { rows: ['..a.', '..g.', '..g.', '..g.', '.ag.', '.bbB', '.bB.', '.b..'], grip: [1, 5] },
     },
+    // Items have no frames of their own, so the flame is static: a white-hot core in a lopsided tongue of fire over
+    // a rag wrapping, so it reads as a flame and not as a lollipop. Gripped low, the flame clears the head.
+    torch: {
+        label: 'Факел',
+        front: {
+            rows: ['..Y..', '.YY..', '.YyY.', 'YywyY', 'YwwyY', '.ywy.', 'HhHhH', '.HhH.', '..B..', '..b..', '..b..', '..b..', '..b..', '..b..', '..k..'],
+            grip: [1, 12],
+        },
+        side: {
+            rows: ['...Y.', '..YY.', '.YyY.', 'YywyY', 'YwwyY', '.ywy.', 'HhHhH', '.HhH.', '..B..', '..b..', '..b..', '..b..', '..b..', '..b..', '..k..'],
+            grip: [1, 12],
+        },
+    },
+    // Three grey tines on a long shaft; from the side it leans forward like the broom, so it clears the face.
+    pitchfork: {
+        label: 'Вилы',
+        front: {
+            rows: [
+                'g.g.g', 'g.g.g', 'g.g.g', 'aggga', '..g..', '..B..', '..B..', '..B..', '..B..', '..B..', '..B..',
+                '..B..', '..B..', '..B..', '..B..', '..B..', '..b..', '..b..', '..b..',
+            ],
+            grip: [1, 11],
+        },
+        side: {
+            rows: [
+                '......g.g.g', '......g.g.g', '......aggga', '........g..', '........B..', '.......B...', '.......B...',
+                '.......B...', '......B....', '......B....', '......B....', '.....B.....', '.....B.....', '.....B.....',
+                '....B......', '....b......', '...b.......',
+            ],
+            grip: [4, 12],
+        },
+    },
 };
 
 // Shooting always shows the pistol, aimed: [fire, recoil] per direction.

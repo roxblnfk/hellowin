@@ -88,4 +88,25 @@ export const PALETTE = {
     eyeRed: 0xff3c34,
     eyeBlue: 0x50c4ff,
     eyeViolet: 0xc880ff,
+
+    // Night flyers. Crow and bat stay a step above the outline so their shapes survive on a dark sky; the ghost is
+    // pale with a blue edge, so it reads on the day sky too.
+    crowDark: 0x2e2a42,
+    crow: 0x4a4562,
+    crowLight: 0x77729a,
+    bat: 0x4e3448,
+    batWing: 0x7a4e6e,
+    batLight: 0xa77898,
+    ghost: 0xf0f4ff,
+    ghostShade: 0xbac8ea,
+    ghostEdge: 0x7a8cc4,
+    ecto: 0x9cf0b4,
+
+    // The owl: a grey-brown, mid-value ramp, so it neither melts into the bark nor glares at night.
+    owlDark: 0x5a4a44,
+    owl: 0x8c7664,
+    owlLight: 0xb8a088,
+    owlFace: 0xdccaa8,
+    owlEye: 0xffb62e,
+    owlEyeGlow: 0xfff2a0,
 };
