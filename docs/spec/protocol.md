@@ -105,7 +105,9 @@
 `horizon` из `app/config/hellowin.php`; `duration` — как у ближней глубины, без `via` и `bush`), `points` 0, выстрел по нему всегда `hit:false`, без реплик
 совы; `witch` — редкий, очки `HELLOWIN_FLYER_RARE_POINTS`; `zombie` — наземная цель проклятого мира: путь по
 лужайке (зона `walk`) от края грядки наружу, `depth` 1, `via` нет, очки `HELLOWIN_ZOMBIE_POINTS`, частота
-`HELLOWIN_ZOMBIE_INTERVAL`.
+`HELLOWIN_ZOMBIE_INTERVAL`. `worm` (**запланировано**, обычный летун сцены 3 из `HELLOWIN_FLYER_KINDS`) — наземная
+цель: путь по лужайке (зона `walk`) из точки в точку внутри зоны — выползает из земли и уходит в землю, без краёв
+экрана; извилистость — `wobble`; `depth` 1, `via` нет, длительность и очки — как у летунов глубины 1.
 
 Летун: `flyer` — id вида `f-` + 8 hex, его же клиент шлёт в `shoot`; `depth` — от 0 (дальний) до N−1, где N — длина
 `HELLOWIN_FLYER_DURATION` (по умолчанию 3); `duration` — мс от `from` до `to`, отсчёт — от `launchedAt` (см. «Время летунов»); `kind` —
