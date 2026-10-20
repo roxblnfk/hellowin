@@ -69,6 +69,8 @@ final readonly class RPCService implements ServiceInterface
         $request->respond(new RPCResponse($this->guarded($method, fn(): array => match ($method) {
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
+            // Neither a lock nor the store: the client syncs its clock over several calls and keeps the fastest one
+            'time' => ['ok' => true, 'now' => $this->clock->now()],
             'register' => $this->register($request->getData(), $player),
             'move' => $this->move($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),

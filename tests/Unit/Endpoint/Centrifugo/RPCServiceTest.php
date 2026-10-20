@@ -88,6 +88,16 @@ final class RPCServiceTest
         Assert::blank($ritual->broadcast->published);
     }
 
+    public function timeIsTheServerClockForAnyone(): void
+    {
+        $ritual = new RitualHarness(lock: new FakeLock(available: false));
+        $ritual->clock->now = 1_760_900_001_500;
+
+        Assert::same($this->call($ritual, 'time', []), ['ok' => true, 'now' => 1_760_900_001_500]);
+        Assert::same($this->call($ritual, 'time', [], self::PLAYER), ['ok' => true, 'now' => 1_760_900_001_500]);
+        Assert::blank($ritual->broadcast->published);
+    }
+
     public function stateReturnsTheSnapshot(): void
     {
         $ritual = new RitualHarness(threshold: 4, stageMax: [4, 6, 8]);
