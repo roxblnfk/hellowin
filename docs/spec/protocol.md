@@ -3,7 +3,8 @@
 Статус: подключение, RPC `click` и `state`, события `click`, `pumpkin`, `scene`, `reset`, снимок состояния
 (со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
 **реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) и летуны (RPC `shoot`, события `flyer`, `shot`,
-`bushes` в снимке) — тоже.
+`bushes` в снимке) — тоже; персонаж и прогулка (`look` в `register` и `Player`, RPC `move`, события `walker`,
+`move`, `leave`, `walkers` в снимке) — **запланировано**.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -26,15 +27,23 @@
 |---|---|---|---|
 | `click` | `{element}` | `{ok:true}` | реализовано |
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
-| `register` | `{name}` | `{ok:true, player: <Player>}` | реализовано |
+| `register` | `{name, look?}` | `{ok:true, player: <Player>}`; с `look` игрок выходит на поле (событие `walker`) | реализовано; `look` — запланировано |
 | `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>]}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий | реализовано |
 | `reset` | `{round}` — раунд, который клиент видит сейчас | `{ok:true, round}` — новый раунд; повторный вызов с тем же `round` сброс не повторяет (сравнение раунда под локами), а возвращает текущий раунд. Ошибки: `invalid round`, `reset disabled` (`HELLOWIN_RESET_RPC=false`) | реализовано |
+| `move` | `{x, y}` — куда идти, проценты экрана | `{ok:true, walk: <Walk>}`; без `look` — `no character` | запланировано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит, улетел или такого нет) | реализовано |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
-`invalid name` и `anonymous` (подключение без секрета).
+`invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `invalid point`, `anonymous`,
+`no character`.
 
-`Player` — `{id, name, clicks, finished, flyers, points}`: `id` — публичный id, `name` — `null` до `register`.
+`Player` — `{id, name, look, clicks, finished, flyers, points}`: `id` — публичный id, `name` и `look` — `null` до
+`register`; `look` — `{body, cloak, face, eyes, hat}` ([`players.md`](players.md), «Персонаж»).
+
+`Walker` — фигурка на поле: `{id, name, look, item, walk: <Walk>}`. `Walk` — `{path: [{x,y}, …], startedAt, arrivesAt}`:
+ломаная от текущей точки до цели (первая точка — откуда, последняя — куда), серверное время в мс. Фигурка идёт по
+ломаной с постоянной скоростью; стоящая — `path` из одной точки. Где фигурка сейчас, клиент считает сам по `now`
+(«Время летунов» — те же часы).
 
 ```json
 {"ok":true,"player":{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":0,"points":0}}
@@ -53,6 +62,9 @@
 | `reset` | — | сброс; новый `round` в самом событии |
 | `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
+| `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` или прошёл экран входа) или сменил вид |
+| `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
+| `leave` | `player: {id}` | у игрока не осталось подключений — фигурка уходит |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
 
 `player` — `{id, name}` игрока, совершившего действие (`name` может быть `null`); у анонимных действий поля нет.
@@ -73,6 +85,9 @@
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
 {"type":"scene","round":1,"scene":1,"stageMax":7}
 {"type":"reset","round":2}
+{"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
+{"type":"move","round":1,"player":{"id":"3f9c0a7d12b4e856"},"walk":{"path":[{"x":40,"y":94},{"x":66,"y":90},{"x":82,"y":74}],"startedAt":1760900002000,"arrivesAt":1760900006100}}
+{"type":"leave","round":1,"player":{"id":"3f9c0a7d12b4e856"}}
 {"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":2,"points":5}]}
 {"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3,"launchedAt":1760900000000,"expiresAt":1760900009000}
 {"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1,"launchedAt":1760900002000,"expiresAt":1760900006000}
@@ -92,6 +107,7 @@
   "threshold": 5,
   "bushes": [{"id":"bush-1","x":4,"y":66,"depth":2}],
   "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2}],
+  "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
   "now": 1760900001500
 }
 ```
@@ -101,7 +117,8 @@
 (квадратичная кривая), без неё полёт прямой. `x`/`y` — проценты экрана (на узких экранах фронтенд растягивает раскладку тыкв по x от центра — `spreadX`
 в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l`; `sceneStages` — номер финальной сцены (длина списка
 `HELLOWIN_SCENE_STAGE_MAX`); `stageMax` — последняя стадия тыквы в текущей сцене, в финальной — та же, что в сцене
-перед ней (см. [`scenario.md`](scenario.md)). `clicks` — клики с момента перехода тыквы в текущую стадию. Страница
+перед ней (см. [`scenario.md`](scenario.md)). `clicks` — клики с момента перехода тыквы в текущую стадию. `walkers` — фигурки игроков на поле
+(`Walker`, см. «RPC»). Страница
 `GET /` отдаёт снимок в шаблон `home` (переменные — см. [`frontend.md`](frontend.md)) вместе с `centrifugoUrl`.
 
 ### Время летунов

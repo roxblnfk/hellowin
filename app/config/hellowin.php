@@ -59,4 +59,11 @@ return [
         ['id' => 'bush-5', 'x' => 16, 'y' => 44, 'depth' => 1],
         ['id' => 'bush-6', 'x' => 88, 'y' => 43, 'depth' => 1],
     ],
+
+    // Where players' characters walk: the lawn rectangle minus the patch ellipse, in percents of the viewport like
+    // the elements (players.md, «На поле»)
+    'walk' => [
+        'area' => ['x1' => 3, 'y1' => 44, 'x2' => 97, 'y2' => 97],
+        'patch' => ['cx' => 50, 'cy' => 63, 'rx' => 31, 'ry' => 25],
+    ],
 ];
