@@ -43,7 +43,7 @@ export function createReveal(root) {
         <p class="reveal__lead">Весь вечер ваши клики обрабатывал он. Вот числа ритуала.</p>
         <dl class="reveal__grid"></dl>
         <p class="reveal__last" data-reveal-last></p>
-        <a class="reveal__link" href="/how-it-works">Как это работает →</a>`;
+        <a class="reveal__link" href="/how-it-works" target="_blank" rel="noopener">Как это работает →</a>`;
     const grid = panel.querySelector('.reveal__grid');
     for (const [key] of CARDS) {
         const card = document.createElement('div');

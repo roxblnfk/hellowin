@@ -20,7 +20,7 @@
           data-finale="{{ json_encode($finale ?? null) }}"
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
           data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}">
-        <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
+        <a class="help-link" href="/how-it-works" target="_blank" rel="noopener" title="Как это работает (в новой вкладке)" aria-label="Как это работает (в новой вкладке)">
             <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
         </a>
 
