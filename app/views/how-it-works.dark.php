@@ -20,10 +20,11 @@
                 RoadRunner «умер», и посетители воскрешают его ритуалом на тыквенной грядке. Ритуал идёт сценами. В
                 каждой сцене тыквы проходят несколько стадий: тыква переходит в следующую, когда по ней набрали
                 <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов, и останавливается на последней стадии сцены — её задаёт
-                список <code>HELLOWIN_SCENE_STAGE_MAX</code>. Когда все тыквы дошли до неё, сцена сменяется. Один проход
-                ритуала — раунд; сброс начинает следующий. Все видят клики всех в реальном времени, а метрики уходят в
-                публичную Grafana. Ниже — что происходит на самом деле, с именами классов, ключей, каналов и портов из
-                кода. Скоро к тыквам добавятся игроки и летуны — пока это в работе.
+                список <code>HELLOWIN_SCENE_STAGE_MAX</code>. Когда все тыквы дошли до неё, сцена готова, а следующую
+                включает модератор — он же сова-рассказчик. В финале сова раскрывает реальные числа вечера. Один проход
+                ритуала — раунд; сброс начинает следующий. Игроки ходят фигурками по лужайке и сбивают летунов. Все
+                видят действия всех в реальном времени, а метрики уходят в публичную Grafana. Ниже — что происходит на
+                самом деле, с именами классов, ключей, каналов и портов из кода.
             </p>
             <dl class="how__terms">
                 <dt>Spiral Framework</dt>
@@ -35,8 +36,8 @@
                 <dd>Сервер WebSocket-соединений и каналов (pub/sub). Держит соединения с браузерами, а решения
                     «пускать ли», «что делать с RPC» спрашивает у приложения через proxy.</dd>
                 <dt>Valkey</dt>
-                <dd>Redis-совместимое хранилище. В нём лежат состояние ритуала и ключи идемпотентности переходов;
-                    AOF на volume — состояние переживает перезапуск.</dd>
+                <dd>Redis-совместимое хранилище. В нём лежат состояние ритуала и сюжета, игроки, летуны, фигурки и
+                    ключи идемпотентности переходов; AOF на volume — состояние переживает перезапуск.</dd>
                 <dt>Prometheus, Grafana</dt>
                 <dd>Prometheus сам забирает метрики с сервисов и хранит их; Grafana рисует по ним дашборд.</dd>
             </dl>
@@ -49,6 +50,7 @@
                 <li role="presentation"><a role="tab" id="tab-click" href="#click" aria-controls="click" aria-selected="false">Клик</a></li>
                 <li role="presentation"><a role="tab" id="tab-stages" href="#stages" aria-controls="stages" aria-selected="false">Стадии и лок</a></li>
                 <li role="presentation"><a role="tab" id="tab-idempotency" href="#idempotency" aria-controls="idempotency" aria-selected="false">Идемпотентный переход</a></li>
+                <li role="presentation"><a role="tab" id="tab-live" href="#live" aria-controls="live" aria-selected="false">Модератор, фигурки, летуны</a></li>
                 <li role="presentation"><a role="tab" id="tab-metrics" href="#metrics" aria-controls="metrics" aria-selected="false">Метрики</a></li>
             </ul>
         </nav>
@@ -74,18 +76,27 @@
                 goridge RPC на <code>127.0.0.1:6001</code>.
             </p>
             <p>
-                Состояние ритуала — в Valkey. Его читает и пишет KV-плагин RoadRunner: хранилище <code>hellowin</code>
-                с драйвером <code>redis</code> на <code>VALKEY_ADDR</code>, в PHP это PSR-16 кэш <code>hellowin</code>.
+                Летунов, фигурки и таблицу лидеров двигает время, а не запросы. Для этого есть плагин
+                <code>service</code>: RoadRunner держит один долгоживущий процесс <code>php app.php hellowin:ticker</code>
+                вне пулов воркеров и перезапускает его при падении. Тикер ходит к плагинам по тому же RPC, что и
+                воркеры, а через gRPC API Centrifugo ещё и спрашивает presence канала. Вторую копию (перекрытие при
+                рестарте) держит в стороне лок <code>ticker</code> — лизинг, который владелец продлевает раз в секунду.
+            </p>
+            <p>
+                Состояние игры — в Valkey: ритуал и сюжет, игроки и таблица лидеров, летуны, фигурки. Его читает и
+                пишет KV-плагин RoadRunner: хранилище <code>hellowin</code> с драйвером <code>redis</code> на
+                <code>VALKEY_ADDR</code>, в PHP это PSR-16 кэш <code>hellowin</code>.
                 Ключи идемпотентности переходов <code>hellowin:amo:*</code> воркеры jobs пишут в тот же Valkey напрямую,
                 через predis (<code>VALKEY_DSN</code>): пакету <code>spiral/idempotency</code> нужен атомарный
-                <code>SET NX EX</code>, которого у KV-плагина нет. Локи <code>pumpkin:{id}</code> и <code>scene</code>
-                и очередь живут в памяти процесса RoadRunner — этого хватает, пока <code>app</code> один.
+                <code>SET NX EX</code>, которого у KV-плагина нет. Локи (<code>pumpkin:{id}</code>, <code>scene</code>,
+                <code>player:{id}</code>, <code>flyer:{id}</code>, <code>walkers</code> и другие) и очередь живут в памяти
+                процесса RoadRunner — этого хватает, пока <code>app</code> один.
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1210 700" style="min-width: 871px" role="img" aria-label="Модули Hellowin: браузер ходит в nginx; nginx раздаёт запросы в RoadRunner, Centrifugo и Grafana. В RoadRunner три плагина с пулами PHP-воркеров: http, centrifuge и jobs. Воркеры по RPC обращаются к плагинам kv, lock, jobs, metrics и centrifuge. Состояние игры (kv, драйвер redis) и ключи идемпотентности (predis) лежат в Valkey. Prometheus собирает метрики с RoadRunner и Centrifugo.">
+<svg class="diagram__svg" viewBox="0 0 1210 750" style="min-width: 871px" role="img" aria-label="Модули Hellowin: браузер ходит в nginx; nginx раздаёт запросы в RoadRunner, Centrifugo и Grafana. В RoadRunner три плагина с пулами PHP-воркеров: http, centrifuge и jobs, и процесс тикера под плагином service. Воркеры и тикер по RPC обращаются к плагинам kv, lock, jobs, metrics и centrifuge. Состояние игры (kv, драйвер redis) и ключи идемпотентности (predis) лежат в Valkey. Prometheus собирает метрики с RoadRunner и Centrifugo.">
 <defs><marker id="a-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
-<rect class="d-group g-rr" x="440" y="146" width="530" height="384" rx="10"/>
+<rect class="d-group g-rr" x="440" y="146" width="530" height="450" rx="10"/>
 <text class="d-h" x="456" y="168" text-anchor="start">RoadRunner 3 · контейнер app · .rr.yaml</text>
 <rect class="d-box g-edge" x="20" y="200" width="150" height="90" rx="6"/>
 <text class="d-t" x="95" y="233.5" text-anchor="middle">Браузер</text>
@@ -126,26 +137,34 @@
 <text class="d-m" x="535" y="465" text-anchor="middle">hellowin: redis</text>
 <rect class="d-box g-rr" x="640" y="432" width="150" height="44" rx="6"/>
 <text class="d-t" x="715" y="450" text-anchor="middle">lock</text>
-<text class="d-m" x="715" y="465" text-anchor="middle">pumpkin:{id}, scene</text>
+<text class="d-m" x="715" y="465" text-anchor="middle">pumpkin:{id}, scene, …</text>
 <rect class="d-box g-rr" x="830" y="432" width="125" height="44" rx="6"/>
 <text class="d-t" x="892.5" y="450" text-anchor="middle">metrics</text>
 <text class="d-m" x="892.5" y="465" text-anchor="middle">:2112 /metrics</text>
+<rect class="d-box g-php" x="640" y="524" width="150" height="58" rx="6"/>
+<text class="d-t" x="715" y="545" text-anchor="middle">service: ticker</text>
+<text class="d-m" x="715" y="560" text-anchor="middle">hellowin:ticker</text>
+<text class="d-s" x="715" y="574" text-anchor="middle">один процесс, лок ticker</text>
 <rect class="d-box g-kv" x="1050" y="250" width="145" height="270" rx="6"/>
-<text class="d-t" x="1122.5" y="328.5" text-anchor="middle">Valkey</text>
-<text class="d-m" x="1122.5" y="343.5" text-anchor="middle">valkey:6379</text>
-<text class="d-s" x="1122.5" y="358.5" text-anchor="middle">AOF + volume</text>
-<text class="d-s" x="1122.5" y="373.5" text-anchor="middle"></text>
-<text class="d-m" x="1122.5" y="388.5" text-anchor="middle">hellowin:round</text>
-<text class="d-m" x="1122.5" y="403.5" text-anchor="middle">hellowin:scene</text>
-<text class="d-m" x="1122.5" y="418.5" text-anchor="middle">hellowin:pumpkin:*</text>
-<text class="d-s" x="1122.5" y="433.5" text-anchor="middle"></text>
-<text class="d-m" x="1122.5" y="448.5" text-anchor="middle">hellowin:amo:*</text>
-<rect class="d-box g-obs" x="250" y="600" width="140" height="60" rx="6"/>
-<text class="d-t" x="320" y="626" text-anchor="middle">Grafana</text>
-<text class="d-m" x="320" y="641" text-anchor="middle">:3000</text>
-<rect class="d-box g-obs" x="800" y="600" width="170" height="60" rx="6"/>
-<text class="d-t" x="885" y="626" text-anchor="middle">Prometheus</text>
-<text class="d-m" x="885" y="641" text-anchor="middle">:9090</text>
+<text class="d-t" x="1122.5" y="276" text-anchor="middle">Valkey</text>
+<text class="d-m" x="1122.5" y="291" text-anchor="middle">valkey:6379</text>
+<text class="d-s" x="1122.5" y="306" text-anchor="middle">AOF + volume</text>
+<text class="d-m" x="1122.5" y="341" text-anchor="middle">hellowin:round</text>
+<text class="d-m" x="1122.5" y="356" text-anchor="middle">hellowin:scene</text>
+<text class="d-m" x="1122.5" y="371" text-anchor="middle">hellowin:pumpkin:*</text>
+<text class="d-m" x="1122.5" y="386" text-anchor="middle">hellowin:story</text>
+<text class="d-m" x="1122.5" y="401" text-anchor="middle">hellowin:shot</text>
+<text class="d-m" x="1122.5" y="416" text-anchor="middle">hellowin:player:*</text>
+<text class="d-m" x="1122.5" y="431" text-anchor="middle">hellowin:leaderboard</text>
+<text class="d-m" x="1122.5" y="446" text-anchor="middle">hellowin:flyer:*</text>
+<text class="d-m" x="1122.5" y="461" text-anchor="middle">hellowin:walkers</text>
+<text class="d-m" x="1122.5" y="491" text-anchor="middle">hellowin:amo:*</text>
+<rect class="d-box g-obs" x="250" y="650" width="140" height="60" rx="6"/>
+<text class="d-t" x="320" y="676" text-anchor="middle">Grafana</text>
+<text class="d-m" x="320" y="691" text-anchor="middle">:3000</text>
+<rect class="d-box g-obs" x="800" y="650" width="170" height="60" rx="6"/>
+<text class="d-t" x="885" y="676" text-anchor="middle">Prometheus</text>
+<text class="d-m" x="885" y="691" text-anchor="middle">:9090</text>
 <path class="d-e" d="M170 245 L250 245" marker-end="url(#a-ln)" marker-start="url(#a-lns)"/>
 <text class="d-l" x="210" y="237" text-anchor="middle">HTTP</text>
 <text class="d-l" x="210" y="262" text-anchor="middle">WS</text>
@@ -154,14 +173,14 @@
 <text class="d-s" x="460" y="82" text-anchor="middle">WebSocket</text>
 <path class="d-e" d="M390 211 L460 211" marker-end="url(#a-ln)"/>
 <text class="d-l" x="422" y="203" text-anchor="middle">/ → :8080</text>
-<path class="d-e" d="M320 290 L320 600" marker-end="url(#a-ln)"/>
-<text class="d-l" x="328" y="450" text-anchor="start">/grafana/ → :3000</text>
+<path class="d-e" d="M320 290 L320 650" marker-end="url(#a-ln)"/>
+<text class="d-l" x="328" y="470" text-anchor="start">/grafana/ → :3000</text>
 <path class="d-e d-e--acc" d="M680 110 L680 186" marker-end="url(#a-acc)"/>
 <text class="d-l" x="674" y="122" text-anchor="end">gRPC proxy :10001</text>
 <text class="d-s" x="674" y="136" text-anchor="end">connect, rpc</text>
 <path class="d-e d-e--acc" d="M760 186 L760 110" marker-end="url(#a-acc)"/>
 <text class="d-l" x="766" y="122" text-anchor="start">gRPC API :10000</text>
-<text class="d-s" x="766" y="136" text-anchor="start">broadcast</text>
+<text class="d-s" x="766" y="136" text-anchor="start">broadcast, presence</text>
 <path class="d-e" d="M535 236 L535 280" marker-end="url(#a-ln)"/>
 <text class="d-s" x="541" y="262" text-anchor="start">pipes</text>
 <path class="d-e" d="M715 236 L715 280" marker-end="url(#a-ln)"/>
@@ -175,6 +194,7 @@
 <path class="d-e" d="M535 408 L535 432" marker-end="url(#a-ln)"/>
 <path class="d-e" d="M715 408 L715 432" marker-end="url(#a-ln)"/>
 <path class="d-e" d="M892 408 L892 432" marker-end="url(#a-ln)"/>
+<path class="d-e" d="M640 553 L625 553 L625 408" marker-end="url(#a-ln)"/>
 <path class="d-e d-e--acc" d="M800 384 L800 222 L792 222" marker-end="url(#a-acc)"/>
 <path class="d-e" d="M818 384 L818 200 L828 200" marker-end="url(#a-ln)"/>
 <path class="d-e d-e--kv" d="M535 476 L535 505 L1050 505" marker-end="url(#a-kv)"/>
@@ -182,12 +202,12 @@
 <path class="d-e d-e--kv" d="M955 315 L1050 315" marker-end="url(#a-kv)"/>
 <text class="d-l" x="1002" y="308" text-anchor="middle">predis</text>
 <text class="d-s" x="1002" y="332" text-anchor="middle">VALKEY_DSN</text>
-<path class="d-e d-e--ok" d="M892 600 L892 476" marker-end="url(#a-ok)"/>
-<text class="d-l" x="900" y="565" text-anchor="start">scrape :2112 · 5s</text>
-<path class="d-e d-e--ok" d="M970 630 L1203 630 L1203 65 L820 65" marker-end="url(#a-ok)"/>
+<path class="d-e d-e--ok" d="M892 650 L892 476" marker-end="url(#a-ok)"/>
+<text class="d-l" x="900" y="625" text-anchor="start">scrape :2112 · 5s</text>
+<path class="d-e d-e--ok" d="M970 680 L1203 680 L1203 65 L820 65" marker-end="url(#a-ok)"/>
 <text class="d-l" x="1010" y="57" text-anchor="middle">scrape :8000/metrics</text>
-<path class="d-e d-e--ok" d="M390 630 L800 630" marker-end="url(#a-ok)"/>
-<text class="d-l" x="595" y="622" text-anchor="middle">PromQL → :9090</text>
+<path class="d-e d-e--ok" d="M390 680 L800 680" marker-end="url(#a-ok)"/>
+<text class="d-l" x="595" y="672" text-anchor="middle">PromQL → :9090</text>
 </svg>
                 </div>
                 <figcaption>
@@ -206,22 +226,30 @@
             <p>
                 <code>GET /</code> — обычный HTTP. <code>HomeController::index()</code> берёт снимок состояния у
                 <code>SnapshotFactory</code>: <code>RitualStore::snapshot()</code> одним <code>kv.MGet</code> читает
-                <code>hellowin:round</code>, <code>hellowin:scene</code> и <code>hellowin:pumpkin:{id}</code> всех тыкв —
-                без локов, страница может отстать на клик, это не страшно. К ним добавляются раскладка из
+                <code>hellowin:round</code>, <code>hellowin:scene</code>, сюжет <code>hellowin:story</code> и
+                <code>hellowin:pumpkin:{id}</code> всех тыкв, ещё один запрос — фигурки <code>hellowin:walkers</code>. Всё
+                без локов: страница может отстать на клик, это не страшно. К ним добавляются раскладка из
                 <code>app/config/hellowin.php</code> и числа политики, и шаблон получает снимок (Snapshot):
             </p>
             <ul>
                 <li><code>round</code>, <code>scene</code> — текущий раунд и сцена;</li>
                 <li><code>sceneStages</code> — номер финальной сцены (длина <code>HELLOWIN_SCENE_STAGE_MAX</code>), <code>stageMax</code> — последняя стадия тыквы в текущей сцене;</li>
                 <li><code>threshold</code> — <code>HELLOWIN_CLICKS_PER_STAGE</code>;</li>
-                <li><code>elements</code> — тыквы: <code>id</code>, <code>type</code>, <code>x</code>, <code>y</code>, <code>size</code>, <code>stage</code> и <code>clicks</code> с момента перехода в текущую стадию.</li>
+                <li><code>elements</code> — тыквы: <code>id</code>, <code>type</code>, <code>x</code>, <code>y</code>, <code>size</code>, <code>stage</code> и <code>clicks</code> с момента перехода в текущую стадию; <code>bushes</code> — кусты, из которых взлетают летуны;</li>
+                <li><code>walkers</code> — фигурки игроков на поле с их путями;</li>
+                <li>сюжет: <code>ready</code> — сцена готова и ждёт модератора, <code>finale</code> — шаг финала (с шага разоблачения — и <code>reveal</code>), <code>paused</code>, <code>zombies</code> — переключатели пульта;</li>
+                <li><code>now</code> — серверное время в мс: по нему клиент считает смещение своих часов для летунов и фигурок.</li>
             </ul>
             <p>
-                Затем браузер открывает WebSocket. Centrifugo ничего не знает о пользователях и на connect спрашивает
-                приложение (connect proxy). <code>ConnectService</code> отвечает анонимным пользователем и списком
-                <code>channels: ['{{ $channel }}']</code> — это server-side подписка. Клиент сам <code>subscribe</code>
-                не вызывает: в <code>config.json</code> клиентские подписки и публикации запрещены, сообщения канала
-                приходят в <code>centrifuge.on('publication')</code>.
+                Затем браузер открывает WebSocket и передаёт в <code>data</code> подключения секрет игрока из
+                <code>localStorage</code>: <code>{playerSecret}</code>. Centrifugo сам о пользователях ничего не знает и
+                на connect спрашивает приложение (connect proxy). <code>ConnectService</code> отвечает
+                <code>user</code> — публичным id игрока, вычисленным из секрета (без секрета — анонимно), списком
+                <code>channels: ['{{ $channel }}']</code> — это server-side подписка — и <code>meta</code> подключения
+                (роль модератора, см. <a href="#live">«Модератор, фигурки, летуны»</a>). Дальше Centrifugo сам подставляет
+                <code>user</code> в каждый RPC: клиент не шлёт свой id и не может выдать себя за другого. Клиент сам
+                <code>subscribe</code> не вызывает: в <code>config.json</code> клиентские подписки и публикации
+                запрещены, сообщения канала приходят в <code>centrifuge.on('publication')</code>.
             </p>
             <p>
                 Тот же снимок отдаёт RPC <code>state</code>. Каждое событие канала несёт <code>round</code>: если он не
@@ -230,7 +258,7 @@
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1000 974" style="min-width: 720px" role="img" aria-label="Загрузка страницы: GET / проходит через nginx в RoadRunner и HomeController; SnapshotFactory без лока читает раунд, сцену и тыквы из KV и отдаёт снимок в шаблон. Затем браузер открывает WebSocket к Centrifugo, Centrifugo спрашивает ConnectService через connect proxy и подписывает клиента на канал hellowin на стороне сервера. При переподключении или событии с чужим раундом клиент вызывает RPC state и получает тот же снимок.">
+<svg class="diagram__svg" viewBox="0 0 1000 974" style="min-width: 720px" role="img" aria-label="Загрузка страницы: GET / проходит через nginx в RoadRunner и HomeController; SnapshotFactory без лока читает раунд, сцену, сюжет, тыквы и фигурки из KV и отдаёт снимок в шаблон. Затем браузер открывает WebSocket с секретом игрока в data, Centrifugo спрашивает ConnectService через connect proxy, получает user, meta и канал и подписывает клиента на канал hellowin на стороне сервера. При переподключении или событии с чужим раундом клиент вызывает RPC state и получает тот же снимок.">
 <defs><marker id="b-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <path class="d-life" d="M62 60 V974"/>
 <path class="d-life" d="M180 60 V974"/>
@@ -250,15 +278,15 @@
 <path class="d-e " d="M424 206 L544 206" marker-end="url(#b-ln)"/>
 <text class="d-l" x="484" y="200" text-anchor="middle">kv.MGet, без лока</text>
 <path class="d-e d-e--ret" d="M544 236 L424 236" marker-end="url(#b-ln)"/>
-<text class="d-l" x="484" y="230" text-anchor="middle">round, scene, тыквы</text>
+<text class="d-l" x="484" y="230" text-anchor="middle">состояние игры</text>
 <path class="d-e " d="M422 258 L446 258 L446 270 L424 270" marker-end="url(#b-ln)"/>
-<text class="d-l" x="452" y="267" text-anchor="start">Snapshot: round, scene, stageMax, threshold, elements</text>
+<text class="d-l" x="452" y="267" text-anchor="start">Snapshot: ритуал, сюжет, фигурки, раскладка, now</text>
 <path class="d-e " d="M422 288 L446 288 L446 300 L424 300" marker-end="url(#b-ln)"/>
 <text class="d-l" x="452" y="297" text-anchor="start">render('home', snapshot + centrifugoUrl)</text>
 <path class="d-e d-e--ret" d="M420 326 L64 326" marker-end="url(#b-ln)"/>
 <text class="d-l" x="242" y="320" text-anchor="middle">200 text/html (обратно через http и nginx)</text>
 <path class="d-e " d="M62 348 L86 348 L86 360 L64 360" marker-end="url(#b-ln)"/>
-<text class="d-l" x="92" y="357" text-anchor="start">сцена по снимку · new Centrifuge(…).connect()</text>
+<text class="d-l" x="92" y="357" text-anchor="start">сцена по снимку · new Centrifuge(url, {data: {playerSecret}})</text>
 <text class="d-h d-phase" x="14" y="382" text-anchor="start">2. WebSocket</text>
 <path class="d-e " d="M64 410 L178 410" marker-end="url(#b-ln)"/>
 <text class="d-l" x="121" y="404" text-anchor="middle">/connection/websocket</text>
@@ -269,7 +297,7 @@
 <path class="d-e " d="M792 500 L923 500" marker-end="url(#b-ln)"/>
 <text class="d-l" x="857.5" y="494" text-anchor="middle">pipes</text>
 <path class="d-e d-e--ret" d="M923 530 L792 530" marker-end="url(#b-ln)"/>
-<text class="d-l" x="857.5" y="524" text-anchor="middle">channels:[hellowin]</text>
+<text class="d-l" x="857.5" y="524" text-anchor="middle">user, channels, meta</text>
 <path class="d-e d-e--ret" d="M788 560 L672 560" marker-end="url(#b-ln)"/>
 <text class="d-l" x="730" y="554" text-anchor="middle">ответ</text>
 <path class="d-e " d="M670 582 L694 582 L694 594 L672 594" marker-end="url(#b-ln)"/>
@@ -288,7 +316,7 @@
 <path class="d-e " d="M923 794 L548 794" marker-end="url(#b-ln)"/>
 <text class="d-l" x="735.5" y="788" text-anchor="middle">SnapshotFactory::create() → kv.MGet</text>
 <path class="d-e d-e--ret" d="M548 824 L923 824" marker-end="url(#b-ln)"/>
-<text class="d-l" x="735.5" y="818" text-anchor="middle">round, scene, тыквы</text>
+<text class="d-l" x="735.5" y="818" text-anchor="middle">ритуал, сюжет, фигурки</text>
 <path class="d-e d-e--ret" d="M923 854 L792 854" marker-end="url(#b-ln)"/>
 <text class="d-l" x="857.5" y="848" text-anchor="middle">{ok: true, state}</text>
 <path class="d-e d-e--ret" d="M788 884 L672 884" marker-end="url(#b-ln)"/>
@@ -338,8 +366,9 @@
             <ol>
                 <li>Элемент проверяется по <code>ElementRegistry</code> (id из <code>app/config/hellowin.php</code>).</li>
                 <li><code>RitualMetrics</code> добавляет 1 к <code>hellowin_clicks_total</code>.</li>
-                <li><code>RitualStore::click()</code> под локом <code>pumpkin:{id}</code> увеличивает <code>clicks</code> тыквы в KV и тут же, под тем же локом, читает раунд и сцену. Лок только на эту тыкву: клики по разным тыквам друг друга не ждут.</li>
-                <li><code>ChannelPublisher</code> публикует в канал <code>{{ $channel }}</code> событие <code>click</code> — всем подписчикам сразу.</li>
+                <li><code>RitualStore::click()</code> под локом <code>pumpkin:{id}</code> увеличивает <code>clicks</code> тыквы в KV (и <code>accepted</code> — принятые клики раунда, для разоблачения в финале) и тут же, под тем же локом, читает раунд и сцену. Лок только на эту тыкву: клики по разным тыквам друг друга не ждут.</li>
+                <li><code>PlayerService</code> под локом <code>player:{id}</code> добавляет клик в статистику игрока — <code>user</code> подключения; анонимный клик статистику пропускает. Сбой статистики пишется в лог и клик не ломает.</li>
+                <li><code>ChannelPublisher</code> публикует в канал <code>{{ $channel }}</code> событие <code>click</code> (с <code>player</code>, если клик не анонимный) — всем подписчикам сразу.</li>
                 <li><code>LockstepPolicy::pumpkinTransition()</code> решает, пора ли тыкве дальше: <code>clicks</code> не меньше <code>HELLOWIN_CLICKS_PER_STAGE</code> и стадия ниже <code>stageMax</code> текущей сцены. Если да, <code>TransitionQueue</code> ставит в очередь задачу <code>TransitionPumpkin</code>, а <code>hellowin_transition_jobs_pushed_total{kind="pumpkin"}</code> растёт на 1.</li>
                 <li>Ответ RPC — всегда данные: <code>{ok: true}</code> или <code>{ok: false, error: 'unknown element' | 'busy' | 'internal error'}</code>; <code>busy</code> — лок тыквы не удалось взять за 5 секунд.</li>
             </ol>
@@ -387,9 +416,9 @@
 <path class="d-e " d="M552 332 L912 332" marker-end="url(#c-ln)"/>
 <text class="d-l" x="732" y="326" text-anchor="middle">get hellowin:pumpkin:pumpkin-3</text>
 <path class="d-e d-e--ret" d="M912 362 L552 362" marker-end="url(#c-ln)"/>
-<text class="d-l" x="732" y="356" text-anchor="middle">{stage, clicks}</text>
+<text class="d-l" x="732" y="356" text-anchor="middle">{stage, clicks, accepted}</text>
 <path class="d-e " d="M552 392 L912 392" marker-end="url(#c-ln)"/>
-<text class="d-l" x="732" y="386" text-anchor="middle">set {stage, clicks + 1}</text>
+<text class="d-l" x="732" y="386" text-anchor="middle">set {stage, clicks + 1, accepted + 1}</text>
 <path class="d-e " d="M552 422 L912 422" marker-end="url(#c-ln)"/>
 <text class="d-l" x="732" y="416" text-anchor="middle">get hellowin:round, hellowin:scene</text>
 <path class="d-e d-e--ret" d="M912 452 L552 452" marker-end="url(#c-ln)"/>
@@ -411,7 +440,7 @@
 <path class="d-e " d="M550 654 L574 654 L574 666 L552 666" marker-end="url(#c-ln)"/>
 <text class="d-l" x="580" y="663" text-anchor="start">LockstepPolicy::pumpkinTransition(): clicks ≥ порог и stage &lt; stageMax?</text>
 <path class="d-e " d="M552 692 L1032 692" marker-end="url(#c-ln)"/>
-<text class="d-l" x="792" y="686" text-anchor="middle">да: jobs.Push TransitionPumpkin {key, round, pumpkin, toStage}</text>
+<text class="d-l" x="792" y="686" text-anchor="middle">да: jobs.Push TransitionPumpkin {key, round, pumpkin, toStage, player}</text>
 <path class="d-e " d="M552 722 L678 722" marker-end="url(#c-ln)"/>
 <text class="d-l" x="615" y="716" text-anchor="middle">jobs_pushed +1</text>
 <path class="d-e d-e--ret" d="M548 752 L418 752" marker-end="url(#c-ln)"/>
@@ -474,11 +503,12 @@
                 <li>Сцены нумеруются от 0 до финальной N — это длина списка <code>HELLOWIN_SCENE_STAGE_MAX</code>.</li>
                 <li>У сцены s потолок стадий <code>stageMax(s)</code> — элемент номер s того же списка, накопительно; у финала — тот же, что у сцены перед ним.</li>
                 <li>Тыква переходит в <code>stage + 1</code> после <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов, пока <code>stage &lt; stageMax(scene)</code>; переход обнуляет <code>clicks</code>.</li>
-                <li>Сцена переходит в следующую, когда <strong>все</strong> тыквы дошли до <code>stageMax</code>. В финальной сцене ничего не двигается, клики только рассылаются.</li>
+                <li>Когда <strong>все</strong> тыквы дошли до <code>stageMax</code>, сцена <strong>готова</strong>, но сама не переключается: событие <code>ready</code>, сова говорит «всё готово», и сцена ждёт модератора. Следующую включает кнопка пульта «Следующая сцена» (RPC <code>scene.next</code>); если зал застрял, модератор может переключить и неготовую сцену (<code>force</code>). Подробно — <a href="#scene-transition">«Переход сцены»</a>.</li>
+                <li>В финальной сцене тыквы не переходят, клики только рассылаются. Модератор ведёт шаги финала, а после разоблачения начинается бесконечный «проклятый мир».</li>
             </ul>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1000 330" style="min-width: 720px" role="img" aria-label="Сцены и стадии: по горизонтали сцены от 0 до финальной N, по вертикали стадия тыквы. В каждой сцене тыквы поднимаются по стадиям до stageMax этой сцены и ждут там; когда все дошли, сцена меняется и потолок поднимается до stageMax следующей сцены. В финальной сцене переходов нет.">
+<svg class="diagram__svg" viewBox="0 0 1000 330" style="min-width: 720px" role="img" aria-label="Сцены и стадии: по горизонтали сцены от 0 до финальной N, по вертикали стадия тыквы. В каждой сцене тыквы поднимаются по стадиям до stageMax этой сцены и ждут там; когда все дошли, сцена готова, и по кнопке модератора она меняется, а потолок поднимается до stageMax следующей сцены. В финальной сцене переходов нет.">
 <defs><marker id="d-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <path class="d-axis" d="M170 50 V260 H980"/>
 <path class="d-cap" d="M170 190 H380 V140 H590 V80 H980"/>
@@ -518,10 +548,10 @@
 <text class="d-s" x="690" y="190" text-anchor="middle">и ждут остальных</text>
 <text class="d-s" x="275" y="282" text-anchor="middle">стадия +1 = HELLOWIN_CLICKS_PER_STAGE кликов</text>
 <text class="d-m" x="275" y="297" text-anchor="middle">→ TransitionPumpkin</text>
-<text class="d-s" x="485" y="282" text-anchor="middle">все на stageMax(0)</text>
-<text class="d-m" x="485" y="297" text-anchor="middle">→ TransitionScene → сцена 1</text>
-<text class="d-s" x="790" y="282" text-anchor="middle">все на stageMax(N−1)</text>
-<text class="d-m" x="790" y="297" text-anchor="middle">→ финал</text>
+<text class="d-s" x="485" y="282" text-anchor="middle">все на stageMax(0) → ready, ждём</text>
+<text class="d-m" x="485" y="297" text-anchor="middle">scene.next → TransitionScene</text>
+<text class="d-s" x="790" y="282" text-anchor="middle">ready в сцене N−1</text>
+<text class="d-m" x="790" y="297" text-anchor="middle">scene.next → финал</text>
 <text class="d-s" x="575" y="318" text-anchor="middle">N = длина списка HELLOWIN_SCENE_STAGE_MAX, stageMax(s) — его элемент номер s; потолок финала = stageMax(N−1)</text>
 </svg>
                 </div>
@@ -631,8 +661,13 @@
                     <tbody>
                     <tr><td>клик, <code>RitualStore::click()</code></td><td><code>pumpkin:{id}</code></td><td>ничего: <code>clicks + 1</code>, затем чтение <code>round</code> и <code>scene</code></td></tr>
                     <tr><td>переход тыквы, <code>advancePumpkin()</code></td><td><code>pumpkin:{id}</code></td><td><code>round</code> текущий и <code>stage == toStage − 1</code></td></tr>
+                    <tr><td>готовность сцены, <code>markReady()</code></td><td><code>scene</code></td><td><code>round</code> и <code>scene</code> текущие, готовность этой сцены ещё не отмечена</td></tr>
                     <tr><td>переход сцены, <code>advanceScene()</code></td><td><code>scene</code></td><td><code>round</code> текущий и <code>scene == toScene − 1</code></td></tr>
+                    <tr><td>пульт: шаг финала, пауза, зомби, <code>updateStory()</code></td><td><code>scene</code></td><td>сюжет до и после: событие — только если изменился</td></tr>
                     <tr><td>сброс, <code>reset()</code></td><td><code>scene</code> и все <code>pumpkin:{id}</code></td><td><code>round == fromRound</code></td></tr>
+                    <tr><td>статистика игрока, <code>PlayerStore</code></td><td><code>player:{id}</code></td><td>ничего: счётчики игрока + 1</td></tr>
+                    <tr><td>выстрел, <code>FlyerStore::shoot()</code></td><td><code>flyer:{id}</code></td><td>ключ летуна ещё есть и полёт не кончился — тогда удалить</td></tr>
+                    <tr><td>ход и вход фигурок, <code>WalkerStore::update()</code></td><td><code>walkers</code></td><td>ничего: read-modify-write одного ключа со всеми фигурками</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -640,8 +675,10 @@
             <h3>Раунд и сброс</h3>
             <p>
                 Сброс начинает ритуал заново: сцена 0, у всех тыкв <code>stage 0</code> и <code>clicks 0</code>,
-                <code>round + 1</code> и событие <code>reset</code> всем. Делает это <code>ResetService::reset(?int $fromRound)</code>,
-                сейчас его вызывает консольная команда <code>hellowin:reset [--round=N]</code>. Сервис берёт лок
+                <code>round + 1</code>, сюжет заново (кроме паузы) и событие <code>reset</code> всем. Делает это
+                <code>ResetService::reset(?int $fromRound)</code>, его вызывают кнопка «Заново» на пульте модератора
+                (RPC <code>reset {round}</code> — раунд, который модератор видит) и консольная команда
+                <code>hellowin:reset [--round=N]</code>. Сервис берёт лок
                 <code>scene</code> и локи всех тыкв, поэтому ни клик, ни переход не увидят полусброшенный ритуал, и
                 под ними сравнивает текущий раунд с тем, который хотят завершить. Второй сброс того же раунда видит
                 уже новый раунд и ничего не делает — это идемпотентность по <code>reset:{round}</code> без отдельного
@@ -762,7 +799,7 @@ final class TransitionPumpkin extends JobHandler</code></pre>
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1100 838" style="min-width: 792px" role="img" aria-label="Идемпотентный переход: клики сверх порога ставят в очередь transitions несколько задач TransitionPumpkin с одним ключом. Воркеры jobs разбирают их параллельно; IdempotencyInterceptor каждого делает SET NX EX в Valkey. Первый получает OK и выполняет переход: под локом тыквы проверяет раунд и стадию, пишет stage + 1 и clicks = 0, публикует событие pumpkin. Остальные получают отказ: обработчик не вызывается, задача подтверждается.">
+<svg class="diagram__svg" viewBox="0 0 1100 838" style="min-width: 792px" role="img" aria-label="Идемпотентный переход: клики сверх порога ставят в очередь transitions несколько задач TransitionPumpkin с одним ключом. Воркеры jobs разбирают их параллельно; IdempotencyInterceptor каждого делает SET NX EX в Valkey. Первый получает OK и выполняет переход: под локом тыквы проверяет раунд и стадию, пишет stage + 1 и clicks = 0, публикует событие pumpkin и проверяет, не готова ли сцена. Остальные получают отказ: обработчик не вызывается, задача подтверждается.">
 <defs><marker id="g-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="d-wait d-risk" x="441" y="380" width="10" height="278" rx="2"/>
 <path class="d-life" d="M56 60 V838"/>
@@ -816,7 +853,7 @@ final class TransitionPumpkin extends JobHandler</code></pre>
 <path class="d-e d-e--acc" d="M448 718 L1034 718" marker-end="url(#g-acc)"/>
 <text class="d-l" x="741" y="712" text-anchor="middle">publish type:'pumpkin' — ровно один раз</text>
 <path class="d-e " d="M446 740 L470 740 L470 752 L448 752" marker-end="url(#g-ln)"/>
-<text class="d-l" x="476" y="749" text-anchor="start">transitions_total +1 · все на stageMax? → push TransitionScene</text>
+<text class="d-l" x="476" y="749" text-anchor="start">transitions_total +1 · все на stageMax? → markReady() под локом scene</text>
 <path class="d-e d-e--ret" d="M444 778 L298 778" marker-end="url(#g-ln)"/>
 <text class="d-l" x="371" y="772" text-anchor="middle">ACK</text>
 <path class="d-e " d="M298 808 L624 808" marker-end="url(#g-ln)"/>
@@ -885,15 +922,140 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                 <code>stage == toStage − 1</code>: если переход на самом деле успел выполниться, повтор ничего не меняет.
             </p>
 
-            <h3>Переход сцены</h3>
+            <h3 id="scene-transition">Переход сцены</h3>
             <p>
-                После каждого перехода тыквы <code>TransitionHandler</code> спрашивает у политики, не пора ли сцене дальше.
-                Последние тыквы могут дойти до <code>stageMax</code> почти одновременно, и тогда несколько воркеров
-                поставят <code>TransitionScene</code>. Механизм тот же: ключ <code>{round}:scene:{toScene}</code>
-                (<code>TransitionQueue::sceneKey()</code>), тот же <code>#[Idempotent]</code>, внутри — лок
-                <code>scene</code>, проверка <code>scene == toScene − 1</code> и одно событие <code>scene</code> со
-                <code>stageMax</code> новой сцены.
+                Сцена не переключается сама: игра идёт не на время, её ведёт модератор. Переход разбит на два шага, и
+                каждый защищён от двойного выполнения по-своему.
             </p>
+            <ol>
+                <li>
+                    <strong>Готовность.</strong> После каждого перехода тыквы <code>TransitionHandler</code> спрашивает у
+                    политики, не дошли ли все тыквы до <code>stageMax</code> (<code>RitualPolicy::sceneReady()</code>).
+                    Последние тыквы могут дойти почти одновременно, и тогда «да» услышат несколько воркеров. Отметку
+                    ставит <code>RitualStore::markReady()</code> под локом <code>scene</code>: в сюжете
+                    <code>hellowin:story</code> поле <code>ready</code> ещё не равно этой сцене — записать и вернуть
+                    <code>true</code>, уже равно — <code>false</code>. Поэтому событие <code>ready</code> и реплики совы
+                    <code>last-pumpkin</code> (с игроком, добившим последнюю тыкву) и <code>scene-ready</code> уходят
+                    ровно один раз. Сама сцена остаётся прежней.
+                </li>
+                <li>
+                    <strong>Переход.</strong> Модератор нажимает «Следующая сцена» — RPC
+                    <code>scene.next {scene}</code> с номером сцены, которую он видит. <code>StoryService::nextScene()</code>
+                    по снимку проверяет: сцена текущая, не финальная и готова (или пришёл <code>force</code>) — и ставит
+                    <code>TransitionScene</code>. Двойной клик, две вкладки пульта или два модератора поставят две
+                    задачи, и это то же, что дубли кликов по тыкве: ключ <code>{round}:scene:{toScene}</code>
+                    (<code>TransitionQueue::sceneKey()</code>), тот же <code>#[Idempotent]</code> с гарантией
+                    <code>AtMostOnce</code>, внутри — лок <code>scene</code>, проверка
+                    <code>scene == toScene − 1</code> и одно событие <code>scene</code> со <code>stageMax</code> новой
+                    сцены и предметом фигурок. Нажатие, пришедшее после перехода, видит, что сцена уже не та, и
+                    ничего не ставит — просто отвечает текущей.
+                </li>
+            </ol>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1100 1000" style="min-width: 792px" role="img" aria-label="Переход сцены. Фаза 1: два jobs-воркера одновременно добивают последние тыквы, оба видят, что сцена готова; markReady под локом scene отмечает готовность у первого и отказывает второму; первый публикует событие ready и реплики совы. Фаза 2: модератор дважды вызывает RPC scene.next; Centrifugo добавляет meta подключения, StoryService проверяет роль и готовность и оба раза ставит TransitionScene с ключом 1:scene:1. Первый воркер записывает маркер в Valkey и переключает сцену под локом scene, второй получает отказ и подтверждает задачу. Модератор и все клиенты получают одно событие scene.">
+<defs><marker id="i-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="i-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="590" y="178" width="10" height="30" rx="2"/>
+<rect class="d-crit" x="710" y="238" width="10" height="30" rx="2"/>
+<rect class="d-crit" x="590" y="820" width="10" height="60" rx="2"/>
+<path class="d-life" d="M60 60 V1000"/>
+<path class="d-life" d="M215 60 V1000"/>
+<path class="d-life" d="M345 60 V1000"/>
+<path class="d-life" d="M470 60 V1000"/>
+<path class="d-life" d="M595 60 V1000"/>
+<path class="d-life" d="M715 60 V1000"/>
+<path class="d-life" d="M840 60 V1000"/>
+<path class="d-life" d="M975 60 V1000"/>
+<text class="d-h d-phase" x="14" y="92" text-anchor="start">1. Готовность: две последние тыквы добиты одновременно</text>
+<path class="d-e " d="M595 106 L619 106 L619 118 L597 118" marker-end="url(#i-ln)"/>
+<text class="d-l" x="625" y="115" text-anchor="start">последняя тыква → stageMax, sceneReady(): да</text>
+<path class="d-e " d="M715 132 L739 132 L739 144 L717 144" marker-end="url(#i-ln)"/>
+<text class="d-l" x="745" y="141" text-anchor="start">и эта тоже: sceneReady(): да</text>
+<path class="d-e " d="M597 178 L973 178" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="172" text-anchor="middle">markReady(round, 0): lock scene</text>
+<path class="d-e d-e--ret" d="M973 208 L597 208" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="202" text-anchor="middle">не отмечена → story.ready = 0 → true</text>
+<path class="d-e " d="M717 238 L973 238" marker-end="url(#i-ln)"/>
+<text class="d-l" x="845" y="232" text-anchor="middle">markReady(round, 0)</text>
+<path class="d-e d-e--ret" d="M973 268 L717 268" marker-end="url(#i-ln)"/>
+<text class="d-l" x="845" y="262" text-anchor="middle">уже отмечена → false</text>
+<path class="d-e d-e--acc" d="M593 298 L217 298" marker-end="url(#i-acc)"/>
+<text class="d-l" x="405" y="292" text-anchor="middle">publish ready · owl last-pumpkin · owl scene-ready</text>
+<path class="d-e d-e--acc" d="M213 328 L62 328" marker-end="url(#i-acc)"/>
+<text class="d-l" x="137" y="322" text-anchor="middle">ready</text>
+<path class="d-e " d="M60 350 L84 350 L84 362 L62 362" marker-end="url(#i-ln)"/>
+<text class="d-l" x="90" y="359" text-anchor="start">кнопка «Следующая сцена» ждёт нажатия</text>
+<text class="d-h d-phase" x="14" y="392" text-anchor="start">2. Переход: модератор нажал кнопку дважды</text>
+<path class="d-e " d="M62 420 L213 420" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="414" text-anchor="middle">scene.next {scene: 0}</text>
+<path class="d-e " d="M62 450 L213 450" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="444" text-anchor="middle">то же ещё раз</text>
+<path class="d-e d-e--acc" d="M217 480 L343 480" marker-end="url(#i-acc)"/>
+<text class="d-l" x="280" y="474" text-anchor="middle">RPC proxy ×2</text>
+<text class="d-s" x="280" y="496" text-anchor="middle">+ meta подключения</text>
+<path class="d-e " d="M345 512 L369 512 L369 524 L347 524" marker-end="url(#i-ln)"/>
+<text class="d-l" x="375" y="521" text-anchor="start">роль из meta · сцена 0 готова → TransitionScene, оба раза</text>
+<path class="d-e " d="M347 550 L468 550" marker-end="url(#i-ln)"/>
+<text class="d-l" x="407" y="544" text-anchor="middle">key 1:scene:1 ×2</text>
+<path class="d-e d-e--ret" d="M343 580 L217 580" marker-end="url(#i-ln)"/>
+<text class="d-l" x="280" y="574" text-anchor="middle">{ok, scene: 1}</text>
+<path class="d-e d-e--ret" d="M213 610 L62 610" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="604" text-anchor="middle">{ok, scene: 1} ×2</text>
+<path class="d-e " d="M472 640 L593 640" marker-end="url(#i-ln)"/>
+<text class="d-l" x="532" y="634" text-anchor="middle">задача 1</text>
+<path class="d-e " d="M472 670 L713 670" marker-end="url(#i-ln)"/>
+<text class="d-l" x="478" y="664" text-anchor="start">задача 2 (параллельно)</text>
+<path class="d-e " d="M597 700 L838 700" marker-end="url(#i-ln)"/>
+<text class="d-l" x="655" y="694" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M838 730 L597 730" marker-end="url(#i-ln)"/>
+<text class="d-l" x="655" y="724" text-anchor="middle">OK</text>
+<path class="d-e " d="M717 760 L838 760" marker-end="url(#i-ln)"/>
+<text class="d-l" x="777" y="754" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M838 790 L717 790" marker-end="url(#i-ln)"/>
+<text class="d-l" x="777" y="784" text-anchor="middle">nil → дубль, ACK</text>
+<path class="d-e " d="M597 820 L973 820" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="814" text-anchor="middle">lock scene · round текущий и scene == 0?</text>
+<path class="d-e " d="M597 850 L973 850" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="844" text-anchor="middle">scene = 1, ready снят</text>
+<path class="d-e " d="M597 880 L973 880" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="874" text-anchor="middle">lock.Release</text>
+<path class="d-e d-e--acc" d="M593 910 L217 910" marker-end="url(#i-acc)"/>
+<text class="d-l" x="405" y="904" text-anchor="middle">publish scene {stageMax, item} · owl scene-1</text>
+<path class="d-e d-e--acc" d="M213 940 L62 940" marker-end="url(#i-acc)"/>
+<text class="d-l" x="137" y="934" text-anchor="middle">scene: 1</text>
+<rect class="d-note d-note--ok" x="30" y="958" width="1040" height="24" rx="4"/>
+<text class="d-n" x="550" y="975" text-anchor="middle">две тыквы и два нажатия — одна отметка ready и один переход: лок scene и ключ {round}:scene:{toScene}</text>
+<rect class="d-box g-edge" x="4" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="60" y="34" text-anchor="middle">Модератор</text>
+<text class="d-s" x="60" y="49" text-anchor="middle">пульт в браузере</text>
+<rect class="d-box g-cf" x="159" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="215" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="215" y="49" text-anchor="middle">канал hellowin</text>
+<rect class="d-box g-php" x="280" y="16" width="130" height="44" rx="6"/>
+<text class="d-t" x="345" y="34" text-anchor="middle">RPCService</text>
+<text class="d-m" x="345" y="49" text-anchor="middle">→ StoryService</text>
+<rect class="d-box g-rr" x="415" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="470" y="34" text-anchor="middle">RR jobs</text>
+<text class="d-m" x="470" y="49" text-anchor="middle">transitions</text>
+<rect class="d-box g-php" x="540" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="595" y="34" text-anchor="middle">jobs-воркер A</text>
+<text class="d-m" x="595" y="49" text-anchor="middle">#[Idempotent]</text>
+<rect class="d-box g-php" x="660" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="715" y="34" text-anchor="middle">jobs-воркер B</text>
+<text class="d-m" x="715" y="49" text-anchor="middle">#[Idempotent]</text>
+<rect class="d-box g-kv" x="785" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="840" y="34" text-anchor="middle">Valkey</text>
+<text class="d-m" x="840" y="49" text-anchor="middle">hellowin:amo:*</text>
+<rect class="d-box g-rr" x="900" y="16" width="150" height="44" rx="6"/>
+<text class="d-t" x="975" y="34" text-anchor="middle">RR lock + kv</text>
+<text class="d-m" x="975" y="49" text-anchor="middle">scene, hellowin:story</text>
+</svg>
+                </div>
+                <figcaption>
+                    Оранжевое — воркер держит лок <code>scene</code>. В фазе 1 воркеры выполняют
+                    <code>TransitionPumpkin</code>, в фазе 2 — <code>TransitionScene</code>.
+                </figcaption>
+            </figure>
 
             <h3>Зачем в ключе раунд</h3>
             <p>
@@ -914,13 +1076,313 @@ final class TransitionPumpkin extends JobHandler</code></pre>
 docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin\Job\TransitionPumpkin::handle:1:pumpkin-3:2'</code></pre>
         </section>
 
+        <section class="how__section" id="live" role="tabpanel" aria-labelledby="tab-live">
+            <h2>Модератор, фигурки, летуны</h2>
+            <p>
+                Вокруг ритуала — живой вечер: модератор ведёт сюжет с пульта, фигурки игроков ходят по лужайке, по небу
+                летают птицы и нечисть, а в финале сова выкладывает реальные числа. Каждая из этих механик — ещё один
+                приём: роль в meta подключения, presence канала, общие часы сервера, «первый под локом», счёт из
+                состояния без лишних записей.
+            </p>
+
+            <h3 id="moderator">Роль модератора</h3>
+            <p>
+                Модератор открывает страницу с <code>?moderator=&lt;секрет&gt;</code>; страница кладёт секрет в
+                <code>localStorage</code>, убирает его из адреса и передаёт в <code>data</code> подключения рядом с
+                секретом игрока. <code>ConnectService</code> сравнивает его с <code>HELLOWIN_MODERATOR_SECRET</code>
+                (<code>hash_equals</code>) и при совпадении кладёт <code>{moderator: true}</code> в <strong>meta</strong>
+                подключения. Meta хранит Centrifugo, клиенту она не видна, а в каждый RPC proxy Centrifugo добавляет её
+                сам — так настроено <code>rpc.proxy.include_connection_meta</code> в <code>config.json</code>. Клиент
+                шлёт в RPC только данные и не может назначить себе роль запросом. Пустой секрет в env — роли нет ни у
+                кого.
+            </p>
+            <p>
+                <code>RPCService</code> читает роль из meta и на методы пульта (<code>scene.next</code>,
+                <code>finale.step</code>, <code>owl.say</code>, <code>flyer.special</code>, <code>pause</code>,
+                <code>zombies</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
+                Роль — не в <code>user</code>: модератор может быть и игроком со своим секретом, а <code>user</code> — это
+                публичный id игрока в событиях и presence. Каждый метод пульта безопасно повторить:
+                <code>StoryService</code> меняет сюжет <code>hellowin:story</code> под локом <code>scene</code>, сравнивает
+                «до» и «после» и публикует событие (и реплику совы) только при изменении.
+            </p>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1000 650" style="min-width: 720px" role="img" aria-label="Роль модератора. Браузер модератора подключается с секретом модератора в data; ConnectService сверяет его с HELLOWIN_MODERATOR_SECRET и отвечает meta moderator true; Centrifugo хранит meta у себя. На RPC pause от модератора Centrifugo добавляет meta, и RPCService выполняет вызов. Тот же RPC от обычного игрока приходит с пустой meta и получает forbidden.">
+<defs><marker id="j-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="j-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<path class="d-life" d="M70 60 V650"/>
+<path class="d-life" d="M200 60 V650"/>
+<path class="d-life" d="M400 60 V650"/>
+<path class="d-life" d="M720 60 V650"/>
+<text class="d-h d-phase" x="14" y="88" text-anchor="start">1. Подключение: секрет в data, роль в meta</text>
+<path class="d-e " d="M72 116 L398 116" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="110" text-anchor="middle">connect {data: {playerSecret, moderatorSecret}}</text>
+<path class="d-e d-e--acc" d="M402 146 L718 146" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="140" text-anchor="middle">connect proxy: data</text>
+<path class="d-e " d="M720 168 L744 168 L744 180 L722 180" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="177" text-anchor="end">hash_equals(HELLOWIN_MODERATOR_SECRET, …)</text>
+<path class="d-e d-e--ret" d="M718 206 L402 206" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="200" text-anchor="middle">user, channels, meta {moderator: true}</text>
+<path class="d-e " d="M400 228 L424 228 L424 240 L402 240" marker-end="url(#j-ln)"/>
+<text class="d-l" x="430" y="237" text-anchor="start">meta хранится здесь, клиенту не уходит</text>
+<path class="d-e d-e--ret" d="M398 266 L72 266" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="260" text-anchor="middle">connected (без meta)</text>
+<text class="d-h d-phase" x="14" y="296" text-anchor="start">2. RPC пульта: meta добавляет Centrifugo, не клиент</text>
+<path class="d-e " d="M72 324 L398 324" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="318" text-anchor="middle">rpc('pause', {on: true})</text>
+<path class="d-e d-e--acc" d="M402 354 L718 354" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="348" text-anchor="middle">RPC proxy + meta {moderator: true}</text>
+<path class="d-e " d="M720 376 L744 376 L744 388 L722 388" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="385" text-anchor="end">метод пульта, роль есть → StoryService</text>
+<path class="d-e d-e--ret" d="M718 414 L402 414" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="408" text-anchor="middle">{ok: true, on: true}</text>
+<path class="d-e d-e--ret" d="M398 444 L72 444" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="438" text-anchor="middle">{ok: true, on: true}</text>
+<path class="d-e " d="M202 474 L398 474" marker-end="url(#j-ln)"/>
+<text class="d-l" x="300" y="468" text-anchor="middle">rpc('pause', …)</text>
+<path class="d-e d-e--acc" d="M402 504 L718 504" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="498" text-anchor="middle">RPC proxy + meta {}</text>
+<path class="d-e " d="M720 526 L744 526 L744 538 L722 538" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="535" text-anchor="end">роли нет → forbidden, данные не разбираются</text>
+<path class="d-e d-e--ret" d="M718 564 L402 564" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="558" text-anchor="middle">{ok: false, error: 'forbidden'}</text>
+<path class="d-e d-e--ret" d="M398 594 L202 594" marker-end="url(#j-ln)"/>
+<text class="d-l" x="300" y="588" text-anchor="middle">forbidden</text>
+<rect class="d-note d-note--ok" x="30" y="610" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="627" text-anchor="middle">клиент не может назначить себе роль: в RPC он шлёт только данные, meta приходит от Centrifugo</text>
+<rect class="d-box g-edge" x="5" y="16" width="130" height="44" rx="6"/>
+<text class="d-t" x="70" y="34" text-anchor="middle">Модератор</text>
+<text class="d-s" x="70" y="49" text-anchor="middle">браузер с секретом</text>
+<rect class="d-box g-edge" x="145" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="200" y="34" text-anchor="middle">Игрок</text>
+<text class="d-s" x="200" y="49" text-anchor="middle">без секрета</text>
+<rect class="d-box g-cf" x="320" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="400" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-m" x="400" y="49" text-anchor="middle">include_connection_meta</text>
+<rect class="d-box g-php" x="625" y="16" width="190" height="44" rx="6"/>
+<text class="d-t" x="720" y="34" text-anchor="middle">RR centrifuge</text>
+<text class="d-m" x="720" y="49" text-anchor="middle">ConnectService · RPCService</text>
+</svg>
+                </div>
+                <figcaption>Сплошные стрелки — запросы, пунктир — ответы. Фиолетовые — вызовы proxy из Centrifugo.</figcaption>
+            </figure>
+
+            <h3 id="walkers">Фигурки на поле: presence и тикер</h3>
+            <p>
+                Игрок, собравший персонажа на экране входа (RPC <code>register</code> с именем и <code>look</code>), —
+                фигурка на лужайке. Кто сейчас на странице, сервер не считает сам: у канала <code>{{ $channel }}</code>
+                включён presence Centrifugo (<code>"presence": true</code> в <code>config.json</code>, клиентам он
+                закрыт). Каждое подключение подписано на канал сервером, поэтому presence — это все открытые вкладки с
+                <code>user</code> = публичный id игрока, и запись пропадает сама, как только соединение закрылось.
+            </p>
+            <p>
+                Раз в секунду тикер (<code>WalkService::sync()</code>) спрашивает presence через gRPC API Centrifugo
+                (<code>CentrifugoPresence</code>), сводит записи к набору игроков и под локом <code>walkers</code>
+                сравнивает его с ключом <code>hellowin:walkers</code>: у присутствующих обновляет <code>seenAt</code>,
+                игроки с <code>look</code> без фигурки выходят на поле (событие <code>walker</code>), а фигурки, чьих
+                игроков нет дольше <code>HELLOWIN_WALK_LEAVE_AFTER</code> мс, уходят (<code>leave</code>). Несколько
+                вкладок — несколько записей одного <code>user</code>, но фигурка одна и уходит, когда закрыта последняя.
+                Задержка ухода нужна, чтобы перезагрузка страницы не роняла фигурку и не переносила её к краю.
+            </p>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1000 310" style="min-width: 720px" role="img" aria-label="Шкала времени одного игрока: вкладка 1 открыта, перезагружается и закрывается; вкладка 2 открыта позже и закрывается последней. Presence канала есть, пока открыта хоть одна вкладка, с коротким провалом на перезагрузке. Тикер раз в секунду сверяет presence: фигурка выходит на поле на первом тике, переживает перезагрузку и уходит через HELLOWIN_WALK_LEAVE_AFTER после закрытия последней вкладки.">
+<defs><marker id="k-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="d-s" x="20" y="62" text-anchor="start">вкладка 1</text>
+<text class="d-s" x="20" y="98" text-anchor="start">вкладка 2</text>
+<text class="d-s" x="20" y="134" text-anchor="start">presence канала</text>
+<text class="d-s" x="20" y="170" text-anchor="start">фигурка на поле</text>
+<text class="d-s" x="20" y="204" text-anchor="start">тикер, раз в секунду</text>
+<rect class="d-box g-edge" x="190" y="50" width="140" height="16" rx="3"/>
+<rect class="d-box g-edge" x="382" y="50" width="148" height="16" rx="3"/>
+<rect class="d-box g-edge" x="450" y="86" width="184" height="16" rx="3"/>
+<rect class="d-box g-cf" x="190" y="122" width="140" height="16" rx="3"/>
+<rect class="d-box g-cf" x="382" y="122" width="252" height="16" rx="3"/>
+<text class="d-s" x="356" y="153" text-anchor="middle">перезагрузка</text>
+<path class="d-cap" d="M210 166 H810"/>
+<circle class="d-pk d-pk--done" cx="210" cy="166" r="5"/>
+<circle class="d-pk d-pk--done" cx="810" cy="166" r="5"/>
+<text class="d-m" x="210" y="186" text-anchor="middle">walker</text>
+<text class="d-m" x="810" y="186" text-anchor="middle">leave</text>
+<path class="d-axis" d="M170 200 H970"/>
+<path class="d-axis" d="M170 195 V205 M210 195 V205 M250 195 V205 M290 195 V205 M330 195 V205 M370 195 V205 M410 195 V205 M450 195 V205 M490 195 V205 M530 195 V205 M570 195 V205 M610 195 V205 M650 195 V205 M690 195 V205 M730 195 V205 M770 195 V205 M810 195 V205 M850 195 V205 M890 195 V205 M930 195 V205 M970 195 V205"/>
+<path class="d-e" d="M636 230 L808 230" marker-start="url(#k-ln)" marker-end="url(#k-ln)"/>
+<text class="d-m" x="722" y="248" text-anchor="middle">HELLOWIN_WALK_LEAVE_AFTER</text>
+<text class="d-s" x="722" y="262" text-anchor="middle">без единого подключения</text>
+<text class="d-s" x="356" y="230" text-anchor="middle">провал короче задержки —</text>
+<text class="d-s" x="356" y="244" text-anchor="middle">фигурка стоит на месте</text>
+<rect class="d-note " x="30" y="276" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="293" text-anchor="middle">две вкладки — две записи presence одного user, а фигурка одна; уходит, когда закрыта последняя</text>
+</svg>
+                </div>
+                <figcaption>
+                    Прямоугольники — открытые соединения и записи presence, оранжевая линия — фигурка на поле, засечки —
+                    тики. Длины условные: задержка — <code>HELLOWIN_WALK_LEAVE_AFTER</code>.
+                </figcaption>
+            </figure>
+            <p>
+                Почему не connect proxy: в момент connect клиент ещё не подписан на канал и своё событие
+                <code>walker</code> не получил бы. Почему не refresh proxy с продлением подключений: уход был бы виден
+                только по истечении срока, а каждое продление — лишний вызов и запись в KV. Presence — готовый учёт
+                подключений, который Centrifugo сам чистит при разрыве. Сбой опроса presence пишется в лог, а фигурки
+                остаются: недоступный presence не значит, что все ушли.
+            </p>
+
+            <h3 id="walk-path">Путь фигурки считает сервер</h3>
+            <p>
+                Клик по земле — только намерение: RPC <code>move {x, y}</code>. Координаты кадр за кадром никто не
+                шлёт. <code>WalkService::move()</code> приводит цель в зону — прямоугольник лужайки
+                <code>walk.area</code> минус эллипс грядки <code>walk.patch</code> из <code>app/config/hellowin.php</code>
+                (клик в грядку — на её край), берёт начало там, где фигурка сейчас по её текущему пути и серверным
+                часам, и строит ломаную: напрямую, если отрезок не задевает грядку, иначе по касательной к эллипсу,
+                увеличенному на 3 %, по его дуге и по касательной к цели, — со стороны, где путь короче. Длительность —
+                длина ломаной, делённая на <code>HELLOWIN_WALK_SPEED</code>. Под локом <code>walkers</code> путь
+                записывается в <code>hellowin:walkers</code>, а в канал уходит событие <code>move</code> с
+                <code>Walk {path, startedAt, arrivesAt}</code>.
+            </p>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1000 370" style="min-width: 720px" role="img" aria-label="Путь фигурки: прямоугольник лужайки и эллипс грядки в центре. Прямой отрезок от фигурки к цели прошёл бы через грядку, поэтому сервер ведёт путь по касательной к чуть увеличенному эллипсу, по его нижней дуге ломаной и по касательной к цели — с той стороны, где короче. Клик внутри грядки переносится на её край по лучу из центра.">
+<defs><marker id="l-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-life" x="60" y="30" width="880" height="290"/>
+<text class="d-s" x="72" y="50" text-anchor="start">walk.area — лужайка</text>
+<ellipse class="d-box g-rr" cx="500" cy="200" rx="170" ry="90"/>
+<ellipse class="d-life" cx="500" cy="200" rx="175" ry="92.7"/>
+<text class="d-t" x="500" y="186" text-anchor="middle">грядка walk.patch</text>
+<text class="d-s" x="500" y="202" text-anchor="middle">сюда фигурки не заходят</text>
+<path class="d-e d-e--ret" d="M230 240 L780 232"/>
+<text class="d-s d-bad" x="500" y="226" text-anchor="middle">напрямую — через грядку</text>
+<path class="d-cap" d="M230 240 L412.5 280.3 L469.6 291.3 L530.4 291.3 L587.5 280.3 L780 232"/>
+<circle class="d-pk d-pk--done" cx="230" cy="240" r="6"/>
+<circle class="d-pk d-pk--done" cx="780" cy="232" r="6"/>
+<text class="d-s" x="220" y="236" text-anchor="end">откуда: где фигурка сейчас</text>
+<text class="d-s" x="220" y="251" text-anchor="end">по Walk и серверным часам</text>
+<text class="d-s" x="792" y="228" text-anchor="start">цель move {x, y}</text>
+<text class="d-s" x="500" y="312" text-anchor="middle">обход по дуге: сторона короче, шаг дуги ≤ 15°</text>
+<text class="d-s" x="683" y="128" text-anchor="start">пунктир — эллипс + 3 %:</text>
+<text class="d-s" x="683" y="142" text-anchor="start">хорды дуги не задевают грядку</text>
+<circle class="d-pk" cx="430" cy="150" r="5"/>
+<path class="d-e" d="M426 147 L402 130" marker-end="url(#l-ln)"/>
+<text class="d-s" x="394" y="118" text-anchor="end">клик в грядку → на край по лучу из центра</text>
+<text class="d-m" x="500" y="352" text-anchor="middle">Walk {path: [откуда, …, цель], startedAt, arrivesAt} · время = длина / HELLOWIN_WALK_SPEED</text>
+</svg>
+                </div>
+                <figcaption>Оранжевая ломаная — путь из события <code>move</code>; его одинаково анимируют все клиенты.</figcaption>
+            </figure>
+            <p class="callout">
+                Анимацию задаёт сервер, а не клиент кликнувшего. Каждый браузер по <code>now</code> из снимка знает
+                смещение своих часов от серверных и ставит фигурку в точку пути, где она должна быть в этот момент
+                серверного времени. Поэтому все видят одно и то же движение, а вкладка, открытая посреди хода, сразу
+                рисует фигурку на середине пути. Новый <code>move</code> во время хода начинается из текущей точки.
+            </p>
+
+            <h3 id="flyers">Летуны и зомби: очки — первому</h3>
+            <p>
+                Летунов запускает тикер: случайно раз в <code>HELLOWIN_FLYER_INTERVAL</code> мс, вид — из набора
+                текущей сцены <code>HELLOWIN_FLYER_KINDS</code>, изредка редкий (<code>HELLOWIN_FLYER_RARE</code>), ещё
+                модератор может выпустить особого кнопкой. Траекторию сервер присылает готовой: событие
+                <code>flyer</code> с точками, глубиной, очками и временем <code>launchedAt</code> / <code>expiresAt</code>,
+                а в KV — ключ <code>hellowin:flyer:{id}</code> с TTL и индекс летящих. Зомби проклятого мира — те же
+                летуны (<code>kind: zombie</code>, свой интервал <code>HELLOWIN_ZOMBIE_INTERVAL</code>), только идут по
+                лужайке от края грядки наружу, — поэтому выстрел, очки и метрики у них общие. На паузе модератора тикер
+                никого не запускает.
+            </p>
+            <p>
+                Клик по летуну — RPC <code>shoot {flyer}</code>. Под локом <code>flyer:{id}</code>: ключ ещё есть, по
+                летуну можно стрелять и полёт не кончился — ключ удаляется, это попадание: очки игроку, одно событие
+                <code>shot</code>, метрика. Следующий выстрел ключа уже не найдёт — промах. Каждый тик тикер тем же
+                способом учитывает улетевших: ключ ещё есть — удалить и засчитать как улетевшего. Ключ удаляет ровно
+                один из них, поэтому летун не бывает и сбит, и улетел. Сервер принимает выстрел до
+                <code>expiresAt</code> + 500 мс, а клиент не рисует летуна, чьё время по серверным часам уже вышло.
+            </p>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1000 440" style="min-width: 720px" role="img" aria-label="Два игрока стреляют в одного летуна. Воркер первого берёт лок flyer:{id}, видит ключ летуна, удаляет его, отпускает лок и публикует shot. Воркер второго ждёт лок, потом не находит ключа и отвечает промахом.">
+<defs><marker id="m-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="m-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="95" y="96" width="10" height="120" rx="2"/>
+<rect class="d-wait" x="755" y="126" width="10" height="150" rx="2"/>
+<rect class="d-crit" x="755" y="276" width="10" height="90" rx="2"/>
+<path class="d-life" d="M100 60 V440"/>
+<path class="d-life" d="M330 60 V440"/>
+<path class="d-life" d="M530 60 V440"/>
+<path class="d-life" d="M760 60 V440"/>
+<path class="d-life" d="M920 60 V440"/>
+<path class="d-e " d="M102 96 L328 96" marker-end="url(#m-ln)"/>
+<text class="d-l" x="215" y="90" text-anchor="middle">lock flyer:{id}</text>
+<path class="d-e " d="M758 126 L332 126" marker-end="url(#m-ln)"/>
+<text class="d-l" x="430" y="120" text-anchor="middle">lock flyer:{id}: ждёт</text>
+<path class="d-e " d="M102 156 L528 156" marker-end="url(#m-ln)"/>
+<text class="d-l" x="315" y="150" text-anchor="middle">get: ключ есть, летун ещё летит</text>
+<path class="d-e " d="M102 186 L528 186" marker-end="url(#m-ln)"/>
+<text class="d-l" x="315" y="180" text-anchor="middle">delete — попадание</text>
+<path class="d-e " d="M102 216 L328 216" marker-end="url(#m-ln)"/>
+<text class="d-l" x="215" y="210" text-anchor="middle">release</text>
+<path class="d-e d-e--acc" d="M102 246 L918 246" marker-end="url(#m-acc)"/>
+<text class="d-l" x="510" y="240" text-anchor="middle">publish shot {points, player} · очки игроку · flyers_shot +1</text>
+<path class="d-e " d="M760 276 L736 276 L736 288 L758 288" marker-end="url(#m-ln)"/>
+<text class="d-l" x="730" y="285" text-anchor="end">лок получен</text>
+<path class="d-e " d="M758 316 L532 316" marker-end="url(#m-ln)"/>
+<text class="d-l" x="645" y="310" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M532 346 L758 346" marker-end="url(#m-ln)"/>
+<text class="d-l" x="645" y="340" text-anchor="middle">ключа нет</text>
+<path class="d-e " d="M760 366 L736 366 L736 378 L758 378" marker-end="url(#m-ln)"/>
+<text class="d-l" x="730" y="375" text-anchor="end">промах: {ok: true, hit: false}</text>
+<rect class="d-note d-note--ok" x="30" y="398" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="415" text-anchor="middle">летун сбит ровно один раз: ключ удаляет первый под локом; тикер учитывает улетевших так же</text>
+<rect class="d-box g-php" x="20" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="100" y="34" text-anchor="middle">RPC shoot</text>
+<text class="d-s" x="100" y="49" text-anchor="middle">игрок 1, первый</text>
+<rect class="d-box g-rr" x="260" y="16" width="140" height="44" rx="6"/>
+<text class="d-t" x="330" y="34" text-anchor="middle">RR lock</text>
+<text class="d-m" x="330" y="49" text-anchor="middle">flyer:{id}</text>
+<rect class="d-box g-rr" x="455" y="16" width="150" height="44" rx="6"/>
+<text class="d-t" x="530" y="34" text-anchor="middle">RR kv</text>
+<text class="d-m" x="530" y="49" text-anchor="middle">hellowin:flyer:{id}</text>
+<rect class="d-box g-php" x="680" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="760" y="34" text-anchor="middle">RPC shoot</text>
+<text class="d-s" x="760" y="49" text-anchor="middle">игрок 2, следом</text>
+<rect class="d-box g-cf" x="860" y="16" width="120" height="44" rx="6"/>
+<text class="d-t" x="920" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="920" y="49" text-anchor="middle">канал hellowin</text>
+</svg>
+                </div>
+                <figcaption>Оранжевое — воркер держит лок, пунктирная рамка — ждёт его.</figcaption>
+            </figure>
+
+            <h3 id="reveal">Разоблачение: числа вечера</h3>
+            <p>
+                На шаге финала, где сова раскрывает правду, событие <code>finale</code> и снимок несут
+                <code>reveal</code> — реальные числа раунда. Отдельных счётчиков на каждый клик для этого нет: всё
+                следует из состояния в Valkey, которое и так пишется под локами. <code>RevealBuilder</code> считает их
+                заново при каждой сборке.
+            </p>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                    <tr><th>Число</th><th>Откуда</th><th>Почему так</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td><code>clicks</code> — обработанные клики</td><td>Σ <code>accepted</code> по <code>hellowin:pumpkin:{id}</code></td><td><code>accepted</code> растёт под тем же локом, что и <code>clicks</code>, но не обнуляется при переходе</td></tr>
+                    <tr><td><code>jobs</code> — задачи, прошедшие очередь</td><td>Σ <code>stage</code> + <code>scene</code></td><td>каждая стадия и каждая сцена — ровно одна выполненная задача перехода</td></tr>
+                    <tr><td><code>burned</code> — сгоревшие клики</td><td><code>clicks</code> − <code>HELLOWIN_CLICKS_PER_STAGE</code> × Σ <code>stage</code> − Σ min(<code>clicks</code> тыквы, порог)</td><td>переход тратит ровно порог; остальное отбросила идемпотентность или пришло после готовности тыквы, кроме кликов, ещё копящихся к переходу</td></tr>
+                    <tr><td><code>shot</code> — сбитые летуны и зомби</td><td><code>hellowin:shot</code> — <code>{round, count}</code> под локом <code>shot</code></td><td>единственный отдельный счётчик: выстрелы редки, лок не мешает; счёт другого раунда читается как 0</td></tr>
+                    <tr><td><code>lastPumpkin</code> — кто добил последнюю тыкву</td><td><code>lastPumpkin</code> в <code>hellowin:story</code></td><td>игрок из задачи, которая отметила готовность сцены; <code>null</code>, если клик был анонимным или сцену переключили <code>force</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                Сброс раунда обнуляет эти числа без отдельного кода: <code>accepted</code>, <code>stage</code>,
+                <code>scene</code> и сюжет сбрасываются вместе с ритуалом, а счёт сбитых привязан к раунду.
+            </p>
+        </section>
+
         <section class="how__section" id="metrics" role="tabpanel" aria-labelledby="tab-metrics">
             <h2>Метрики</h2>
             <p>
                 При старте воркера <code>HellowinBootloader</code> объявляет коллекторы в плагине <code>metrics</code> и
                 выставляет gauge из состояния в Valkey — оно переживает перезапуск RoadRunner. Дальше
                 <code>RitualMetrics</code> вызывает <code>metrics.Add</code> и <code>metrics.Set</code> по RPC из клика,
-                постановки задачи, перехода и сброса. Ошибка метрик только пишется в лог: клик из-за неё не падает.
+                постановки задачи, перехода и сброса, а <code>PlayMetrics</code> — из выстрела и тикера (летуны, фигурки,
+                игроки). Ошибка метрик только пишется в лог: клик из-за неё не падает.
                 RoadRunner отдаёт всё на <code>:2112/metrics</code> вместе со своими <code>rr_http_*</code> (middleware
                 <code>http_metrics</code> в <code>.rr.yaml</code>; там же <code>gzip</code>, который сжимает и ответы PHP,
                 и статику — он стоит перед <code>static</code>, потому что RoadRunner 3 выполняет middleware слева
@@ -989,6 +1451,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                     <tr><td><code>hellowin_scene_stage</code></td><td>TransitionHandler, старт, сброс</td><td>gauge: текущая сцена</td></tr>
                     <tr><td><code>hellowin_round</code></td><td>старт, сброс</td><td>gauge: текущий раунд</td></tr>
                     <tr><td><code>hellowin_pumpkin_stage{element}</code></td><td>TransitionHandler, старт, сброс</td><td>gauge: стадия каждой тыквы</td></tr>
+                    <tr><td><code>hellowin_flyers_launched_total{depth}</code>, <code>hellowin_flyers_shot_total{depth}</code>, <code>hellowin_flyers_escaped_total{depth}</code></td><td>тикер, RPC <code>shoot</code></td><td>counter: запущенные, сбитые и улетевшие несбитыми летуны (и зомби)</td></tr>
+                    <tr><td><code>hellowin_walkers</code></td><td>тикер, раз в секунду</td><td>gauge: фигурки на поле</td></tr>
+                    <tr><td><code>hellowin_players</code>, <code>hellowin_players_registered</code></td><td>тикер, сборка таблицы лидеров</td><td>gauge: известные игроки и игроки с именем</td></tr>
                     <tr><td><code>rr_http_request_total</code>, <code>rr_http_request_duration_seconds</code>, <code>rr_http_workers_*</code></td><td>RoadRunner http</td><td>HTTP-запросы, задержка, воркеры</td></tr>
                     <tr><td><code>centrifugo_node_num_clients</code>, <code>centrifugo_transport_messages_sent</code>, <code>centrifugo_proxy_duration_seconds_histogram</code></td><td>Centrifugo</td><td>подключения, отправленные сообщения, задержка proxy-вызовов в RoadRunner</td></tr>
                     </tbody>

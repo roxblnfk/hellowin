@@ -26,7 +26,7 @@ final class HowItWorksPageTest extends TestCase
         $body = $this->page();
 
         \preg_match_all('/<a role="tab" id="([^"]+)"[^>]*\baria-controls="([^"]+)"/', $body, $tabs, \PREG_SET_ORDER);
-        Assert::count($tabs, 6);
+        Assert::count($tabs, 7);
 
         foreach ($tabs as [, $tab, $panel]) {
             Assert::string($body)->contains(\sprintf('id="%s" role="tabpanel" aria-labelledby="%s"', $panel, $tab));
@@ -57,6 +57,14 @@ final class HowItWorksPageTest extends TestCase
             'hellowin_transition_jobs_pushed_total',
             'hellowin_transitions_total',
             'hellowin_pumpkin_stage',
+            'markReady',
+            'scene.next',
+            'include_connection_meta',
+            'HELLOWIN_MODERATOR_SECRET',
+            'CentrifugoPresence',
+            'HELLOWIN_WALK_LEAVE_AFTER',
+            'flyer:{id}',
+            'RevealBuilder',
         ];
         foreach ($terms as $term) {
             Assert::string($body)->contains($term);
