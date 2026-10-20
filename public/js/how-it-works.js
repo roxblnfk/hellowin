@@ -24,7 +24,6 @@
             if (focus) {
                 tabs[index].focus();
             }
-            revealTab(tabs[index]);
         }
 
         // A fragment inside a panel (not just the panel itself) opens that panel too.
@@ -98,18 +97,6 @@
         // once the others hide. A reload keeps its own restored position.
         if (initial && performance.getEntriesByType('navigation')[0]?.type !== 'reload') {
             initial.target.scrollIntoView({block: 'start'});
-        }
-    }
-
-    // Scrolls only the tab strip: scrollIntoView would also move the page. offsetLeft counts from the strip
-    // because the stylesheet makes the strip positioned.
-    function revealTab(tab) {
-        const strip = tab.closest('[role="tablist"]');
-        const left = tab.offsetLeft;
-        if (left < strip.scrollLeft) {
-            strip.scrollLeft = left;
-        } else if (left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) {
-            strip.scrollLeft = left + tab.offsetWidth - strip.clientWidth;
         }
     }
 })();

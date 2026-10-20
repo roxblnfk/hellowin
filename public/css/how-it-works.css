@@ -143,20 +143,18 @@ body:has(.how) {
     backdrop-filter: blur(8px);
 }
 
-/* Positioned so the script can read tab offsets against the strip. */
+/* Wraps into more rows instead of scrolling: every tab stays in sight, on a phone too. */
 .tabs__list {
-    position: relative;
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
-    overflow-x: auto;
-    scrollbar-width: thin;
 }
 
 .tabs__list a {
-    display: block;
+    display: inline-block;
     padding: 7px 14px;
     border-radius: 8px;
     color: var(--d-muted);
