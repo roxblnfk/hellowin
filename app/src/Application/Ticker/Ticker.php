@@ -6,6 +6,7 @@ namespace App\Application\Ticker;
 
 use App\Application\Flyer\FlyerService;
 use App\Application\Player\LeaderboardService;
+use App\Application\Walk\WalkService;
 use Psr\Log\LoggerInterface;
 use Random\Randomizer;
 
@@ -16,8 +17,12 @@ use Random\Randomizer;
  */
 final class Ticker
 {
+    /** Milliseconds between comparisons of the lawn with the channel presence. */
+    private const PRESENCE_INTERVAL = 1000;
+
     private ?int $nextLeaderboard = null;
     private ?int $nextFlyer = null;
+    private ?int $nextPresence = null;
 
     /**
      * @param positive-int $leaderboardInterval Milliseconds.
@@ -28,6 +33,7 @@ final class Ticker
         private readonly int $leaderboardInterval,
         private readonly FlyerService $flyers,
         private readonly array $flyerInterval,
+        private readonly WalkService $walks,
         private readonly LoggerInterface $logger,
         private readonly Randomizer $random = new Randomizer(),
     ) {}
@@ -49,6 +55,11 @@ final class Ticker
         }
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));
+
+        if ($this->nextPresence === null || $now >= $this->nextPresence) {
+            $this->nextPresence = $now + self::PRESENCE_INTERVAL;
+            $this->safely('walkers', fn() => $this->walks->sync());
+        }
 
         if ($this->nextLeaderboard === null || $now >= $this->nextLeaderboard) {
             $this->nextLeaderboard = $now + $this->leaderboardInterval;

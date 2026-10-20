@@ -16,6 +16,7 @@ final readonly class Player
      * @param int<0, max> $finished Pumpkin transitions this player's click caused.
      * @param int<0, max> $flyers Flyers shot down.
      * @param int<0, max> $points Points for the flyers.
+     * @param Look|null $look Null until the player picks a character: such a player stays off the lawn.
      */
     public function __construct(
         public string $id,
@@ -24,6 +25,7 @@ final readonly class Player
         public int $finished = 0,
         public int $flyers = 0,
         public int $points = 0,
+        public ?Look $look = null,
     ) {}
 
     /**
@@ -42,25 +44,27 @@ final readonly class Player
             self::count($value['finished'] ?? null),
             self::count($value['flyers'] ?? null),
             self::count($value['points'] ?? null),
+            Look::fromArray($value['look'] ?? null),
         );
     }
 
     /**
      * @param non-empty-string $name
+     * @param Look|null $look Null keeps the current look.
      */
-    public function named(string $name): self
+    public function named(string $name, ?Look $look = null): self
     {
-        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points);
+        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look);
     }
 
     public function clicked(): self
     {
-        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points);
+        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look);
     }
 
     public function finishedPumpkin(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points);
+        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points, $this->look);
     }
 
     /**
@@ -68,17 +72,18 @@ final readonly class Player
      */
     public function shotFlyer(int $points): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points, $this->look);
     }
 
     /**
-     * @return array{id: non-empty-string, name: non-empty-string|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>}
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>}
      */
     public function toArray(): array
     {
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'look' => $this->look?->toArray(),
             'clicks' => $this->clicks,
             'finished' => $this->finished,
             'flyers' => $this->flyers,

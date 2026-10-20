@@ -7,6 +7,8 @@ namespace App\Application\Config;
 use App\Domain\Element\Element;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
+use App\Domain\Walk\Items;
+use App\Domain\Walk\WalkZone;
 use Spiral\Core\InjectableConfig;
 
 /**
@@ -26,6 +28,15 @@ final class HellowinConfig extends InjectableConfig
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
         'bushes' => [],
+        'horizon' => 38,
+        'items' => [],
+        'walk' => [
+            'area' => ['x1' => 3, 'y1' => 44, 'x2' => 97, 'y2' => 97],
+            'patch' => ['cx' => 50, 'cy' => 63, 'rx' => 31, 'ry' => 25],
+            'spawn' => ['y1' => 86, 'y2' => 90],
+            'speed' => 12,
+            'leave_after' => 5000,
+        ],
     ];
 
     /**
@@ -161,6 +172,79 @@ final class HellowinConfig extends InjectableConfig
         }, $bushes));
     }
 
+    public function getWalkZone(): WalkZone
+    {
+        $walk = $this->walk();
+        $area = $walk['area'] ?? null;
+        $patch = $walk['patch'] ?? null;
+        \is_array($area) && \is_array($patch) or throw new \InvalidArgumentException(
+            'Config "hellowin.walk" must have "area" {x1, y1, x2, y2} and "patch" {cx, cy, rx, ry}.',
+        );
+
+        return new WalkZone(
+            self::float($area['x1'] ?? null, 'walk.area.x1'),
+            self::float($area['y1'] ?? null, 'walk.area.y1'),
+            self::float($area['x2'] ?? null, 'walk.area.x2'),
+            self::float($area['y2'] ?? null, 'walk.area.y2'),
+            self::float($patch['cx'] ?? null, 'walk.patch.cx'),
+            self::float($patch['cy'] ?? null, 'walk.patch.cy'),
+            self::float($patch['rx'] ?? null, 'walk.patch.rx'),
+            self::float($patch['ry'] ?? null, 'walk.patch.ry'),
+        );
+    }
+
+    public function getItems(): Items
+    {
+        $items = $this->config['items'] ?? [];
+        \is_array($items) or throw new \InvalidArgumentException('Config "hellowin.items" must be a list.');
+
+        return new Items(\array_values(\array_map(static function (mixed $item): ?string {
+            $item === null || \is_string($item) && \preg_match('/^[a-z0-9-]{1,24}$/', $item) === 1 or throw new \InvalidArgumentException(
+                'Config "hellowin.items" must list item ids (slugs `a-z 0-9 -`) or null by scene.',
+            );
+
+            /** @var non-empty-string|null $item */
+            return $item;
+        }, $items)));
+    }
+
+    /**
+     * @return array{float, float} Top and bottom of the band along the bottom of the lawn new characters appear in.
+     */
+    public function getWalkSpawn(): array
+    {
+        $spawn = $this->walk()['spawn'] ?? null;
+        \is_array($spawn) or throw new \InvalidArgumentException('Config "hellowin.walk.spawn" must be {y1, y2}.');
+        $y1 = self::float($spawn['y1'] ?? null, 'walk.spawn.y1');
+        $y2 = self::float($spawn['y2'] ?? null, 'walk.spawn.y2');
+        $y1 <= $y2 or throw new \InvalidArgumentException('Config "hellowin.walk.spawn" needs y1 <= y2.');
+
+        return [$y1, $y2];
+    }
+
+    /**
+     * @return float Percents of the screen per second along the path.
+     */
+    public function getWalkSpeed(): float
+    {
+        /** @var mixed $value */
+        $value = $this->walk()['speed'] ?? null;
+        \is_string($value) && \is_numeric(\trim($value)) and $value = (float) \trim($value);
+        \is_int($value) and $value = (float) $value;
+
+        return \is_float($value) && $value > 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.walk.speed" (env HELLOWIN_WALK_SPEED) must be a positive number.');
+    }
+
+    /**
+     * @return positive-int Milliseconds without connections before a character leaves the lawn.
+     */
+    public function getWalkLeaveAfter(): int
+    {
+        return self::positiveInt($this->walk()['leave_after'] ?? null, 'walk.leave_after', 'HELLOWIN_WALK_LEAVE_AFTER');
+    }
+
     private static function element(mixed $spec): Element
     {
         \is_array($spec) or throw new \InvalidArgumentException('Each element of "hellowin.elements" must be an array.');
@@ -223,5 +307,13 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) || \is_float($value)
             ? (float) $value
             : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be a number.', $key));
+    }
+
+    private function walk(): array
+    {
+        $walk = $this->config['walk'] ?? [];
+        \is_array($walk) or throw new \InvalidArgumentException('Config "hellowin.walk" must be an array.');
+
+        return $walk;
     }
 }

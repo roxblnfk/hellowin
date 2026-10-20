@@ -109,7 +109,7 @@ final class TransitionHandlerTest
         Assert::false($ritual->transitions->scene(1, 1));
 
         Assert::same($ritual->store->snapshot()->scene, 1);
-        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 2]]);
+        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 2, 'item' => 'torch']]);
         $counters = $ritual->counters();
         Assert::same($counters[RitualMetrics::TRANSITIONS . '{scene}'], 1.0);
         Assert::same($counters[RitualMetrics::SCENE . '{}'], 1.0);
@@ -142,7 +142,7 @@ final class TransitionHandlerTest
         }
 
         Assert::same(\array_column($ritual->broadcast->ofType('pumpkin'), 'stage'), [1, 2, 3]);
-        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 3]]);
+        Assert::same($ritual->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 3, 'item' => 'torch']]);
         Assert::same($ritual->store->snapshot()->pumpkin('pumpkin-1')?->stage, 3);
     }
 

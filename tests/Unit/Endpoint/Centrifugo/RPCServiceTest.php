@@ -25,6 +25,7 @@ use Tests\Fake\SpyWorker;
 final class RPCServiceTest
 {
     private const PLAYER = '0123456789abcdef';
+    private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
 
     private SpyWorker $worker;
 
@@ -94,6 +95,7 @@ final class RPCServiceTest
                 ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 0],
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'stage' => 0, 'clicks' => 2],
             ],
+            'walkers' => [],
             'now' => $ritual->clock->now,
         ]]);
     }
@@ -128,6 +130,7 @@ final class RPCServiceTest
         Assert::same($response, ['ok' => true, 'player' => [
             'id' => self::PLAYER,
             'name' => 'Jack O. Lantern',
+            'look' => null,
             'clicks' => 2,
             'finished' => 0,
             'flyers' => 0,
@@ -262,6 +265,70 @@ final class RPCServiceTest
         Assert::blank($ritual->broadcast->ofType('reset'));
     }
 
+    public function registerWithALookPutsTheCharacterOnTheLawn(): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($response['player']['look'] ?? null, self::LOOK);
+        Assert::same($ritual->playerStore->find(self::PLAYER)?->look?->toArray(), self::LOOK);
+        Assert::same($ritual->broadcast->ofType('walker')[0]['walker']['id'] ?? null, self::PLAYER);
+        Assert::same(\array_column($this->call($ritual, 'state', [])['state']['walkers'], 'id'), [self::PLAYER]);
+    }
+
+    public function registerWithoutALookKeepsTheOneChosen(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        $response = $this->call($ritual, 'register', ['name' => 'Jill'], self::PLAYER);
+
+        Assert::same($response['player']['look'] ?? null, self::LOOK);
+        Assert::same($ritual->broadcast->ofType('walker')[1]['walker']['name'] ?? null, 'Jill');
+    }
+
+    public function registerRejectsAnInvalidLook(): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'register', ['name' => 'Jack', 'look' => ['hat' => 'Top Hat']], self::PLAYER);
+
+        Assert::same($response, ['ok' => false, 'error' => 'invalid look']);
+        Assert::null($ritual->playerStore->find(self::PLAYER));
+        Assert::blank($ritual->broadcast->published);
+    }
+
+    public function moveSendsTheCharacter(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        $response = $this->call($ritual, 'move', ['x' => 10, 'y' => 90.5], self::PLAYER);
+
+        Assert::true($response['ok']);
+        Assert::equals($response['walk']['path'][\count($response['walk']['path']) - 1], ['x' => 10, 'y' => 90.5]);
+        Assert::equals($ritual->broadcast->ofType('move')[0]['walk'], $response['walk']);
+    }
+
+    #[DataSet([['x' => '10', 'y' => 90]], 'string')]
+    #[DataSet([['x' => 10]], 'no y')]
+    #[DataSet([[]], 'nothing')]
+    public function moveNeedsAPoint(array $params): void
+    {
+        Assert::same($this->call(new RitualHarness(), 'move', $params, self::PLAYER), ['ok' => false, 'error' => 'invalid point']);
+    }
+
+    public function moveNeedsACharacter(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack'], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'move', ['x' => 10, 'y' => 90], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        Assert::same($this->call($ritual, 'move', ['x' => 10, 'y' => 90]), ['ok' => false, 'error' => 'anonymous']);
+        Assert::blank($ritual->broadcast->published);
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
@@ -279,6 +346,7 @@ final class RPCServiceTest
             new NullLogger(),
             $ritual->reset,
             new HellowinConfig(['reset_rpc' => $resetRpc]),
+            $ritual->walks,
         );
         $service->handle(new RPC(
             worker: $this->worker,

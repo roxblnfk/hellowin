@@ -4,7 +4,7 @@
 (со `stageMax` и `size`), игроки (`playerSecret` при подключении, RPC `register` и `me`, `player` в `click` и `pumpkin`) —
 **реализовано** на backend; разметка главной на переменных снимка — у фронтенда; таблица лидеров (событие `leaderboard`, `top` в `me`) и летуны (RPC `shoot`, события `flyer`, `shot`,
 `bushes` в снимке) — тоже; персонаж и прогулка (`look` в `register` и `Player`, RPC `move`, события `walker`,
-`move`, `leave`, `walkers` в снимке) — **запланировано**; модератор и сюжет (секрет модератора, RPC пульта, события
+`move`, `leave`, `walkers` в снимке, `item` в `scene`) — тоже; модератор и сюжет (секрет модератора, RPC пульта, события
 `owl`, `ready`, `finale`, `pause`, `zombies`, летуны по сценам, `ready`/`finale`/`paused`/`zombies` в снимке) —
 **запланировано**.
 
@@ -33,10 +33,10 @@
 |---|---|---|---|
 | `click` | `{element}` | `{ok:true}` | реализовано |
 | `state` | `{}` | `{ok:true, state: <Snapshot>}` — для пересинхронизации после переподключения | реализовано |
-| `register` | `{name, look?}` | `{ok:true, player: <Player>}`; с `look` игрок выходит на поле (событие `walker`) | реализовано; `look` — запланировано |
+| `register` | `{name, look?}` | `{ok:true, player: <Player>}`; с `look` игрок выходит на поле или переодевается (событие `walker`); без `look` вид не меняется | реализовано |
 | `me` | `{}` | `{ok:true, player: <Player>, top: [<Player>], moderator}` — своя статистика и последняя таблица лидеров при загрузке; `player` — `null` у анонима и у игрока без действий; `moderator` — `true` у подключения модератора | реализовано; `moderator` — запланировано |
 | `reset` | `{round}` — раунд, который клиент видит сейчас | `{ok:true, round}` — новый раунд; повторный вызов с тем же `round` сброс не повторяет (сравнение раунда под локами), а возвращает текущий раунд. Ошибки: `invalid round`, `reset disabled` (`HELLOWIN_RESET_RPC=false`) | реализовано |
-| `move` | `{x, y}` — куда идти, проценты экрана | `{ok:true, walk: <Walk>}`; без `look` — `no character` | запланировано |
+| `move` | `{x, y}` — куда идти, проценты экрана | `{ok:true, walk: <Walk>}` — цель приведена в зону, путь огибает грядку; без `look` — `no character` | реализовано |
 | `shoot` | `{flyer}` | `{ok:true, hit:true, points}` или `{ok:true, hit:false}` (уже сбит, улетел или такого нет) | реализовано |
 
 ### Модератор
@@ -55,8 +55,8 @@
 | `reset` | как выше | становится RPC пульта; `HELLOWIN_RESET_RPC` уходит |
 
 Коды ошибок: `unknown method`, `unknown element`, `busy` (не удалось взять лок), `internal error`; для `register` —
-`invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `invalid point`, `anonymous`,
-`no character`.
+`invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `anonymous`, `invalid point` (`x`/`y` не числа),
+`no character` (проверяются в этом порядке).
 
 `Player` — `{id, name, look, clicks, finished, flyers, points}`: `id` — публичный id, `name` и `look` — `null` до
 `register`; `look` — `{body, cloak, face, eyes, hat}` ([`players.md`](players.md), «Персонаж»).
@@ -67,7 +67,7 @@
 («Время летунов» — те же часы).
 
 ```json
-{"ok":true,"player":{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":0,"points":0}}
+{"ok":true,"player":{"id":"3f9c0a7d12b4e856","name":"Jack","look":null,"clicks":42,"finished":3,"flyers":0,"points":0}}
 ```
 
 ## События канала `hellowin`
@@ -79,13 +79,13 @@
 |---|---|---|
 | `click` | `element`, `emoji`, `clicks`, `threshold`, `stage`, `player?` | каждый принятый клик |
 | `pumpkin` | `element`, `stage`, `player?` | тыква перешла в новую стадию (ровно одно событие на переход) |
-| `scene` | `scene`, `stageMax` | сцена сменилась (ровно одно событие на смену) |
-| `reset` | — | сброс; новый `round` в самом событии |
+| `scene` | `scene`, `stageMax`, `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
+| `reset` | `item` (предмет фигурок в сцене 0) | сброс; новый `round` в самом событии |
 | `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
-| `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` или прошёл экран входа) или сменил вид |
+| `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` — в пределах секунды, или прошёл экран входа) или сменил вид / имя |
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
-| `leave` | `player: {id}` | у игрока не осталось подключений — фигурка уходит |
+| `leave` | `player: {id}` | у игрока нет подключений дольше `HELLOWIN_WALK_LEAVE_AFTER` мс — фигурка уходит |
 | `ready` | `scene` | все тыквы сцены дошли до `stageMax` — сцена ждёт модератора (ровно одно событие на сцену) |
 | `finale` | `step`, `reveal?` | шаг финала; на шаге 4 и дальше — `reveal` (см. ниже) |
 | `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line` + `params`, например `{player: {id, name}}`) или свободный текст модератора (`text`) |
@@ -115,12 +115,12 @@
 {"type":"click","round":1,"element":"pumpkin-3","emoji":"🎃","clicks":5,"threshold":5,"stage":0,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":1}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
-{"type":"scene","round":1,"scene":1,"stageMax":7}
-{"type":"reset","round":2}
+{"type":"scene","round":1,"scene":1,"stageMax":7,"item":"torch"}
+{"type":"reset","round":2,"item":null}
 {"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
 {"type":"move","round":1,"player":{"id":"3f9c0a7d12b4e856"},"walk":{"path":[{"x":40,"y":94},{"x":66,"y":90},{"x":82,"y":74}],"startedAt":1760900002000,"arrivesAt":1760900006100}}
 {"type":"leave","round":1,"player":{"id":"3f9c0a7d12b4e856"}}
-{"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","clicks":42,"finished":3,"flyers":2,"points":5}]}
+{"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","look":null,"clicks":42,"finished":3,"flyers":2,"points":5}]}
 {"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3,"launchedAt":1760900000000,"expiresAt":1760900009000}
 {"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1,"launchedAt":1760900002000,"expiresAt":1760900006000}
 {"type":"shot","round":1,"flyer":"f-3a9c01d2","points":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}

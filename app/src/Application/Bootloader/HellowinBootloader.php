@@ -17,6 +17,9 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Ticker\Ticker;
+use App\Application\Walk\CentrifugoPresence;
+use App\Application\Walk\Presence;
+use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Element\Element;
@@ -28,8 +31,10 @@ use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use RoadRunner\Centrifugo\CentrifugoApiInterface;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Boot\Bootloader\Bootloader;
 use Spiral\Broadcasting\BroadcastInterface;
@@ -87,6 +92,7 @@ final class HellowinBootloader extends Bootloader
                 RitualStore $store,
                 RitualPolicy $policy,
                 Clock $clock,
+                WalkerStore $walkers,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -94,11 +100,43 @@ final class HellowinBootloader extends Bootloader
                 $config->getClicksPerStage(),
                 $config->getBushes(\count($flyers->getDepths())),
                 $clock,
+                $walkers,
+                $config->getItems(),
+            ),
+            WalkerStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): WalkerStore => new WalkerStore($cache->storage($config->getStorage()), new Locks($lock)),
+            Presence::class => static fn(HellowinConfig $config, CentrifugoApiInterface $api): Presence
+                => new CentrifugoPresence($api, $config->getChannel()),
+            WalkService::class => static fn(
+                HellowinConfig $config,
+                WalkerStore $walkers,
+                PlayerStore $players,
+                Presence $presence,
+                ChannelPublisher $publisher,
+                RitualStore $ritual,
+                PlayMetrics $metrics,
+                Clock $clock,
+            ): WalkService => new WalkService(
+                $walkers,
+                $config->getWalkZone(),
+                $players,
+                $presence,
+                $publisher,
+                $ritual,
+                $metrics,
+                $clock,
+                $config->getWalkSpeed(),
+                $config->getWalkLeaveAfter(),
+                $config->getWalkSpawn(),
+                $config->getItems(),
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,
                 BroadcastInterface $broadcast,
-            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel()),
+            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems()),
             Clock::class => SystemClock::class,
             LeaderboardService::class => static fn(
                 HellowinConfig $config,
@@ -133,12 +171,14 @@ final class HellowinBootloader extends Bootloader
                 FlyerConfig $flyerConfig,
                 LeaderboardService $leaderboard,
                 FlyerService $flyers,
+                WalkService $walks,
                 LoggerInterface $logger,
             ): Ticker => new Ticker(
                 $leaderboard,
                 $players->getLeaderboardInterval(),
                 $flyers,
                 $flyerConfig->getInterval(),
+                $walks,
                 $logger,
             ),
         ];

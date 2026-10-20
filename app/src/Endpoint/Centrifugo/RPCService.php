@@ -10,9 +10,12 @@ use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
+use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Walk\NoCharacterException;
+use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
 use App\Domain\Ritual\RitualBusyException;
@@ -39,6 +42,7 @@ final readonly class RPCService implements ServiceInterface
         private LoggerInterface $logger,
         private ResetService $reset,
         private HellowinConfig $config,
+        private WalkService $walks,
     ) {}
 
     #[\Override]
@@ -52,6 +56,7 @@ final readonly class RPCService implements ServiceInterface
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             'register' => $this->register($request->getData(), $player),
+            'move' => $this->move($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),
             'reset' => $this->reset($request->getData()),
             'me' => [
@@ -151,9 +156,37 @@ final readonly class RPCService implements ServiceInterface
         }
 
         try {
-            return ['ok' => true, 'player' => $this->players->register($player, $params['name'] ?? null)->toArray()];
+            $registered = $this->players->register($player, $params['name'] ?? null, $params['look'] ?? null);
         } catch (InvalidNameException) {
             return self::fail('invalid name');
+        } catch (InvalidLookException) {
+            return self::fail('invalid look');
+        }
+
+        $this->walks->enter($registered);
+
+        return ['ok' => true, 'player' => $registered->toArray()];
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function move(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        $x = $params['x'] ?? null;
+        $y = $params['y'] ?? null;
+        if (!(\is_int($x) || \is_float($x)) || !(\is_int($y) || \is_float($y))) {
+            return self::fail('invalid point');
+        }
+
+        try {
+            return ['ok' => true, 'walk' => $this->walks->move($player, (float) $x, (float) $y)->toArray()];
+        } catch (NoCharacterException) {
+            return self::fail('no character');
         }
     }
 }

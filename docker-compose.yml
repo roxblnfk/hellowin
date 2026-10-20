@@ -44,6 +44,8 @@ services:
       HELLOWIN_FLYER_BUSH_CHANCE: ${HELLOWIN_FLYER_BUSH_CHANCE:-0.4}
       HELLOWIN_FLYER_ARC_CHANCE: ${HELLOWIN_FLYER_ARC_CHANCE:-0.5}
       HELLOWIN_FLYER_KINDS: ${HELLOWIN_FLYER_KINDS:-duck,chicken}
+      HELLOWIN_WALK_SPEED: ${HELLOWIN_WALK_SPEED:-12}
+      HELLOWIN_WALK_LEAVE_AFTER: ${HELLOWIN_WALK_LEAVE_AFTER:-5000}
       # Game state (RoadRunner kv, redis driver) and idempotency keys (predis) live in the same Valkey.
       VALKEY_ADDR: valkey:6379
       VALKEY_DSN: tcp://valkey:6379

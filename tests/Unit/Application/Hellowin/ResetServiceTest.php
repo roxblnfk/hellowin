@@ -25,7 +25,7 @@ final class ResetServiceTest
         $round = $ritual->reset->reset();
 
         Assert::same($round, 2);
-        Assert::same($ritual->broadcast->ofType('reset'), [['type' => 'reset', 'round' => 2]]);
+        Assert::same($ritual->broadcast->ofType('reset'), [['type' => 'reset', 'round' => 2, 'item' => null]]);
         $counters = $ritual->counters();
         Assert::same($counters[RitualMetrics::ROUND . '{}'], 2.0);
         Assert::same($counters[RitualMetrics::PUMPKIN_STAGE . '{pumpkin-1}'], 0.0);

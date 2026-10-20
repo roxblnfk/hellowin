@@ -32,7 +32,7 @@ final class ResetCommandTest extends TestCase
 
         Assert::same($this->storage()->get('hellowin:round'), 5);
         Assert::same($this->storage()->get('hellowin:scene'), 0);
-        Assert::same($this->broadcast->ofType('reset'), [['type' => 'reset', 'round' => 5]]);
+        Assert::same($this->broadcast->ofType('reset'), [['type' => 'reset', 'round' => 5, 'item' => null]]);
     }
 
     public function roundThatIsOverIsLeftAlone(): void

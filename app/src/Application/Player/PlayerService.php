@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Player;
 
 use App\Domain\Lock\LockBusyException;
+use App\Domain\Player\Look;
 use App\Domain\Player\Player;
 use App\Domain\Player\PlayerName;
 use App\Domain\Player\PlayerStore;
@@ -23,14 +24,17 @@ final readonly class PlayerService
 
     /**
      * @param non-empty-string $id
+     * @param mixed $look Null keeps the current look.
      * @throws InvalidNameException
+     * @throws InvalidLookException
      * @throws LockBusyException
      */
-    public function register(string $id, mixed $name): Player
+    public function register(string $id, mixed $name, mixed $look = null): Player
     {
         $name = PlayerName::normalize($name) ?? throw new InvalidNameException('invalid name');
+        $look = $look === null ? null : Look::fromArray($look) ?? throw new InvalidLookException('invalid look');
 
-        return $this->store->update($id, static fn(Player $player): Player => $player->named($name));
+        return $this->store->update($id, static fn(Player $player): Player => $player->named($name, $look));
     }
 
     /**

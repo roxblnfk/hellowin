@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Application\Hellowin\PlayMetrics;
+use App\Application\Walk\Presence;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Broadcasting\BroadcastInterface;
 use Spiral\RoadRunner\Metrics\MetricsInterface;
@@ -13,6 +14,7 @@ use Testo\Assert;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Tests\Fake\FakeLock;
+use Tests\Fake\FakePresence;
 use Tests\Fake\SpyBroadcast;
 use Tests\Fake\SpyMetrics;
 use Tests\TestCase;
@@ -52,5 +54,6 @@ final class TickerCommandTest extends TestCase
         $this->getContainer()->bindSingleton(BroadcastInterface::class, $this->broadcast);
         $this->getContainer()->bindSingleton(LockInterface::class, $this->lock);
         $this->getContainer()->bindSingleton(MetricsInterface::class, $this->metrics);
+        $this->getContainer()->bindSingleton(Presence::class, new FakePresence());
     }
 }

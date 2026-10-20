@@ -91,7 +91,7 @@ final class TickerTest
 
     private static function ticker(RitualHarness $ritual): Ticker
     {
-        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], new NullLogger());
+        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger());
     }
 
     private static function escaped(RitualHarness $ritual): float

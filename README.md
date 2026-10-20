@@ -55,6 +55,8 @@
 | `HELLOWIN_FLYER_BUSH_CHANCE` | `0.4` | вероятность, что летун взлетает из куста, а не влетает из-за края |
 | `HELLOWIN_FLYER_ARC_CHANCE` | `0.5` | вероятность полёта дугой |
 | `HELLOWIN_FLYER_KINDS` | `duck,chicken` | виды летунов, сервер выбирает случайно |
+| `HELLOWIN_WALK_SPEED` | `12` | скорость фигурок игроков, процентов экрана в секунду по длине пути |
+| `HELLOWIN_WALK_LEAVE_AFTER` | `5000` | сколько миллисекунд игрок может быть без подключений, прежде чем его фигурка уйдёт с поля |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |

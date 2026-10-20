@@ -7,6 +7,8 @@ namespace App\Application\Hellowin;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
+use App\Domain\Walk\Items;
+use App\Domain\Walk\Walker;
 use Spiral\Broadcasting\BroadcastInterface;
 
 /**
@@ -20,6 +22,7 @@ final readonly class ChannelPublisher
     public function __construct(
         private BroadcastInterface $broadcast,
         private string $channel,
+        private Items $items = new Items(),
     ) {}
 
     /**
@@ -46,14 +49,23 @@ final readonly class ChannelPublisher
         ));
     }
 
+    /**
+     * Carries the item every character holds in the new scene.
+     */
     public function scene(int $round, int $scene, int $stageMax): void
     {
-        $this->publish(['type' => 'scene', 'round' => $round, 'scene' => $scene, 'stageMax' => $stageMax]);
+        $this->publish([
+            'type' => 'scene',
+            'round' => $round,
+            'scene' => $scene,
+            'stageMax' => $stageMax,
+            'item' => $this->items->forScene($scene),
+        ]);
     }
 
     public function reset(int $round): void
     {
-        $this->publish(['type' => 'reset', 'round' => $round]);
+        $this->publish(['type' => 'reset', 'round' => $round, 'item' => $this->items->forScene(0)]);
     }
 
     public function flyer(int $round, Flyer $flyer): void
@@ -67,6 +79,29 @@ final readonly class ChannelPublisher
             ['type' => 'shot', 'round' => $round, 'flyer' => $flyer->id, 'points' => $flyer->points],
             $player,
         ));
+    }
+
+    /**
+     * @param non-empty-string|null $item
+     */
+    public function walker(int $round, Walker $walker, ?string $item): void
+    {
+        $this->publish(['type' => 'walker', 'round' => $round, 'walker' => $walker->toArray($item)]);
+    }
+
+    public function move(int $round, Walker $walker): void
+    {
+        $this->publish([
+            'type' => 'move',
+            'round' => $round,
+            'player' => ['id' => $walker->id],
+            'walk' => $walker->walk->toArray(),
+        ]);
+    }
+
+    public function leave(int $round, string $player): void
+    {
+        $this->publish(['type' => 'leave', 'round' => $round, 'player' => ['id' => $player]]);
     }
 
     /**

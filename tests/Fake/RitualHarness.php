@@ -17,6 +17,7 @@ use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
@@ -28,6 +29,9 @@ use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\Items;
+use App\Domain\Walk\WalkerStore;
+use App\Domain\Walk\WalkZone;
 use Psr\Log\NullLogger;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
@@ -56,6 +60,9 @@ final class RitualHarness
     public readonly FrozenClock $clock;
     public readonly FlyerStore $flyerStore;
     public readonly FlyerService $flyers;
+    public readonly WalkerStore $walkerStore;
+    public readonly WalkService $walks;
+    public readonly FakePresence $presence;
 
     /**
      * @param positive-int $threshold
@@ -82,7 +89,7 @@ final class RitualHarness
         $this->players = new PlayerService($this->playerStore, new NullLogger());
         $policy = new LockstepPolicy($threshold, $stageMax);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
-        $publisher = new ChannelPublisher($this->broadcast, 'hellowin');
+        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork']));
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players, $threshold);
@@ -90,7 +97,8 @@ final class RitualHarness
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->clock = new FrozenClock();
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock);
+        $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']));
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
@@ -110,6 +118,30 @@ final class RitualHarness
             $this->players,
             $this->clock,
         );
+        $this->presence = new FakePresence();
+        $this->walks = new WalkService(
+            $this->walkerStore,
+            self::walkZone(),
+            $this->playerStore,
+            $this->presence,
+            $publisher,
+            $this->store,
+            $this->playMetrics,
+            $this->clock,
+            10.0,
+            5000,
+            [86.0, 90.0],
+            new Items([null, 'torch', 'pitchfork']),
+            new Randomizer(new Mt19937(7)),
+        );
+    }
+
+    /**
+     * The lawn of app/config/hellowin.php.
+     */
+    public static function walkZone(): WalkZone
+    {
+        return new WalkZone(3, 44, 97, 97, 50, 63, 31, 25);
     }
 
     public function click(string $pumpkin, int $times = 1, ?string $player = null): void

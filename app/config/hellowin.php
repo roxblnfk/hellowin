@@ -60,10 +60,25 @@ return [
         ['id' => 'bush-6', 'x' => 88, 'y' => 43, 'depth' => 1],
     ],
 
+    // The horizon line in percents of the viewport, from the top
+    'horizon' => 38,
+
+    // What every character holds, by scene number; null is empty hands. The frontend draws an item by its id
+    'items' => [null, 'torch', 'pitchfork', 'pitchfork'],
+
     // Where players' characters walk: the lawn rectangle minus the patch ellipse, in percents of the viewport like
     // the elements (players.md, «На поле»)
     'walk' => [
         'area' => ['x1' => 3, 'y1' => 44, 'x2' => 97, 'y2' => 97],
         'patch' => ['cx' => 50, 'cy' => 63, 'rx' => 31, 'ry' => 25],
+
+        // New characters appear at a random point of this band: lower on a phone lies the HUD
+        'spawn' => ['y1' => 86, 'y2' => 90],
+
+        // Percents of the screen per second along the path, the same for every character
+        'speed' => env('HELLOWIN_WALK_SPEED', 12),
+
+        // Milliseconds a player may stay without connections before the character leaves: a reloaded page keeps it
+        'leave_after' => env('HELLOWIN_WALK_LEAVE_AFTER', 5000),
     ],
 ];

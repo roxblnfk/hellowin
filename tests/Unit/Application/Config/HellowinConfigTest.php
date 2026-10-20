@@ -7,6 +7,7 @@ namespace Tests\Unit\Application\Config;
 use App\Application\Config\HellowinConfig;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
+use App\Domain\Walk\WalkZone;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
@@ -112,5 +113,58 @@ final class HellowinConfigTest
             ->withMessageContaining('HELLOWIN_FLYER_DURATION');
 
         $config->getBushes(3);
+    }
+
+    public function walkZoneComesFromTheConfig(): void
+    {
+        $config = new HellowinConfig(['walk' => [
+            'area' => ['x1' => 1, 'y1' => 2, 'x2' => 99, 'y2' => 98],
+            'patch' => ['cx' => 50, 'cy' => 60, 'rx' => 30, 'ry' => 20.5],
+        ]]);
+
+        Assert::equals($config->getWalkZone(), new WalkZone(1, 2, 99, 98, 50, 60, 30, 20.5));
+    }
+
+    #[DataSet([' 7.5 ', 7.5], 'env string')]
+    #[DataSet([12, 12.0], 'integer')]
+    public function acceptsAPositiveWalkSpeed(mixed $value, float $expected): void
+    {
+        Assert::same((new HellowinConfig(['walk' => ['speed' => $value]]))->getWalkSpeed(), $expected);
+    }
+
+    #[DataSet(['0'], 'zero')]
+    #[DataSet([-3], 'negative')]
+    #[DataSet(['fast'], 'word')]
+    public function rejectsAnInvalidWalkSpeed(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_WALK_SPEED');
+
+        (new HellowinConfig(['walk' => ['speed' => $value]]))->getWalkSpeed();
+    }
+
+    public function walkDefaultsMatchTheSpec(): void
+    {
+        $config = new HellowinConfig();
+
+        Assert::same($config->getWalkSpeed(), 12.0);
+        Assert::same($config->getWalkLeaveAfter(), 5000);
+        Assert::same($config->getWalkSpawn(), [86.0, 90.0]);
+    }
+
+    public function itemsGoByScene(): void
+    {
+        $items = (new HellowinConfig(['items' => [null, 'torch']]))->getItems();
+
+        Assert::same([$items->forScene(0), $items->forScene(1), $items->forScene(2)], [null, 'torch', null]);
+    }
+
+    #[DataSet([['Torch']], 'uppercase')]
+    #[DataSet([[42]], 'number')]
+    #[DataSet(['torch'], 'not a list')]
+    public function rejectsInvalidItems(mixed $items): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('hellowin.items');
+
+        (new HellowinConfig(['items' => $items]))->getItems();
     }
 }

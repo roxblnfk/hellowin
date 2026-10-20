@@ -1,8 +1,8 @@
 # Движок (backend)
 
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
-игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны. Кто запускает сброс —
-**запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
+игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны, фигурки игроков на поле. Кто
+запускает сброс — **запланировано** ([`scenario.md`](scenario.md), [`players.md`](players.md)).
 
 ## Классы
 
@@ -22,6 +22,8 @@
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
+| Фигурки: вид, путь, зона, KV | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `register`, тикер) |
+| Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo) |
 
 ## Периодический процесс (тикер)
 
@@ -50,6 +52,7 @@
 |---|---|---|
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс; первый — через интервал после старта | `FlyerFactory` → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
+| Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
@@ -77,8 +80,46 @@
   Ключ удаляет ровно один из двоих (выстрел или учёт), поэтому летун не бывает и сбит, и улетел, и не считается дважды.
   Если тикер лежал дольше запаса TTL, ключи истекают сами и такие летуны не попадут ни в одну метрику.
 - Летуны не зависят от ритуала: летают в любой сцене, включая финальную; `round` в событиях — только потому, что его
-  несёт каждое событие. Есть ли подключённые клиенты, тикер не проверяет: presence в Centrifugo выключен, а запуск без
-  зрителей стоит одного ключа в KV и одной публикации.
+  несёт каждое событие. Есть ли подключённые клиенты, тикер для летунов не проверяет: запуск без зрителей стоит одного
+  ключа в KV и одной публикации.
+
+## Фигурки на поле
+
+Правила — [`players.md`](players.md), «Персонаж», «На поле»; события и RPC — [`protocol.md`](protocol.md).
+
+- **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt}`, меняется под RR-локом `walkers`.
+  Один ключ — снимок читает фигурки одним запросом; сброс раунда его не трогает, позиции переживают сброс. `name` и
+  `look` копируются из записи игрока при выходе на поле и повторном `register`.
+- **Выход на поле**: `register` с `look` (или повторный `register` игрока, у которого `look` уже есть) — фигурка
+  появляется или переодевается на месте, событие `walker`. Новая фигурка стоит в случайной точке полосы `walk.spawn`
+  (`app/config/hellowin.php`) у нижнего края зоны, приведённой в зону. `move` игрока с `look`, чьей фигурки ещё нет
+  на поле, сначала ставит её (`walker`), потом ведёт (`move`).
+- **Ход** (`move {x, y}`): цель приводится в зону — в прямоугольник `walk.area`, из эллипса `walk.patch` на его край
+  по лучу из центра; если край там вне прямоугольника — в ближайшую точку, где эллипс пересекает сторону
+  прямоугольника. Начало — где фигурка сейчас по её `Walk` и серверным часам. Если отрезок не заходит внутрь эллипса —
+  путь прямой; иначе — по касательной к эллипсу, увеличенному на 3 %, по его дуге ломаной с шагом не больше 15° и по
+  касательной к цели; из двух сторон — короче, из тех, что не выходят из прямоугольника больше чем на 2 % (такие
+  вершины прижимаются к краю). Запас 3 % держит хорды дуги вне грядки. Координаты — до сотых. Длительность — длина
+  ломаной / `HELLOWIN_WALK_SPEED`. Под локом `walkers`: два `move` одного игрока не теряют друг друга.
+- **Уход — presence Centrifugo + тикер.** У канала `hellowin` включён presence (`docker/centrifugo/config.json`):
+  серверная подписка каждого подключения попадает в presence с `user` = `publicId`, при закрытии соединения запись
+  сразу пропадает. Раз в секунду тикер спрашивает presence канала через API Centrifugo (RR-плагин `centrifuge`,
+  `CentrifugoApiInterface::presence`), сводит записи к набору игроков и сравнивает с фигурками: у присутствующих
+  обновляет `seenAt`, игроки с `look` без фигурки выходят на поле (`walker`), фигурки, чьих игроков нет дольше
+  `HELLOWIN_WALK_LEAVE_AFTER` мс, уходят (`leave`). Несколько вкладок — несколько записей presence одного `user`:
+  фигурка одна, уходит, когда закрыта последняя. Задержка ухода нужна, чтобы перезагрузка страницы не роняла фигурку
+  и не переносила её к нижнему краю.
+- Почему так: presence — готовый в Centrifugo учёт подключений, который сам чистится при разрыве; приложению не нужно
+  держать свои счётчики клиентов или heartbeat. Альтернатива — refresh proxy (connect отдаёт `expire_at`, Centrifugo
+  периодически продлевает подключение через приложение, тикер удаляет непродлённых) — работает и без presence, но уход
+  виден только по истечении срока, а это лишний прокси и запись в KV на каждое продление. Подключение с `look` выходит
+  на поле не в connect proxy, а по presence: в момент connect клиент ещё не подписан на канал и своё событие `walker`
+  не получил бы.
+- **Предмет в руке** — `items` в `app/config/hellowin.php`, по номеру сцены (`null` — пустые руки, за концом списка —
+  тоже `null`). `item` фигурки не хранится: в снимке и событии `walker` это предмет текущей сцены. При смене сцены
+  `walker` не рассылаются: событие `scene` несёт `item` новой сцены, и клиент меняет предмет у всех фигурок сразу.
+- Сбой опроса presence (Centrifugo недоступен) — ошибка в лог, фигурки не трогаются: недоступный presence не значит,
+  что все ушли.
 
 ## Поток клика
 
@@ -133,8 +174,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks}`) | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
+| Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, `flyer:{id}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, `flyer:{id}`, `walkers`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -159,6 +201,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
+| `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.
@@ -179,6 +222,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
 | `HELLOWIN_FLYER_KINDS` | `duck,chicken` | виды летунов через запятую (`[a-z]+`), выбираются равновероятно |
+| `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
+| `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
 | `VALKEY_DSN` | `tcp://valkey:6379` | Valkey для idempotency (predis) |
 | `CENTRIFUGO_WS_URL` | `/connection/websocket` | URL WebSocket для фронта |
