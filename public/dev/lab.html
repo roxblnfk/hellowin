@@ -32,7 +32,7 @@
   Sandbox for the pixel scene without a backend (docs/spec/frontend.md, "Проверка"): a fake snapshot and a fake
   engine that emits channel events through the same client model as app.js.
   Query: ?auto=1 auto-clicks, ?w=px narrows the page, ?stage=N starts every pumpkin at stage N, ?freeze=ms stops the frame loop after ms,
-  ?ui=0 hides the controls, ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment, ?kind=<id> the kind — the sunset has none of its own), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
+  ?ui=0 hides the controls, ?sound=1 plays the real sound (unlocked by the first press; window.audio is the engine), ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment, ?kind=<id> the kind — the sunset has none of its own), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
   Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
   your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
   the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene. The "выстрел" button
@@ -99,6 +99,7 @@
         <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
+        <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
     </footer>
 </main>
 <dialog class="join" data-join aria-labelledby="join-title">
@@ -870,7 +871,20 @@
     const scene = await createScene(root, readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
     if (params.has('hits')) scene?.showHits(true);
-    const owl = createOwl(root, scene, simulated ? { now: () => simTime, later } : {});
+    // ?sound=1: the real audio engine, wired like app.js (the first press anywhere unlocks it).
+    let client = null;
+    let sound = null;
+    if (params.get('sound') === '1') {
+        const [{ createAudio }, { bindSoundToggle, bindUiClicks, createSound }] = await Promise.all([import('/js/audio/engine.js'), import('/js/sound.js')]);
+        const audio = createAudio();
+        audio.unlockOn(document);
+        bindSoundToggle(root.querySelector('[data-sound-toggle]'), audio);
+        bindUiClicks(root, audio);
+        sound = createSound(audio, { serverNow: () => client?.serverNow() ?? Date.now(), owlGone: () => Boolean(scene?.owlGone?.()) });
+        scene?.onCue((cue) => sound.cue(cue));
+        window.audio = audio;
+    }
+    const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line) });
     const reveal = createReveal(root);
     // The lab shows the console when it plays the moderator (?mod=1); the fake engine answers like the server would.
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
@@ -878,11 +892,12 @@
         call: engineCall,
         clickAll: () => engine.elements.forEach((e, i) => later(() => client.clickable(e.id) && engineClick(e.id), i * 30)),
     });
-    const client = createClient(root, scene, {
+    client = createClient(root, scene, {
         requestState: async () => engineSnapshot(),
         now: clientTime,
         owl,
         reveal,
+        sound,
         onChange: (model) => moderatorConsole?.update(model),
     });
     client.start();

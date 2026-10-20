@@ -11,7 +11,8 @@
 стеке; финал (шаги 0–5: ритуальная поза, силуэт, молнии и FrankenPHP, RoadRunner, разоблачение с аптаймом, проклятый
 мир с фразами FrankenPHP и чоканьем — автоматическим и по клику (по клику — в лаборатории, против контракта backend), строка связи в HUD; красный огонёк, пиво ночью) — **реализовано** и проверено в лаборатории, на живом стеке — шаги 0–2;
 множитель порогов (группа «Пороги» на пульте, событие `thresholds`, `k` и `online`) — **реализовано** и проверено в
-лаборатории и на живом стеке; игроки на странице (лидеры, своя статистика) — **запланировано**.
+лаборатории и на живом стеке; звук (движок `audio/**`, подключение по событиям, кнопка «Звук» в HUD) — **реализовано**, проверено
+тестами маршрутизации и в лаборатории (`?sound=1`), на слух на живом стеке — **в работе**; игроки на странице (лидеры, своя статистика) — **запланировано**.
 
 ## Зона и ограничения
 
@@ -50,6 +51,8 @@
 | `client.js` | модель клиента: снимок из DOM, события канала → DOM-хуки, API сцены, сова, разоблачение, пульт; маршрутизация кликов по чоканью (`cursed`, `clinksWalker`, `clinksPumpkin`); `bindShooting`, `bindClinking`, `bindWalking` |
 | `owl.js` | каталог реплик совы (`LINES`: id → текст) и пузырь над сценой (`createOwl`) |
 | `reveal.js` | панель разоблачения (шаг финала 4+, числа `reveal` и аптайм) |
+| `sound.js` | что играет страница (раздел «Звук»): события канала и моменты сцены → вызовы движка `audio/engine.js` (`createSound`), кнопка «Звук» (`bindSoundToggle`), щелчок кнопок HUD и пульта (`bindUiClicks`) |
+| `audio/**` | звуковой движок (`createAudio`, `trackOf`, `NEXT_TRACK`; музыка и эффекты синтезируются в воркере, `synth/`); песочница — `public/dev/audio.html`. Ведёт отдельный агент: фронтенд его только вызывает |
 | `franken.js` | фразы FrankenPHP в проклятом мире (`PHRASES`) и выбор фразы по серверному времени (`phraseAt`) |
 | `toasts.js` | тосты чоканья в проклятом мире (`TOASTS`, расширяется добавлением в конец; тост — строка или два голоса `[реплика, ответ]`) и выбор тоста: автоматического — по группе и слоту (`toastOf`), по клику — по числу из события `clink` (`toastAt`: `toast % TOASTS.length`) |
 | `join.js` | экран входа: имя, части персонажа, превью на 2D-canvas, `register`, `localStorage` |
@@ -63,13 +66,15 @@
 | `pixel/bonfire.js` | костёр по стадиям (`BONFIRE`), взрыв `EXPLOSION`, пепелище `ASH`, `magicCircle(progress)` |
 | `pixel/characters.js` | сборные персонажи: каталог частей, позы (в т. ч. `ritual` со слоем `glow`, `shoot` по предмету, `clink` и `toast` — чоканье), направления, сборка кадра 32×40 с опорой между ступней (`FRAME`), пламя свечи и красного огонька слоем `flames`, пиво и пена отдельным слоем `beer`, спрайты эффектов выстрела `SHOT_FX`; лист — `public/dev/characters.html` |
 | `pixel/finale.js` | арт финала: `FRANKEN`, `SILHOUETTE`, `RUNNER` (far, s/m/l/xl), эффекты `FX`, `frankenHalo`, `FINALE_EMISSIVE`; лист и макет шагов — `public/dev/finale.html` |
-| `pixel/finale-stage.js` | постановка шагов финала в сцене: таймлайн `T`, FrankenPHP и силуэт на круге, столб, дым, молнии, RoadRunner, пузыри RoadRunner и FrankenPHP; правила `nightOf` / `lightsOut` / `ritualOf` / `rumbleAt` для `scene.js` |
+| `pixel/finale-timeline.js` | таймлайн шагов финала `T` без PixiJS: по нему рисует сцена и играет звук |
+| `pixel/finale-stage.js` | постановка шагов финала в сцене: таймлайн `T` (реэкспорт из `finale-timeline.js`), FrankenPHP и силуэт на круге, столб, дым, молнии, RoadRunner, пузыри RoadRunner и FrankenPHP; правила `nightOf` / `lightsOut` / `ritualOf` / `rumbleAt` для `scene.js` |
 | `pixel/clink.js` | чоканье в проклятом мире: автоматические группы по путям фигурок и серверному времени (`clinksOf`, `createClinks`), чоканье по клику из события `clink` (`clinkOf`, `CLINK_STALE_MS`), общий таймлайн `CLINK` |
 | `pixel/bubble.js` | пиксельные пузыри реплик в экранном разрешении (`createBubbles`: `say` каждый кадр, `sweep`) — FrankenPHP, RoadRunner, тосты |
 | `pixel/scene.js` | PixiJS-приложение: раскладка, слои, анимации; API ниже |
 
 `scene.js` и `join.js` (оба тянут `characters.js`) `app.js` грузит динамически: если они не загрузились, тыквы
-и счёт работают на emoji-кнопках.
+и счёт работают на emoji-кнопках. `audio/engine.js` и `sound.js` — тоже динамически, параллельно со сценой: без них
+страница работает молча, кнопка «Звук» скрыта.
 
 API сцены — единственная связь `app.js` с canvas:
 
@@ -96,6 +101,10 @@ scene.owl({ms, hoot});               // сова говорит ms: клюв и 
                                      // возвращает 0; после отлёта совы реплика просто показывается над FrankenPHP
 scene.setFinale({step, ready});      // шаг финала (null вне финальной сцены) и замкнут ли круг; следующий шаг играется
                                      // с анимацией, любой другой (перезагрузка, ресинк, reduced motion) — сразу итогом
+scene.onCue(fn);                     // моменты для звука без события канала: fn({type: 'owl-away'}) — сова взлетает на шаге 5,
+                                     // {type: 'franken', text, x} — началась фраза FrankenPHP (пойманная позже 1,5 с — нет),
+                                     // {type: 'clink', x} — удар автоматического чоканья (раз на чоканье, позже 0,4 с — нет); x — % ширины
+scene.owlGone();                     // сова улетела: её реплики теперь над FrankenPHP
 ```
 
 ### Разметка и DOM-хуки
@@ -118,6 +127,7 @@ scene.setFinale({step, ready});      // шаг финала (null вне фин�
 | `[data-owl-bubble]` (создаёт `owl.js` в `#app`) | `data-owl-text` внутри | пузырь совы, `role="status"`; `hidden`, когда сова молчит |
 | `[data-reveal]` (создаёт `reveal.js` в `#app`) | `data-reveal-clicks|jobs|burned|shot|uptime`, `data-reveal-label`, `data-reveal-note`, `data-reveal-last`, `data-reveal-close` | панель разоблачения |
 | кнопка в HUD | `data-join-open` | «Персонаж»: открыть экран входа |
+| кнопка в HUD | `data-sound-toggle`, `aria-pressed` (`true` — звук включён) | «Звук: вкл» / «Звук: выкл»; `hidden`, пока движок не загрузился; подпись и `aria-pressed` — из `audio.state()` по `subscribe`, клик — `audio.toggleMute()` (включение разблокирует звук, поэтому только из клика) |
 | `<dialog>` после `#app` | `data-join` | экран входа; внутри — хуки ниже |
 | экран входа | `data-join-name`, `data-join-error`, `data-join-preview` | поле имени, ошибка под ним, canvas превью |
 | экран входа | `data-part="body\|cloak\|face\|eyes\|hat"` → `data-step="-1\|1"`, `data-part-value` | строка части: «‹», подпись, «›» |
@@ -613,6 +623,52 @@ client, clink)` в `client.js`.
   FrankenPHP — PixiJS в экранном разрешении поверх увеличенного мира (`labelLayer`, как имена): кремовый, ступенчатая
   рамка и хвост к голове, как у пузыря совы.
 
+### Звук
+
+Движок — `public/js/audio/engine.js` (не зона фронтенда, только вызовы). `app.js` создаёт `createAudio()`,
+`audio.unlockOn(document)` (до первого нажатия или клавиши все вызовы молчат) и отдаёт `createSound(audio, {serverNow,
+owlGone})` клиенту (`createClient(…, {sound})`), сове (`createOwl(…, {onShow})`) и сцене (`scene.onCue`). Mute и
+громкости хранит сам движок (`localStorage['hellowin.audio']`), фоновую вкладку он приостанавливает.
+
+**Правило — как у рисования: только из событий.** Звучит событие канала или момент серверных часов; свой клик по тыкве,
+выстрел, шаг ничего не играют, пока не вернётся событие. Исключение — щелчок `ui.click` по кнопкам HUD и пульта.
+
+- Громкость: своё действие (`player.id` события — я) — 1, чужое и анонимное — 0,6. Панорама — `clamp((x − 50) / 50, −1, 1) × 0,8`
+  по x элемента, летуна, фигурки (процент ширины).
+- **Музыка** — `audio.setMusic(trackOf({scene, sceneStages, finale}))` при старте, снимке (ресинк), `scene`, `finale`,
+  `reset`: день, закат, ночь, кровавая луна финала, `cursed` с шага 5. С ночи (сцена N−1) эффекты финала
+  рендерятся заранее (`whenReady('finale')`). Снимок играет только музыку, без эффектов.
+- **Интенсивность** — `0,2 + 0,8 × доля пройденных стадий сцены`: тыквы — от стадии, с которой началась сцена (`stageMax`
+  прошлой; открывшему страницу посреди сцены — от самой низкой тыквы), до `stageMax`; в финальной сцене — стадия круга;
+  при `ready` и с шага финала 1 — 1. Пересчёт по `click`, `pumpkin`, `scene`, `finale`, снимку; `reset` — 0,2.
+- `click`: по тыкве — `pumpkin.burned`, если `clicks > threshold`, тыква на `stageMax` или сцена финальная; иначе сцена 0 —
+  `pumpkin.carve` (стадии 0–2) / `pumpkin.scoop` (стадия 3 — вычищают), сцена 1 — `pumpkin.ignite`, сцена 2 —
+  `pumpkin.enchant`; по костру — `bonfire.click`, по кругу — `circle.click`.
+- `pumpkin`: тыква в сцене 0 / 1 / 2 — `pumpkin.stage` / `pumpkin.lit` / `pumpkin.charged`; костёр — `bonfire.stage`; круг —
+  `circle.stage`, на своём `stageMax` — `circle.done`.
+- `ready` — `ui.ready`. `scene` в финальную — `bonfire.explode`. `reset` — `stopAll()`, `ui.reset`. `zombies {on: true}` — `zombie.groan`.
+- `flyer` по `kind`: duck — `duck.quack`, chicken — `chicken.cluck`, bat — `bat.squeak`, worm — `worm.squelch`, firefly —
+  `firefly.ding`, witch — `witch.cackle`, zombie — `zombie.groan`, roadrunner — `runner.steps`, crow — `crow.caw`, ghost —
+  `ghost.wail`. Панорама — по `from.x`, громкость по глубине 0/1/2 — 0,5/0,75/1, с `bush` — ещё `bush.rustle` у куста.
+  Не звучит летун, чей `expiresAt` прошёл или запущенный больше 1,5 с назад.
+- `shot` — `flyer.hit` и `flyer.fall` (+0,05 с) там, где летун сейчас (по его пути); летун, которого страница не видела
+  или давно улетевший, — молча. Фигурка стрелка на поле — `shot.<item>` (pistol, candle, book, beer, `red-flame` →
+  `shot.redflame`; пустые руки — нет); мой выстрел — ещё `points`.
+- `move` моей фигурки — `walk.step` каждые 0,35 с пути (не больше 12, таймерами: следующий `move` и `reset` отменяют
+  неуслышанные); чужие шаги молчат.
+- `clink` не старше 3 с — `clink.glass` в момент удара (`at + CLINK.strike`) и `clink.cheer` при поднятых кружках
+  (`at + CLINK.raise`); часть, прошедшая больше чем на 0,25 с, не играется. Автоматическое чоканье — `clink.glass` с громкостью 0,5
+  по `scene.onCue` в момент удара.
+- `walker` моей фигурки, которой не было на поле (после `register` или подключения с `look`), — `ui.join`; смена вида — нет.
+- **Сова**: когда пузырь действительно открылся (`onShow` в `owl.js`, в т. ч. вторая часть реплики) — `audio.speak('owl',
+  text)`, у драматичной (`hoot`) — сначала `owl.hoot`, речь — с задержкой 0,95 с; после отлёта совы реплика над FrankenPHP — `audio.speak('franken', text)`,
+  как и его фразы по серверным часам (`scene.onCue`).
+- **Финал** — только следующий шаг вживую (как анимирует сцена; перезагрузка, ресинк, скачок — молча), задержки — из `T`
+  (`finale-timeline.js`): шаг 1 — `finale.wake`; 2 — `finale.strike` на каждой молнии (`T.strikes`: 0; 0,38; 0,76 с) и
+  `finale.tada` на разоблачении (`T.reveal`, 0,9 с); 3 — `finale.run` и `finale.meep` (`T.meep`, 5 с); 4 — `finale.reveal`;
+  5 — `finale.owlAway`, когда сова взлетает (`scene.onCue`), музыка `cursed` — сразу с событием (`trackOf`).
+- **Фон.** В скрытой вкладке и 0,6 с после её возвращения события не звучат: так отсекается пачка придержанных публикаций.
+
 ## Страница «Как это работает» (`GET /how-it-works`)
 
 - Вводный блок + вкладки (WAI-ARIA Tabs, `public/js/how-it-works.js`, вкладка в `location.hash`, без JS — все
@@ -666,7 +722,8 @@ client, clink)` в `client.js`.
   сразу (`?fshot=ms` сбивает ближнего).
   Инструменты лаборатории (утка, клик, авто, выстрел, стадия) — отдельной панелью
   `[data-lab-panel]`. Все параметры (`?walkers=N`, `?me=1`, `?join=1`, `?shooter=1` и прочие) — в комментарии в
-  начале `lab.html`; `window.lab` — `{client, engine, scene}` для проверок из консоли.
+  начале `lab.html`; `window.lab` — `{client, engine, scene}` для проверок из консоли. `?sound=1` — настоящий звук, как
+  в `app.js` (первое нажатие разблокирует, кнопка «Звук» в HUD, `window.audio` — движок); без него лаборатория молчит.
 - Быстрый цикл без пересборки: dev-override (`docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
   --build -V`) монтирует код, шаблоны и статика подхватываются сразу.
 - Прод-стек копирует код в образ: после правок `docker compose up -d --build app`.

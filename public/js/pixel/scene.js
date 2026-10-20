@@ -313,6 +313,8 @@ export async function createScene(rootEl, snapshot) {
     const flyers = new Map();
     // Server time in ms; the client model supplies it with the clock offset (setServerClock).
     let serverNow = () => Date.now();
+    // Moments the sound plays that no channel event marks (sound.js): set by onCue.
+    let cue = () => {};
     const bushes = new Map();
     const flyerTextures = new Map();
     const hazyTextures = new Map();
@@ -750,6 +752,7 @@ export async function createScene(rootEl, snapshot) {
         const f = owlFlight;
         if (f.mode === 'perched' && f.leave && clock >= owlTalk.until && sinceStep() > OWL_STAY_MS) {
             owlFlight = { mode: reduced ? 'away' : 'leaving', at: clock, leave: false };
+            cue({ type: 'owl-away' });
         }
         const t = clock - owlFlight.at;
         const wing = OWL_FLIGHT.fly[Math.floor(clock / 90) % OWL_FLIGHT.fly.length];
@@ -2329,6 +2332,19 @@ export async function createScene(rootEl, snapshot) {
 
     const walkersOf = (c) => [c.player, c.walker].filter(Boolean);
 
+    // A planned clink rings once, at its strike; one caught later than STRIKE_FRESH_MS (a reload, a background tab)
+    // stays silent. Clinks by click are rung from their channel event (sound.js).
+    const STRIKE_FRESH_MS = 400;
+    const struck = new Set();
+    function strikeCue(g, meet, now) {
+        const at = g.at + CLINK.strike;
+        const key = `${g.key}@${g.at}`;
+        if (now < at || struck.has(key)) return;
+        struck.add(key);
+        if (struck.size > 64) struck.delete(struck.values().next().value);
+        if (now - at < STRIKE_FRESH_MS) cue({ type: 'clink', x: (meet.x / layout.artW) * 100 });
+    }
+
     function addClink(event) {
         const by = walkers.get(event?.player?.id);
         if (by) by.clink = null;
@@ -2386,6 +2402,7 @@ export async function createScene(rootEl, snapshot) {
                 });
                 if (!sides.length) continue;
                 const meet = { x: sides.reduce((a, side) => a + side.at.x, 0) / sides.length, y: Math.min(...sides.map((side) => side.at.y)) };
+                strikeCue(g, meet, now);
                 take({ key: g.key, at: g.at, until: g.until, toast: g.toast, sides, meet });
             }
         }
@@ -3012,6 +3029,7 @@ export async function createScene(rootEl, snapshot) {
         defTexture,
         flyerArt,
         depthKey,
+        cue: (c) => cue(c),
         strike: () => {
             veilStart = clock;
             veilFrames = STRIKE_VEIL;
@@ -3218,6 +3236,20 @@ export async function createScene(rootEl, snapshot) {
         /** Channel event `clink`: the pair turns to each other, strikes, raises the glasses; older than 3 s is not played. */
         clink(event) {
             addClink(event);
+        },
+
+        /**
+         * Moments the sound plays that no channel event marks, as fn({type, ...}): `owl-away` (the owl takes off at
+         * finale step 5), `franken` {text, x} (a phrase of FrankenPHP comes up), `clink` {x} (a planned clink strikes);
+         * x in percent of the width.
+         */
+        onCue(fn) {
+            cue = typeof fn === 'function' ? fn : () => {};
+        },
+
+        /** Whether the owl has left the branch (finale step 5): its lines are then shown over FrankenPHP. */
+        owlGone() {
+            return owlGone();
         },
 
         /** Sets the server-time source flights are measured against. */

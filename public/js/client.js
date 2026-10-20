@@ -95,8 +95,9 @@ export function readSnapshot(root) {
  * @param {{say: Function}|null} [options.owl]  speech bubble of owl.js
  * @param {{update: Function}|null} [options.reveal]  reveal panel of reveal.js
  * @param {(model: object) => void} [options.onChange]  after every applied event or snapshot (the console repaints)
+ * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  */
-export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {} }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null }) {
     const model = { ...readSnapshot(root), me: null, moderator: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
@@ -256,6 +257,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintAll();
         scene?.render(snapshotOf());
         paintCircle();
+        sound?.load(model);
         onChange(model);
     }
 
@@ -461,6 +463,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         model,
         load,
 
+        /** The server clock as this client measured it, ms. */
+        serverNow: () => now() + offset,
+
         /** Whether a click on the element would be accepted: a locked bonfire or circle is not worth an RPC. */
         clickable(id) {
             return !button(id)?.hasAttribute('data-locked');
@@ -471,6 +476,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         setMe(id) {
             model.me = id ?? null;
             scene?.setMe(model.me);
+            sound?.me(model.me, model);
         },
 
         canWalk,
@@ -523,7 +529,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 resync();
                 return;
             }
+            // What the event changed is the sound's cue: a finale step that follows the one before, a new walker.
+            const before = sound && { scene: model.scene, stageMax: model.stageMax, step: model.finale?.step ?? null, walkers: new Set(model.walkers.map((w) => w.id)) };
             handler(event);
+            sound?.event(event, model, before);
             onChange(model);
         },
 
@@ -547,6 +556,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             spread();
             new ResizeObserver(spread).observe(root);
             paintAll();
+            sound?.load(model);
             // The uptime ticks in the HUD and on the reveal: repaint when its minute changes.
             let shown = null;
             setInterval(() => {

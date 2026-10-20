@@ -62,6 +62,7 @@
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
+            <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
         </footer>
     </main>
 

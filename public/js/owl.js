@@ -66,8 +66,11 @@ const EDGE = 8;
  *
  * @param {HTMLElement} root  #app
  * @param {object|null} scene API of pixel/scene.js
+ * @param {object} [options]
+ * @param {(line: {text: string, hoot: boolean, x: number|null}) => void} [options.onShow]  the bubble has just opened with
+ *   a line (the sound voices it); x — the speaker in percent of the width, null without a canvas
  */
-export function createOwl(root, scene, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms) } = {}) {
+export function createOwl(root, scene, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), onShow = () => {} } = {}) {
     const bubble = document.createElement('div');
     bubble.className = 'owl-bubble';
     bubble.dataset.owlBubble = '';
@@ -122,6 +125,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         const open = () => {
             bubble.hidden = false;
             place();
+            const perch = scene?.perch?.();
+            const width = root.clientWidth;
+            onShow({ text, hoot, x: perch && width ? (perch.x / width) * 100 : null });
         };
         bubble.hidden = true;
         if (delay > 0) later(() => mine === token && open(), delay);

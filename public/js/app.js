@@ -72,14 +72,36 @@ async function startScene(snapshot) {
     }
 }
 
+// Lazy like the scene: without Web Audio or the engine's modules the page plays silently.
+async function startSound(modules, scene, serverNow) {
+    try {
+        const [{ createAudio }, { bindSoundToggle, bindUiClicks, createSound }] = await modules;
+        const audio = createAudio();
+        audio.unlockOn(document);
+        bindSoundToggle(root.querySelector('[data-sound-toggle]'), audio);
+        bindUiClicks(root, audio);
+        const sound = createSound(audio, { serverNow, owlGone: () => Boolean(scene?.owlGone?.()) });
+        scene?.onCue?.((cue) => sound.cue(cue));
+        return sound;
+    } catch (error) {
+        console.warn('sound failed to start', error);
+        return null;
+    }
+}
+
 async function main() {
+    // Fetched alongside the scene's modules, not after them.
+    const soundModules = Promise.all([import('./audio/engine.js'), import('./sound.js')]);
+    soundModules.catch(() => {});
     const scene = await startScene(readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
-    const owl = createOwl(root, scene);
+    let client = null;
+    const sound = await startSound(soundModules, scene, () => client?.serverNow() ?? Date.now());
+    const owl = createOwl(root, scene, { onShow: (line) => sound?.owl(line) });
     const reveal = createReveal(root);
 
     if (typeof Centrifuge === 'undefined') {
-        createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')), owl, reveal }).start();
+        createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')), owl, reveal, sound }).start();
         return;
     }
 
@@ -104,11 +126,12 @@ async function main() {
         })
         : stateTime());
 
-    const client = createClient(root, scene, {
+    client = createClient(root, scene, {
         requestState: () => centrifuge.rpc('state', {}).then(answer).then((reply) => reply.state),
         requestTime,
         owl,
         reveal,
+        sound,
         onChange: (model) => moderatorConsole?.update(model),
     });
     client.start();

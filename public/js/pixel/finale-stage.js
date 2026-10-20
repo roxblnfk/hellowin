@@ -4,6 +4,7 @@ import { createBubbles } from './bubble.js';
 import { FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, frankenHalo } from './finale.js';
 import { EMISSIVE, LIT_PALETTE } from './night.js';
 import { PALETTE } from './palette.js';
+import { T } from './finale-timeline.js';
 
 /**
  * The finale's steps on the scene (docs/spec/scenario.md, «Финал»; docs/spec/frontend.md, «Финал»): FrankenPHP and
@@ -13,40 +14,13 @@ import { PALETTE } from './palette.js';
  * The pumpkins, the walkers, the owl and the lighting stay in scene.js; they read T from here.
  */
 
-/** Timeline of the steps, ms since the step's event. */
-export const T = {
-    // Step 1: the circle flashes, the column lights up, smoke rolls, the silhouette rises; the ground rumbles while the
-    // pumpkins are pulled into a round dance.
-    flash: 90,
-    column: 180,
-    cloud: 300,
-    rise: 600,
-    riseFrame: 400,
-    rumble: 2200,
-    pull: 1500,
-    // Step 2: three strikes; the third cuts to the night under its flash, then the smoke clears off FrankenPHP and the
-    // pumpkins' lights go out as they drop.
-    strikes: [0, 380, 760],
-    strikeFrame: 60,
-    night: 780,
-    reveal: 900,
-    revealFrame: 150,
-    fling: 700,
-    // Step 3: on a diagonal from the screen edge at the horizon down to the front, a beat of standing, «мип-мип».
-    run: 4600,
-    meep: 5000,
-    meepMs: 1800,
-    // Step 5: the pumpkins rise and light up; RoadRunner runs back up the diagonal and off the edge; FrankenPHP keeps
-    // quiet while the owl says its last line and flies away.
-    rise5: 1000,
-    leave: 1200,
-    back: 4400,
-    quiet: 14000,
-};
+export { T };
 
 // RoadRunner's evening run along the horizon in the cursed world: a run of RUN_MS in every slot of LOOP_MS.
 const LOOP_MS = 15000;
 const RUN_MS = 6500;
+// A FrankenPHP phrase is voiced only when caught this early: the frame loop stops in a background tab.
+const PHRASE_FRESH_MS = 1500;
 
 // FrankenPHP's lime body keeps half its colour at night: the logo has to read under the moon. RoadRunner, the other
 // hero, keeps half of all its colours but the outline.
@@ -126,7 +100,7 @@ export const ritualOf = (step, ready, t) => (step === 0 && ready) || step === 1 
 /**
  * @param {object} env  scene internals: layers (ground, light, far, fx, labels), layout(), lighting(), centre() — the
  *   circle's foot in art px, clock(), serverNow(), reduced(), defTexture(def, lit), flyerArt(def, hazy), depthKey(x, y),
- *   strike() — a lightning strike begins (the scene flashes its veil)
+ *   strike() — a lightning strike begins (the scene flashes its veil), cue(cue) — a moment the sound plays
  */
 export function createFinaleStage(env) {
     // Sprites on the ground are made again with groundLayer on every rebuild; the rest live as long as the scene.
@@ -138,6 +112,7 @@ export function createFinaleStage(env) {
     runnerFar.visible = false;
     env.far.addChild(runnerFar);
     let lastStrike = -1;
+    let lastPhrase = null;
 
     function build() {
         const make = (layer, { add = false, alpha = 1 } = {}) => {
@@ -297,6 +272,11 @@ export function createFinaleStage(env) {
         const figure = figureOf(step, t, clock, phrase);
         if (figure) place(g.figure, figure, c.x, c.y, frankenTexture(figure), base + 4);
         if (phrase) bubble('franken', phrase.text, { x: c.x + 4, y: c.y - 84 });
+        // Spoken once, as it comes up: a phrase already halfway through on a reload stays silent.
+        if (phrase && phrase.at !== lastPhrase) {
+            lastPhrase = phrase.at;
+            if (now - phrase.at < PHRASE_FRESH_MS) env.cue?.({ type: 'franken', text: phrase.text, x: (c.x / env.layout().artW) * 100 });
+        }
 
         // Lightning over everything, each strike flashing the screen.
         if (step === 2 && !reduced) {
