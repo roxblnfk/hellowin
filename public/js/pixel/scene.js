@@ -675,16 +675,19 @@ export async function createScene(rootEl, snapshot) {
         animateOwl();
     }
 
-    // At finale step 5 the owl flies off the branch once its last line is over, and is gone. A line after that brings
-    // it back to the branch for the line and sends it off again (provisional, docs/spec/frontend.md).
+    // At finale step 5 the owl flies off the branch once its last line is over, and is gone; lines after that are
+    // shown over FrankenPHP (perch()).
     const OWL_TAKEOFF_MS = 150;
     const OWL_FLY_MS = 2500;
-    const OWL_RETURN_MS = 1800;
+    const OWL_H = OWL.idle[0].h;
+    // FrankenPHP's head above the circle's centre, in art pixels: where his own phrase bubbles hang (finale-stage.js).
+    const FRANKEN_HEAD = 84;
     // The owl does not leave before this long into step 5: the farewell line may still wait for the bubble (owl.js).
     const OWL_STAY_MS = 3000;
     let owlFlight = { mode: 'perched', at: 0, leave: false };
     // Off the top of the screen, up and to the left of the branch.
     const owlAway = () => ({ x: owlAt.x - layout.artW * 0.35, y: -OWL_FLIGHT.fly[0].h - 4 });
+    const owlGone = () => owlFlight.mode === 'away' || owlFlight.mode === 'leaving';
 
     // Idle on the server clock, so the whole room sees the same blink and the same swivel: 5 s slots, a blink in
     // each, a swivel to one side in some of them and, rarely, all the way round.
@@ -725,7 +728,7 @@ export async function createScene(rootEl, snapshot) {
         return reduced ? OWL.idle[0] : idleOwl(serverNow());
     }
 
-    // The owl's frame and point: on the branch, or taking off, flying away and coming back (owlFlight).
+    // The owl's frame and point: on the branch, or taking off and flying away (owlFlight).
     function owlPose() {
         const f = owlFlight;
         if (f.mode === 'perched' && f.leave && clock >= owlTalk.until && sinceStep() > OWL_STAY_MS) {
@@ -740,15 +743,6 @@ export async function createScene(rootEl, snapshot) {
             else {
                 const away = owlAway();
                 return { def: wing, at: { x: owlAt.x + (away.x - owlAt.x) * k * k, y: owlAt.y + (away.y - owlAt.y) * k } };
-            }
-        }
-        if (owlFlight.mode === 'returning') {
-            const k = t / OWL_RETURN_MS;
-            if (k >= 1) owlFlight = { mode: 'perched', at: clock, leave: true };
-            else {
-                const away = owlAway();
-                const e = 1 - (1 - k) * (1 - k);
-                return { def: k > 0.9 ? OWL_FLIGHT.takeOff : wing, at: { x: away.x + (owlAt.x - away.x) * e, y: away.y + (owlAt.y - away.y) * e } };
             }
         }
         if (owlFlight.mode === 'away') return null;
@@ -2532,23 +2526,22 @@ export async function createScene(rootEl, snapshot) {
          * pixel) to measure the 18-art-px owl up from it; follows resizes.
          */
         perch() {
+            // Once the owl has flown away, its lines (the moderator's free text) hang over FrankenPHP's head; the
+            // bubble measures the owl's height up from the point, so it goes that much below the head.
+            if (owlGone()) {
+                const c = centre();
+                return { x: c.x * layout.cssPx, y: (c.y - FRANKEN_HEAD + OWL_H) * layout.cssPx, px: layout.cssPx };
+            }
             return { ...perch, px: layout.cssPx };
         },
 
         /**
          * The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. Returns the ms
-         * until it starts: an owl that has flown away (finale step 5) first comes back to the branch.
+         * until it starts. After the owl has flown away (finale step 5) the line is just shown over FrankenPHP.
          */
         owl({ ms, hoot = false }) {
-            let delay = 0;
-            if (owlFlight.mode === 'away' || owlFlight.mode === 'leaving') {
-                owlFlight = reduced ? { mode: 'perched', at: clock, leave: true } : { mode: 'returning', at: clock, leave: false };
-                delay = reduced ? 0 : OWL_RETURN_MS;
-            } else if (owlFlight.mode === 'returning') {
-                delay = Math.max(0, OWL_RETURN_MS - (clock - owlFlight.at));
-            }
-            owlTalk = { at: clock + delay, until: clock + delay + ms, hoot };
-            return delay;
+            if (!owlGone()) owlTalk = { at: clock, until: clock + ms, hoot };
+            return 0;
         },
 
         /**

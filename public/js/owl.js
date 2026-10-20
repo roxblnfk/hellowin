@@ -113,7 +113,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         shownAt = now();
         textEl.textContent = text;
         const ms = showMs(text);
-        // An owl that has flown away comes back to the branch first: the bubble waits for it.
+        // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
         const delay = Number(scene?.owl?.({ ms, hoot })) || 0;
         const open = () => {
             bubble.hidden = false;
