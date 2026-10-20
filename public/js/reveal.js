@@ -40,7 +40,7 @@ export function createReveal(root) {
         <button type="button" class="reveal__close" data-reveal-close aria-label="Закрыть">×</button>
         <p class="reveal__kicker">Разоблачение</p>
         <h2 class="reveal__title" id="reveal-title">RoadRunner не умирал</h2>
-        <p class="reveal__lead">Весь вечер ваши клики обрабатывал он. Вот числа ритуала.</p>
+        <p class="reveal__lead">Весь вечер RoadRunner обеспечивал инфраструктуру вашего ритуала. Вот что через него прошло:</p>
         <dl class="reveal__grid"></dl>
         <p class="reveal__last" data-reveal-last></p>
         <a class="reveal__link" href="/how-it-works" target="_blank" rel="noopener">Как это работает →</a>`;

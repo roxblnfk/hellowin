@@ -31,17 +31,15 @@ export const T = {
     reveal: 900,
     revealFrame: 150,
     fling: 700,
-    // Step 3: along the horizon to the middle, down to the front, a beat of standing, «мип-мип».
-    horizon: 2200,
-    approach: 2400,
+    // Step 3: on a diagonal from the screen edge at the horizon down to the front, a beat of standing, «мип-мип».
+    run: 4600,
     meep: 5000,
     meepMs: 1800,
-    // Step 5: the pumpkins rise and light up; RoadRunner goes back up, then off along the horizon; FrankenPHP keeps
+    // Step 5: the pumpkins rise and light up; RoadRunner runs back up the diagonal and off the edge; FrankenPHP keeps
     // quiet while the owl says its last line and flies away.
     rise5: 1000,
     leave: 1200,
-    back: 2200,
-    away: 2200,
+    back: 4400,
     quiet: 14000,
 };
 
@@ -209,31 +207,35 @@ export function createFinaleStage(env) {
     const sizeOf = (p) => (p < 0.15 ? 's' : p < 0.4 ? 'm' : p < 0.7 ? 'l' : 'xl');
 
     /**
-     * RoadRunner at `t` into the step: { far, def, x, y, flip, meep } or null. `p` runs 0 → 1 from the horizon's middle
-     * to the front spot; the sizes swap as it comes nearer.
+     * RoadRunner at `t` into the step: { far, def, x, y, flip, meep } or null. It comes on one diagonal from the right
+     * screen edge at the horizon down to the front spot. `k` runs 0 → 1 along it in perspective — slow and small by
+     * the hills, faster and bigger as it nears — and the sprite grows from the hazy far speck through the sizes.
      */
     function runnerOf(step, t, clock, now) {
         const { artW, horizon } = env.layout();
         const front = frontSpot();
-        const top = { x: artW / 2, y: horizon + 2 };
+        const edge = { x: artW + 8, y: horizon - 1 };
         const far = (x, flip, ms = clock) => ({ far: true, def: RUNNER.far[Math.floor(ms / 100) % 4], x, y: horizon - 1, flip });
-        const near = (p, pose, flip) => {
-            const set = RUNNER[sizeOf(p)];
+        // Even ground speed looks like an ease-in on screen: the far part of the way is foreshortened.
+        const along = (p) => p ** 1.8;
+        const on = (k, pose, flip) => {
+            const x = lerp(edge.x, front.x, k);
+            const y = lerp(edge.y, front.y, k);
+            if (k < 0.1) return { far: true, def: RUNNER.far[Math.floor(clock / 100) % 4], x, y, flip };
+            const set = RUNNER[sizeOf(k)];
             const def = pose === 'run' ? set.run[Math.floor(clock / 70) % 4] : set[pose];
-            return { far: false, def, x: lerp(top.x, front.x, p), y: lerp(top.y, front.y, p), flip };
+            return { far: false, def, x, y, flip };
         };
+        // Heading down-left toward the front spot it faces left (mirrored); the stop turns it to the centre, also left.
         if (step === 3) {
-            if (t < T.horizon) return far(lerp(-8, top.x, t / T.horizon), false);
-            const p = (t - T.horizon) / T.approach;
-            if (p < 1) return near(p, 'run', false);
+            if (t < T.run) return on(along(t / T.run), 'run', true);
             const into = t - T.meep;
-            return { ...near(1, into >= 0 && into < T.meepMs ? 'meep' : 'stop', true), meep: into >= 0 && into < T.meepMs };
+            return { ...on(1, into >= 0 && into < T.meepMs ? 'meep' : 'stop', true), meep: into >= 0 && into < T.meepMs };
         }
-        if (step === 4) return near(1, 'stop', true);
+        if (step === 4) return on(1, 'stop', true);
         if (step === 5) {
-            if (t < T.leave) return near(1, 'stop', true);
-            if (t < T.leave + T.back) return near(1 - (t - T.leave) / T.back, 'run', true);
-            if (t < T.leave + T.back + T.away) return far(lerp(top.x, artW + 8, (t - T.leave - T.back) / T.away), false);
+            if (t < T.leave) return on(1, 'stop', true);
+            if (t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false);
             // Then it keeps running along the horizon, now and then, like in scene 0: one run per slot, on the server
             // clock so every viewer sees the same.
             const slot = Math.floor(now / LOOP_MS);
