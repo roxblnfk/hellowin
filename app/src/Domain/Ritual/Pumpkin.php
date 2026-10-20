@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+/**
+ * Stage and click counters of a pumpkin. The bonfire keeps the same record: it moves by the same rules, only by its
+ * own threshold and stage maximums.
+ */
 final readonly class Pumpkin
 {
     /**

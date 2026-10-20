@@ -23,7 +23,6 @@ use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
-use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
@@ -60,7 +59,8 @@ final class HellowinBootloader extends Bootloader
             ): RitualStore => new RitualStore(
                 $cache->storage($config->getStorage()),
                 $lock,
-                \array_map(static fn(Element $element): string => $element->id, $elements->all()),
+                $elements->pumpkinIds(),
+                bonfire: $elements->bonfire()?->id,
             ),
             PlayerStore::class => static fn(
                 HellowinConfig $config,
@@ -68,7 +68,12 @@ final class HellowinBootloader extends Bootloader
                 LockInterface $lock,
             ): PlayerStore => new PlayerStore($cache->storage($config->getStorage()), new Locks($lock)),
             RitualPolicy::class => static fn(HellowinConfig $config): RitualPolicy
-                => new LockstepPolicy($config->getClicksPerStage(), $config->getSceneStageMax()),
+                => new LockstepPolicy(
+                    $config->getClicksPerStage(),
+                    $config->getSceneStageMax(),
+                    $config->getBonfireClicksPerStage(),
+                    $config->getBonfireStageMax(),
+                ),
             ClickHandler::class => static fn(
                 HellowinConfig $config,
                 ElementRegistry $elements,
@@ -87,6 +92,7 @@ final class HellowinBootloader extends Bootloader
                 $publisher,
                 $players,
                 $config->getClicksPerStage(),
+                bonfireThreshold: $config->getBonfireClicksPerStage(),
             ),
             SnapshotFactory::class => static fn(
                 HellowinConfig $config,
@@ -107,6 +113,7 @@ final class HellowinBootloader extends Bootloader
                 $walkers,
                 $config->getItems(),
                 $reveal,
+                $config->getBonfireClicksPerStage(),
             ),
             ShotTally::class => static fn(
                 HellowinConfig $config,
@@ -114,7 +121,7 @@ final class HellowinBootloader extends Bootloader
                 LockInterface $lock,
             ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
             RevealBuilder::class => static fn(HellowinConfig $config, ShotTally $shots, PlayerStore $players): RevealBuilder
-                => new RevealBuilder($shots, $players, $config->getClicksPerStage()),
+                => new RevealBuilder($shots, $players, $config->getClicksPerStage(), $config->getBonfireClicksPerStage()),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

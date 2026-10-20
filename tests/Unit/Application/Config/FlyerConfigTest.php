@@ -63,14 +63,15 @@ final class FlyerConfigTest
 
     public function kindsComeByScene(): void
     {
-        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], ['crow', 'bat'], ['ghost', 'bat'], ['ghost', 'bat']]);
+        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], [], ['bat'], ['bat']]);
         Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), [['duck', 'bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; bat ']))->getKinds(), [['duck'], ['bat']]);
+        Assert::same((new FlyerConfig(['kinds' => 'duck; ;bat']))->getKinds(), [['duck'], [], ['bat']]);
+        Assert::same((new FlyerConfig(['kinds' => '']))->getKinds(), [[]]);
     }
 
-    #[DataSet([''], 'empty')]
     #[DataSet(['duck,'], 'trailing comma')]
-    #[DataSet(['duck;;bat'], 'empty scene')]
+    #[DataSet(['duck,,bat'], 'empty kind')]
     #[DataSet(['Duck'], 'uppercase')]
     #[DataSet([['duck']], 'array')]
     public function kindsRejectGarbage(mixed $value): never
@@ -84,7 +85,7 @@ final class FlyerConfigTest
     {
         $config = new FlyerConfig();
 
-        Assert::same($config->getRare(), ['roadrunner', null, 'witch', 'witch']);
+        Assert::same($config->getRare(), ['roadrunner', null, null, null]);
         Assert::same($config->getRareChance(), 0.08);
         Assert::same($config->getRarePoints(), 10);
         Assert::same((new FlyerConfig(['rare' => '']))->getRare(), [null]);

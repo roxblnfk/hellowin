@@ -25,7 +25,7 @@ use App\Domain\Walk\WalkerStore;
  *     stageMax: int<0, max>,
  *     threshold: positive-int,
  *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
- *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>,
+ *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size?: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>, threshold?: positive-int, stageMax?: int<0, max>}>,
  *     walkers: list<array>,
  *     ready: bool,
  *     finale: array{step: int, reveal?: array}|null,
@@ -38,6 +38,7 @@ final readonly class SnapshotFactory
 {
     /**
      * @param positive-int $threshold
+     * @param positive-int $bonfireThreshold Clicks the bonfire needs to move.
      * @param list<Bush> $bushes
      */
     public function __construct(
@@ -50,6 +51,7 @@ final readonly class SnapshotFactory
         private ?WalkerStore $walkers = null,
         private Items $items = new Items(),
         private ?RevealBuilder $reveal = null,
+        private int $bonfireThreshold = 1,
     ) {}
 
     /**
@@ -63,10 +65,15 @@ final readonly class SnapshotFactory
         $elements = [];
         foreach ($this->elements->all() as $element) {
             $pumpkin = $ritual->pumpkin($element->id);
-            $elements[] = $element->toArray() + [
+            $state = $element->toArray() + [
                 'stage' => $pumpkin?->stage ?? 0,
                 'clicks' => $pumpkin?->clicks ?? 0,
             ];
+            $element->bonfire() and $state += [
+                'threshold' => $this->bonfireThreshold,
+                'stageMax' => $this->policy->bonfireStageMax($ritual->scene),
+            ];
+            $elements[] = $state;
         }
 
         return [

@@ -16,11 +16,13 @@ final readonly class RevealBuilder
 {
     /**
      * @param positive-int $threshold Clicks a pumpkin transition takes.
+     * @param positive-int|null $bonfireThreshold Clicks a bonfire transition takes; null — as a pumpkin's.
      */
     public function __construct(
         private ShotTally $shots,
         private PlayerStore $players,
         private int $threshold,
+        private ?int $bonfireThreshold = null,
     ) {}
 
     /**
@@ -43,6 +45,6 @@ final readonly class RevealBuilder
         $id = $ritual->story->lastPumpkin;
         $lastPumpkin = $id === null ? null : ($this->players->find($id)?->ref() ?? ['id' => $id, 'name' => null]);
 
-        return Reveal::of($ritual, $this->threshold, $this->shots->count($ritual->round), $lastPumpkin);
+        return Reveal::of($ritual, $this->threshold, $this->shots->count($ritual->round), $lastPumpkin, $this->bonfireThreshold);
     }
 }

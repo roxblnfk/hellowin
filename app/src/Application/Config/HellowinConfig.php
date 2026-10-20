@@ -24,7 +24,9 @@ final class HellowinConfig extends InjectableConfig
         'centrifugo_url' => '/connection/websocket',
         'clicks_per_stage' => 5,
         'moderator_secret' => '',
-        'scene_stage_max' => '4,6,8',
+        'scene_stage_max' => '4,8,11',
+        'bonfire_clicks_per_stage' => 20,
+        'bonfire_stage_max' => '0,4,7',
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
         'bushes' => [],
@@ -74,8 +76,8 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * The last pumpkin stage of every scene where pumpkins move, cumulative: `[4, 6, 8]` takes pumpkins to stage 4
-     * in scene 0, to 6 in scene 1, to 8 in scene 2; scene 3 is the final one. A comma-separated string is accepted
+     * The last pumpkin stage of every scene where pumpkins move, cumulative: `[4, 8, 11]` takes pumpkins to stage 4
+     * in scene 0, to 8 in scene 1, to 11 in scene 2; scene 3 is the final one. A comma-separated string is accepted
      * too: env variables arrive as strings.
      *
      * @return non-empty-list<positive-int> Strictly increasing.
@@ -101,6 +103,50 @@ final class HellowinConfig extends InjectableConfig
         }
 
         /** @var non-empty-list<positive-int> $list */
+        return $list;
+    }
+
+    /**
+     * Clicks on the bonfire that move it to its next stage: the whole room clicks it, so it takes more than a pumpkin.
+     *
+     * @return positive-int
+     */
+    public function getBonfireClicksPerStage(): int
+    {
+        return self::positiveInt(
+            $this->config['bonfire_clicks_per_stage'] ?? null,
+            'bonfire_clicks_per_stage',
+            'HELLOWIN_BONFIRE_CLICKS_PER_STAGE',
+        );
+    }
+
+    /**
+     * The last bonfire stage of every scene, cumulative like {@see getSceneStageMax()}: `[0, 4, 7]` leaves the bonfire
+     * out in scene 0 and takes it to stage 4 in scene 1, to 7 in scene 2. Scenes past the list keep its last value.
+     *
+     * @return non-empty-list<int<0, max>> Never decreasing.
+     */
+    public function getBonfireStageMax(): array
+    {
+        $value = $this->config['bonfire_stage_max'] ?? null;
+        \is_string($value) and $value = \array_map(\trim(...), \explode(',', $value));
+
+        $error = static fn(): \InvalidArgumentException => new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.bonfire_stage_max" (env HELLOWIN_BONFIRE_STAGE_MAX) must be a non-decreasing list of '
+            . 'integers from 0, like "0,4,7"; got %s.',
+            \is_array($value) ? (string) \json_encode($value, \JSON_UNESCAPED_UNICODE) : \get_debug_type($value),
+        ));
+
+        \is_array($value) && $value !== [] or throw $error();
+
+        $list = [];
+        foreach ($value as $stage) {
+            \is_string($stage) && \preg_match('/^\d+$/', $stage) === 1 and $stage = (int) $stage;
+            \is_int($stage) && $stage >= ($list === [] ? 0 : $list[\count($list) - 1]) or throw $error();
+            $list[] = $stage;
+        }
+
+        /** @var non-empty-list<int<0, max>> $list */
         return $list;
     }
 
@@ -263,12 +309,17 @@ final class HellowinConfig extends InjectableConfig
         $emojis = $spec['emojis'] ?? null;
         \is_array($emojis) && $emojis !== [] or throw new \InvalidArgumentException('Element emojis must be a non-empty list.');
 
+        $type = $spec['type'] ?? null;
+        \in_array($type, [Element::TYPE_PUMPKIN, Element::TYPE_BONFIRE], true) or throw new \InvalidArgumentException(
+            'Config "hellowin.elements.*.type" must be "pumpkin" or "bonfire".',
+        );
+
         return new Element(
             id: self::nonEmptyString($spec['id'] ?? null, 'elements.*.id'),
-            type: self::nonEmptyString($spec['type'] ?? null, 'elements.*.type'),
+            type: $type,
             x: self::float($spec['x'] ?? null, 'elements.*.x'),
             y: self::float($spec['y'] ?? null, 'elements.*.y'),
-            size: self::size($spec['size'] ?? null),
+            size: $type === Element::TYPE_BONFIRE ? null : self::size($spec['size'] ?? null),
             emojis: \array_values(\array_map(
                 static fn(mixed $emoji): string => self::nonEmptyString($emoji, 'elements.*.emojis'),
                 $emojis,

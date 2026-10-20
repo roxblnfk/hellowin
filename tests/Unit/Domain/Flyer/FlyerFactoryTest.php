@@ -109,6 +109,27 @@ final class FlyerFactoryTest
         Assert::same($factory->launch(0, 5)->kind, 'bat');
     }
 
+    public function batsWobbleAndOthersFlyTheirPath(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.5, 0.5, new Randomizer(new Mt19937(7)), [['duck'], ['bat']]);
+
+        Assert::null($factory->launch(0, 0)?->wobble);
+        foreach (\range(1, 30) as $_) {
+            $wobble = $factory->launch(0, 1)?->wobble;
+            Assert::notNull($wobble);
+            Assert::numeric($wobble->amp)->between(3, 8);
+            Assert::numeric($wobble->waves)->between(2, 5);
+        }
+    }
+
+    public function sceneWithoutKindsLaunchesOnlyItsRareFlyer(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck'], [], []], [null, null, 'witch'], 1.0);
+
+        Assert::null($factory->launch(0, 1));
+        Assert::same($factory->launch(0, 2)?->kind, 'witch');
+    }
+
     public function rareFlyerOfTheSceneShowsUpByChance(): void
     {
         $factory = new FlyerFactory(

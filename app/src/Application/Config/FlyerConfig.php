@@ -22,8 +22,8 @@ final class FlyerConfig extends InjectableConfig
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
-        'kinds' => 'duck,chicken;crow,bat;ghost,bat;ghost,bat',
-        'rare' => 'roadrunner;;witch;witch',
+        'kinds' => 'duck,chicken;;bat;bat',
+        'rare' => 'roadrunner;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
         'zombie_interval' => '4000-9000',
@@ -111,7 +111,7 @@ final class FlyerConfig extends InjectableConfig
      * Flyer kinds by scene, picked at random for every launch: `"duck,chicken;crow,bat"` — sets separated by `;`, kinds
      * within a set by `,`. Scenes past the list take its last set.
      *
-     * @return non-empty-list<non-empty-list<non-empty-string>>
+     * @return non-empty-list<list<non-empty-string>> An empty set is a scene without flyers.
      */
     public function getKinds(): array
     {
@@ -123,7 +123,7 @@ final class FlyerConfig extends InjectableConfig
         $scenes = [];
         foreach (\explode(';', $value) as $set) {
             $kinds = [];
-            foreach (\explode(',', $set) as $item) {
+            foreach (\trim($set) === '' ? [] : \explode(',', $set) as $item) {
                 $kind = self::kind($item) ?? throw $error;
                 $kinds[$kind] = $kind;
             }

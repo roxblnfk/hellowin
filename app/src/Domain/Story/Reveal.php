@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\Story;
 
+use App\Domain\Ritual\Pumpkin;
 use App\Domain\Ritual\RitualSnapshot;
 
 /**
  * The real numbers of the round for the finale reveal: the twist of the story is the explanation of the engine.
  *
- * Everything but the shots follows from the ritual state, so clicks pay no extra write: each pumpkin counts its
- * accepted clicks under its own lock, every stage it reached is one transition job that ran, every scene one more,
- * and a transition consumes exactly `threshold` clicks — the rest burned on the idempotency key while the
- * transition was in flight, or after the pumpkin reached the last stage of its scene.
+ * Everything but the shots follows from the ritual state, so clicks pay no extra write: each pumpkin and the bonfire
+ * count their accepted clicks under their own lock, every stage they reached is one transition job that ran, every
+ * scene one more, and a transition consumes exactly its threshold of clicks — the rest burned on the idempotency key
+ * while the transition was in flight, or after the pumpkin reached the last stage of its scene.
  */
 final readonly class Reveal
 {
@@ -21,7 +22,8 @@ final readonly class Reveal
      * @param int<0, max> $jobs Transition jobs that ran.
      * @param int<0, max> $burned Clicks that moved nothing.
      * @param int<0, max> $shot Flyers shot down.
-     * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin Who finished the last pumpkin.
+     * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin Who finished the last element of
+     *        the last ready scene.
      */
     public function __construct(
         public int $clicks,
@@ -35,19 +37,28 @@ final readonly class Reveal
      * @param positive-int $threshold Clicks a pumpkin transition takes.
      * @param int<0, max> $shot
      * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin
+     * @param positive-int|null $bonfireThreshold Clicks a bonfire transition takes; null — as a pumpkin's.
      */
-    public static function of(RitualSnapshot $ritual, int $threshold, int $shot, ?array $lastPumpkin): self
-    {
+    public static function of(
+        RitualSnapshot $ritual,
+        int $threshold,
+        int $shot,
+        ?array $lastPumpkin,
+        ?int $bonfireThreshold = null,
+    ): self {
+        $elements = \array_map(static fn(Pumpkin $pumpkin): array => [$pumpkin, $threshold], $ritual->pumpkins);
+        $ritual->bonfire === null or $elements[] = [$ritual->bonfire, $bonfireThreshold ?? $threshold];
+
         $clicks = 0;
         $stages = 0;
-        $pending = 0;
-        foreach ($ritual->pumpkins as $pumpkin) {
-            $clicks += $pumpkin->accepted;
-            $stages += $pumpkin->stage;
-            $pending += \min($pumpkin->clicks, $threshold);
+        $spent = 0;
+        foreach ($elements as [$element, $cost]) {
+            $clicks += $element->accepted;
+            $stages += $element->stage;
+            $spent += $element->stage * $cost + \min($element->clicks, $cost);
         }
 
-        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $stages * $threshold - $pending), $shot, $lastPumpkin);
+        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin);
     }
 
     /**

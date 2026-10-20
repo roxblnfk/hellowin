@@ -12,6 +12,8 @@ final class OwlLine
 {
     public const SCENE_READY = 'scene-ready';
     public const LAST_PUMPKIN = 'last-pumpkin';
+    public const BONFIRE_OPEN = 'bonfire-open';
+    public const BONFIRE_DONE = 'bonfire-done';
     public const WITCH_DOWN = 'witch-down';
     public const ZOMBIES = 'zombies';
 

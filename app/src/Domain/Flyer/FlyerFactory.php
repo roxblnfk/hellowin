@@ -15,6 +15,7 @@ use Random\Randomizer;
  * - From a bush: up from the bush and out across the screen through the top or a side edge, at the bush depth.
  *
  * Either way the flight is straight or, with the arc chance, a quadratic curve through `via`.
+ * Bats also wobble across it: a random swing of {@see WOBBLE_AMP} percents and {@see WOBBLE_WAVES} waves.
  *
  * Kinds come by scene. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
@@ -23,6 +24,12 @@ final readonly class FlyerFactory
 {
     /** Coordinates behind the screen edges: far enough for the largest sprite to start fully hidden. */
     private const OUT = [-8.0, 108.0];
+
+    /** Range of a bat's swing across its path, percents of the screen. */
+    private const WOBBLE_AMP = [3.0, 8.0];
+
+    /** Range of full swings over a bat's flight: few are zigzags, many with a large swing read as loops. */
+    private const WOBBLE_WAVES = [2.0, 5.0];
 
     /** @var non-empty-list<FlyerDepth> */
     private array $depths;
@@ -35,8 +42,8 @@ final readonly class FlyerFactory
      * @param list<Bush> $bushes Each at one of the depths.
      * @param float $bushChance Probability to take off from a bush, when there are bushes.
      * @param float $arcChance Probability of a curved flight.
-     * @param non-empty-list<non-empty-list<non-empty-string>> $kinds Kinds by scene, picked with equal chance; scenes
-     *        past the list take the last set.
+     * @param non-empty-list<list<non-empty-string>> $kinds Kinds by scene, picked with equal chance; scenes past the list
+     *        take the last set. A scene with an empty set launches no flyers but its rare one.
      * @param list<non-empty-string|null> $rare The rare flyer by scene, null for none; scenes past the list take the last.
      * @param float $rareChance Probability that a launch is the rare flyer of the scene.
      * @param positive-int $rarePoints Points for a rare flyer other than the roadrunner.
@@ -69,8 +76,9 @@ final readonly class FlyerFactory
 
     /**
      * @param int $now Unix time in milliseconds.
+     * @return Flyer|null Null when the scene has no flyers and this launch is not its rare one.
      */
-    public function launch(int $now, int $scene = 0): Flyer
+    public function launch(int $now, int $scene = 0): ?Flyer
     {
         $rare = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
         if ($rare !== null && $this->chance($this->rareChance)) {
@@ -78,6 +86,9 @@ final readonly class FlyerFactory
         }
 
         $kinds = $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)];
+        if ($kinds === []) {
+            return null;
+        }
         $arc = $this->chance($this->arcChance);
 
         $bush = $this->bushes !== [] && $this->chance($this->bushChance)
@@ -89,9 +100,11 @@ final readonly class FlyerFactory
         $settings = $this->depths[$depth];
 
         [$from, $via, $to] = $bush === null ? $this->fromEdge($arc) : $this->fromBush($bush->at, $arc);
+        $id = 'f-' . \bin2hex($this->random->getBytes(4));
+        $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
 
         return new Flyer(
-            id: 'f-' . \bin2hex($this->random->getBytes(4)),
+            id: $id,
             depth: $depth,
             from: $from,
             to: $to,
@@ -100,7 +113,8 @@ final readonly class FlyerFactory
             duration: $settings->duration,
             points: $settings->points,
             launchedAt: $now,
-            kind: $kinds[$this->random->getInt(0, \count($kinds) - 1)],
+            kind: $kind,
+            wobble: $kind === Flyer::KIND_BAT ? $this->wobble() : null,
         );
     }
 
@@ -186,6 +200,11 @@ final readonly class FlyerFactory
             : null;
 
         return [$bush, $via, $to];
+    }
+
+    private function wobble(): Wobble
+    {
+        return new Wobble($this->float(...self::WOBBLE_AMP), $this->float(...self::WOBBLE_WAVES));
     }
 
     private function chance(float $probability): bool

@@ -939,6 +939,18 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                     ровно один раз. Сама сцена остаётся прежней.
                 </li>
                 <li>
+                    <strong>Готовность с костром.</strong> Со сцены 1 готовых тыкв мало: в центре грядки ещё костёр, один элемент на
+                    весь зал. Пока тыквы сцены не готовы, клик по нему отвечает <code>locked</code> и никуда не идёт;
+                    последняя тыква вместо готовности открывает костёр (отметка в сюжете под тем же локом
+                    <code>scene</code>, реплика <code>bonfire-open</code>). Дальше все бьют в один лок
+                    <code>bonfire</code> — отсюда ответы <code>busy</code> — и после порога
+                    <code>HELLOWIN_BONFIRE_CLICKS_PER_STAGE</code> ставят горсть дублей одной задачи
+                    <code>TransitionPumpkin</code> с ключом <code>{round}:bonfire:{toStage}</code>; выполняется одна,
+                    это видно по <code>kind="bonfire"</code> в метриках. Сцену делает готовой переход костра на его
+                    последнюю стадию сцены (<code>HELLOWIN_BONFIRE_STAGE_MAX</code>) — тот же
+                    <code>markReady()</code>, реплики <code>bonfire-done</code> и <code>scene-ready</code>.
+                </li>
+                <li>
                     <strong>Переход.</strong> Модератор нажимает «Следующая сцена» — RPC
                     <code>scene.next {scene}</code> с номером сцены, которую он видит. <code>StoryService::nextScene()</code>
                     по снимку проверяет: сцена текущая, не финальная и готова (или пришёл <code>force</code>) — и ставит

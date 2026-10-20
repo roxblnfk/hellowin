@@ -26,10 +26,12 @@ final readonly class TransitionHandler
     ) {}
 
     /**
-     * A pumpkin that finishes the scene makes it ready: the scene waits for the moderator, the owl says so.
+     * Moves a pumpkin or the bonfire. The last pumpkin of a scene opens the bonfire when the scene takes it further,
+     * otherwise makes the scene ready; the bonfire reaching its last stage of the scene makes it ready. A ready scene
+     * waits for the moderator, and the owl says each of these once.
      *
-     * @param non-empty-string|null $player Player of the click that queued the transition: it finished the pumpkin.
-     * @return bool Whether the pumpkin moved.
+     * @param non-empty-string|null $player Player of the click that queued the transition: it finished the element.
+     * @return bool Whether the element moved.
      * @throws RitualBusyException
      */
     public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null): bool
@@ -41,16 +43,28 @@ final readonly class TransitionHandler
 
         $finisher = $this->players->finishedPumpkin($player);
         $this->publisher->pumpkin($round, $moved, $finisher);
-        $this->metrics->pumpkinMoved($moved);
 
-        // Pumpkins finishing at once may each see the scene done; the store marks it ready for one of them
         $ritual = $this->store->snapshot();
-        if ($ritual->round === $round
-            && $this->policy->sceneReady($ritual->scene, $ritual->pumpkins)
-            && $this->store->markReady($round, $ritual->scene, $player)) {
-            $this->publisher->ready($round, $ritual->scene);
-            $finisher === null or $this->publisher->owl($round, OwlLine::LAST_PUMPKIN, ['player' => $finisher->ref()]);
-            $this->publisher->owl($round, OwlLine::SCENE_READY);
+        $bonfire = $ritual->bonfire?->id === $moved->id;
+        $bonfire ? $this->metrics->bonfireMoved($moved) : $this->metrics->pumpkinMoved($moved);
+        if ($ritual->round !== $round) {
+            return true;
+        }
+
+        // Elements finishing at once may each see the same; the store marks it for one of them
+        $params = $finisher === null ? null : ['player' => $finisher->ref()];
+        if ($this->policy->sceneReady($ritual->scene, $ritual->pumpkins, $ritual->bonfire)) {
+            if ($this->store->markReady($round, $ritual->scene, $player)) {
+                $this->publisher->ready($round, $ritual->scene);
+                $params === null or $this->publisher->owl($round, $bonfire ? OwlLine::BONFIRE_DONE : OwlLine::LAST_PUMPKIN, $params);
+                $this->publisher->owl($round, OwlLine::SCENE_READY);
+            }
+        } elseif (!$bonfire
+            && $ritual->bonfire !== null
+            && $this->policy->bonfireOpen($ritual->scene, $ritual->pumpkins, $ritual->bonfire)
+            && $this->store->markBonfireOpen($round, $ritual->scene)) {
+            $params === null or $this->publisher->owl($round, OwlLine::LAST_PUMPKIN, $params);
+            $this->publisher->owl($round, OwlLine::BONFIRE_OPEN);
         }
 
         return true;
@@ -67,7 +81,7 @@ final readonly class TransitionHandler
             return false;
         }
 
-        $this->publisher->scene($round, $toScene, $this->policy->stageMax($toScene));
+        $this->publisher->scene($round, $toScene, $this->policy->stageMax($toScene), $this->policy->bonfireStageMax($toScene));
         $final and $this->publisher->finale($round, 0);
         $this->publisher->owl($round, OwlLine::scene($toScene));
         $this->metrics->sceneMoved($toScene);

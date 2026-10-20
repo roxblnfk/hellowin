@@ -45,24 +45,27 @@ final readonly class FlyerService
      * Launches a flyer of the current scene.
      *
      * @param int $now Unix time in milliseconds.
+     * @return Flyer|null Null when the scene has no flyers and the launch did not turn out its rare one.
      */
-    public function launch(int $now): Flyer
+    public function launch(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
+        $flyer = $this->factory->launch($now, $ritual->scene);
 
-        return $this->release($ritual->round, $this->factory->launch($now, $ritual->scene));
+        return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
 
     /**
-     * The ticker's launch: nothing while the moderator pauses the sky.
+     * The ticker's launch: nothing while the moderator pauses the sky or in a scene without flyers.
      *
      * @param int $now Unix time in milliseconds.
      */
     public function launchScheduled(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
+        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene);
 
-        return $ritual->story->paused ? null : $this->release($ritual->round, $this->factory->launch($now, $ritual->scene));
+        return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
 
     /**

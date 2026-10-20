@@ -22,12 +22,18 @@ return [
     'moderator_secret' => env('HELLOWIN_MODERATOR_SECRET', ''),
 
     // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene
-    'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8'),
+    'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '4,8,11'),
+
+    // The bonfire in the middle: clicks per stage (the whole room clicks it, so more than a pumpkin) and its last
+    // stage by scene, cumulative like the pumpkins'; 0 in a scene leaves it out there
+    'bonfire_clicks_per_stage' => env('HELLOWIN_BONFIRE_CLICKS_PER_STAGE', 20),
+    'bonfire_stage_max' => env('HELLOWIN_BONFIRE_STAGE_MAX', '0,4,7'),
 
     // Valkey of the idempotency storage (app/config/idempotency.php)
     'valkey_dsn' => env('VALKEY_DSN', 'tcp://valkey:6379'),
 
-    // Around the root in the centre of the screen: x/y are percents of the viewport, size is s, m or l
+    // Pumpkins around the root in the centre of the screen and the bonfire on the tops in the very middle: x/y are
+    // percents of the viewport, a pumpkin's size is s, m or l
     'elements' => [
         ['id' => 'pumpkin-1', 'type' => 'pumpkin', 'x' => 47.8, 'y' => 51.2, 'size' => 'm', 'emojis' => ['🎃', '👻', '🦇']],
         ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 55.7, 'y' => 55, 'size' => 's', 'emojis' => ['🎃', '🍬', '🍭']],
@@ -47,6 +53,7 @@ return [
         ['id' => 'pumpkin-16', 'type' => 'pumpkin', 'x' => 40.6, 'y' => 64, 'size' => 's', 'emojis' => ['🎃', '🕸️', '🪄']],
         ['id' => 'pumpkin-17', 'type' => 'pumpkin', 'x' => 35.8, 'y' => 51.5, 'size' => 's', 'emojis' => ['🎃', '🐺', '🌕']],
         ['id' => 'pumpkin-18', 'type' => 'pumpkin', 'x' => 45.2, 'y' => 58.4, 'size' => 's', 'emojis' => ['🎃', '🍄', '🦔']],
+        ['id' => 'bonfire', 'type' => 'bonfire', 'x' => 50, 'y' => 63, 'emojis' => ['🔥', '✨', '💨']],
     ],
 
     // Bushes birds fly out of, on the edges of the patch: x/y are percents of the viewport; depth is the flyer depth
@@ -64,7 +71,7 @@ return [
     'horizon' => 38,
 
     // What every character holds, by scene number; null is empty hands. The frontend draws an item by its id
-    'items' => [null, 'torch', 'pitchfork', 'pitchfork'],
+    'items' => ['pistol', 'candle', 'book', 'book'],
 
     // Where players' characters walk: the lawn rectangle minus the patch ellipse, in percents of the viewport like
     // the elements (players.md, «На поле»)

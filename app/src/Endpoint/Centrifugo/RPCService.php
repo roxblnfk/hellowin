@@ -6,6 +6,7 @@ namespace App\Endpoint\Centrifugo;
 
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
+use App\Application\Hellowin\ElementLockedException;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
@@ -133,6 +134,8 @@ final readonly class RPCService implements ServiceInterface
             return ['ok' => true];
         } catch (UnknownElementException) {
             return self::fail('unknown element');
+        } catch (ElementLockedException) {
+            return self::fail('locked');
         }
     }
 

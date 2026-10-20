@@ -12,6 +12,9 @@ final readonly class Flyer
 {
     public const KIND_DUCK = 'duck';
 
+    /** Flies a wobbling path: zigzags and loops. */
+    public const KIND_BAT = 'bat';
+
     /** Runs along the horizon in the first scene as a hint: no points, and every shot misses. */
     public const KIND_ROADRUNNER = 'roadrunner';
 
@@ -29,6 +32,7 @@ final readonly class Flyer
      * @param int<0, max> $points
      * @param int $launchedAt Unix time in milliseconds.
      * @param non-empty-string $kind
+     * @param Wobble|null $wobble Swing across the path; null flies the base trajectory as it is.
      */
     public function __construct(
         public string $id,
@@ -41,6 +45,7 @@ final readonly class Flyer
         public int $points,
         public int $launchedAt,
         public string $kind = self::KIND_DUCK,
+        public ?Wobble $wobble = null,
     ) {}
 
     /**
@@ -87,6 +92,7 @@ final readonly class Flyer
             $points,
             $launchedAt,
             $kind,
+            Wobble::fromArray($value['wobble'] ?? null),
         );
     }
 
@@ -121,6 +127,7 @@ final readonly class Flyer
         $event['from'] = $this->from->toArray();
         $this->via === null or $event['via'] = $this->via->toArray();
         $event['to'] = $this->to->toArray();
+        $this->wobble === null or $event['wobble'] = $this->wobble->toArray();
         $event['duration'] = $this->duration;
         $event['points'] = $this->points;
         // A backgrounded tab receives queued publications late; these let it drop flyers already gone

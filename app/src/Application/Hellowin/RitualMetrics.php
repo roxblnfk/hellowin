@@ -25,8 +25,10 @@ final readonly class RitualMetrics
     public const SCENE = 'hellowin_scene_stage';
     public const ROUND = 'hellowin_round';
     public const PUMPKIN_STAGE = 'hellowin_pumpkin_stage';
+    public const BONFIRE_STAGE = 'hellowin_bonfire_stage';
     public const KIND_PUMPKIN = 'pumpkin';
     public const KIND_SCENE = 'scene';
+    public const KIND_BONFIRE = 'bonfire';
 
     public function __construct(
         private MetricsInterface $metrics,
@@ -45,6 +47,7 @@ final readonly class RitualMetrics
             self::SCENE => Collector::gauge()->withHelp('Current scene of the ritual.'),
             self::ROUND => Collector::gauge()->withHelp('Current round of the ritual.'),
             self::PUMPKIN_STAGE => Collector::gauge()->withHelp('Current stage of each pumpkin.')->withLabels('element'),
+            self::BONFIRE_STAGE => Collector::gauge()->withHelp('Current stage of the bonfire.'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -71,6 +74,12 @@ final readonly class RitualMetrics
         $this->pumpkinStage($pumpkin);
     }
 
+    public function bonfireMoved(Pumpkin $bonfire): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [self::KIND_BONFIRE]));
+        $this->bonfireStage($bonfire);
+    }
+
     public function sceneMoved(int $scene): void
     {
         $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [self::KIND_SCENE]));
@@ -87,11 +96,17 @@ final readonly class RitualMetrics
         foreach ($snapshot->pumpkins as $pumpkin) {
             $this->pumpkinStage($pumpkin);
         }
+        $snapshot->bonfire === null or $this->bonfireStage($snapshot->bonfire);
     }
 
     private function pumpkinStage(Pumpkin $pumpkin): void
     {
         $this->safely(fn() => $this->metrics->set(self::PUMPKIN_STAGE, $pumpkin->stage, [$pumpkin->id]));
+    }
+
+    private function bonfireStage(Pumpkin $bonfire): void
+    {
+        $this->safely(fn() => $this->metrics->set(self::BONFIRE_STAGE, $bonfire->stage));
     }
 
     /**

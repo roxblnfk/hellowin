@@ -39,7 +39,7 @@ final class StoryTest
 
     public function storyRoundTripsThroughItsRecord(): void
     {
-        $story = new Story(2, null, true, true, 'aaaaaaaaaaaaaaaa');
+        $story = new Story(2, null, true, true, 'aaaaaaaaaaaaaaaa', 2);
 
         Assert::equals(Story::fromArray($story->toArray()), $story);
         Assert::equals(Story::fromArray('garbage'), new Story());

@@ -50,6 +50,17 @@ final class RPCServiceTest
         Assert::blank($ritual->metrics->calls);
     }
 
+    public function closedBonfireIsLocked(): void
+    {
+        $ritual = new RitualHarness(bonfire: [1]);
+
+        $response = $this->call($ritual, 'click', ['element' => RitualHarness::BONFIRE]);
+
+        Assert::same($response, ['ok' => false, 'error' => 'locked']);
+        Assert::blank($ritual->broadcast->published);
+        Assert::blank($ritual->metrics->calls);
+    }
+
     public function missingElementIsRejected(): void
     {
         $response = $this->call(new RitualHarness(), 'click', []);

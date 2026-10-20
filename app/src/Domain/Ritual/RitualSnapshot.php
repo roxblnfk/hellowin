@@ -12,14 +12,19 @@ final readonly class RitualSnapshot
      * @param positive-int $round
      * @param int<0, max> $scene
      * @param list<Pumpkin> $pumpkins
+     * @param Pumpkin|null $bonfire Null when the patch has no bonfire.
      */
     public function __construct(
         public int $round,
         public int $scene,
         public array $pumpkins,
         public Story $story = new Story(),
+        public ?Pumpkin $bonfire = null,
     ) {}
 
+    /**
+     * A pumpkin or the bonfire by element id.
+     */
     public function pumpkin(string $id): ?Pumpkin
     {
         foreach ($this->pumpkins as $pumpkin) {
@@ -28,7 +33,7 @@ final readonly class RitualSnapshot
             }
         }
 
-        return null;
+        return $this->bonfire?->id === $id ? $this->bonfire : null;
     }
 
     /**

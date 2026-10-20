@@ -3,7 +3,8 @@
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
 игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны, фигурки игроков на поле, сюжет
 (готовность сцен, переход по кнопке, финал и разоблачение, сова, пауза, зомби проклятого мира), роль
-модератора (сброс — только ему).
+модератора (сброс — только ему), костёр (элемент `bonfire`: порог и стадии по сценам, `locked`, реплики совы), летуны
+по сценам с пустыми наборами и `wobble` летучих мышей.
 
 ## Классы
 
@@ -72,7 +73,11 @@
   только край): из точки куста вверх и за верхний или боковой край через экран. Иначе — из-за левого или правого края
   (четверть — из верхнего угла) за противоположный, в небе. С вероятностью `HELLOWIN_FLYER_ARC_CHANCE` полёт — дуга
   через `via` (квадратичная кривая), иначе прямая. Точки за краем — `-8` / `108`. Генератор — `FlyerFactory`
-  с инъекцией `Randomizer`: в тестах траектории детерминированы. Вид — из набора текущей сцены (`HELLOWIN_FLYER_KINDS`).
+  с инъекцией `Randomizer`: в тестах траектории детерминированы. Вид — из набора текущей сцены (`HELLOWIN_FLYER_KINDS`);
+  пустой набор — обычного летуна нет, запуск тикера пропускается (редкий летун сцены по-прежнему выпадает с его шансом).
+  Летучие мыши (`bat`) получают `wobble` (`Domain/Flyer/Wobble`): `amp` — случайно 3–8 % экрана, `waves` — 2–5 полных
+  колебаний за полёт, до десятых; диапазоны — константы `FlyerFactory` (`WOBBLE_AMP`, `WOBBLE_WAVES`), не env: это вид
+  траектории, а не число игры. У остальных видов поля нет.
   На паузе модератора (`paused` в сюжете) тикер не запускает никого, расписание идёт дальше.
 - **Редкие и особые.** С вероятностью `HELLOWIN_FLYER_RARE_CHANCE` запуск тикера — редкий летун сцены
   (`HELLOWIN_FLYER_RARE`); его же модератор запускает кнопкой (RPC `flyer.special`, виды `witch`, `roadrunner`, и на
@@ -152,9 +157,10 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin}` (`Domain/Story/Story`), пишется
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire}` (`Domain/Story/Story`;
+  `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
-  поэтому сброс (он берёт `scene` и все `pumpkin:{id}`) атомарно возвращает и сюжет; пауза при этом остаётся.
+  поэтому сброс (он берёт `scene`, все `pumpkin:{id}` и `bonfire`) атомарно возвращает и сюжет; пауза при этом остаётся.
 - **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `zombies` меняют сюжет под локом через
   `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
   нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
@@ -164,22 +170,28 @@
   локом `pumpkin:{id}`, что и `clicks`. Отсюда: `clicks` = Σ `accepted`; `jobs` = Σ `stage` + `scene` (каждая стадия
   и каждая сцена — ровно одна выполненная задача перехода); `burned` = `clicks` − `HELLOWIN_CLICKS_PER_STAGE` × Σ
   `stage` − Σ min(`clicks`, порог) — переход тратит ровно порог, остальное сгорело на идемпотентности или после
-  готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. Сбитые летуны — ключ `hellowin:shot`
+  готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. Костёр входит во все три суммы со своим порогом
+  (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`): его `accepted` — в `clicks`, стадии — в `jobs`, сгоревшие — в `burned`; клики
+  `locked` не принимаются и не считаются нигде. Сбитые летуны — ключ `hellowin:shot`
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
-  читается как 0, так что сброс его не трогает. `lastPumpkin` — игрок из задачи, отметившей последнюю готовность;
+  читается как 0, так что сброс его не трогает. `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
+  (тыквы или костра);
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
 
 ## Поток клика
 
 1. RPC `click {element}` → `RPCService` проверяет элемент по реестру; игрок — `user` подключения (`publicId` или пусто).
-2. Метрика `hellowin_clicks_total{type,element}`.
-3. Под RR-локом `pumpkin:{id}`: `clicks + 1` в KV; под тем же локом читаются `round` и `scene`.
+2. Под RR-локом `pumpkin:{id}` (у костра — `bonfire`): `clicks + 1` в KV; под тем же локом читаются `round` и `scene`.
+   Клик по костру сначала, под тем же локом, читает весь ритуал одним `getMultiple` и спрашивает
+   `RitualPolicy::bonfireOpen`; закрыт — ничего не пишет, ответ `locked`, дальше шаги не идут. Проверка под локом
+   костра, а не по снимку до него: сброс берёт и этот лок, так что между проверкой и счётом он не вклинится.
+3. Метрика `hellowin_clicks_total{type,element}` — после принятого клика: `busy` и `locked` её не увеличивают.
 4. Статистика игрока: под RR-локом `player:{id}` `clicks + 1` (анонимный клик — пропуск). Сбой статистики пишется
    в лог и не ломает клик.
 5. Публикация `click` в канал (с `player`, если он есть).
-6. Если политика разрешает переход (`clicks >= HELLOWIN_CLICKS_PER_STAGE` и `stage < stageMax(scene)`) — задача
-   `TransitionPumpkin {key, round, pumpkin, toStage, player}` в очередь, метрика
-   `hellowin_transition_jobs_pushed_total{kind="pumpkin"}`. Ставится на **каждом** таком клике, пока переход
+6. Если политика разрешает переход (`clicks >= HELLOWIN_CLICKS_PER_STAGE` и `stage < stageMax(scene)`; у костра —
+   его порог и потолок) — задача `TransitionPumpkin {key, round, pumpkin, toStage, player}` в очередь, метрика
+   `hellowin_transition_jobs_pushed_total{kind="pumpkin"}` (у костра — `kind="bonfire"`). Ставится на **каждом** таком клике, пока переход
    не выполнен: дубли намеренные. `player` — вне ключа: из дублей выполняется один, его игрок и «добил» тыкву.
 
 ## Переходы
@@ -190,16 +202,25 @@
   `finished + 1` игроку из payload → публикация `pumpkin` (с `player`) → `hellowin_transitions_total{kind="pumpkin"}`, `hellowin_pumpkin_stage{element}` → проверка
   готовности сцены по снимку (`RitualPolicy::sceneReady`) → под RR-локом `scene` отметка `ready` в сюжете, только если
   её ещё нет (две тыквы, добитые одновременно, обе видят сцену готовой — отметит одна) → событие `ready`, реплики
-  `last-pumpkin` (игрок из payload) и `scene-ready`. Сама сцена не переходит.
+  `last-pumpkin` (игрок из payload) и `scene-ready`. Сама сцена не переходит. Если сцене нужен костёр
+  (`RitualPolicy::bonfireOpen` — тыквы готовы, костёр ниже своей последней стадии сцены), вместо готовности — отметка
+  `bonfire` (сцена) в сюжете под тем же локом `scene`, тоже один раз на сцену (`RitualStore::markBonfireOpen`), и
+  реплики `last-pumpkin`, `bonfire-open`.
+- **Костёр.** Та же задача `TransitionPumpkin` с `pumpkin: "bonfire"`, ключ `{round}:bonfire:{toStage}`; отличаются лок
+  (`bonfire`), запись (`hellowin:bonfire`), порог (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`), потолок
+  (`HELLOWIN_BONFIRE_STAGE_MAX`) и метрики: `kind="bonfire"` в `pushed` и `transitions`, gauge
+  `hellowin_bonfire_stage`. Переход костра на последнюю стадию сцены делает сцену готовой: `ready`, реплики
+  `bonfire-done` (игрок из payload) и `scene-ready`; в `lastPumpkin` сюжета — игрок костра.
 - **Сцена.** RPC модератора `scene.next {scene, force?}` (`StoryService::nextScene`) по снимку проверяет: `scene`
   текущая, не финальная, готова (или `force`) → задача `TransitionScene {key, round, toScene}`
   (`pushed{kind="scene"}`), ключ `{round}:scene:{toScene}`, тоже `#[Idempotent]`: повторные нажатия ставят дубли,
   выполняется одна. Обработчик: RR-лок `scene` → проверка (`round` текущий и `scene == toScene - 1`) → `scene = toScene`,
-  `ready` снят, в финальной сцене `finale = 0` → публикация `scene` (со `stageMax` новой сцены), в финальной — `finale
+  `ready` и `bonfire` сняты, в финальной сцене `finale = 0` → публикация `scene` (со `stageMax` и `bonfireStageMax`
+  новой сцены), в финальной — `finale
   {step: 0}`, реплика `scene-{toScene}` → `hellowin_transitions_total{kind="scene"}`, `hellowin_scene_stage`.
 - **Сброс.** `ResetService::reset(?int $fromRound)` (консоль `hellowin:reset [--round=N]`): под локами `scene`
-  и всех `pumpkin:{id}` сравнивает текущий `round` с `fromRound` (по умолчанию — текущий); совпал — `round + 1`,
-  сцена 0, тыквы `stage 0`/`clicks 0`/`accepted 0`, сюжет заново (кроме паузы), публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
+  и всех `pumpkin:{id}` и `bonfire` сравнивает текущий `round` с `fromRound` (по умолчанию — текущий); совпал — `round + 1`,
+  сцена 0, тыквы и костёр `stage 0`/`clicks 0`/`accepted 0`, сюжет заново (кроме паузы), публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
   идемпотентность по `reset:{round}` без пакета: состояние и так защищено этими локами, а сравнение `round` под ними
   отсекает второй сброс того же раунда; ключ в Valkey дал бы второй источник правды о раунде. Сервис вызывается из любого
   места (будущее голосование) — достаточно передать раунд, который хотят завершить.
@@ -224,12 +245,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 | Что | Где | Через |
 |---|---|---|
-| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks, accepted}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` и `hellowin:bonfire` (`{stage, clicks, accepted}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -244,11 +265,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Метрика | Тип | Смысл |
 |---|---|---|
 | `hellowin_clicks_total{type,element}` | counter | принятые клики |
-| `hellowin_transition_jobs_pushed_total{kind}` | counter | задачи перехода в очереди, дубли включительно; `kind` = `pumpkin` / `scene` |
+| `hellowin_transition_jobs_pushed_total{kind}` | counter | задачи перехода в очереди, дубли включительно; `kind` = `pumpkin` / `bonfire` / `scene` |
 | `hellowin_transitions_total{kind}` | counter | реально выполненные переходы |
 | `hellowin_scene_stage` | gauge | текущая сцена |
 | `hellowin_round` | gauge | текущий раунд |
 | `hellowin_pumpkin_stage{element}` | gauge | стадия каждой тыквы |
+| `hellowin_bonfire_stage` | gauge | стадия костра (отдельно от тыкв, чтобы панель стадий тыкв не смешивала шкалы) |
 | `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер при сборке таблицы лидеров |
 | `hellowin_players_registered` | gauge | игроки с именем; там же |
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
@@ -266,7 +288,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 |---|---|---|
 | `HELLOWIN_CLICKS_PER_STAGE` | 5 | кликов по тыкве для перехода в следующую стадию |
 | `HELLOWIN_MODERATOR_SECRET` | пусто | секрет модератора (`moderatorSecret` в `data` подключения); пусто — пульт выключен, RPC пульта всем отвечают `forbidden` |
-| `HELLOWIN_SCENE_STAGE_MAX` | `4,6,8` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены |
+| `HELLOWIN_SCENE_STAGE_MAX` | `4,8,11` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены |
+| `HELLOWIN_BONFIRE_CLICKS_PER_STAGE` | 20 | кликов по костру для перехода в следующую стадию; больше тыквенного — его кликает весь зал |
+| `HELLOWIN_BONFIRE_STAGE_MAX` | `0,4,7` | последняя стадия костра по сценам, накопительно, неубывающий список от 0; 0 (или не выше текущей стадии) — костёр сцене не нужен; за концом списка и в финале — последнее значение до финала |
 | `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
 | `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
@@ -274,8 +298,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
-| `HELLOWIN_FLYER_KINDS` | `duck,chicken;crow,bat;ghost,bat;ghost,bat` | виды летунов по сценам: наборы через `;`, внутри набора через запятую (`[a-z]+`), выбираются равновероятно из набора текущей сцены; сцены за концом списка берут последний набор |
-| `HELLOWIN_FLYER_RARE` | `roadrunner;;witch;witch` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
+| `HELLOWIN_FLYER_KINDS` | `duck,chicken;;bat;bat` | виды летунов по сценам: наборы через `;`, внутри набора через запятую (`[a-z]+`), выбираются равновероятно из набора текущей сцены; пустой набор — в сцене только редкий летун (если задан); сцены за концом списка берут последний набор |
+| `HELLOWIN_FLYER_RARE` | `roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `4000-9000` | мс между зомби в проклятом мире: диапазон или число |

@@ -74,4 +74,61 @@ final class LockstepPolicyTest
 
         new LockstepPolicy(5, $stageMax);
     }
+
+    #[DataSet([0, 0], 'no bonfire in scene 0')]
+    #[DataSet([1, 4], 'scene 1')]
+    #[DataSet([2, 7], 'scene 2')]
+    #[DataSet([3, 7], 'final scene keeps the one before it')]
+    #[DataSet([9, 7], 'past the list')]
+    public function bonfireStageMaxGoesByScene(int $scene, int $expected): void
+    {
+        Assert::same(self::withBonfire()->bonfireStageMax($scene), $expected);
+    }
+
+    public function bonfireOpensOnceThePumpkinsAreDoneAndUntilItIsDone(): void
+    {
+        $policy = self::withBonfire();
+        $done = [new Pumpkin('a', 6), new Pumpkin('b', 6)];
+
+        Assert::false($policy->bonfireOpen(1, [new Pumpkin('a', 6), new Pumpkin('b', 5)], new Pumpkin('f', 0)));
+        Assert::true($policy->bonfireOpen(1, $done, new Pumpkin('f', 3)));
+        Assert::false($policy->bonfireOpen(1, $done, new Pumpkin('f', 4)));
+        Assert::false($policy->bonfireOpen(0, [new Pumpkin('a', 4)], new Pumpkin('f', 0)));
+        Assert::false($policy->bonfireOpen(3, [new Pumpkin('a', 8)], new Pumpkin('f', 4)));
+    }
+
+    public function sceneWithTheBonfireIsReadyOnceTheBonfireIsDone(): void
+    {
+        $policy = self::withBonfire();
+        $done = [new Pumpkin('a', 6), new Pumpkin('b', 6)];
+
+        Assert::true($policy->pumpkinsDone(1, $done));
+        Assert::false($policy->sceneReady(1, $done, new Pumpkin('f', 3)));
+        Assert::true($policy->sceneReady(1, $done, new Pumpkin('f', 4)));
+        Assert::true($policy->sceneReady(0, [new Pumpkin('a', 4)], new Pumpkin('f', 0)));
+        Assert::true($policy->sceneReady(1, $done));
+    }
+
+    #[DataSet([0, 1, 20, 1], 'threshold reached')]
+    #[DataSet([0, 1, 19, null], 'below the threshold')]
+    #[DataSet([4, 1, 20, null], 'last stage of the scene')]
+    #[DataSet([4, 2, 25, 5], 'next scene')]
+    #[DataSet([0, 0, 20, null], 'no bonfire in the scene')]
+    #[DataSet([7, 3, 20, null], 'final scene')]
+    public function bonfireMovesByItsOwnThreshold(int $stage, int $scene, int $clicks, ?int $expected): void
+    {
+        Assert::same(self::withBonfire()->bonfireTransition(new Pumpkin('f', $stage, $clicks), $scene), $expected);
+    }
+
+    public function bonfireStageMaxNeverGoesDown(): never
+    {
+        Expect::exception(\InvalidArgumentException::class);
+
+        new LockstepPolicy(5, [4, 6], 20, [0, 4, 3]);
+    }
+
+    private static function withBonfire(): LockstepPolicy
+    {
+        return new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8], bonfireClicksPerStage: 20, bonfireStageMax: [0, 4, 7]);
+    }
 }

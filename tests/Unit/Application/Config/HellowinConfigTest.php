@@ -57,7 +57,7 @@ final class HellowinConfigTest
 
     public function sceneStageMaxDefaultsToThreeScenes(): void
     {
-        Assert::same((new HellowinConfig())->getSceneStageMax(), [4, 6, 8]);
+        Assert::same((new HellowinConfig())->getSceneStageMax(), [4, 8, 11]);
     }
 
     #[DataSet([' 4, 7 ,9', [4, 7, 9]], 'env string')]
@@ -95,6 +95,47 @@ final class HellowinConfigTest
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('size');
 
         $config->getElements();
+    }
+
+    public function bonfireHasNoSize(): void
+    {
+        $config = new HellowinConfig(['elements' => [
+            ['id' => 'bonfire', 'type' => 'bonfire', 'x' => 50, 'y' => 63, 'emojis' => ['🔥']],
+        ]]);
+
+        Assert::same($config->getElements()[0]->toArray(), ['id' => 'bonfire', 'type' => 'bonfire', 'x' => 50.0, 'y' => 63.0]);
+    }
+
+    public function rejectsAnUnknownElementType(): never
+    {
+        $config = new HellowinConfig(['elements' => [
+            ['id' => 'p', 'type' => 'ghost', 'x' => 1, 'y' => 2, 'size' => 's', 'emojis' => ['🎃']],
+        ]]);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('type');
+
+        $config->getElements();
+    }
+
+    public function bonfireDefaultsLeaveItOutOfTheFirstScene(): void
+    {
+        $config = new HellowinConfig();
+
+        Assert::same($config->getBonfireStageMax(), [0, 4, 7]);
+        Assert::same($config->getBonfireClicksPerStage(), 20);
+        Assert::same((new HellowinConfig(['bonfire_stage_max' => ' 0, 0 ,3']))->getBonfireStageMax(), [0, 0, 3]);
+        Assert::same((new HellowinConfig(['bonfire_clicks_per_stage' => '40']))->getBonfireClicksPerStage(), 40);
+    }
+
+    #[DataSet(['0,4,3'], 'decreasing')]
+    #[DataSet(['-1,2'], 'negative')]
+    #[DataSet([''], 'empty')]
+    #[DataSet(['0,x'], 'not a number')]
+    public function rejectsInvalidBonfireStageMax(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_BONFIRE_STAGE_MAX');
+
+        (new HellowinConfig(['bonfire_stage_max' => $value]))->getBonfireStageMax();
     }
 
     public function bushDepthComesFromTheConfig(): void

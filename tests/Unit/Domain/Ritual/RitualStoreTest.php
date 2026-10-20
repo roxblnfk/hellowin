@@ -210,6 +210,48 @@ final class RitualStoreTest
         self::store()->click('ghost');
     }
 
+    public function bonfireKeepsItsOwnKeyAndLock(): void
+    {
+        $storage = new ArrayStorage();
+        $lock = new FakeLock();
+        $store = new RitualStore($storage, $lock, ['a'], bonfire: 'fire');
+        $lock->held['bonfire'] = 'someone-else';
+
+        try {
+            $store->click('fire');
+            Assert::fail('The bonfire click must wait for the bonfire lock.');
+        } catch (RitualBusyException) {
+        }
+        unset($lock->held['bonfire']);
+        $store->click('fire');
+        $store->advancePumpkin(1, 'fire', 1);
+
+        Assert::same($storage->get('hellowin:bonfire'), ['stage' => 1, 'clicks' => 0, 'accepted' => 1]);
+        Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire', 1, 0, 1));
+        Assert::equals($store->snapshot()->pumpkins, [new Pumpkin('a')]);
+    }
+
+    public function refusedClickWritesNothing(): void
+    {
+        $store = new RitualStore(new ArrayStorage(), new FakeLock(), ['a'], bonfire: 'fire');
+
+        Assert::null($store->click('fire', static fn(): bool => false));
+        Assert::equals($store->snapshot()->bonfire, new Pumpkin('fire'));
+    }
+
+    public function bonfireOpensOncePerSceneAndNotInAReadyOne(): void
+    {
+        $store = new RitualStore(new ArrayStorage(), new FakeLock(), ['a'], bonfire: 'fire');
+
+        Assert::true($store->markBonfireOpen(1, 0));
+        Assert::false($store->markBonfireOpen(1, 0));
+        Assert::false($store->markBonfireOpen(2, 0));
+        $store->advanceScene(1, 1);
+        Assert::null($store->snapshot()->story->bonfire);
+        $store->markReady(1, 1, null);
+        Assert::false($store->markBonfireOpen(1, 1));
+    }
+
     private static function store(FakeLock $lock = new FakeLock()): RitualStore
     {
         return new RitualStore(new ArrayStorage(), $lock, ['a', 'b']);

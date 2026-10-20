@@ -6,7 +6,8 @@
 `bushes` в снимке) — тоже; персонаж и прогулка (`look` в `register` и `Player`, RPC `move`, события `walker`,
 `move`, `leave`, `walkers` в снимке, `item` в `scene`) — тоже; модератор и сюжет (секрет модератора, RPC пульта, события
 `owl`, `ready`, `finale`, `pause`, `zombies`, `ready`/`finale`/`paused`/`zombies` в снимке) — тоже; летуны по сценам,
-особые летуны и зомби — тоже.
+особые летуны и зомби — тоже; костёр (элемент `bonfire` в снимке, ошибка `locked`, `bonfireStageMax` в `scene`,
+реплики `bonfire-open` / `bonfire-done`) и `wobble` летучих мышей — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -55,7 +56,8 @@
 | `pause` | `{on}` — `true` / `false` | `{ok:true, on}`, событие `pause`; на паузе летуны и зомби не запускаются, уже запущенные долетают; `on` не bool — `invalid on` |
 | `reset` | как выше | сброс ритуала |
 
-Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы — **запланировано**),
+Коды ошибок: `unknown method`, `unknown element`, `locked` (клик по костру, пока тыквы сцены не готовы или когда костёр уже на своей последней стадии сцены: клик не
+считается и не рассылается),
 `busy` (не удалось взять лок), `internal error`; для `register` —
 `invalid name`, `invalid look` и `anonymous` (подключение без секрета); для `move` — `anonymous`, `invalid point` (`x`/`y` не числа),
 `no character` (проверяются в этом порядке); для пульта — `forbidden` и коды из таблицы выше.
@@ -80,17 +82,17 @@
 | `type` | Поля | Когда |
 |---|---|---|
 | `click` | `element`, `emoji`, `clicks`, `threshold`, `stage`, `player?` | каждый принятый клик |
-| `pumpkin` | `element`, `stage`, `player?` | элемент — тыква или костёр (**запланировано**) — перешёл в новую стадию (ровно одно событие на переход) |
-| `scene` | `scene`, `stageMax`, `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
+| `pumpkin` | `element`, `stage`, `player?` | элемент — тыква или костёр (`element: "bonfire"`) — перешёл в новую стадию (ровно одно событие на переход) |
+| `scene` | `scene`, `stageMax`, `bonfireStageMax` (последняя стадия костра в новой сцене), `item` (предмет фигурок в новой сцене) | сцена сменилась (ровно одно событие на смену) |
 | `reset` | `item` (предмет фигурок в сцене 0) | сброс; новый `round` в самом событии |
 | `flyer` | `flyer`, `kind`, `depth`, `bush?`, `from:{x,y}`, `via?:{x,y}`, `to:{x,y}`, `wobble?:{amp,waves}`, `duration`, `points`, `launchedAt`, `expiresAt` | запущен летун |
 | `shot` | `flyer`, `points`, `player?` | летун сбит, ровно одно событие на летуна |
 | `walker` | `walker: <Walker>` | игрок вышел на поле (подключился с `look` — в пределах секунды, или прошёл экран входа) или сменил вид / имя |
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
 | `leave` | `player: {id}` | у игрока нет подключений дольше `HELLOWIN_WALK_LEAVE_AFTER` мс — фигурка уходит |
-| `ready` | `scene` | все тыквы сцены дошли до `stageMax` — сцена ждёт модератора (ровно одно событие на сцену); следом реплики совы `last-pumpkin` (если добил игрок) и `scene-ready` |
+| `ready` | `scene` | все тыквы сцены дошли до `stageMax`, а костёр — до своей последней стадии сцены (если она выше той, на которой он был) — сцена ждёт модератора (ровно одно событие на сцену); следом реплики совы `last-pumpkin` (если последней была тыква) или `bonfire-done` (если костёр) — обе только если добил игрок — и `scene-ready`. Если сцене нужен костёр, последняя тыква события `ready` не даёт: вместо него реплики `last-pumpkin` и `bonfire-open` |
 | `finale` | `step`, `reveal?` | шаг финала; на шаге 4 и дальше — `reveal` (см. «Снимок»). Шаг 0 приходит вместе с `scene` при входе в финальную сцену |
-| `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
+| `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `bonfire-open`, `bonfire-done`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
 | `pause` | `on` | модератор включил или снял паузу нечисти |
 | `zombies` | `on` | модератор включил или выключил зомби |
 | `leaderboard` | `top: [<Player>]` — лучшие первыми | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс, даже без изменений |
@@ -107,7 +109,7 @@
 
 Летун: `flyer` — id вида `f-` + 8 hex, его же клиент шлёт в `shoot`; `depth` — от 0 (дальний) до N−1, где N — длина
 `HELLOWIN_FLYER_DURATION` (по умолчанию 3); `duration` — мс от `from` до `to`, отсчёт — от `launchedAt` (см. «Время летунов»); `kind` —
-случайный из набора текущей сцены `HELLOWIN_FLYER_KINDS` (по умолчанию: сцена 0 — `duck`, `chicken`; 1 — `crow`, `bat`; 2 и финал — `ghost`, `bat`) или редкий летун сцены (`roadrunner`, `witch`). Сервер принимает выстрел до `expiresAt` + 500 мс. Летун без попадания исчезает сам:
+случайный из набора текущей сцены `HELLOWIN_FLYER_KINDS` (по умолчанию: сцена 0 — `duck`, `chicken`; 1 — никого; 2 и финал — `bat`) или редкий летун сцены (по умолчанию только `roadrunner` в сцене 0; `witch` — с пульта). Сервер принимает выстрел до `expiresAt` + 500 мс. Летун без попадания исчезает сам:
 отдельного события «улетел» нет. Промах мимо летуна на сервер не шлётся.
 
 Примеры:
@@ -117,14 +119,16 @@
 {"type":"click","round":1,"element":"pumpkin-3","emoji":"🎃","clicks":5,"threshold":5,"stage":0,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":1}
 {"type":"pumpkin","round":1,"element":"pumpkin-3","stage":2,"player":{"id":"3f9c0a7d12b4e856","name":null}}
-{"type":"scene","round":1,"scene":1,"stageMax":7,"item":"torch"}
-{"type":"reset","round":2,"item":null}
-{"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
+{"type":"pumpkin","round":1,"element":"bonfire","stage":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
+{"type":"scene","round":1,"scene":1,"stageMax":8,"bonfireStageMax":4,"item":"candle"}
+{"type":"reset","round":2,"item":"pistol"}
+{"type":"walker","round":1,"walker":{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}}
 {"type":"move","round":1,"player":{"id":"3f9c0a7d12b4e856"},"walk":{"path":[{"x":40,"y":94},{"x":66,"y":90},{"x":82,"y":74}],"startedAt":1760900002000,"arrivesAt":1760900006100}}
 {"type":"leave","round":1,"player":{"id":"3f9c0a7d12b4e856"}}
 {"type":"leaderboard","round":1,"top":[{"id":"3f9c0a7d12b4e856","name":"Jack","look":null,"clicks":42,"finished":3,"flyers":2,"points":5}]}
 {"type":"flyer","round":1,"flyer":"f-3a9c01d2","kind":"duck","depth":0,"from":{"x":-8,"y":18.4},"to":{"x":108,"y":10.2},"duration":9000,"points":3,"launchedAt":1760900000000,"expiresAt":1760900009000}
 {"type":"flyer","round":1,"flyer":"f-77b0e415","kind":"duck","depth":2,"bush":"bush-1","from":{"x":4,"y":86},"via":{"x":21.5,"y":18.3},"to":{"x":70.2,"y":-8},"duration":4000,"points":1,"launchedAt":1760900002000,"expiresAt":1760900006000}
+{"type":"flyer","round":1,"flyer":"f-1c0de5a7","kind":"bat","depth":1,"from":{"x":108,"y":22.5},"to":{"x":-8,"y":14.1},"wobble":{"amp":5.4,"waves":3.7},"duration":6500,"points":2,"launchedAt":1760900003000,"expiresAt":1760900009500}
 {"type":"shot","round":1,"flyer":"f-3a9c01d2","points":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 {"type":"ready","round":1,"scene":0}
 {"type":"owl","round":1,"line":"last-pumpkin","params":{"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}}
@@ -146,8 +150,8 @@
   "threshold": 5,
   "bushes": [{"id":"bush-1","x":4,"y":66,"depth":2}],
   "elements": [{"id":"pumpkin-1","type":"pumpkin","x":50,"y":20,"size":"l","stage":0,"clicks":2},
-               {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":40,"stageMax":0}],
-  "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":null,"walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
+               {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0}],
+  "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
   "ready": false,
   "finale": null,
   "paused": false,
@@ -159,21 +163,25 @@
 `ready` — сцена готова и ждёт модератора; `finale` — `null` вне финальной сцены, в ней `{step, reveal?}`;
 `paused`, `zombies` — переключатели пульта. `reveal` — числа вечера с начала раунда для экрана
 разоблачения: `{clicks, jobs, burned, shot, lastPumpkin: {id, name} | null}` — принятые клики, выполненные задачи
-перехода (переходы тыкв + переходы сцен), сгоревшие клики (сверх порога и после готовности тыквы), сбитые летуны (и
-зомби), кто добил последнюю тыкву последней готовой сцены (`null`, если клик был анонимным или сцену переключили
-`force`, не дождавшись). Как считаются — [`engine.md`](engine.md), «Сюжет».
+перехода (переходы тыкв и костра + переходы сцен), сгоревшие клики (сверх порога и после готовности тыквы; клики
+`locked` по костру не принимаются и сюда не входят), сбитые летуны (и зомби), кто добил последний элемент последней
+готовой сцены — тыкву или, в сцене с костром, костёр (`null`, если клик был анонимным или сцену переключили
+`force`, не дождавшись; имя поля осталось `lastPumpkin`). Как считаются — [`engine.md`](engine.md), «Сюжет».
 
 Сброс (`reset`) возвращает и сюжет: `ready` — `false`, `finale` — `null`, `zombies` — `false`; `paused` сохраняется —
 пауза про зал, а не про сюжет. Клиент применяет это сам по событию `reset`, без RPC.
 
 `bush` — id куста, из которого взлетает летун (тогда `from` — его точка, а `depth` летуна — `depth` куста, см.
-[`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `wobble` (**запланировано**, летучие мыши) — кривая поверх базовой траектории: смещение поперёк пути
-`amp · sin(2π · waves · t)` (`amp` — проценты экрана, `t` — доля полёта 0…1); без поля — без колебаний; петли — `waves`
-с большой `amp` или отдельное поле, если понадобится (согласовать). `via` — контрольная точка дуги
+[`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `wobble` (только у `kind: bat`, у остальных поля нет) — кривая поверх базовой траектории: смещение поперёк пути
+`amp · sin(2π · waves · t)` (`amp` — проценты экрана, `t` — доля полёта 0…1; `waves` — дробное число полных колебаний
+за полёт); без поля — без колебаний; петли — `waves` с большой `amp` или отдельное поле, если понадобится (согласовать).
+Диапазоны — [`engine.md`](engine.md), «Летуны». `via` — контрольная точка дуги
 (квадратичная кривая), без неё полёт прямой. `x`/`y` — проценты экрана (на узких экранах фронтенд растягивает раскладку тыкв по x от центра — `spreadX`
-в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l` (у тыкв); у костра (`type: bonfire`, **запланировано**) — свои `threshold`
+в `public/js/layout.js`; и у тыкв, и в траекториях летунов: `from`/`to` могут выходить за 0–100 — летун влетает из-за края); `size` — `s` / `m` / `l` (у тыкв); у костра (`type: bonfire`, id `bonfire`, без `size`) — свои `threshold`
 (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`) и `stageMax` (последняя стадия костра в текущей сцене, из
-`HELLOWIN_BONFIRE_STAGE_MAX`), кликабелен, когда все тыквы на `stageMax` сцены; `sceneStages` — номер финальной сцены (длина списка
+`HELLOWIN_BONFIRE_STAGE_MAX`; новую сцена приносит в `scene.bonfireStageMax`), кликабелен, когда все тыквы на
+`stageMax` сцены, а `stage` костра ниже его `stageMax` — клиент вычисляет это сам по снимку и событиям `pumpkin`;
+`threshold` в событии `click` по костру — тоже его порог; `sceneStages` — номер финальной сцены (длина списка
 `HELLOWIN_SCENE_STAGE_MAX`); `stageMax` — последняя стадия тыквы в текущей сцене, в финальной — та же, что в сцене
 перед ней (см. [`scenario.md`](scenario.md)). `clicks` — клики с момента перехода тыквы в текущую стадию. `walkers` — фигурки игроков на поле
 (`Walker`, см. «RPC»). Страница

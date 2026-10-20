@@ -9,12 +9,12 @@ use Psr\SimpleCache\CacheInterface;
 use RoadRunner\Lock\LockInterface;
 
 /**
- * Ritual state in a key-value store: the round, the scene, every pumpkin's stage and click counters, and the story
- * the moderator leads beside them.
+ * Ritual state in a key-value store: the round, the scene, the stage and click counters of every pumpkin and of the
+ * bonfire, and the story the moderator leads beside them.
  *
- * Each pumpkin is written under its own lock `pumpkin:{id}`, the scene and the story under `scene`. A reset takes
- * `scene` and then every pumpkin lock, so no click or transition interleaves with it: a click reads the round and
- * the scene under the pumpkin lock and therefore never sees a half-reset ritual.
+ * Each pumpkin is written under its own lock `pumpkin:{id}`, the bonfire under `bonfire`, the scene and the story
+ * under `scene`. A reset takes `scene` and then every element lock, so no click or transition interleaves with it:
+ * a click reads the round and the scene under the element lock and therefore never sees a half-reset ritual.
  */
 final readonly class RitualStore
 {
@@ -22,8 +22,10 @@ final readonly class RitualStore
     private const KEY_SCENE = 'hellowin:scene';
     private const KEY_STORY = 'hellowin:story';
     private const KEY_PUMPKIN = 'hellowin:pumpkin:';
+    private const KEY_BONFIRE = 'hellowin:bonfire';
     private const LOCK_SCENE = 'scene';
     private const LOCK_PUMPKIN = 'pumpkin:';
+    private const LOCK_BONFIRE = 'bonfire';
 
     /** @var list<non-empty-string> */
     private array $pumpkins;
@@ -32,6 +34,7 @@ final readonly class RitualStore
      * @param iterable<non-empty-string> $pumpkins Ids of every pumpkin of the ritual.
      * @param float $lockTtl Seconds a lock outlives a crashed worker.
      * @param float $lockWait Seconds to wait for a busy lock before giving up.
+     * @param non-empty-string|null $bonfire Element id of the bonfire, null when the patch has none.
      */
     public function __construct(
         private CacheInterface $storage,
@@ -39,6 +42,7 @@ final readonly class RitualStore
         iterable $pumpkins,
         private float $lockTtl = 5.0,
         private float $lockWait = 5.0,
+        private ?string $bonfire = null,
     ) {
         $ids = [];
         foreach ($pumpkins as $id) {
@@ -48,15 +52,22 @@ final readonly class RitualStore
     }
 
     /**
-     * Counts a click on the pumpkin.
+     * Counts a click on a pumpkin or the bonfire.
      *
+     * @param \Closure(RitualSnapshot): bool|null $accepts Decides on the whole ritual, read under the element lock,
+     *        whether the click counts at all.
+     * @return ClickOutcome|null Null when `$accepts` refused the click: nothing is written.
      * @throws RitualBusyException
      */
-    public function click(string $id): ClickOutcome
+    public function click(string $id, ?\Closure $accepts = null): ?ClickOutcome
     {
         $id = $this->known($id);
 
-        return $this->locked([self::LOCK_PUMPKIN . $id], function () use ($id): ClickOutcome {
+        return $this->locked([$this->lockOf($id)], function () use ($id, $accepts): ?ClickOutcome {
+            if ($accepts !== null && !$accepts($this->snapshot())) {
+                return null;
+            }
+
             $current = $this->readPumpkin($id);
             $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1);
             $this->writePumpkin($pumpkin);
@@ -66,16 +77,17 @@ final readonly class RitualStore
     }
 
     /**
-     * Moves the pumpkin to the stage if it is still one stage behind it in the same round; clicks start over.
+     * Moves a pumpkin or the bonfire to the stage if it is still one stage behind it in the same round; clicks start
+     * over.
      *
-     * @return Pumpkin|null The moved pumpkin, null when the transition is stale or already done.
+     * @return Pumpkin|null The moved element, null when the transition is stale or already done.
      * @throws RitualBusyException
      */
     public function advancePumpkin(int $round, string $id, int $toStage): ?Pumpkin
     {
         $id = $this->known($id);
 
-        return $this->locked([self::LOCK_PUMPKIN . $id], function () use ($round, $id, $toStage): ?Pumpkin {
+        return $this->locked([$this->lockOf($id)], function () use ($round, $id, $toStage): ?Pumpkin {
             $current = $this->readPumpkin($id);
             if ($toStage < 1 || $this->readRound() !== $round || $current->stage !== $toStage - 1) {
                 return null;
@@ -89,9 +101,30 @@ final readonly class RitualStore
     }
 
     /**
+     * Marks that every pumpkin of the scene is done and the bonfire is open, once per scene of a round.
+     *
+     * @return bool False when the scene is stale, already open or already ready.
+     * @throws RitualBusyException
+     */
+    public function markBonfireOpen(int $round, int $scene): bool
+    {
+        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene): bool {
+            $story = $this->readStory();
+            if ($scene < 0 || $this->readRound() !== $round || $this->readScene() !== $scene
+                || $story->bonfire === $scene || $story->ready === $scene) {
+                return false;
+            }
+
+            $this->storage->set(self::KEY_STORY, $story->bonfireOpenIn($scene)->toArray());
+
+            return true;
+        });
+    }
+
+    /**
      * Marks the scene ready for the moderator, once per scene of a round.
      *
-     * @param non-empty-string|null $player Who finished the last pumpkin.
+     * @param non-empty-string|null $player Who finished the last element of the scene.
      * @return bool False when the scene is stale or already marked.
      * @throws RitualBusyException
      */
@@ -149,23 +182,24 @@ final readonly class RitualStore
     }
 
     /**
-     * Starts the next round from scene 0 with every pumpkin at stage 0 and the story over. Runs once per round:
-     * a call for a round that is already over changes nothing.
+     * Starts the next round from scene 0 with every pumpkin and the bonfire at stage 0 and the story over. Runs once
+     * per round: a call for a round that is already over changes nothing.
      *
      * @return positive-int|null The new round, null when `$fromRound` is not the current one.
      * @throws RitualBusyException
      */
     public function reset(int $fromRound): ?int
     {
-        $locks = [self::LOCK_SCENE, ...\array_map(static fn(string $id): string => self::LOCK_PUMPKIN . $id, $this->pumpkins)];
+        $elements = $this->elements();
+        $locks = [self::LOCK_SCENE, ...\array_map($this->lockOf(...), $elements)];
 
-        return $this->locked($locks, function () use ($fromRound): ?int {
+        return $this->locked($locks, function () use ($fromRound, $elements): ?int {
             $round = $this->readRound();
             if ($round !== $fromRound) {
                 return null;
             }
 
-            foreach ($this->pumpkins as $id) {
+            foreach ($elements as $id) {
                 $this->writePumpkin(new Pumpkin($id));
             }
             $this->storage->set(self::KEY_SCENE, 0);
@@ -192,8 +226,8 @@ final readonly class RitualStore
     public function snapshot(): RitualSnapshot
     {
         $keys = [self::KEY_ROUND, self::KEY_SCENE, self::KEY_STORY];
-        foreach ($this->pumpkins as $id) {
-            $keys[] = self::KEY_PUMPKIN . $id;
+        foreach ($this->elements() as $id) {
+            $keys[] = $this->keyOf($id);
         }
 
         $values = [...$this->storage->getMultiple($keys)];
@@ -206,6 +240,7 @@ final readonly class RitualStore
                 $this->pumpkins,
             ),
             story: Story::fromArray($values[self::KEY_STORY] ?? null),
+            bonfire: $this->bonfire === null ? null : self::toPumpkin($this->bonfire, $values[self::KEY_BONFIRE] ?? null),
         );
     }
 
@@ -243,13 +278,37 @@ final readonly class RitualStore
     }
 
     /**
+     * @return list<non-empty-string> Pumpkins and the bonfire.
+     */
+    private function elements(): array
+    {
+        return $this->bonfire === null ? $this->pumpkins : [...$this->pumpkins, $this->bonfire];
+    }
+
+    /**
      * @return non-empty-string
      */
     private function known(string $id): string
     {
-        return \in_array($id, $this->pumpkins, true)
+        return \in_array($id, $this->elements(), true)
             ? $id
-            : throw new \InvalidArgumentException(\sprintf('Unknown pumpkin "%s".', $id));
+            : throw new \InvalidArgumentException(\sprintf('Unknown element "%s".', $id));
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function keyOf(string $id): string
+    {
+        return $id === $this->bonfire ? self::KEY_BONFIRE : self::KEY_PUMPKIN . $id;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function lockOf(string $id): string
+    {
+        return $id === $this->bonfire ? self::LOCK_BONFIRE : self::LOCK_PUMPKIN . $id;
     }
 
     /**
@@ -278,13 +337,13 @@ final readonly class RitualStore
      */
     private function readPumpkin(string $id): Pumpkin
     {
-        return self::toPumpkin($id, $this->storage->get(self::KEY_PUMPKIN . $id));
+        return self::toPumpkin($id, $this->storage->get($this->keyOf($id)));
     }
 
     private function writePumpkin(Pumpkin $pumpkin): void
     {
         $this->storage->set(
-            self::KEY_PUMPKIN . $pumpkin->id,
+            $this->keyOf($pumpkin->id),
             ['stage' => $pumpkin->stage, 'clicks' => $pumpkin->clicks, 'accepted' => $pumpkin->accepted],
         );
     }

@@ -24,7 +24,9 @@ final readonly class Story
      * @param int<0, 5>|null $finale Finale step; null outside the final scene.
      * @param bool $paused Flyers and zombies are not launched.
      * @param bool $zombies Zombies walk out of the patch in the cursed world.
-     * @param non-empty-string|null $lastPumpkin Player who finished the last pumpkin of a ready scene.
+     * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
+     *        pumpkin, or the bonfire in a scene that has it.
+     * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.
      */
     public function __construct(
         public ?int $ready = null,
@@ -32,6 +34,7 @@ final readonly class Story
         public bool $paused = false,
         public bool $zombies = false,
         public ?string $lastPumpkin = null,
+        public ?int $bonfire = null,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -46,6 +49,8 @@ final readonly class Story
         $finale = $value['finale'] ?? null;
         /** @var mixed $player */
         $player = $value['lastPumpkin'] ?? null;
+        /** @var mixed $bonfire */
+        $bonfire = $value['bonfire'] ?? null;
 
         return new self(
             \is_int($ready) && $ready >= 0 ? $ready : null,
@@ -53,6 +58,7 @@ final readonly class Story
             ($value['paused'] ?? false) === true,
             ($value['zombies'] ?? false) === true,
             PlayerId::isValid($player) ? $player : null,
+            \is_int($bonfire) && $bonfire >= 0 ? $bonfire : null,
         );
     }
 
@@ -62,7 +68,15 @@ final readonly class Story
      */
     public function readyIn(int $scene, ?string $player): self
     {
-        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin);
+        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire);
+    }
+
+    /**
+     * @param int<0, max> $scene
+     */
+    public function bonfireOpenIn(int $scene): self
+    {
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene);
     }
 
     /**
@@ -80,18 +94,18 @@ final readonly class Story
     public function stepTo(int $step): self
     {
         return $this->finale !== null && $step === $this->finale + 1 && $step <= self::LAST_STEP
-            ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin)
+            ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire)
             : $this;
     }
 
     public function withPaused(bool $paused): self
     {
-        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin);
+        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire);
     }
 
     public function withZombies(bool $zombies): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin);
+        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire);
     }
 
     /**
@@ -113,7 +127,7 @@ final readonly class Story
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 5>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null}
+     * @return array{ready: int<0, max>|null, finale: int<0, 5>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null}
      */
     public function toArray(): array
     {
@@ -123,6 +137,7 @@ final readonly class Story
             'paused' => $this->paused,
             'zombies' => $this->zombies,
             'lastPumpkin' => $this->lastPumpkin,
+            'bonfire' => $this->bonfire,
         ];
     }
 }

@@ -10,16 +10,24 @@ final readonly class ElementRegistry
     private array $elements;
 
     /**
-     * @param iterable<Element> $elements
+     * @param iterable<Element> $elements At most one of them is the bonfire.
      */
     public function __construct(iterable $elements)
     {
         $map = [];
+        $bonfire = null;
         foreach ($elements as $element) {
             isset($map[$element->id]) and throw new \InvalidArgumentException(
                 \sprintf('Duplicate element id "%s".', $element->id),
             );
             $map[$element->id] = $element;
+
+            if ($element->bonfire()) {
+                $bonfire === null or throw new \InvalidArgumentException(
+                    \sprintf('Elements "%s" and "%s" are both bonfires; there is one at most.', $bonfire, $element->id),
+                );
+                $bonfire = $element->id;
+            }
         }
 
         $this->elements = $map;
@@ -36,5 +44,29 @@ final readonly class ElementRegistry
     public function all(): array
     {
         return \array_values($this->elements);
+    }
+
+    /**
+     * @return list<non-empty-string>
+     */
+    public function pumpkinIds(): array
+    {
+        $ids = [];
+        foreach ($this->elements as $element) {
+            $element->bonfire() or $ids[] = $element->id;
+        }
+
+        return $ids;
+    }
+
+    public function bonfire(): ?Element
+    {
+        foreach ($this->elements as $element) {
+            if ($element->bonfire()) {
+                return $element;
+            }
+        }
+
+        return null;
     }
 }
