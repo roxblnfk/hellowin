@@ -370,6 +370,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintElements();
             paintStory();
             paintFinale();
+            handOut(event);
         },
 
         // The bubble is a moment, not state: a resync does not bring an old line back.
@@ -430,7 +431,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
     };
 
-    // The item in every walker's hand follows the scene: `scene` and `reset` carry it instead of a walker event each.
+    // The item in every walker's hand follows the story: `scene`, `finale` and `reset` carry it instead of a walker
+    // event each.
     function handOut(event) {
         if (!('item' in event)) return;
         model.walkers.forEach((w) => {
