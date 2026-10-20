@@ -15,7 +15,7 @@
 - [`engine.md`](docs/spec/engine.md) — backend: хранилище, локи, очередь, ключи идемпотентности, метрики.
 - [`players.md`](docs/spec/players.md) — идентификация игроков и статистика.
 - [`frontend.md`](docs/spec/frontend.md) — зона фронтенда: файлы, правила рендеринга, DOM-хуки, проверка.
-- [`infra.md`](docs/spec/infra.md) — docker compose, порты, nginx, Prometheus, Grafana.
+- [`infra.md`](docs/spec/infra.md) — docker compose, порты, HTTP в RoadRunner, Prometheus, Grafana.
 
 У каждой спеки есть статус разделов (реализовано / в работе / запланировано). Расхождение кода и спеки — баг одной
 из сторон: выясни, какой, а не подгоняй молча.
@@ -43,7 +43,8 @@ frontend — `app/views`, `public`; infra — `docker*`, `Dockerfile`. Изме�
 - Тесты, статанализ, стиль: `composer test`, `composer psalm`, `composer cs:diff` / `composer cs:fix`.
 - Глобальный composer-плагин `llm/skills` ждёт ввода: любой composer-вызов запускай с `< /dev/null`.
 - В Git Bash `php` может не быть в PATH — запускай PHP-команды через PowerShell.
-- Стек: `docker compose up -d --build` → `http://localhost:8080/`, Grafana — `/grafana/`. Прод-образ копирует код при
+- Стек: `docker compose up -d --build` → `http://localhost:8080/`, Grafana — `http://localhost:3000/`, WebSocket —
+  `ws://localhost:8000/connection/websocket`. Прод-образ копирует код при
   сборке: после правок `docker compose up -d --build app`. Для правок без пересборки — dev-override из README.
 - Скриншоты страниц: headless Edge
   (`"/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --headless=new --screenshot=… --window-size=W,H URL`).

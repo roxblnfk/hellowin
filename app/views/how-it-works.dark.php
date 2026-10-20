@@ -58,9 +58,20 @@
         <section class="how__section" id="modules" role="tabpanel" aria-labelledby="tab-modules">
             <h2>Кто с кем разговаривает</h2>
             <p>
-                Наружу открыт только nginx (<code>localhost:8080</code>). Он разводит запросы по путям:
-                <code>/</code> — в HTTP-плагин RoadRunner, <code>/connection/</code> — в Centrifugo с апгрейдом до
-                WebSocket, <code>/grafana/</code> — в Grafana. Всё остальное живёт во внутренней сети docker compose.
+                Перед RoadRunner нет nginx: страницы и статику отдаёт сам HTTP-плагин на <code>localhost:8080</code>.
+                Его middleware идут слева направо: <code>http_metrics</code>, <code>headers</code> (заголовки
+                безопасности), <code>gzip</code>, <code>static</code> (файлы <code>public/</code> с ETag — повторный
+                запрос получает 304) и <code>rate_limiter</code> (token bucket по IP — только для запросов, дошедших
+                до PHP). RoadRunner не реверс-прокси, поэтому Centrifugo и Grafana открыты своими портами: WebSocket —
+                <code>:8000</code>, дашборд — <code>:3000</code>. Адреса страница получает от сервера, достроенные
+                хостом, по которому её открыли. Всё остальное живёт во внутренней сети docker compose.
+            </p>
+            <p>
+                Основная нагрузка — не HTTP, а RPC через WebSocket, и HTTP-лимитер их не видит. Поэтому
+                <code>RPCService</code> до любого метода берёт токен из ведра игрока: оно лежит в KV
+                <code>process</code> (память RoadRunner) и меняется под локом <code>rate:{group}:{player}</code>, потому
+                что атомарного обновления у KV нет. Быстрые клики проходят, поток из скрипта после <code>burst</code>
+                получает <code>rate limited</code>; модератора лимит не касается.
             </p>
             <p>
                 RoadRunner и Centrifugo связаны двумя gRPC-каналами в разные стороны. Centrifugo проксирует события
@@ -94,7 +105,7 @@
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1210 750" style="min-width: 871px" role="img" aria-label="Модули Hellowin: браузер ходит в nginx; nginx раздаёт запросы в RoadRunner, Centrifugo и Grafana. В RoadRunner три плагина с пулами PHP-воркеров: http, centrifuge и jobs, и процесс тикера под плагином service. Воркеры и тикер по RPC обращаются к плагинам kv, lock, jobs, metrics и centrifuge. Состояние игры (kv, драйвер redis) и ключи идемпотентности (predis) лежат в Valkey. Prometheus собирает метрики с RoadRunner и Centrifugo.">
+<svg class="diagram__svg" viewBox="0 0 1210 750" style="min-width: 871px" role="img" aria-label="Модули Hellowin: браузер ходит напрямую на три опубликованных порта: :8080 — HTTP-плагин RoadRunner, :8000 — WebSocket Centrifugo, :3000 — Grafana. В RoadRunner три плагина с пулами PHP-воркеров: http, centrifuge и jobs, и процесс тикера под плагином service. Воркеры и тикер по RPC обращаются к плагинам kv, lock, jobs, metrics и centrifuge. Состояние игры (kv, драйвер redis) и ключи идемпотентности (predis) лежат в Valkey. Prometheus собирает метрики с RoadRunner и Centrifugo.">
 <defs><marker id="a-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="a-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="d-group g-rr" x="440" y="146" width="530" height="450" rx="10"/>
 <text class="d-h" x="456" y="168" text-anchor="start">RoadRunner 3 · контейнер app · .rr.yaml</text>
@@ -103,16 +114,16 @@
 <text class="d-m" x="95" y="248.5" text-anchor="middle">centrifuge-js</text>
 <text class="d-s" x="95" y="263.5" text-anchor="middle">WebSocket</text>
 <rect class="d-box g-edge" x="250" y="200" width="140" height="90" rx="6"/>
-<text class="d-t" x="320" y="233.5" text-anchor="middle">nginx (proxy)</text>
-<text class="d-s" x="320" y="248.5" text-anchor="middle">:80 в контейнере</text>
-<text class="d-m" x="320" y="263.5" text-anchor="middle">localhost:8080</text>
+<text class="d-t" x="320" y="233.5" text-anchor="middle">порты хоста</text>
+<text class="d-s" x="320" y="248.5" text-anchor="middle">без прокси</text>
+<text class="d-m" x="320" y="263.5" text-anchor="middle">:8080 · :8000 · :3000</text>
 <rect class="d-box g-cf" x="600" y="20" width="220" height="90" rx="6"/>
 <text class="d-t" x="710" y="53.5" text-anchor="middle">Centrifugo v6</text>
-<text class="d-m" x="710" y="68.5" text-anchor="middle">:8000 WebSocket, /metrics</text>
+<text class="d-m" x="710" y="68.5" text-anchor="middle">:8000 WebSocket · :9000 /metrics</text>
 <text class="d-m" x="710" y="83.5" text-anchor="middle">:10000 gRPC API</text>
 <rect class="d-box g-rr" x="460" y="186" width="150" height="50" rx="6"/>
 <text class="d-t" x="535" y="207" text-anchor="middle">http</text>
-<text class="d-m" x="535" y="222" text-anchor="middle">:8080</text>
+<text class="d-m" x="535" y="222" text-anchor="middle">:8080 static · gzip</text>
 <rect class="d-box g-rr" x="640" y="186" width="150" height="50" rx="6"/>
 <text class="d-t" x="715" y="207" text-anchor="middle">centrifuge</text>
 <text class="d-m" x="715" y="222" text-anchor="middle">proxy :10001</text>
@@ -169,12 +180,12 @@
 <text class="d-l" x="210" y="237" text-anchor="middle">HTTP</text>
 <text class="d-l" x="210" y="262" text-anchor="middle">WS</text>
 <path class="d-e" d="M320 200 L320 65 L600 65" marker-end="url(#a-ln)"/>
-<text class="d-l" x="460" y="57" text-anchor="middle">/connection/ → :8000</text>
+<text class="d-l" x="460" y="57" text-anchor="middle">:8000/connection/websocket</text>
 <text class="d-s" x="460" y="82" text-anchor="middle">WebSocket</text>
 <path class="d-e" d="M390 211 L460 211" marker-end="url(#a-ln)"/>
-<text class="d-l" x="422" y="203" text-anchor="middle">/ → :8080</text>
+<text class="d-l" x="422" y="203" text-anchor="middle">:8080</text>
 <path class="d-e" d="M320 290 L320 650" marker-end="url(#a-ln)"/>
-<text class="d-l" x="328" y="470" text-anchor="start">/grafana/ → :3000</text>
+<text class="d-l" x="328" y="470" text-anchor="start">:3000</text>
 <path class="d-e d-e--acc" d="M680 110 L680 186" marker-end="url(#a-acc)"/>
 <text class="d-l" x="674" y="122" text-anchor="end">gRPC proxy :10001</text>
 <text class="d-s" x="674" y="136" text-anchor="end">connect, rpc</text>
@@ -205,7 +216,7 @@
 <path class="d-e d-e--ok" d="M892 650 L892 476" marker-end="url(#a-ok)"/>
 <text class="d-l" x="900" y="625" text-anchor="start">scrape :2112 · 5s</text>
 <path class="d-e d-e--ok" d="M970 680 L1203 680 L1203 65 L820 65" marker-end="url(#a-ok)"/>
-<text class="d-l" x="1010" y="57" text-anchor="middle">scrape :8000/metrics</text>
+<text class="d-l" x="1010" y="57" text-anchor="middle">scrape :9000/metrics</text>
 <path class="d-e d-e--ok" d="M390 680 L800 680" marker-end="url(#a-ok)"/>
 <text class="d-l" x="595" y="672" text-anchor="middle">PromQL → :9090</text>
 </svg>
@@ -258,7 +269,7 @@
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1000 974" style="min-width: 720px" role="img" aria-label="Загрузка страницы: GET / проходит через nginx в RoadRunner и HomeController; SnapshotFactory без лока читает раунд, сцену, сюжет, тыквы и фигурки из KV и отдаёт снимок в шаблон. Затем браузер открывает WebSocket с секретом игрока в data, Centrifugo спрашивает ConnectService через connect proxy, получает user, meta и канал и подписывает клиента на канал hellowin на стороне сервера. При переподключении или событии с чужим раундом клиент вызывает RPC state и получает тот же снимок.">
+<svg class="diagram__svg" viewBox="0 0 1000 974" style="min-width: 720px" role="img" aria-label="Загрузка страницы: GET / проходит middleware HTTP-плагина RoadRunner в пул воркеров и HomeController; SnapshotFactory без лока читает раунд, сцену, сюжет, тыквы и фигурки из KV и отдаёт снимок в шаблон. Затем браузер открывает WebSocket напрямую к Centrifugo на :8000 с секретом игрока в data, Centrifugo спрашивает ConnectService через connect proxy, получает user, meta и канал и подписывает клиента на канал hellowin на стороне сервера. При переподключении или событии с чужим раундом клиент вызывает RPC state и получает тот же снимок.">
 <defs><marker id="b-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <path class="d-life" d="M62 60 V974"/>
 <path class="d-life" d="M180 60 V974"/>
@@ -272,7 +283,7 @@
 <path class="d-e " d="M64 116 L178 116" marker-end="url(#b-ln)"/>
 <text class="d-l" x="121" y="110" text-anchor="middle">GET /</text>
 <path class="d-e " d="M182 146 L296 146" marker-end="url(#b-ln)"/>
-<text class="d-l" x="239" y="140" text-anchor="middle">app:8080</text>
+<text class="d-l" x="239" y="140" text-anchor="middle">мимо static</text>
 <path class="d-e " d="M300 176 L420 176" marker-end="url(#b-ln)"/>
 <text class="d-l" x="360" y="170" text-anchor="middle">pipes</text>
 <path class="d-e " d="M424 206 L544 206" marker-end="url(#b-ln)"/>
@@ -282,16 +293,14 @@
 <path class="d-e " d="M422 258 L446 258 L446 270 L424 270" marker-end="url(#b-ln)"/>
 <text class="d-l" x="452" y="267" text-anchor="start">Snapshot: ритуал, сюжет, фигурки, раскладка, now</text>
 <path class="d-e " d="M422 288 L446 288 L446 300 L424 300" marker-end="url(#b-ln)"/>
-<text class="d-l" x="452" y="297" text-anchor="start">render('home', snapshot + centrifugoUrl)</text>
+<text class="d-l" x="452" y="297" text-anchor="start">render('home', snapshot + centrifugoUrl от хоста)</text>
 <path class="d-e d-e--ret" d="M420 326 L64 326" marker-end="url(#b-ln)"/>
-<text class="d-l" x="242" y="320" text-anchor="middle">200 text/html (обратно через http и nginx)</text>
+<text class="d-l" x="242" y="320" text-anchor="middle">200 text/html (обратно через gzip и headers)</text>
 <path class="d-e " d="M62 348 L86 348 L86 360 L64 360" marker-end="url(#b-ln)"/>
 <text class="d-l" x="92" y="357" text-anchor="start">сцена по снимку · new Centrifuge(url, {data: {playerSecret}})</text>
 <text class="d-h d-phase" x="14" y="382" text-anchor="start">2. WebSocket</text>
-<path class="d-e " d="M64 410 L178 410" marker-end="url(#b-ln)"/>
-<text class="d-l" x="121" y="404" text-anchor="middle">/connection/websocket</text>
-<path class="d-e " d="M182 440 L668 440" marker-end="url(#b-ln)"/>
-<text class="d-l" x="425" y="434" text-anchor="middle">Upgrade → centrifugo:8000</text>
+<path class="d-e " d="M64 440 L668 440" marker-end="url(#b-ln)"/>
+<text class="d-l" x="366" y="434" text-anchor="middle">ws://&lt;host&gt;:8000/connection/websocket</text>
 <path class="d-e d-e--acc" d="M672 470 L788 470" marker-end="url(#b-acc)"/>
 <text class="d-l" x="730" y="464" text-anchor="middle">connect proxy (gRPC)</text>
 <path class="d-e " d="M792 500 L923 500" marker-end="url(#b-ln)"/>
@@ -329,11 +338,11 @@
 <text class="d-t" x="62" y="34" text-anchor="middle">Браузер</text>
 <text class="d-m" x="62" y="49" text-anchor="middle">centrifuge-js</text>
 <rect class="d-box g-edge" x="123" y="16" width="114" height="44" rx="6"/>
-<text class="d-t" x="180" y="34" text-anchor="middle">nginx</text>
-<text class="d-m" x="180" y="49" text-anchor="middle">:80</text>
+<text class="d-t" x="180" y="34" text-anchor="middle">RR middleware</text>
+<text class="d-m" x="180" y="49" text-anchor="middle">:8080</text>
 <rect class="d-box g-rr" x="241" y="16" width="114" height="44" rx="6"/>
 <text class="d-t" x="298" y="34" text-anchor="middle">RR http</text>
-<text class="d-m" x="298" y="49" text-anchor="middle">:8080</text>
+<text class="d-m" x="298" y="49" text-anchor="middle">пул воркеров</text>
 <rect class="d-box g-php" x="359" y="16" width="126" height="44" rx="6"/>
 <text class="d-t" x="422" y="34" text-anchor="middle">HomeController</text>
 <text class="d-m" x="422" y="49" text-anchor="middle">→ SnapshotFactory</text>
@@ -1412,13 +1421,14 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 направо).
             </p>
             <p>
-                Prometheus раз в 5 секунд скрейпит <code>app:2112</code> и <code>centrifugo:8000/metrics</code>.
+                Prometheus раз в 5 секунд скрейпит <code>app:2112</code> и <code>centrifugo:9000/metrics</code> (внутренний
+                порт Centrifugo: наружу открыт только WebSocket на 8000).
                 Grafana получает datasource и дашборд «Hellowin» через provisioning и пускает анонимно в роли Viewer:
                 смотреть может любой, редактировать — нет.
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1000 330" style="min-width: 720px" role="img" aria-label="Путь метрики: RitualMetrics из ClickHandler, TransitionQueue, TransitionHandler, ResetService и HellowinBootloader вызывает metrics.Add и metrics.Set по RPC в плагин metrics RoadRunner; Prometheus каждые 5 секунд забирает /metrics с :2112 и с Centrifugo :8000; Grafana строит дашборд PromQL-запросами к Prometheus, браузер открывает её через nginx /grafana/.">
+<svg class="diagram__svg" viewBox="0 0 1000 330" style="min-width: 720px" role="img" aria-label="Путь метрики: RitualMetrics из ClickHandler, TransitionQueue, TransitionHandler, ResetService и HellowinBootloader вызывает metrics.Add и metrics.Set по RPC в плагин metrics RoadRunner; Prometheus каждые 5 секунд забирает /metrics с :2112 и с Centrifugo :9000; Grafana строит дашборд PromQL-запросами к Prometheus, браузер открывает её на порту :3000.">
 <defs><marker id="h-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="h-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="d-box g-php" x="20" y="50" width="230" height="150" rx="6"/>
 <text class="d-t" x="135" y="83.5" text-anchor="middle">RitualMetrics</text>
@@ -1442,10 +1452,10 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
 <text class="d-s" x="905" y="143.5" text-anchor="middle">дашборд «Hellowin»</text>
 <rect class="d-box g-cf" x="340" y="240" width="190" height="60" rx="6"/>
 <text class="d-t" x="435" y="266" text-anchor="middle">Centrifugo</text>
-<text class="d-m" x="435" y="281" text-anchor="middle">:8000/metrics</text>
+<text class="d-m" x="435" y="281" text-anchor="middle">:9000/metrics</text>
 <rect class="d-box g-edge" x="830" y="240" width="150" height="60" rx="6"/>
 <text class="d-t" x="905" y="266" text-anchor="middle">Браузер</text>
-<text class="d-m" x="905" y="281" text-anchor="middle">/grafana/</text>
+<text class="d-m" x="905" y="281" text-anchor="middle">:3000</text>
 <path class="d-e" d="M250 125 L340 125" marker-end="url(#h-ln)"/>
 <text class="d-l" x="295" y="117" text-anchor="middle">Add, Set</text>
 <text class="d-m" x="295" y="141" text-anchor="middle">:6001</text>

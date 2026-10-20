@@ -1,19 +1,25 @@
 # Инфраструктура
 
-Статус: **реализовано**, включая сервис `valkey`, очередь RR jobs и процесс `ticker`.
+Статус: **реализовано**, включая сервис `valkey`, очередь RR jobs, процесс `ticker` и стек без nginx: HTTP
+отдаёт сам RoadRunner.
 
 ## Сервисы (`docker-compose.yml`)
 
 | Сервис | Порты внутри | Роль |
 |---|---|---|
-| `proxy` (nginx) | 80 → наружу `${HTTP_PORT:-8080}` | единственная точка входа |
-| `app` (Dockerfile: PHP 8.4 + RoadRunner 3) | http 8080, centrifuge proxy 10001, metrics 2112, rpc 6001 (локально) | приложение |
-| `centrifugo` (v6) | 8000 (WebSocket, `/metrics`), gRPC API 10000 | WebSocket-соединения и каналы |
+| `app` (Dockerfile: PHP 8.4 + RoadRunner 3) | http 8080 → наружу `${HTTP_PORT:-8080}`; centrifuge proxy 10001, metrics 2112, rpc 6001 (локально) | приложение: страницы и статика |
+| `centrifugo` (v6) | 8000 (WebSocket) → наружу `${CENTRIFUGO_PORT:-8000}`; внутренний 9000 (`/metrics`, `/health`); gRPC API 10000 | WebSocket-соединения и каналы |
 | `valkey` | 6379 | состояние игры (RR KV) и ключи идемпотентности; AOF + volume |
 | `prometheus` | 9090 | сбор метрик |
-| `grafana` | 3000 → через nginx `/grafana/` | публичный дашборд |
+| `grafana` | 3000 → наружу `${GRAFANA_PORT:-3000}`, без sub-path | публичный дашборд |
 
-nginx: `/connection/` → `centrifugo:8000` (upgrade), `/grafana/` → `grafana:3000`, `/` → `app:8080`.
+Наружу три порта: сайт `http://localhost:8080/`, WebSocket `ws://localhost:8000/connection/websocket`, Grafana
+`http://localhost:3000/`. Реверс-прокси нет: RoadRunner им не является, поэтому Centrifugo и Grafana публикуются
+своими портами, а страница ссылается на них через `CENTRIFUGO_WS_URL` и `GRAFANA_URL` вида `:<порт>/путь` — сервер
+достраивает их хостом, по которому открыта страница (`localhost`, `127.0.0.1`, адрес в LAN). Браузер подключается к
+Centrifugo с Origin страницы (`http://localhost:8080`), он и должен быть в `CENTRIFUGO_ALLOWED_ORIGINS`. Grafana
+строит свои ссылки от `GRAFANA_ROOT_URL` (по умолчанию `http://localhost:3000/`). У Centrifugo `/metrics` и
+`/health` вынесены на внутренний порт 9000 (`http_server.internal_port`), чтобы публикация 8000 не открывала их.
 
 ## Связи
 
@@ -27,24 +33,52 @@ nginx: `/connection/` → `centrifugo:8000` (upgrade), `/grafana/` → `grafana:
   идемпотентности (predis, `VALKEY_DSN`). `app` стартует после healthy `valkey`.
 - Пулы воркеров: http (2), centrifuge (2), jobs (2, pipeline `transitions`). Отдельно плагин `service` держит один
   долгоживущий процесс `ticker` (`php app.php hellowin:ticker`): летуны и таблица лидеров, см. `engine.md`.
-- HTTP-middleware RoadRunner выполняются слева направо: `http_metrics`, `gzip`, `static` — `gzip` перед `static`,
-  чтобы сжималась и статика.
-- Prometheus скрейпит `app:2112` и `centrifugo:8000/metrics` раз в 5 с.
+- Prometheus скрейпит `app:2112` и `centrifugo:9000/metrics` раз в 5 с.
 - Grafana: datasource и дашборд «Hellowin» через provisioning (`docker/grafana/`), анонимы — роль Viewer (публичный
   read-only), дашборд домашний; админ — `GF_SECURITY_ADMIN_PASSWORD` (по умолчанию `admin`, для публичного
   развёртывания задать). Разделы дашборда: игра (клики, сцена, раунд), переходы (задачи в очереди против выполненных
   по `kind`, «отсечённые дубли» = pushed − transitions, стадии тыкв), игроки, летуны (запущено / сбито / улетело по
-  глубине, процент попаданий), Centrifugo, RoadRunner.
+  глубине, процент попаданий), Centrifugo, RoadRunner (и отказы лимитов: RPC по группам, HTTP 429).
+
+## HTTP в RoadRunner
+
+RoadRunner (3.0) смотрит в браузер сам. Middleware оборачивают друг друга слева направо:
+`http_metrics`, `headers`, `gzip`, `static`, `rate_limiter`.
+
+- `http_metrics` первым — считает все ответы, включая 429 лимитера.
+- `headers` — ко всем ответам, и статике, и PHP: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (камера, микрофон, геолокация — нет) и
+  `Content-Security-Policy` только из директив, не ломающих страницы: `frame-ancestors 'none'; base-uri 'self';
+  object-src 'none'; form-action 'self'`. `script-src`/`style-src` нет: centrifuge-js и Pixi грузятся с CDN, SVG
+  страницы «Как это работает» стилизован inline. `nosniff` требует верных MIME: `static` берёт их по расширению
+  (`.js` — `text/javascript`, это нужно module worker'ам звука).
+- `gzip` перед `static` — сжимает и статику, и HTML от PHP.
+- `static` — `public/`, кроме `.php` и `.htaccess`; `calculate_etag` (сильный ETag по содержимому) и
+  `Cache-Control: no-cache`: имена файлов без хеша, поэтому браузер каждый раз сверяет ETag и получает 304, пока файл
+  не изменился. Несуществующий файл уходит дальше, в PHP (404).
+- `rate_limiter` последним — token bucket по IP клиента только для запросов в PHP (`rate: 5` в секунду, `burst: 20`);
+  сверх — 429 с `Retry-After`, до PHP запрос не доходит. Вёдра — в памяти процесса RoadRunner. `proxy_ip_parser` не
+  нужен: прокси нет, IP — адрес TCP-соединения. В Docker Desktop все запросы с хоста приходят с одного адреса шлюза и
+  делят ведро; на Linux без userland-proxy видны настоящие IP. Если перед стеком встанет прокси или TLS-терминатор,
+  перед `rate_limiter` нужен `proxy_ip_parser` с доверенными подсетями прокси.
+- `max_request_size: 1` (МБ): приложение ничего не принимает телом.
+- Пул http: `allocate_timeout: 10s`, `max_queue_size: 100` — запрос не ждёт воркера бесконечно, очередь не растёт без
+  края; `supervisor.exec_ttl: 30s` — зависший запрос убивает воркер. Пул centrifuge: `allocate_timeout: 3s` — столько
+  же Centrifugo ждёт ответа proxy.
+
+Лимиты RPC (основная нагрузка) — в PHP, см. [`engine.md`](engine.md), «Лимиты запросов». Centrifugo OSS ограничивает
+подключения: `client.user_connection_limit: 10` на игрока и `client.connection_rate_limit: 100` новых в секунду на
+узел; лимиты команд в Centrifugo — только PRO.
 
 ## Режимы
 
 - Прод (`docker-compose.yml`): `APP_ENV=prod`, `DEBUG=false` заданы жёстко и не зависят от `.env`.
-- Dev (`docker-compose.dev.yml`): код смонтирован, `APP_ENV=local`, `DEBUG=true`, Centrifugo и Prometheus открыты на
-  `127.0.0.1`; после правок PHP — `docker compose exec app rr reset`.
+- Dev (`docker-compose.dev.yml`): код смонтирован, `APP_ENV=local`, `DEBUG=true`, Prometheus открыт на
+  `127.0.0.1:9090`; после правок PHP — `docker compose exec app rr reset`.
 - Состояние локов и очереди — в памяти RoadRunner: `app` в одном экземпляре.
 
 ## E2E без браузера
 
 Node-скрипт с двумя клиентами centrifuge (`centrifuge` + `ws`, заголовок `Origin` из `CENTRIFUGO_ALLOWED_ORIGINS`)
-подключается через `http://localhost:8080/connection/websocket`, вызывает RPC и проверяет события второго клиента.
+подключается через `ws://localhost:8000/connection/websocket`, вызывает RPC и проверяет события второго клиента.
 Для быстрых проверок порогов поднимай `app` с маленькими значениями env и возвращай дефолты после.

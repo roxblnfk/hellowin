@@ -8,7 +8,7 @@
 стадии, `locked` вне шага финала 0, готовность финальной сцены, `not ready` и `force` у шага финала 1), червяки
 (`worm`) финальной сцены — наземные цели по лужайке, аптайм RoadRunner (`startedAt`) и разбегание фигурок на шаге
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
-порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`).
+порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»).
 
 ## Классы
 
@@ -24,6 +24,8 @@
 | События канала | `Application/Hellowin/ChannelPublisher` |
 | Игроки: id из секрета, имя, запись в KV | `Domain/Player/PlayerId`, `PlayerName`, `PlayerStore`, `Application/Player/PlayerService` |
 | Локи нескольких ресурсов | `Domain/Lock/Locks` |
+| Лимит RPC | `Domain/RateLimit/TokenBucket` (ведро), `Domain/RateLimit/RateLimiter` (вёдра в KV под локом), из `Endpoint/Centrifugo/RPCService` |
+| Адреса Centrifugo и Grafana для страницы | `Application/Web/ServiceUrl` (из `Endpoint/Web/HomeController`) |
 | Таблица лидеров | `Domain/Player/Leaderboard` (ранжирование), `Application/Player/LeaderboardService` |
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
@@ -323,17 +325,39 @@ claim возвращает nil, обработчик не вызывается, 
 `RetryableLockException` → повтор с задержкой относится к lease-хранилищам (AtLeastOnce) и сработает, только если
 alias `transitions` переключить обратно на `RedisLeaseConfig`.
 
+## Лимиты запросов
+
+Основная нагрузка игры — RPC через Centrifugo; HTTP — две страницы и статика.
+
+- **RPC** — в PHP, потому что HTTP-лимитер RoadRunner их не видит, а лимиты команд Centrifugo есть только в PRO.
+  `RPCService` до любого метода, кроме вызовов модератора, берёт токен из ведра (token bucket): ведро держит до
+  `burst` токенов и пополняется на `rate` в секунду. Ключ — игрок (`user` подключения), без игрока — id подключения;
+  группа — `click`, `shoot`, `move` или `other` (все прочие методы). Пустое ведро — ответ `rate limited` и
+  `hellowin_rpc_rate_limited_total{group}`. Вёдра лежат в KV `process` (память RoadRunner: лимиту не нужна
+  долговечность, рестарт воркеров их не теряет) под ключом `hellowin:rate:{group}:{caller}` с TTL на время полного
+  пополнения плюс секунда (KV округляет срок до секунд, а пропавшее раньше ведро выдало бы лишний `burst`). У KV нет
+  атомарного обновления, поэтому чтение и запись ведра — под RR-локом `rate:{group}:{caller}` (ожидание 0.5 с). Сбой
+  лимитера (лок, KV) пишется в лог и пропускает вызов: лимит защищает игру и не должен её ронять.
+- **Подключения** — Centrifugo OSS: `client.user_connection_limit` (10 подключений на игрока) и
+  `client.connection_rate_limit` (100 новых подключений в секунду на узел), [`infra.md`](infra.md).
+- **HTTP** — middleware `rate_limiter` RoadRunner, по IP, только для PHP-страниц: статику отдаёт `static` раньше
+  него ([`infra.md`](infra.md)).
+
+Значения по умолчанию (`HELLOWIN_RPC_RATE_*`, «Env») рассчитаны так, чтобы быстрые клики (10–15 в секунду) не
+резались никогда, а поток из скрипта упирался в `burst` и дальше шёл не быстрее `rate`.
+
 ## Хранилища
 
 | Что | Где | Через |
 |---|---|---|
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
+| Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, `started-at`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -361,6 +385,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
+| `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.
@@ -397,5 +422,10 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
 | `VALKEY_DSN` | `tcp://valkey:6379` | Valkey для idempotency (predis) |
-| `CENTRIFUGO_WS_URL` | `/connection/websocket` | URL WebSocket для фронта |
+| `HELLOWIN_RPC_RATE_CLICK` | `20,40` | лимит `click` на игрока: `<в секунду>,<burst>` token bucket; 0 — без лимита |
+| `HELLOWIN_RPC_RATE_SHOOT` | `20,40` | то же для `shoot` |
+| `HELLOWIN_RPC_RATE_MOVE` | `10,20` | то же для `move` |
+| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `time`, `me`, `register`, `clink`…) |
+| `CENTRIFUGO_WS_URL` | `:8000/connection/websocket` | URL WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL или путь — как есть |
+| `GRAFANA_URL` | `:3000/` | ссылка на дашборд со страниц, в тех же формах |
 | `CENTRIFUGO_GRPC_API` | `centrifugo:10000` | gRPC API Centrifugo для публикации |

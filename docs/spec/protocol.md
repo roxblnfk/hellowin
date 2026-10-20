@@ -11,14 +11,19 @@
 `circleStageMax` в `scene`, реплика `circle-done`, `force` и `not ready` у `finale.step`) и червяки (`worm`) — тоже;
 `startedAt` в снимке и разбегание фигурок (`move`) на шаге финала 2 — тоже; набор летунов проклятого мира и светлячки
 (`firefly`) — тоже; множитель порогов (RPC `thresholds`, событие `thresholds`, `k` и `online` в снимке, `online` в
-`leaderboard`) — тоже; предмет шага финала (`item` в `finale`, пиво проклятого мира) — тоже.
+`leaderboard`) — тоже; предмет шага финала (`item` в `finale`, пиво проклятого мира) — тоже; лимит RPC (ошибка
+`rate limited`) и адрес Centrifugo на своём порту — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
 ## Подключение
 
-1. Браузер открывает WebSocket к Centrifugo: URL из `data-centrifugo-url` (по умолчанию `/connection/websocket`,
-   относительный путь достраивается до `ws(s)://<host>`).
+1. Браузер открывает WebSocket к Centrifugo: URL из `data-centrifugo-url`. Centrifugo опубликован на своём порту
+   (RoadRunner не реверс-прокси), поэтому сервер отдаёт полный URL: `CENTRIFUGO_WS_URL` вида `:<порт>/путь` (по
+   умолчанию `:8000/connection/websocket`) он достраивает схемой и хостом, по которым открыта страница, —
+   `ws://localhost:8000/connection/websocket` для `http://localhost:8080/`, `wss://…` для https
+   (`App\Application\Web\ServiceUrl`). Полный `ws(s)://` URL из env отдаётся как есть, путь — тоже, его фронт
+   достраивает до `ws(s)://<host>`.
 2. Centrifugo вызывает connect proxy → `ConnectService`. Сервер сам подписывает клиента на канал `hellowin`
    (server-side subscription): клиент **не** вызывает `subscribe`, а слушает `centrifuge.on('publication', …)`.
 3. Клиентам запрещено публиковать в канал и подписываться на другие каналы.
@@ -33,6 +38,13 @@
 ## RPC
 
 Вызов: `centrifuge.rpc(method, data)`. Ответ: `{ok: true, …}` или `{ok: false, error: <code>}`.
+
+Лимит: каждый вызов, кроме вызовов модератора, сначала берёт токен из ведра своего игрока (у подключения без игрока —
+из ведра подключения) для группы метода: у `click`, `shoot` и `move` свои вёдра, остальные методы делят `other`.
+Пустое ведро — `{ok: false, error: 'rate limited'}`, метод не вызывается; ведро пополняется само, повторять можно
+сразу, но лишние вызовы снова получат отказ. Вкладки одного игрока делят его вёдра. Пороги — `HELLOWIN_RPC_RATE_*`
+([`engine.md`](engine.md), «Лимиты запросов»): быстрый честный темп кликов в них укладывается. Клиент пишет отказ в
+`console.warn`, как прочие ошибки RPC.
 
 | Метод | Данные | Ответ | Статус |
 |---|---|---|---|

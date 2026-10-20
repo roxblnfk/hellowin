@@ -5,13 +5,14 @@
 
 ## Запуск
 
-Всё поднимается через Docker Compose. Наружу публикуется только nginx (`proxy`):
+Всё поднимается через Docker Compose. Страницы и статику отдаёт сам RoadRunner, без nginx; Centrifugo и Grafana
+опубликованы своими портами:
 
 | URL | Что |
 |---|---|
-| `http://localhost:8080/` | страница Hellowin |
-| `http://localhost:8080/connection/websocket` | WebSocket Centrifugo |
-| `http://localhost:8080/grafana/` | дашборд «Hellowin» (публичный, только чтение) |
+| `http://localhost:8080/` | страница Hellowin (RoadRunner) |
+| `ws://localhost:8000/connection/websocket` | WebSocket Centrifugo |
+| `http://localhost:3000/` | дашборд «Hellowin» (публичный, только чтение) |
 
 1. Для локального запуска настраивать ничего не нужно. Переменные Compose (см. ниже) берутся из `.env`, пример —
    `.env.docker.example`. Режим приложения в контейнере от `.env` не зависит: `docker-compose.yml` всегда задаёт
@@ -24,7 +25,7 @@
    docker compose ps          # все сервисы должны стать healthy
    ```
 
-3. Откройте `http://localhost:8080/` и `http://localhost:8080/grafana/`.
+3. Откройте `http://localhost:8080/` и `http://localhost:3000/`.
 
 Остановить: `docker compose down`. Данные Valkey, Prometheus и Grafana остаются в volumes; `docker compose down -v`
 удалит и их.
@@ -41,8 +42,10 @@
 |---|---|---|
 | `GF_SECURITY_ADMIN_PASSWORD` | `admin` | пароль администратора Grafana, применяется при первом запуске. Для публичного развёртывания задайте обязательно |
 | `GF_SECURITY_ADMIN_USER` | `admin` | логин администратора Grafana |
-| `HTTP_PORT` | `8080` | внешний порт nginx |
-| `PUBLIC_URL` | `http://localhost:8080` | внешний адрес сайта; от него Grafana строит `root_url` |
+| `HTTP_PORT` | `8080` | внешний порт сайта (RoadRunner http) |
+| `CENTRIFUGO_PORT` | `8000` | внешний порт WebSocket Centrifugo |
+| `GRAFANA_PORT` | `3000` | внешний порт Grafana |
+| `GRAFANA_ROOT_URL` | `http://localhost:3000/` | внешний адрес Grafana; от него она строит свои ссылки |
 | `CENTRIFUGO_ALLOWED_ORIGINS` | `http://localhost:8080 http://127.0.0.1:8080` | Origin через пробел, с которых браузер может подключаться к WebSocket |
 | `HELLOWIN_CLICKS_PER_STAGE` | `5` | сколько кликов по тыкве переводят её в следующую стадию, целое > 0 |
 | `HELLOWIN_MODERATOR_SECRET` | пусто | секрет модератора: страница с `?moderator=<секрет>` получает пульт (сцены, сова, финал, сброс); пусто — пульт выключен |
@@ -69,20 +72,24 @@
 | `HELLOWIN_ZOMBIE_POINTS` | `2` | очки за зомби |
 | `HELLOWIN_WALK_SPEED` | `12` | скорость фигурок игроков, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | `5000` | сколько миллисекунд игрок может быть без подключений, прежде чем его фигурка уйдёт с поля |
-| `CENTRIFUGO_WS_URL` | `/connection/websocket` | путь или полный URL WebSocket для фронта |
+| `HELLOWIN_RPC_RATE_CLICK`, `_SHOOT`, `_MOVE`, `_OTHER` | `20,40`, `20,40`, `10,20`, `10,30` | лимит RPC на игрока: `<в секунду>,<burst>`; `_OTHER` — общий для прочих методов; 0 — без лимита; модератора лимит не касается |
+| `CENTRIFUGO_WS_URL` | `:${CENTRIFUGO_PORT}/connection/websocket` | WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL (`wss://ws.example.com/connection/websocket`) — как есть |
+| `GRAFANA_URL` | `:${GRAFANA_PORT}/` | ссылка на дашборд со страниц, в тех же формах |
 | `CENTRIFUGO_ADMIN_ENABLED` | `false` | admin UI Centrifugo (нужны ещё `CENTRIFUGO_ADMIN_PASSWORD` и `CENTRIFUGO_ADMIN_SECRET`) |
 | `PROMETHEUS_RETENTION` | `15d` | срок хранения метрик |
 
 Адрес Valkey приложение берёт из `VALKEY_ADDR` (RoadRunner KV, `host:port`) и `VALKEY_DSN` (хранилище
 идемпотентности, по умолчанию `tcp://valkey:6379`); в `docker-compose.yml` они указывают на сервис `valkey`.
 
-Чтобы открыть демо в интернет, опубликуйте порт `proxy` (или поставьте перед ним TLS-терминатор) и выставьте
-`PUBLIC_URL=https://your.domain`, `CENTRIFUGO_ALLOWED_ORIGINS=https://your.domain` и свой `GF_SECURITY_ADMIN_PASSWORD`.
+Чтобы открыть демо в интернет, откройте три порта (или поставьте перед ними TLS-терминатор) и выставьте
+`CENTRIFUGO_ALLOWED_ORIGINS=https://your.domain`, `GRAFANA_ROOT_URL` и свой `GF_SECURITY_ADMIN_PASSWORD`; за
+терминатором с другими адресами задайте `CENTRIFUGO_WS_URL` и `GRAFANA_URL` полными URL. HTTP-заголовки, сжатие,
+ETag статики и лимит запросов по IP — в `.rr.yaml`, подробности — [`docs/spec/infra.md`](docs/spec/infra.md).
 
 ### Grafana
 
 Анонимный доступ в роли Viewer: любой посетитель видит дашборд «Hellowin», но ничего не может редактировать. Дашборд
-и datasource заведены через provisioning. Администратор входит через `/grafana/login`; сменить пароль потом —
+и datasource заведены через provisioning. Администратор входит через `http://localhost:3000/login`; сменить пароль потом —
 `docker compose exec grafana grafana cli admin reset-admin-password <new>`.
 
 ### Режим разработки
@@ -91,8 +98,8 @@
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -V
 ```
 
-Образ с dev-зависимостями, код смонтирован в `/app`, `APP_ENV=local`, `DEBUG=true`. На `127.0.0.1` открыты Centrifugo
-(`:8000`) и Prometheus (`:9090`). После изменения PHP-кода: `docker compose exec app rr reset`.
+Образ с dev-зависимостями, код смонтирован в `/app`, `APP_ENV=local`, `DEBUG=true`. На `127.0.0.1:9090` открыт
+Prometheus. После изменения PHP-кода: `docker compose exec app rr reset`.
 
 ### Тесты и проверки
 
