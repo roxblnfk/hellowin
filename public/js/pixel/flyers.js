@@ -625,6 +625,132 @@ function zombieSet() {
     return [farSet('zombie'), near, near];
 }
 
+// A cursed earthworm for the blood-moon lawn, charged with the same violet energy as the pumpkins: its back, saddle
+// and eye glow — light sources (night.js, EMISSIVE), so they stay lit when the scene relights the rest; a plain
+// colour on the lawn would sink into the maroon. Only the belly is lit like the ground, which keeps the body round.
+// Side view on one 16×9 grid for every frame, head to the right; the anchor is on the ground under the middle.
+const WORM_LEGEND = {
+    '.': null, O: 'outline', b: 'violetGlow', s: 'violet', h: 'violetHot', v: 'eyeViolet', V: 'violetHot', e: 'flameCore',
+    w: 'magicCore', d: 'soil', D: 'soilDark', l: 'soilLight',
+};
+const WORM_W = 16;
+const WORM_H = 9;
+const WORM_NOSE = 14;
+const bump = (u, a, b) => (u > a && u < b ? Math.sin((Math.PI * (u - a)) / (b - a)) : 0);
+
+/**
+ * The worm's body `len` columns long ending in the nose at WORM_NOSE, raised off the ground by `lift(u)` (u: 0 at the
+ * tail, 1 at the nose). Columns outside `from`–`to` are underground. Thin tail, a thicker saddle, a two-pixel nose.
+ */
+function wormBody(len, lift = () => 0, { eye = 'e', from = 0, to = WORM_W - 1 } = {}) {
+    const fill = Array.from({ length: WORM_H }, () => Array(WORM_W).fill(null));
+    const tops = [];
+    const tail = WORM_NOSE - len + 1;
+    for (let x = Math.max(tail, from); x <= Math.min(WORM_NOSE, to); x++) {
+        const u = (x - tail) / (len - 1);
+        const saddle = u >= 0.6 && u <= 0.76;
+        const nose = x === WORM_NOSE;
+        const th = nose || u < 0.1 ? 2 : u < 0.3 ? 3 : saddle ? 5 : 4;
+        const bottom = WORM_H - 1 - Math.max(0, Math.round(lift(u))) - (nose ? 1 : 0);
+        tops[x] = bottom - th + 1;
+        for (let y = tops[x]; y <= bottom; y++) fill[y][x] = saddle ? 'v' : 'b';
+    }
+    const empty = (x, y) => !fill[y]?.[x];
+    const rows = fill.map((r, y) => r.map((c, x) => {
+        if (!c) return '.';
+        if (empty(x - 1, y) || empty(x + 1, y) || empty(x, y - 1) || empty(x, y + 1)) return 'O';
+        // The upper row catches the light (a cream ring every third column), the lower one is in shade.
+        if (y === tops[x] + 1) return c === 'v' ? 'V' : x % 3 === 0 ? 'h' : 'b';
+        return c === 'v' ? 'v' : 's';
+    }));
+    if (tops[WORM_NOSE - 1] !== undefined && to >= WORM_NOSE) rows[tops[WORM_NOSE - 1] + 1][WORM_NOSE - 1] = eye;
+    return wormSprite(rows.map((r) => r.join('')));
+}
+
+// Overlays a patch of rows ('.' is see-through) on a worm frame: the dirt it comes out of or goes into.
+function overlay(sprite, patch) {
+    const rows = sprite.rows.map((r, y) => [...r].map((ch, x) => (patch[y]?.[x] && patch[y][x] !== '.' ? patch[y][x] : ch)).join(''));
+    return wormSprite(rows);
+}
+
+// Every frame shares the grid and the anchor; `box` is the opaque bounding box, the base of the hit box.
+function wormSprite(rows) {
+    let left = WORM_W;
+    let right = -1;
+    let top = WORM_H;
+    rows.forEach((r, y) => [...r].forEach((ch, x) => {
+        if (ch === '.') return;
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+    }));
+    return {
+        w: WORM_W,
+        h: WORM_H,
+        rows,
+        legend: WORM_LEGEND,
+        anchor: { x: WORM_W >> 1, y: WORM_H },
+        box: { x: left, y: top, w: right - left + 1, h: WORM_H - top },
+    };
+}
+
+const blank = (n) => Array(n).fill('.'.repeat(WORM_W));
+
+function wormSet() {
+    // Crawl: stretched, the tail bunching up into a hump, the full arch, the hump running out toward the nose.
+    const fly = [
+        wormBody(15),
+        wormBody(13, (u) => 2 * bump(u, 0.04, 0.6)),
+        wormBody(11, (u) => 3 * bump(u, 0.12, 0.72)),
+        wormBody(13, (u) => 2 * bump(u, 0.4, 0.96)),
+    ];
+    // Emerge: a nose pokes out of a mound, rears up, then the front lies down on the lawn with the tail still in.
+    const emerge = [
+        wormSprite([...blank(6),
+            '......OO........',
+            '....lObeOl......',
+            '...lDdDDdl......']),
+        wormSprite([...blank(3),
+            '.......OO.......',
+            '......ObeO......',
+            '......ObsO......',
+            '.....ObsO.......',
+            '....lOhsOl......',
+            '...lDdDDdl......']),
+        overlay(wormBody(9, () => 0, { from: 6 }), [...blank(7),
+            '....lDdl........',
+            '...lDdDdDl......']),
+    ];
+    // Burrow at the end of the path: the nose dives into a mound ahead, then only the tail tip sticks out.
+    const burrow = [
+        overlay(wormBody(11, () => 0, { to: 11 }), [...blank(7),
+            '..........lDdl..',
+            '.........lDdDdDl']),
+        wormSprite([...blank(5),
+            '..........O.....',
+            '.........ObO....',
+            '........lObOl...',
+            '........lDdDdDl.']),
+    ];
+    // Hit: wide-eyed, it writhes into an S (the scene throws it from side to side); then it sinks where it was hit —
+    // a loop of it left above the dirt, then the mound with a last violet spark.
+    const hit = wormBody(13, (u) => 3.4 * (2 * u - 1) ** 2, { eye: 'w' });
+    const fall = [
+        wormSprite([...blank(4),
+            '......OOOO......',
+            '.....ObhbbO.....',
+            '.....ObOOsO.....',
+            '....lOsOOsOl....',
+            '...lDdDdDdDdl...']),
+        wormSprite([...blank(6),
+            '........V.......',
+            '......ldvdl.....',
+            '....lDdDdDdl....']),
+    ];
+    const set = { fly, emerge, burrow, hit, fall };
+    return [set, set, set];
+}
+
 function poseSet(def, kind, { post = (s) => s } = {}) {
     return DEPTH_W.map((w, depth) => {
         if (depth === 0) return farSet(kind);
@@ -652,13 +778,16 @@ const FEATHER_LEGEND = {
     G: 'duckGray', g: 'duckGrayDark', B: 'duckBrown', b: 'duckBrownLight', w: 'white', W: 'chickenShade',
     C: 'crowDark', c: 'crow', v: 'crowLight', T: 'bat', U: 'batWing', q: 'ghost', E: 'ecto', Q: 'ghostShade',
     n: 'hay', N: 'hayDark', y: 'pumpkinShine', s: 'white', d: 'denim', D: 'denimDark', z: 'zombie', Z: 'zombieShade',
+    o: 'soil', O: 'soilDark', l: 'soilLight', P: 'violetGlow',
 };
 
 /**
  * Indexed by depth (0 — far, 2 — near): { fly: 4 wingbeat frames, hit, fall: 2 tumbling frames }.
  * `roadrunner` and `zombie` move on the ground: `fly` is their run / walk cycle. The road-runner's far sprite is
  * 7×4, a little more than a speck. The zombie keeps one size at depths 1 and 2, its anchor is between the feet, and its
- * fall frames collapse in place (kneel, then flat) instead of tumbling.
+ * fall frames collapse in place (kneel, then flat) instead of tumbling. `worm` crawls on the lawn too: one 16×9 set at
+ * every depth, anchor on the ground under its middle, `box` — the opaque bounds; besides the crawl it has `emerge` (3
+ * frames, out of a mound) and `burrow` (2, into one), its `hit` writhes and `fall` sinks it into the ground in place.
  */
 export const FLYERS = {
     duck: flyerSet(DUCK),
@@ -669,6 +798,7 @@ export const FLYERS = {
     witch: poseSet(WITCH, 'witch'),
     roadrunner: poseSet(ROADRUNNER, 'roadrunner'),
     zombie: zombieSet(),
+    worm: wormSet(),
     // Each feather knows whose it is, so a burst can pick the right ones.
     feathers: [
         { ...sprite(['.G', 'Gg', 'g.'], FEATHER_LEGEND), kind: 'duck' },
@@ -691,6 +821,11 @@ export const FLYERS = {
         { ...sprite(['.d', 'dD', 'D.'], FEATHER_LEGEND), kind: 'roadrunner' },
         { ...sprite(['z.', 'Zz'], FEATHER_LEGEND), kind: 'zombie' },
         { ...sprite(['GG', 'g.'], FEATHER_LEGEND), kind: 'zombie' },
+        // A worm throws up clods of dirt and a violet spark.
+        { ...sprite(['.o', 'oO'], FEATHER_LEGEND), kind: 'worm' },
+        { ...sprite(['lo.', 'oOO'], FEATHER_LEGEND), kind: 'worm' },
+        { ...sprite(['o'], FEATHER_LEGEND), kind: 'worm' },
+        { ...sprite(['.P.', 'P.P'], FEATHER_LEGEND), kind: 'worm' },
     ],
 };
 

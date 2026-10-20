@@ -12,7 +12,9 @@
         .grass { background: #2e7a34; }
         .dusk { background: #c86a5a; }
         .night { background: #1a1834; }
-        .night .cell span, .dusk .cell span { color: #eee; }
+        /* The lawn under the blood moon (night.js, LIGHTINGS.blood); sprites on it are relit the same way. */
+        .blood { background: #2a0e14; }
+        .night .cell span, .dusk .cell span, .blood .cell span { color: #eee; }
         .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .cell span { font-size: 11px; color: #123; }
         .grass .cell span { color: #eee; }
@@ -21,12 +23,13 @@
 <body>
 <h2>Живая сцена 3× (параметры: ?t=мс — стоп-кадр, ?zoom=N — масштаб листов, ?only=kind,kind, ?live=0 — без сцен)</h2>
 <div id="live"></div>
-<h2>Ночь: вороны, мыши, призраки, ведьма, бегун на горизонте, зомби на лужайке</h2>
+<h2>Ночь: вороны, мыши, призраки, ведьма, бегун на горизонте, зомби и червяк на лужайке</h2>
 <div id="live-night"></div>
 <div id="out"></div>
 <script type="module">
     import { FLYERS, BUSH, DIGITS, digitsSprite, feathersOf, bake } from '../js/pixel/flyers.js';
     import { PALETTE } from '../js/pixel/palette.js';
+    import { relightCanvas } from '../js/pixel/night.js';
 
     const out = document.getElementById('out');
     const params = new URLSearchParams(location.search);
@@ -35,10 +38,10 @@
     const baked = new Map();
     const tex = (s) => baked.get(s) ?? baked.set(s, bake(s)).get(s);
 
-    function view(sprite, scale, label) {
+    function view(sprite, scale, label, lit = 'day') {
         const cell = document.createElement('div');
         cell.className = 'cell';
-        const c = bake(sprite);
+        const c = lit === 'day' ? bake(sprite) : relightCanvas(bake(sprite), lit);
         c.style.width = `${sprite.w * scale}px`;
         c.style.height = `${sprite.h * scale}px`;
         cell.append(c);
@@ -69,16 +72,21 @@
         witch: ['sky', 'dusk', 'night'],
         roadrunner: ['sky', 'grass'],
         zombie: ['grass', 'night'],
+        worm: ['grass', 'night', 'blood'],
     };
     const only = params.get('only')?.split(',');
     for (const [kind, bgs] of Object.entries(BACKDROPS)) {
         if (only && !only.includes(kind)) continue;
         for (const bg of bgs) {
-            section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, ${zoom}× (${bg})`, bg, FLYERS[kind].flatMap((set, depth) => [
-                ...set.fly.map((s, i) => view(s, zoom, `d${depth} fly${i}`)),
-                view(set.hit, zoom, `d${depth} hit`),
-                ...set.fall.map((s, i) => view(s, zoom, `d${depth} fall${i}`)),
-            ]));
+            // A ground kind shares one set between depths: it is shown once. The worm also emerges and burrows.
+            const lit = bg === 'blood' ? 'blood' : 'day';
+            section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, ${zoom}× (${bg})`, bg, FLYERS[kind].flatMap((set, depth, all) => (depth && set === all[depth - 1] ? [] : [
+                ...(set.emerge ?? []).map((s, i) => view(s, zoom, `d${depth} emerge${i}`, lit)),
+                ...set.fly.map((s, i) => view(s, zoom, `d${depth} fly${i}`, lit)),
+                ...(set.burrow ?? []).map((s, i) => view(s, zoom, `d${depth} burrow${i}`, lit)),
+                view(set.hit, zoom, `d${depth} hit`, lit),
+                ...set.fall.map((s, i) => view(s, zoom, `d${depth} fall${i}`, lit)),
+            ])));
         }
     }
     section('перья 6×, куст idle ×2 и rustle ×3 3×, цифры 4×', 'grass', [
@@ -121,6 +129,9 @@
             { kind: 'bat', depth: 2, from: { x: -8, y: 16 }, via: { x: 50, y: 30 }, to: { x: 108, y: 8 }, start: 8000, duration: 3500 },
             { kind: 'roadrunner', depth: 0, ground: true, from: { x: -8, y: (HORIZON / H) * 100 }, to: { x: 108, y: (HORIZON / H) * 100 }, start: 2000, duration: 3500 },
             { kind: 'zombie', depth: 1, ground: true, walk: 150, from: { x: 30, y: 72 }, to: { x: 80, y: 74 }, start: 0, duration: 11000, shotAt: 9800, points: 3 },
+            // Worms meander across the lawn (wobble), out of the ground and back into it; the second one is shot.
+            { kind: 'worm', depth: 1, ground: true, walk: 150, from: { x: 70, y: 90 }, to: { x: 50, y: 88 }, wobble: { amp: 1.5, waves: 4 }, start: 1000, duration: 6500 },
+            { kind: 'worm', depth: 1, ground: true, walk: 150, from: { x: 8, y: 82 }, to: { x: 28, y: 86 }, wobble: { amp: 1.2, waves: 3.5 }, start: 5000, duration: 6500, shotAt: 9000, points: 2 },
         ],
     };
     const FLAP = [180, 130, 90];
@@ -135,6 +146,18 @@
         };
     }
     const toArt = (p) => ({ x: (p.x / 100) * W, y: (p.y / 100) * H });
+    // The worm's clock as in scene.js: it emerges at `from`, crawls the path in between, burrows at `to`.
+    const EMERGE_MS = 3 * 130;
+    const BURROW_MS = 2 * 150;
+    function wormAt(f, local) {
+        const t = Math.min(1, Math.max(0, (local - EMERGE_MS) / (f.duration - EMERGE_MS - BURROW_MS)));
+        const p = pointAt(f, t);
+        const dx = f.to.x - f.from.x;
+        const dy = f.to.y - f.from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const off = f.wobble.amp * Math.sin(2 * Math.PI * f.wobble.waves * t);
+        return { t, p: { x: p.x - (dy / len) * off, y: p.y + (dx / len) * off } };
+    }
 
     function live(cfg) {
         const canvas = document.createElement('canvas');
@@ -180,8 +203,11 @@
                 const flip = f.to.x < f.from.x;
                 if (f.shotAt && t >= f.shotAt) {
                     const fall = t - f.shotAt;
-                    const p0 = toArt(pointAt(f, (f.shotAt - f.start) / f.duration));
-                    if (f.ground) {
+                    const p0 = toArt(f.wobble ? wormAt(f, f.shotAt - f.start).p : pointAt(f, (f.shotAt - f.start) / f.duration));
+                    if (f.kind === 'worm') {
+                        // The worm writhes side to side, then sinks into the ground.
+                        if (fall < 1300) draw(fall < 450 ? set.hit : set.fall[fall < 850 ? 0 : 1], p0.x, p0.y, fall < 450 ? (Math.floor(fall / 90) % 2 ? !flip : flip) : flip);
+                    } else if (f.ground) {
                         // A ground target collapses where it stands.
                         if (fall < 1600) draw(fall < 160 ? set.hit : set.fall[fall < 420 ? 0 : 1], p0.x, p0.y, flip, Math.min(1, 2 - fall / 800));
                     } else {
@@ -202,6 +228,14 @@
                     continue;
                 }
                 if (local > f.duration) continue;
+                if (f.kind === 'worm') {
+                    const p = toArt(wormAt(f, local).p);
+                    const frame = local < EMERGE_MS ? set.emerge[Math.floor(local / 130)]
+                        : local > f.duration - BURROW_MS ? set.burrow[Math.min(1, Math.floor((local - f.duration + BURROW_MS) / 150))]
+                        : set.fly[Math.floor(local / f.walk) % 4];
+                    draw(frame, p.x, p.y, flip);
+                    continue;
+                }
                 const p = toArt(pointAt(f, local / f.duration));
                 const period = f.walk ?? (f.kind === 'roadrunner' ? 70 : FLAP[f.depth]);
                 draw(set.fly[Math.floor(local / period) % 4], p.x, p.y, flip);

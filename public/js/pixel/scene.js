@@ -1227,24 +1227,51 @@ export async function createScene(rootEl, snapshot) {
 
     // Wingbeat period per depth, far to near (public/dev/flyers.html); the ground runners step at their own pace.
     const FLAP = [260, 130, 90];
-    const STEP_MS = { roadrunner: 70, zombie: 150 };
+    const STEP_MS = { roadrunner: 70, zombie: 150, worm: 150 };
     const RUSTLE_MS = 600;
     // Kinds that walk on the lawn: in groundLayer, sorted by their feet, on the walkers' coordinates.
-    const GROUND = new Set(['zombie']);
-    // A zombie collapses where it stands: hit, kneel, flat, then blinks out.
-    const COLLAPSE = { hit: 160, kneel: 420, lie: 1600, gone: 2000 };
+    const GROUND = new Set(['zombie', 'worm']);
+    // A shot ground target goes down where it stands: `hit`, then fall[0] until `fall`, fall[1], blinking from `lie`
+    // until `gone`. A zombie kneels and lies flat; a worm writhes side to side, then sinks into the ground.
+    const COLLAPSE = { zombie: { hit: 160, fall: 420, lie: 1600, gone: 2000 }, worm: { hit: 450, fall: 850, lie: 1300, gone: 1700 } };
+    // A worm comes out of the ground at `from` (3 emerge frames) and goes back in at `to` (2 burrow frames).
+    const EMERGE_MS = 130;
+    const BURROW_MS = 150;
     // Single-pixel feathers of a shot far flyer.
     const SPECK = { chicken: 'white', crow: 'crowDark', bat: 'bat', ghost: 'ghost', witch: 'violetDark', zombie: 'zombie' };
 
-    // Zombie paths are on the lawn in config coordinates (the walk zone), so they take the patch spread like walkers.
+    // Zombie and worm paths are on the lawn in config coordinates (the walk zone), so they take the patch spread like
+    // walkers. A worm meanders: `wobble` sways it across the path, in config percents.
     function groundPathAt(f, t) {
-        return walkerArt({ x: f.from.x + (f.to.x - f.from.x) * t, y: f.from.y + (f.to.y - f.from.y) * t });
+        const dx = f.to.x - f.from.x;
+        const dy = f.to.y - f.from.y;
+        const p = { x: f.from.x + dx * t, y: f.from.y + dy * t };
+        if (!f.wobble) return walkerArt(p);
+        const len = Math.hypot(dx, dy) || 1;
+        const off = f.wobble.amp * Math.sin(2 * Math.PI * f.wobble.waves * t);
+        return walkerArt({ x: p.x - (dy / len) * off, y: p.y + (dx / len) * off });
+    }
+
+    /**
+     * A crawling worm at `local` ms into its flight: it stays on `from` while it emerges and on `to` while it burrows,
+     * and crawls the whole path in the time between. Returns its point and frame.
+     */
+    function wormAt(f, set, local) {
+        const out = set.emerge.length * EMERGE_MS;
+        const back = set.burrow.length * BURROW_MS;
+        const t = clamp((local - out) / Math.max(1, f.duration - out - back), 0, 1);
+        const into = local - (f.duration - back);
+        const frame = local < out ? set.emerge[Math.floor(local / EMERGE_MS)]
+            : into >= 0 ? set.burrow[Math.min(set.burrow.length - 1, Math.floor(into / BURROW_MS))]
+            : set.fly[Math.floor((local - out) / STEP_MS.worm) % set.fly.length];
+        return { pos: groundPathAt(f, t), frame };
     }
 
     function animateFlyers() {
         for (const [id, f] of flyers) {
             const set = FLYERS[f.kind]?.[f.depth] ?? FLYERS.duck[0];
             let art;
+            let flip = f.flip;
             if (f.shotAt === null) {
                 const now = serverNow();
                 // A flyer stamped a few ms ahead of our clock estimate must not index frames with a negative time.
@@ -1255,20 +1282,27 @@ export async function createScene(rootEl, snapshot) {
                     continue;
                 }
                 const t = clamp(local / f.duration, 0, 1);
-                f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
-                const frame = set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length];
+                let frame;
+                if (set.emerge) ({ pos: f.pos, frame } = wormAt(f, set, local));
+                else {
+                    f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
+                    frame = set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length];
+                }
                 art = f.ground ? flyerArt(frame, false, lightAt(f.pos.x, f.pos.y)) : flyerArt(frame, f.depth === 0);
             } else if (f.ground) {
                 const since = clock - f.shotAt;
-                if (since >= COLLAPSE.gone) {
+                const collapse = COLLAPSE[f.kind] ?? COLLAPSE.zombie;
+                if (since >= collapse.gone) {
                     f.sprite.destroy();
                     flyers.delete(id);
                     continue;
                 }
                 f.pos = f.shotPos;
-                art = flyerArt(since < COLLAPSE.hit ? set.hit : set.fall[since < COLLAPSE.kneel ? 0 : 1], false, lighting);
+                art = flyerArt(since < collapse.hit ? set.hit : set.fall[since < collapse.fall ? 0 : 1], false, lightAt(f.pos.x, f.pos.y));
+                // A hit worm writhes: thrown from side to side every 90 ms.
+                if (f.kind === 'worm' && since < collapse.hit && !reduced) flip = Math.floor(since / 90) % 2 ? !f.flip : f.flip;
                 // Blinks out instead of fading, like the particles: alpha would add colours outside the palette.
-                f.sprite.visible = since < COLLAPSE.lie || Math.floor(since / 100) % 2 === 0;
+                f.sprite.visible = since < collapse.lie || Math.floor(since / 100) % 2 === 0;
             } else {
                 // Hit frame, then a tumble down: far birds fall behind the hills, the nearer ones off the screen.
                 const fall = (clock - f.shotAt) / 1000;
@@ -1285,7 +1319,7 @@ export async function createScene(rootEl, snapshot) {
             }
             f.sprite.texture = art.texture;
             f.sprite.anchor.set(art.ax, art.ay);
-            f.sprite.scale.x = f.flip ? -1 : 1;
+            f.sprite.scale.x = flip ? -1 : 1;
             f.sprite.position.set(Math.round(f.pos.x), Math.round(f.pos.y));
             if (f.ground) f.sprite.zIndex = depthKey(f.pos.x, f.pos.y);
             f.art = art;
@@ -1349,7 +1383,8 @@ export async function createScene(rootEl, snapshot) {
             spawn([speck], f.pos.x, f.pos.y, -6, -8, 20, 1);
             spawn([speck], f.pos.x, f.pos.y, 7, -5, 20, 1.1);
         } else if (!reduced) {
-            const feathers = feathersOf(f.kind).map((def) => flyerArt(def).texture);
+            // Bits of a ground target take the light it stood in, like the target itself.
+            const feathers = feathersOf(f.kind).map((def) => flyerArt(def, false, f.ground ? lightAt(mid.x, mid.y) : 'day').texture);
             for (let i = 0; i < 6; i++) {
                 const a = (i / 6) * Math.PI * 2 + 0.4;
                 spawn(feathers, mid.x, mid.y, Math.cos(a) * 24, Math.sin(a) * 14 - 10, 30, 1.2 + Math.random() * 0.3);
@@ -1368,6 +1403,13 @@ export async function createScene(rootEl, snapshot) {
         const left = Math.round(f.pos.x) - (f.flip ? def.w - def.anchor.x : def.anchor.x);
         const top = Math.round(f.pos.y) - def.anchor.y;
         if (f.depth === 0) return { left, top, w: def.w, h: def.h, pixels: true };
+        if (def.box) {
+            // A worm is long and low: its opaque bounds (mirrored with it) and 2 px around them, or it would be a
+            // sliver to hit.
+            const { box } = def;
+            const x = f.flip ? def.w - box.x - box.w : box.x;
+            return { left: left + x - 2, top: top + box.y - 2, w: box.w + 4, h: box.h + 3, pixels: false };
+        }
         if (f.ground) {
             // The anchor is at the feet: the box covers the body above them, without the outstretched arms.
             const w = Math.max(2, Math.round(def.w * 0.5));

@@ -107,7 +107,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         if (!isPumpkin(element)) {
             // The bonfire opens once every pumpkin is done, the circle at finale step 0 (layout.js); a type without a
             // rule stays locked. A locked click is not even sent (app.js).
-            const open = element.type === 'bonfire' ? bonfireOpen(element, model.stageMax, model.elements)
+            const open = element.type === 'bonfire' ? bonfireOpen(element, model.stageMax, model.elements, model.scene, model.sceneStages)
                 : element.type === 'circle' ? circleOpen(element, model.scene, model.sceneStages, model.finale)
                 : false;
             el.dataset.threshold = element.threshold;
@@ -299,13 +299,9 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
                 bonfire.stageMax = event.bonfireStageMax;
                 bonfireMaxByScene.set(model.scene, bonfire.stageMax);
             }
-            // Before the final scene the circle's last stage is 0; the event does not carry the new one, so it comes
-            // from a fresh snapshot, merged into the circle alone (a full render would cut the bonfire's explosion).
+            // The circle's last stage: HELLOWIN_CIRCLE_STAGES in the final scene, 0 before it.
             const circle = circleOf();
-            if (circle) {
-                circle.stageMax = 0;
-                if (model.scene >= model.sceneStages) refreshCircle();
-            }
+            if (circle) circle.stageMax = event.circleStageMax ?? 0;
             paintAll();
             scene?.setScene(model.scene, model.stageMax);
             handOut(event);
@@ -359,20 +355,6 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             if (!stageMaxByScene.has(0)) resync();
         },
     };
-
-    function refreshCircle() {
-        const round = model.round;
-        requestState()
-            .then((snapshot) => {
-                const fresh = snapshot?.elements?.find((e) => e.type === 'circle');
-                const circle = circleOf();
-                if (!fresh || !circle || snapshot.round !== round || model.round !== round) return;
-                Object.assign(circle, { stage: fresh.stage, clicks: fresh.clicks, threshold: fresh.threshold, stageMax: fresh.stageMax });
-                paintElements();
-                onChange(model);
-            })
-            .catch((error) => console.warn('state rpc failed', error));
-    }
 
     // The item in every walker's hand follows the scene: `scene` and `reset` carry it instead of a walker event each.
     function handOut(event) {

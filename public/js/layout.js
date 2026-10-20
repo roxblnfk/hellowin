@@ -42,9 +42,12 @@ export function jumpedOut(scene, stageMax, elements) {
 /** Whether a pumpkin floats: the last stage of the spell, or anything in the final scene. */
 export const floats = (stage, scene, finalScene) => stage >= FLOAT_STAGE || scene >= finalScene;
 
-/** Whether the bonfire takes clicks: every pumpkin of the scene done and the bonfire below its last stage of the scene. */
-export function bonfireOpen(bonfire, stageMax, elements) {
-    if (!bonfire || bonfire.stage >= (bonfire.stageMax ?? 0)) return false;
+/**
+ * Whether the bonfire takes clicks: before the final scene (there the circle on its pit does), every pumpkin of the
+ * scene done and the bonfire below its last stage of the scene.
+ */
+export function bonfireOpen(bonfire, stageMax, elements, scene, finalScene) {
+    if (!bonfire || scene >= finalScene || bonfire.stage >= (bonfire.stageMax ?? 0)) return false;
     return elements.filter(isPumpkin).every((e) => e.stage >= stageMax);
 }
 
