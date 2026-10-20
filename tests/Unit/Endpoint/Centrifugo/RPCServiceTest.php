@@ -448,7 +448,7 @@ final class RPCServiceTest
         }
 
         $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
-        Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'reveal' => $reveal]);
+        Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal]);
         Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal]);
     }
 

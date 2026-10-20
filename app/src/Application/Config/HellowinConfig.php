@@ -34,6 +34,7 @@ final class HellowinConfig extends InjectableConfig
         'bushes' => [],
         'horizon' => 38,
         'items' => [],
+        'finale_items' => [],
         'walk' => [
             'area' => ['x1' => 3, 'y1' => 44, 'x2' => 97, 'y2' => 97],
             'patch' => ['cx' => 50, 'cy' => 63, 'rx' => 31, 'ry' => 25],
@@ -279,14 +280,27 @@ final class HellowinConfig extends InjectableConfig
         $items = $this->config['items'] ?? [];
         \is_array($items) or throw new \InvalidArgumentException('Config "hellowin.items" must be a list.');
 
+        $finale = $this->config['finale_items'] ?? [];
+        \is_array($finale) or throw new \InvalidArgumentException('Config "hellowin.finale_items" must be an array.');
+
+        $byStep = [];
+        /** @var mixed $item */
+        foreach ($finale as $step => $item) {
+            \is_int($step) && $step >= 0 && self::isItem($item) or throw new \InvalidArgumentException(
+                'Config "hellowin.finale_items" must map finale steps to item ids (slugs `a-z 0-9 -`) or null.',
+            );
+            /** @var non-empty-string|null $item */
+            $byStep[$step] = $item;
+        }
+
         return new Items(\array_values(\array_map(static function (mixed $item): ?string {
-            $item === null || \is_string($item) && \preg_match('/^[a-z0-9-]{1,24}$/', $item) === 1 or throw new \InvalidArgumentException(
+            self::isItem($item) or throw new \InvalidArgumentException(
                 'Config "hellowin.items" must list item ids (slugs `a-z 0-9 -`) or null by scene.',
             );
 
             /** @var non-empty-string|null $item */
             return $item;
-        }, $items)));
+        }, $items)), $byStep);
     }
 
     /**
@@ -324,6 +338,11 @@ final class HellowinConfig extends InjectableConfig
     public function getWalkLeaveAfter(): int
     {
         return self::positiveInt($this->walk()['leave_after'] ?? null, 'walk.leave_after', 'HELLOWIN_WALK_LEAVE_AFTER');
+    }
+
+    private static function isItem(mixed $item): bool
+    {
+        return $item === null || \is_string($item) && \preg_match('/^[a-z0-9-]{1,24}$/', $item) === 1;
     }
 
     private static function element(mixed $spec): Element

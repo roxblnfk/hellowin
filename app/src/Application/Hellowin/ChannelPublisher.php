@@ -51,9 +51,17 @@ final readonly class ChannelPublisher
 
     /**
      * Carries the item every character holds in the new scene and the last stages of the centrepieces in it.
+     *
+     * @param int|null $finale The finale step the new scene starts at: 0 for the final scene, null before it.
      */
-    public function scene(int $round, int $scene, int $stageMax, int $bonfireStageMax = 0, int $circleStageMax = 0): void
-    {
+    public function scene(
+        int $round,
+        int $scene,
+        int $stageMax,
+        int $bonfireStageMax = 0,
+        int $circleStageMax = 0,
+        ?int $finale = null,
+    ): void {
         $this->publish([
             'type' => 'scene',
             'round' => $round,
@@ -61,13 +69,13 @@ final readonly class ChannelPublisher
             'stageMax' => $stageMax,
             'bonfireStageMax' => $bonfireStageMax,
             'circleStageMax' => $circleStageMax,
-            'item' => $this->items->forScene($scene),
+            'item' => $this->items->held($scene, $finale),
         ]);
     }
 
     public function reset(int $round): void
     {
-        $this->publish(['type' => 'reset', 'round' => $round, 'item' => $this->items->forScene(0)]);
+        $this->publish(['type' => 'reset', 'round' => $round, 'item' => $this->items->held(0)]);
     }
 
     public function flyer(int $round, Flyer $flyer): void
@@ -129,11 +137,13 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * Carries the item every character holds from this step on.
+     *
      * @param array|null $reveal From step {@see \App\Domain\Story\Story::REVEAL_STEP} on.
      */
-    public function finale(int $round, int $step, ?array $reveal = null): void
+    public function finale(int $round, int $scene, int $step, ?array $reveal = null): void
     {
-        $message = ['type' => 'finale', 'round' => $round, 'step' => $step];
+        $message = ['type' => 'finale', 'round' => $round, 'step' => $step, 'item' => $this->items->held($scene, $step)];
         $reveal === null or $message['reveal'] = $reveal;
 
         $this->publish($message);

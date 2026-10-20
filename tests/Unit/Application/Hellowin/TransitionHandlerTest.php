@@ -140,7 +140,7 @@ final class TransitionHandlerTest
 
         $ritual->transitions->scene(1, 1);
 
-        Assert::same($ritual->broadcast->ofType('finale'), [['type' => 'finale', 'round' => 1, 'step' => 0]]);
+        Assert::same($ritual->broadcast->ofType('finale'), [['type' => 'finale', 'round' => 1, 'step' => 0, 'item' => 'torch']]);
         Assert::same($ritual->store->snapshot()->story->finale, 0);
     }
 

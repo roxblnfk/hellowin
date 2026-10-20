@@ -183,6 +183,42 @@ final class WalkServiceTest
         Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item'), ['torch']);
     }
 
+    public function cursedWorldHandsBeerToEveryCharacter(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->walks->enter(self::register($ritual, self::A, 'Jack'));
+        $ritual->transitions->scene(1, 1);
+        foreach ([1, 2, 3, 4, 5] as $step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+        $ritual->broadcast->published = [];
+
+        $ritual->walks->enter(self::register($ritual, self::A, 'Jack'));
+        $ritual->walks->enter(self::register($ritual, self::B, 'Jill'));
+
+        Assert::same(\array_column(\array_column($ritual->broadcast->ofType('walker'), 'walker'), 'item'), ['beer', 'beer']);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item'), ['beer', 'beer']);
+
+        // The reset takes the beer away with the finale
+        $ritual->reset->reset();
+        Assert::same(\array_column($ritual->broadcast->ofType('reset'), 'item'), [null]);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item'), [null, null]);
+    }
+
+    public function finaleStepsCarryTheItemOfTheStep(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        foreach ([1, 2, 3, 4, 5] as $step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+
+        Assert::same(
+            \array_column($ritual->broadcast->ofType('finale'), 'item', 'step'),
+            [0 => 'torch', 1 => 'torch', 2 => 'torch', 3 => 'torch', 4 => 'torch', 5 => 'beer'],
+        );
+    }
+
     public function charactersOutliveTheReset(): void
     {
         $ritual = new RitualHarness();

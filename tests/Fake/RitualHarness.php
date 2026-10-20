@@ -111,7 +111,7 @@ final class RitualHarness
         $this->players = new PlayerService($this->playerStore, new NullLogger());
         $policy = new LockstepPolicy($threshold, $stageMax, $bonfireThreshold, $bonfire ?? [], $circleThreshold, $circle ?? 1);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
-        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork']));
+        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer']));
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players);
@@ -122,7 +122,7 @@ final class RitualHarness
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock));
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock));
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -162,7 +162,7 @@ final class RitualHarness
             10.0,
             5000,
             [86.0, 90.0],
-            new Items([null, 'torch', 'pitchfork']),
+            new Items([null, 'torch', 'pitchfork'], [5 => 'beer']),
             new Randomizer(new Mt19937(7)),
         );
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);

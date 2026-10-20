@@ -64,7 +64,7 @@ final readonly class SnapshotFactory
         $k = $ritual->story->k;
         $walkers = $this->walkers?->all() ?? [];
 
-        $item = $this->items->forScene($ritual->scene);
+        $item = $this->items->held($ritual->scene, $ritual->story->finale);
         $elements = [];
         foreach ($this->elements->all() as $element) {
             $pumpkin = $ritual->pumpkin($element->id);

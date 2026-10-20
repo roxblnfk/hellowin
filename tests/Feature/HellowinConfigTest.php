@@ -40,6 +40,13 @@ final class HellowinConfigTest extends TestCase
         }
     }
 
+    public function shippedItemsHandOutBeerInTheCursedWorld(): void
+    {
+        $items = $this->getContainer()->get(HellowinConfig::class)->getItems();
+
+        Assert::same([$items->held(3, 0), $items->held(3, 4), $items->held(3, 5)], ['book', 'book', 'beer']);
+    }
+
     #[Env('HELLOWIN_FLYER_INTERVAL', '100-200')]
     #[Env('HELLOWIN_FLYER_POINTS', '5,1')]
     #[Env('HELLOWIN_FLYER_DURATION', '3000,1000')]

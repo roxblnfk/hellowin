@@ -228,7 +228,25 @@ final class HellowinConfigTest
     {
         $items = (new HellowinConfig(['items' => [null, 'torch']]))->getItems();
 
-        Assert::same([$items->forScene(0), $items->forScene(1), $items->forScene(2)], [null, 'torch', null]);
+        Assert::same([$items->held(0), $items->held(1), $items->held(2)], [null, 'torch', null]);
+    }
+
+    public function finaleItemsGoFromTheirStepOn(): void
+    {
+        $items = (new HellowinConfig(['items' => [null, 'torch'], 'finale_items' => [3 => 'beer']]))->getItems();
+
+        Assert::same([$items->held(1, 2), $items->held(1, 3), $items->held(1, 5)], ['torch', 'beer', 'beer']);
+    }
+
+    #[DataSet([['five' => 'beer']], 'not by step')]
+    #[DataSet([[-1 => 'beer']], 'negative step')]
+    #[DataSet([[5 => 'Beer']], 'uppercase')]
+    #[DataSet(['beer'], 'not an array')]
+    public function rejectsInvalidFinaleItems(mixed $items): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('hellowin.finale_items');
+
+        (new HellowinConfig(['finale_items' => $items]))->getItems();
     }
 
     #[DataSet([['Torch']], 'uppercase')]

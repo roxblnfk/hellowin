@@ -78,7 +78,7 @@ final readonly class WalkService
         );
 
         $ritual = $this->ritual->snapshot();
-        $this->publisher->walker($ritual->round, $walker, $this->items->forScene($ritual->scene));
+        $this->publisher->walker($ritual->round, $walker, $this->items->held($ritual->scene, $ritual->story->finale));
 
         return $walker;
     }
@@ -117,7 +117,7 @@ final readonly class WalkService
         [$entered, $walker] = $result;
 
         $ritual = $this->ritual->snapshot();
-        $entered === null or $this->publisher->walker($ritual->round, $entered, $this->items->forScene($ritual->scene));
+        $entered === null or $this->publisher->walker($ritual->round, $entered, $this->items->held($ritual->scene, $ritual->story->finale));
         $this->publisher->move($ritual->round, $walker);
 
         return $walker->walk;
@@ -170,7 +170,7 @@ final readonly class WalkService
 
         if ($entered !== [] || $left !== []) {
             $ritual = $this->ritual->snapshot();
-            $item = $this->items->forScene($ritual->scene);
+            $item = $this->items->held($ritual->scene, $ritual->story->finale);
             foreach ($entered as $walker) {
                 $this->publisher->walker($ritual->round, $walker, $item);
             }

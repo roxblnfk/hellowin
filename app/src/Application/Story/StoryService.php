@@ -70,7 +70,7 @@ final readonly class StoryService
 
         if ($after->finale !== $before->finale) {
             $ritual = $this->store->snapshot();
-            $this->publisher->finale($ritual->round, $after->finale, $this->reveal->finale($ritual)['reveal'] ?? null);
+            $this->publisher->finale($ritual->round, $ritual->scene, $after->finale, $this->reveal->finale($ritual)['reveal'] ?? null);
             $this->publisher->owl($ritual->round, OwlLine::finale($after->finale));
             $after->finale === Story::SCATTER_STEP and $this->scatter();
         }

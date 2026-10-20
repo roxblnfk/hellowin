@@ -68,7 +68,7 @@ final readonly class Walker
     /**
      * The character as the client contract shows it (docs/spec/protocol.md, `Walker`).
      *
-     * @param non-empty-string|null $item What the character holds: every character holds the item of the current scene.
+     * @param non-empty-string|null $item What the character holds: every character holds the item of the scene and finale step.
      * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, item: non-empty-string|null, walk: array}
      */
     public function toArray(?string $item = null): array

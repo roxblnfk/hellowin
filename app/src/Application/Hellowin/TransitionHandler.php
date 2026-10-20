@@ -89,8 +89,9 @@ final readonly class TransitionHandler
             $this->policy->stageMax($toScene),
             $this->policy->stageMax($toScene, Element::TYPE_BONFIRE),
             $this->policy->stageMax($toScene, Element::TYPE_CIRCLE),
+            $final ? 0 : null,
         );
-        $final and $this->publisher->finale($round, 0);
+        $final and $this->publisher->finale($round, $toScene, 0);
         $this->publisher->owl($round, OwlLine::scene($toScene));
         $this->metrics->sceneMoved($toScene);
 

@@ -11,7 +11,7 @@
 `circleStageMax` в `scene`, реплика `circle-done`, `force` и `not ready` у `finale.step`) и червяки (`worm`) — тоже;
 `startedAt` в снимке и разбегание фигурок (`move`) на шаге финала 2 — тоже; набор летунов проклятого мира и светлячки
 (`firefly`) — тоже; множитель порогов (RPC `thresholds`, событие `thresholds`, `k` и `online` в снимке, `online` в
-`leaderboard`) — тоже.
+`leaderboard`) — тоже; предмет шага финала (`item` в `finale`, пиво проклятого мира) — тоже.
 
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
@@ -97,7 +97,7 @@
 | `move` | `player: {id}`, `walk: <Walk>` | фигурка пошла |
 | `leave` | `player: {id}` | у игрока нет подключений дольше `HELLOWIN_WALK_LEAVE_AFTER` мс — фигурка уходит |
 | `ready` | `scene` | все тыквы сцены дошли до `stageMax`, а костёр — до своей последней стадии сцены (если она выше той, на которой он был) — сцена ждёт модератора (ровно одно событие на сцену); следом реплики совы `last-pumpkin` (если последней была тыква) или `bonfire-done` (если костёр), `circle-done` (если замкнут магический круг — в финальной сцене на шаге 0 готовность даёт он) — только если добил игрок — и `scene-ready`. Если сцене нужен костёр, последняя тыква события `ready` не даёт: вместо него реплики `last-pumpkin` и `bonfire-open` |
-| `finale` | `step`, `reveal?`, `item?` — предмет в руке всех фигурок с этого шага (**запланировано**; с шага 5 — `beer`; клиент меняет его всем фигуркам, как по `scene`) (на шаге 2 следом — `move` каждой фигурке к краю поля: от центра грядки наружу, путь тем же роутером, что у RPC `move`) | шаг финала; на шаге 4 и дальше — `reveal` (см. «Снимок»). Шаг 0 приходит вместе с `scene` при входе в финальную сцену |
+| `finale` | `step`, `item` — предмет в руке всех фигурок с этого шага (до шага 5 — предмет финальной сцены, с шага 5 — `beer`; `null` — пустые руки; клиент меняет его всем фигуркам, как по `scene`), `reveal?` (на шаге 2 следом — `move` каждой фигурке к краю поля: от центра грядки наружу, путь тем же роутером, что у RPC `move`) | шаг финала; на шаге 4 и дальше — `reveal` (см. «Снимок»). Шаг 0 приходит вместе с `scene` при входе в финальную сцену |
 | `owl` | `line?`, `params?`, `text?` | реплика совы: каталожная (`line`, `params` — только если есть подстановки, например `{player: {id, name}}`) или свободный текст модератора (`text`, показывать как текст, не HTML). Авто-реплики: `scene-ready`, `last-pumpkin`, `bonfire-open`, `bonfire-done`, `circle-done`, `scene-{N}` (после события `scene`), `finale-{N}` (после `finale`, кроме шага 0 — на нём `scene-{N}` финальной сцены), `witch-down`, `zombies` |
 | `pause` | `on` | модератор включил или снял паузу нечисти |
 | `zombies` | `on` | модератор включил или выключил зомби |
@@ -148,7 +148,7 @@
 {"type":"ready","round":1,"scene":0}
 {"type":"owl","round":1,"line":"last-pumpkin","params":{"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}}
 {"type":"owl","round":1,"text":"Кто здесь?"}
-{"type":"finale","round":1,"step":4,"reveal":{"clicks":5230,"jobs":312,"burned":1720,"shot":87,"lastPumpkin":{"id":"3f9c0a7d12b4e856","name":"Jack"}}}
+{"type":"finale","round":1,"step":4,"item":"book","reveal":{"clicks":5230,"jobs":312,"burned":1720,"shot":87,"lastPumpkin":{"id":"3f9c0a7d12b4e856","name":"Jack"}}}
 {"type":"pause","round":1,"on":true}
 {"type":"thresholds","round":1,"k":0.5,"thresholds":{"pumpkin":3,"bonfire":10,"circle":10}}
 ```
