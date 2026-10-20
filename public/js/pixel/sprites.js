@@ -1051,9 +1051,9 @@ const armsCache = new Map();
  * the head), each { lit, beer } sprites of one w×h and that anchor at the pumpkin's foot, like pumpkinLayers. The mug's
  * side follows the seed. The frames reach past the pumpkin's own grid, so the scene places them by their own anchor.
  */
-export function pumpkinArms(stage, size, seed = 0) {
+export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
     const sz = ARMS[size] ? size : 'm';
-    const key = `${sz}:${Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0))}:${seed >>> 0}`;
+    const key = `${sz}:${Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0))}:${seed >>> 0}:${side < 0 ? -1 : 1}`;
     if (armsCache.has(key)) return armsCache.get(key);
     const L = pumpkinLayers(stage, sz, seed);
     const rows = L.layers.body.rows.map((row) => [...row].map((ch, x) => (ch !== '.' ? x : -1)).filter((x) => x >= 0));
@@ -1063,7 +1063,7 @@ export function pumpkinArms(stage, size, seed = 0) {
     const xl = Math.min(...rows[shoulder]);
     const xr = Math.max(...rows[shoulder]);
     const { reach, grip, glass: drawn } = ARMS[sz];
-    const dir = seed & 1 ? -1 : 1;
+    const dir = side < 0 ? -1 : 1;
     // Mirrored for a mug on the left; the highlight stays on the lit left side.
     const glass = dir > 0 ? drawn : drawn.map((row) => [...row].reverse().map((ch) => ({ y: 'o', o: 'y' }[ch] ?? ch)).join(''));
     const gw = glass[0].length;

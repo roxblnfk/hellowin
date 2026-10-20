@@ -1109,8 +1109,8 @@ export async function createScene(rootEl, snapshot) {
         p.arms.visible = toneOf() === 'franken';
         if (p.arms.visible) {
             const lit = lightAt(at.x, at.y);
-            p.armsArt = artTexture(`pumpkin-arms:${clamp(p.stage, 0, PUMPKIN_STAGES)}:${p.size}:${p.seed}:${lit}`, () => {
-                const { anchor, frames } = pumpkinArms(p.stage, p.size, p.seed);
+            p.armsArt = artTexture(`pumpkin-arms:${clamp(p.stage, 0, PUMPKIN_STAGES)}:${p.size}:${p.seed}:${p.mug}:${lit}`, () => {
+                const { anchor, frames } = pumpkinArms(p.stage, p.size, p.seed, p.mug);
                 return { anchor, frames: frames.map((f) => ({ lit: texture(litBake(f.lit, lit)), beer: texture(keepHueBake(f.beer, lit)) })) };
             });
             showArms(p, 0);
@@ -1166,6 +1166,8 @@ export async function createScene(rootEl, snapshot) {
                 lift: 0,
                 node,
                 seed: seedOf(element.id),
+                // The mug faces the lawn, so a player can come up to it: outward from the root, by seed right below it.
+                mug: Math.sign(element.x - ROOT.x) || (seedOf(element.id) & 1 ? -1 : 1),
                 ring,
                 body,
                 layers,
@@ -2345,7 +2347,7 @@ export async function createScene(rootEl, snapshot) {
         const { def } = p.art;
         const row = Math.max(0, def.rows.findIndex((r) => [...r].some((ch) => def.legend[ch])));
         const top = { x: p.pos.x, y: p.pos.y - p.lift - def.anchor.y + row - PUMPKIN_HEAD };
-        return { at: { ...p.pos }, head: top, meet: { x: p.pos.x + Math.sign(toward.x - p.pos.x) * PUMPKIN_REACH, y: p.pos.y } };
+        return { at: { ...p.pos }, head: top, meet: { x: p.pos.x + (p.mug || Math.sign(toward.x - p.pos.x)) * PUMPKIN_REACH, y: p.pos.y } };
     }
 
     // A failed clink by click sends no event (protocol.md, `clink`): the heading is let go this long after both should
