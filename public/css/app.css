@@ -245,6 +245,134 @@ body:not([data-final]) .circle,
     box-shadow: 0 0 0 2px var(--outline);
 }
 
+/* Sound controls under the help link (public/js/sound.js, bindSoundControls): narrow, so the moderator's console on
+   the right never reaches them. Icons are drawn in CSS boxes, not emoji, to stay pixel. */
+.sound-panel {
+    position: absolute;
+    top: 68px;
+    left: 12px;
+    z-index: 1002;
+    display: grid;
+    grid-template-columns: 30px 30px;
+    gap: 8px;
+    width: 68px;
+    padding: 6px 0 0;
+}
+
+.sound-panel[hidden] {
+    display: none;
+}
+
+.sound-panel__button {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    color: var(--gold);
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--text), 0 0 0 4px var(--outline);
+    font: 700 16px/1 var(--pixel-font);
+    cursor: pointer;
+}
+
+.sound-panel__button:hover {
+    background: var(--soil-dark);
+}
+
+.sound-panel__button:focus-visible,
+.sound-panel__volume:focus-visible {
+    outline: 2px dashed var(--accent);
+    outline-offset: 5px;
+}
+
+.sound-panel__button--sound::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 8px;
+    width: 12px;
+    height: 14px;
+    background: currentColor;
+    clip-path: polygon(0 30%, 34% 30%, 100% 0, 100% 100%, 34% 70%, 0 70%);
+}
+
+.sound-panel__button--sound::after {
+    content: ')';
+    position: absolute;
+    right: 4px;
+    top: 7px;
+}
+
+.sound-panel__button--music::before {
+    content: '♪';
+    font-size: 20px;
+}
+
+.sound-panel__button[aria-pressed="false"] {
+    color: var(--text);
+    opacity: 0.75;
+}
+
+.sound-panel__button--sound[aria-pressed="false"]::after {
+    content: '×';
+    color: var(--accent);
+}
+
+.sound-panel__button--music[aria-pressed="false"]::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 14px;
+    height: 2px;
+    background: var(--accent);
+    transform: rotate(-45deg);
+}
+
+/* A pixel slider: a flat track and a square thumb. */
+.sound-panel__volume {
+    grid-column: 1 / -1;
+    width: 68px;
+    height: 16px;
+    margin: 2px 0 0;
+    background: transparent;
+    appearance: none;
+    cursor: pointer;
+}
+
+.sound-panel__volume::-webkit-slider-runnable-track {
+    height: 6px;
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--text);
+}
+
+.sound-panel__volume::-moz-range-track {
+    height: 6px;
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--text);
+}
+
+.sound-panel__volume::-webkit-slider-thumb {
+    width: 10px;
+    height: 14px;
+    margin-top: -4px;
+    border: 0;
+    border-radius: 0;
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--outline);
+    appearance: none;
+}
+
+.sound-panel__volume::-moz-range-thumb {
+    width: 10px;
+    height: 14px;
+    border: 0;
+    border-radius: 0;
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--outline);
+}
+
 /* Pixel panel: square corners and a stepped two-colour frame instead of rounded borders. */
 .hud {
     position: absolute;

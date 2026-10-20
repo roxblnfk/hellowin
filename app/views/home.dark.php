@@ -22,6 +22,11 @@
           data-finale="{{ json_encode($finale ?? null) }}"
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
           data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}">
+        <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
+            <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
+            <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
+            <input type="range" class="sound-panel__volume" data-volume min="0" max="100" step="5" value="100" aria-label="Громкость" title="Громкость">
+        </div>
         <a class="help-link" href="/how-it-works" target="_blank" rel="noopener" title="Как это работает (в новой вкладке)" aria-label="Как это работает (в новой вкладке)">
             <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
         </a>
@@ -62,7 +67,6 @@
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
-            <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
         </footer>
     </main>
 

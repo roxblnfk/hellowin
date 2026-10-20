@@ -51,7 +51,7 @@
 | `client.js` | модель клиента: снимок из DOM, события канала → DOM-хуки, API сцены, сова, разоблачение, пульт; маршрутизация кликов по чоканью (`cursed`, `clinksWalker`, `clinksPumpkin`); `bindShooting`, `bindClinking`, `bindWalking` |
 | `owl.js` | каталог реплик совы (`LINES`: id → текст) и пузырь над сценой (`createOwl`) |
 | `reveal.js` | панель разоблачения (шаг финала 4+, числа `reveal` и аптайм) |
-| `sound.js` | что играет страница (раздел «Звук»): события канала и моменты сцены → вызовы движка `audio/engine.js` (`createSound`), кнопка «Звук» (`bindSoundToggle`), щелчок кнопок HUD и пульта (`bindUiClicks`) |
+| `sound.js` | что играет страница (раздел «Звук»): события канала и моменты сцены → вызовы движка `audio/engine.js` (`createSound`), панель звука (`bindSoundControls`), щелчок кнопок HUD и пульта (`bindUiClicks`) |
 | `audio/**` | звуковой движок (`createAudio`, `trackOf`, `NEXT_TRACK`; музыка и эффекты синтезируются в воркере, `synth/`); песочница — `public/dev/audio.html`. Ведёт отдельный агент: фронтенд его только вызывает |
 | `franken.js` | фразы FrankenPHP в проклятом мире (`PHRASES`) и выбор фразы по серверному времени (`phraseAt`) |
 | `toasts.js` | тосты чоканья в проклятом мире (`TOASTS`, расширяется добавлением в конец; тост — строка или два голоса `[реплика, ответ]`) и выбор тоста: автоматического — по группе и слоту (`toastOf`), по клику — по числу из события `clink` (`toastAt`: `toast % TOASTS.length`) |
@@ -127,7 +127,7 @@ scene.owlGone();                     // сова улетела: её репли
 | `[data-owl-bubble]` (создаёт `owl.js` в `#app`) | `data-owl-text` внутри | пузырь совы, `role="status"`; `hidden`, когда сова молчит |
 | `[data-reveal]` (создаёт `reveal.js` в `#app`) | `data-reveal-clicks|jobs|burned|shot|uptime`, `data-reveal-label`, `data-reveal-note`, `data-reveal-last`, `data-reveal-close` | панель разоблачения |
 | кнопка в HUD | `data-join-open` | «Персонаж»: открыть экран входа |
-| кнопка в HUD | `data-sound-toggle`, `aria-pressed` (`true` — звук включён) | «Звук: вкл» / «Звук: выкл»; `hidden`, пока движок не загрузился; подпись и `aria-pressed` — из `audio.state()` по `subscribe`, клик — `audio.toggleMute()` (включение разблокирует звук, поэтому только из клика) |
+| панель звука | `data-sound-panel` (`hidden`, пока движок не загрузился): `data-sound-toggle`, `data-music-toggle` (`aria-pressed` — `true`, когда включено), `data-volume` (`range` 0–100) | левый верхний угол под ссылкой «Как это работает», узкая (68 px), чтобы пульт справа её не доставал. Звук — `audio.toggleMute()` (включение разблокирует звук, поэтому только из клика); ползунок — `audio.setVolume('master', v)`, при выключенном звуке включает его; музыка — шина `music` в 0, прежний уровень хранится в localStorage `hellowin.audio.music` и возвращается при включении (эффекты звучат дальше). Состояние — из `audio.state()` по `subscribe`; громкости и mute хранит движок (`hellowin.audio`). В лаборатории — текстовая кнопка «Звук: вкл / выкл» в HUD |
 | `<dialog>` после `#app` | `data-join` | экран входа; внутри — хуки ниже |
 | экран входа | `data-join-name`, `data-join-error`, `data-join-preview` | поле имени, ошибка под ним, canvas превью |
 | экран входа | `data-part="body\|cloak\|face\|eyes\|hat"` → `data-step="-1\|1"`, `data-part-value` | строка части: «‹», подпись, «›» |

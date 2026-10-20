@@ -310,22 +310,69 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
  * The HUD's sound switch `[data-sound-toggle]`: shown once the engine is there, its label and aria-pressed follow the
  * engine's state, a click toggles the mute (unmuting unlocks the audio, so it has to come from the click).
  */
-export function bindSoundToggle(button, audio) {
-    if (!button) return;
+const MUSIC_KEY = 'hellowin.audio.music';
+
+/**
+ * The sound controls inside `root`, each optional: the sound on/off button `[data-sound-toggle]` (a text button in the
+ * lab's HUD, an icon in the page's corner panel), the master volume slider `[data-volume]` and the music on/off button
+ * `[data-music-toggle]`. Music off is the music bus at 0; the level it had is kept to come back to. The panel
+ * `[data-sound-panel]` stays hidden until the engine has loaded.
+ */
+export function bindSoundControls(root, audio) {
+    const sound = root.querySelector('[data-sound-toggle]');
+    const volume = root.querySelector('[data-volume]');
+    const music = root.querySelector('[data-music-toggle]');
+    const musicLevel = () => {
+        try {
+            const v = Number(localStorage.getItem(MUSIC_KEY));
+            return v > 0 && v <= 1 ? v : 0.5;
+        } catch {
+            return 0.5;
+        }
+    };
     const paint = (state) => {
         const on = !state.muted;
-        button.setAttribute('aria-pressed', String(on));
-        button.textContent = on ? 'Звук: вкл' : 'Звук: выкл';
+        if (sound) {
+            sound.setAttribute('aria-pressed', String(on));
+            if (sound.dataset.icon === undefined) sound.textContent = on ? 'Звук: вкл' : 'Звук: выкл';
+            else sound.setAttribute('aria-label', on ? 'Звук включён' : 'Звук выключен');
+        }
+        if (volume && document.activeElement !== volume) volume.value = String(Math.round((state.volume?.master ?? audio.volume('master')) * 100));
+        if (music) {
+            const playing = (state.volume?.music ?? audio.volume('music')) > 0;
+            music.setAttribute('aria-pressed', String(playing));
+            music.setAttribute('aria-label', playing ? 'Музыка включена' : 'Музыка выключена');
+        }
     };
-    button.hidden = false;
+    root.querySelectorAll('[data-sound-panel], [data-sound-toggle]').forEach((el) => (el.hidden = false));
     paint(audio.state());
     audio.subscribe(paint);
-    button.addEventListener('click', () => audio.toggleMute());
+    sound?.addEventListener('click', () => audio.toggleMute());
+    // Dragging the slider is a gesture: it may unlock and unmute the sound.
+    volume?.addEventListener('input', () => {
+        const v = Number(volume.value) / 100;
+        audio.setVolume('master', v);
+        if (v > 0 && audio.state().muted) audio.setMuted(false);
+    });
+    music?.addEventListener('click', () => {
+        const level = audio.volume('music');
+        if (level > 0) {
+            try {
+                localStorage.setItem(MUSIC_KEY, String(level));
+            } catch {
+                // Without storage the music comes back at the default level.
+            }
+            audio.setVolume('music', 0);
+        } else {
+            audio.setVolume('music', musicLevel());
+            if (audio.state().muted) audio.setMuted(false);
+        }
+    });
 }
 
 /** The only sound of a local click: a button of the HUD or of the moderator's console. */
 export function bindUiClicks(target, audio) {
     target.addEventListener('click', (event) => {
-        if (event.target.closest?.('.hud button, [data-debug-panel] button')) audio.play('ui.click');
+        if (event.target.closest?.('.hud button, [data-sound-panel] button, [data-debug-panel] button')) audio.play('ui.click');
     });
 }

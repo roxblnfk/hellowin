@@ -75,10 +75,10 @@ async function startScene(snapshot) {
 // Lazy like the scene: without Web Audio or the engine's modules the page plays silently.
 async function startSound(modules, scene, serverNow) {
     try {
-        const [{ createAudio }, { bindSoundToggle, bindUiClicks, createSound }] = await modules;
+        const [{ createAudio }, { bindSoundControls, bindUiClicks, createSound }] = await modules;
         const audio = createAudio();
         audio.unlockOn(document);
-        bindSoundToggle(root.querySelector('[data-sound-toggle]'), audio);
+        bindSoundControls(root, audio);
         bindUiClicks(root, audio);
         const sound = createSound(audio, { serverNow, owlGone: () => Boolean(scene?.owlGone?.()) });
         scene?.onCue?.((cue) => sound.cue(cue));

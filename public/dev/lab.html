@@ -875,10 +875,10 @@
     let client = null;
     let sound = null;
     if (params.get('sound') === '1') {
-        const [{ createAudio }, { bindSoundToggle, bindUiClicks, createSound }] = await Promise.all([import('/js/audio/engine.js'), import('/js/sound.js')]);
+        const [{ createAudio }, { bindSoundControls, bindUiClicks, createSound }] = await Promise.all([import('/js/audio/engine.js'), import('/js/sound.js')]);
         const audio = createAudio();
         audio.unlockOn(document);
-        bindSoundToggle(root.querySelector('[data-sound-toggle]'), audio);
+        bindSoundControls(root, audio);
         bindUiClicks(root, audio);
         sound = createSound(audio, { serverNow: () => client?.serverNow() ?? Date.now(), owlGone: () => Boolean(scene?.owlGone?.()) });
         scene?.onCue((cue) => sound.cue(cue));
