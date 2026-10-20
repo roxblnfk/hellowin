@@ -100,6 +100,41 @@ final readonly class WalkZone
     }
 
     /**
+     * The lawn point nearest to `$target` among those at least `$offset` to its right (`$side` 1) or left (-1).
+     * The nearest such point lies on the edge of the lawn or on the vertical line `$offset` away, so the method
+     * samples both: the patch edge every half degree, the rectangle sides and the line every 0.25.
+     *
+     * @param 1|-1 $side
+     * @return Point|null Null when the lawn has no point on that side.
+     */
+    public function nearestBeside(Point $target, int $side, float $offset): ?Point
+    {
+        $line = $target->x + (float) $side * $offset;
+        $candidates = [];
+        for ($degree = 0.0; $degree < 360.0; $degree += 0.5) {
+            $angle = \deg2rad($degree);
+            $candidates[] = new Point($this->cx + $this->rx * \cos($angle), $this->cy + $this->ry * \sin($angle));
+        }
+        for ($t = 0.0; $t <= 1.0; $t += 0.25 / \max($this->x2 - $this->x1, $this->y2 - $this->y1)) {
+            $x = $this->x1 + ($this->x2 - $this->x1) * $t;
+            $y = $this->y1 + ($this->y2 - $this->y1) * $t;
+            \array_push($candidates, new Point($x, $this->y1), new Point($x, $this->y2), new Point($this->x1, $y), new Point($this->x2, $y), new Point($line, $y));
+        }
+
+        $nearest = null;
+        $best = \INF;
+        foreach ($candidates as $point) {
+            if (((float) $side * ($point->x - $target->x)) < $offset - self::EPSILON || !$this->contains($point)) {
+                continue;
+            }
+            $distance = \hypot($point->x - $target->x, $point->y - $target->y);
+            $distance < $best and [$nearest, $best] = [$point, $distance];
+        }
+
+        return $nearest;
+    }
+
+    /**
      * Where a lawn point runs to when it flees the patch: along the ray from the patch centre through the point to the
      * edge of the rectangle. The centre itself runs down.
      */

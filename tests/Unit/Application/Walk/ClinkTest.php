@@ -150,6 +150,35 @@ final class ClinkTest
         Assert::blank(\array_column($ritual->broadcast->ofType('clink'), 'walker'));
     }
 
+    /**
+     * The frontend puts the mug on the left for an odd `crc32(id)`, on the right for an even one.
+     */
+    #[DataSet(['pumpkin-5', 71.2, 58.4, new Point(79.4, 55.07)], 'mug on the right')]
+    #[DataSet(['pumpkin-11', 40, 83.7, new Point(36, 85.44)], 'mug on the left')]
+    public function clinkWithAPumpkinStandsOnTheSideOfItsMug(string $id, float $x, float $y, Point $meet): void
+    {
+        $ritual = self::cursed([$id], [$id], [$id => [$x, $y]]);
+        self::place($ritual, self::A, 50, 95);
+
+        $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, $id);
+
+        $end = $walk->path[\count($walk->path) - 1];
+        Assert::equals($end, $meet);
+        Assert::same($end->x > $x, (\crc32($id) & 1) === 0);
+    }
+
+    public function pumpkinWithoutLawnOnItsMugSideIsMetAtTheNearestPoint(): void
+    {
+        // The mug of pumpkin-15 is on the right, towards the middle of the patch: the lawn there is too far
+        $ritual = self::cursed(['pumpkin-15'], ['pumpkin-15'], ['pumpkin-15' => [27.7, 60.2]]);
+        self::place($ritual, self::A, 10, 60);
+
+        $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, 'pumpkin-15');
+
+        $nearest = RitualHarness::walkZone()->clamp(new Point(27.7, 60.2));
+        Assert::equals($walk->path[\count($walk->path) - 1], new Point(\round($nearest->x, 2), \round($nearest->y, 2)));
+    }
+
     public function clinkWithAPumpkinWalksToTheNearestPointOfTheLawn(): void
     {
         $ritual = self::cursed(['pumpkin-2']);
@@ -258,10 +287,12 @@ final class ClinkTest
      * The final scene at the cursed world's step.
      *
      * @param list<non-empty-string> $reachable
+     * @param list<non-empty-string> $pumpkins
+     * @param array<non-empty-string, array{float, float}> $positions
      */
-    private static function cursed(array $reachable = []): RitualHarness
+    private static function cursed(array $reachable = [], array $pumpkins = ['pumpkin-1', 'pumpkin-2'], array $positions = []): RitualHarness
     {
-        $ritual = new RitualHarness(stageMax: [1], circle: 1, reachable: $reachable);
+        $ritual = new RitualHarness(stageMax: [1], pumpkins: $pumpkins, circle: 1, reachable: $reachable, positions: $positions);
         $ritual->transitions->scene(1, 1);
         foreach ([1, 2, 3, 4, 5] as $step) {
             $ritual->story->finaleStep($step, force: true);

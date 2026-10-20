@@ -39,6 +39,7 @@ final readonly class WalkService
      * @param array{float, float} $spawnY Top and bottom of the band new characters appear in.
      * @param float $clinkGap Percents of the screen between two characters that clink.
      * @param positive-int $clinkDuration Milliseconds a clink plays; a new clink of the same player is refused meanwhile.
+     * @param float $clinkReach Percents of the screen: how far from a pumpkin a character may stand to clink with it.
      */
     public function __construct(
         private WalkerStore $store,
@@ -56,6 +57,7 @@ final readonly class WalkService
         private ElementRegistry $elements,
         private float $clinkGap,
         private int $clinkDuration,
+        private float $clinkReach,
         private Randomizer $random = new Randomizer(),
     ) {}
 
@@ -159,7 +161,7 @@ final readonly class WalkService
             $element = $this->elements->find($target);
             $element !== null && $element->type === Element::TYPE_PUMPKIN && $element->reachable
                 or throw new ClinkRefusedException('no target');
-            $pumpkin = self::rounded($this->zone->clamp(new Point($element->x, $element->y)));
+            $pumpkin = self::rounded($this->mugSide($element));
         }
 
         $now = $this->clock->now();
@@ -330,6 +332,22 @@ final readonly class WalkService
     private static function rounded(Point $point): Point
     {
         return new Point(\round($point->x, 2), \round($point->y, 2));
+    }
+
+    /**
+     * Where a character stands to clink with the pumpkin: on the side of its mug, which the frontend picks by
+     * `crc32(id)` — odd on the left, even on the right (`pumpkinArms` in public/js/pixel/sprites.js); the nearest lawn
+     * point there, `$clinkGap` aside. Without such a point within `$clinkReach` — the lawn point nearest to the pumpkin.
+     */
+    private function mugSide(Element $pumpkin): Point
+    {
+        $at = new Point($pumpkin->x, $pumpkin->y);
+        $side = (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1;
+        $beside = $this->zone->nearestBeside($at, $side, $this->clinkGap);
+
+        return $beside !== null && \hypot($beside->x - $at->x, $beside->y - $at->y) <= $this->clinkReach
+            ? $beside
+            : $this->zone->clamp($at);
     }
 
     /**

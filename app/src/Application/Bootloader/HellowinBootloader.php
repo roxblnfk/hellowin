@@ -139,6 +139,7 @@ final class HellowinBootloader extends Bootloader
                 $elements,
                 $config->getClinkGap(),
                 $config->getClinkDuration(),
+                $config->getWalkReach(),
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,
