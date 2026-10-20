@@ -151,10 +151,13 @@ final class ClinkTest
     }
 
     /**
-     * The frontend puts the mug on the left for an odd `crc32(id)`, on the right for an even one.
+     * The frontend turns a pumpkin's mug outwards from the root of the patch, to the lawn.
      */
-    #[DataSet(['pumpkin-5', 71.2, 58.4, new Point(79.4, 55.07)], 'mug on the right')]
-    #[DataSet(['pumpkin-11', 40, 83.7, new Point(36, 85.44)], 'mug on the left')]
+    #[DataSet(['pumpkin-3', 66.2, 48.3, new Point(70.2, 44)], 'right, by the horizon')]
+    #[DataSet(['pumpkin-5', 71.2, 58.4, new Point(79.4, 55.07)], 'right')]
+    #[DataSet(['pumpkin-11', 40, 83.7, new Point(36, 85.44)], 'left')]
+    #[DataSet(['pumpkin-15', 27.7, 60.2, new Point(19.57, 58.23)], 'left, by the left side')]
+    #[DataSet(['pumpkin-17', 35.8, 51.5, new Point(29.66, 44.13)], 'left, by the horizon')]
     public function clinkWithAPumpkinStandsOnTheSideOfItsMug(string $id, float $x, float $y, Point $meet): void
     {
         $ritual = self::cursed([$id], [$id], [$id => [$x, $y]]);
@@ -164,19 +167,30 @@ final class ClinkTest
 
         $end = $walk->path[\count($walk->path) - 1];
         Assert::equals($end, $meet);
-        Assert::same($end->x > $x, (\crc32($id) & 1) === 0);
+        Assert::same($end->x > $x, $x > 50);
+    }
+
+    public function pumpkinRightAboveTheRootKeepsItsMugByItsId(): void
+    {
+        // crc32('pumpkin-11') is odd: the mug on the left
+        $ritual = self::cursed(['pumpkin-11'], ['pumpkin-11'], ['pumpkin-11' => [50, 85]]);
+        self::place($ritual, self::A, 70, 95);
+
+        $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, 'pumpkin-11');
+
+        Assert::same(\crc32('pumpkin-11') & 1, 1);
+        Assert::true($walk->path[\count($walk->path) - 1]->x <= 46.0);
     }
 
     public function pumpkinWithoutLawnOnItsMugSideIsMetAtTheNearestPoint(): void
     {
-        // The mug of pumpkin-15 is on the right, towards the middle of the patch: the lawn there is too far
-        $ritual = self::cursed(['pumpkin-15'], ['pumpkin-15'], ['pumpkin-15' => [27.7, 60.2]]);
-        self::place($ritual, self::A, 10, 60);
+        // Right of the patch with its mug to the right, but the lawn ends 1 % further
+        $ritual = self::cursed(['pumpkin-1'], ['pumpkin-1'], ['pumpkin-1' => [96, 90]]);
+        self::place($ritual, self::A, 60, 92);
 
-        $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, 'pumpkin-15');
+        $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, 'pumpkin-1');
 
-        $nearest = RitualHarness::walkZone()->clamp(new Point(27.7, 60.2));
-        Assert::equals($walk->path[\count($walk->path) - 1], new Point(\round($nearest->x, 2), \round($nearest->y, 2)));
+        Assert::equals($walk->path[\count($walk->path) - 1], new Point(96, 90));
     }
 
     public function clinkWithAPumpkinWalksToTheNearestPointOfTheLawn(): void

@@ -335,14 +335,19 @@ final readonly class WalkService
     }
 
     /**
-     * Where a character stands to clink with the pumpkin: on the side of its mug, which the frontend picks by
-     * `crc32(id)` — odd on the left, even on the right (`pumpkinArms` in public/js/pixel/sprites.js); the nearest lawn
-     * point there, `$clinkGap` aside. Without such a point within `$clinkReach` — the lawn point nearest to the pumpkin.
+     * Where a character stands to clink with the pumpkin: on the side of its mug, which the frontend draws outwards
+     * from the root of the patch, by the pumpkin's x against the patch centre, and on a pumpkin right above the centre
+     * by `crc32(id)` — odd on the left (public/js/pixel/scene.js); the nearest lawn point there, `$clinkGap` aside.
+     * Without such a point within `$clinkReach` — the lawn point nearest to the pumpkin.
      */
     private function mugSide(Element $pumpkin): Point
     {
         $at = new Point($pumpkin->x, $pumpkin->y);
-        $side = (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1;
+        $side = match (true) {
+            $pumpkin->x > $this->zone->cx => 1,
+            $pumpkin->x < $this->zone->cx => -1,
+            default => (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1,
+        };
         $beside = $this->zone->nearestBeside($at, $side, $this->clinkGap);
 
         return $beside !== null && \hypot($beside->x - $at->x, $beside->y - $at->y) <= $this->clinkReach
