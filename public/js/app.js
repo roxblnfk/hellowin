@@ -1,5 +1,7 @@
 import { bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
+import { createOwl } from './owl.js';
+import { createReveal } from './reveal.js';
 
 const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
 
@@ -21,6 +23,29 @@ function playerSecret() {
         return secret;
     } catch {
         return make();
+    }
+}
+
+const MODERATOR_KEY = 'hellowin.moderator';
+
+/**
+ * The moderator's secret (protocol.md, «Подключение», item 5): `?moderator=<secret>` is moved into localStorage and
+ * taken off the address, so it does not end up in a shared link or a screenshot. Without storage it lives for this
+ * page only. A wrong secret is no error: the connection is simply not the moderator's.
+ */
+function moderatorSecret() {
+    const url = new URL(location.href);
+    const param = url.searchParams.get('moderator');
+    if (param !== null) {
+        url.searchParams.delete('moderator');
+        history.replaceState(history.state, '', url);
+    }
+    try {
+        if (param) localStorage.setItem(MODERATOR_KEY, param);
+        if (param === '') localStorage.removeItem(MODERATOR_KEY);
+        return localStorage.getItem(MODERATOR_KEY) || null;
+    } catch {
+        return param || null;
     }
 }
 
@@ -52,15 +77,28 @@ async function startScene(snapshot) {
 async function main() {
     const scene = await startScene(readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
+    const owl = createOwl(root, scene);
+    const reveal = createReveal(root);
 
     if (typeof Centrifuge === 'undefined') {
-        createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')) }).start();
+        createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')), owl, reveal }).start();
         return;
     }
 
-    const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl), { data: { playerSecret: playerSecret() } });
+    const secret = moderatorSecret();
+    const data = secret ? { playerSecret: playerSecret(), moderatorSecret: secret } : { playerSecret: playerSecret() };
+    const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl), { data });
+    // The console's buttons draw nothing either: their effects come back as channel events.
+    const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
+        call: (method, params) => centrifuge.rpc(method, params).then(answer),
+        // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
+        clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
+    });
     const client = createClient(root, scene, {
-        requestState: () => centrifuge.rpc('state', {}).then(answer).then((data) => data.state),
+        requestState: () => centrifuge.rpc('state', {}).then(answer).then((reply) => reply.state),
+        owl,
+        reveal,
+        onChange: (model) => moderatorConsole?.update(model),
     });
     client.start();
 
@@ -78,9 +116,13 @@ async function main() {
         setStatus('connected');
         if (connectedOnce) client.resync();
         connectedOnce = true;
-        // Who this browser is: the walker with this id is ours and may be sent around the patch.
+        // Who this browser is: the walker with this id is ours and may be sent around the patch; the moderator
+        // connection gets the console.
         centrifuge.rpc('me', {}).then(answer)
-            .then((data) => client.setMe(data.player?.id ?? null))
+            .then((reply) => {
+                client.setMe(reply.player?.id ?? null);
+                client.setModerator(reply.moderator === true);
+            })
             .catch((error) => console.warn('me rpc failed', error));
     });
 
@@ -128,13 +170,6 @@ async function main() {
             if (data?.ok === false) console.warn('move rejected', data.error);
         })
         .catch((error) => console.warn('move rpc failed', error)));
-
-    // Restart and "click every pumpkin" draw nothing either: the channel's `reset` / `click` events do.
-    initDebugPanel(root.querySelector('[data-debug-panel]'), {
-        reset: () => centrifuge.rpc('reset', { round: client.model.round }).then(answer),
-        // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
-        clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
-    });
 
     centrifuge.connect();
 }

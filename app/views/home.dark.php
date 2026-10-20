@@ -14,7 +14,11 @@
           data-threshold="{{ $threshold }}"
           data-bushes="{{ json_encode($bushes ?? []) }}"
           data-walkers="{{ json_encode($walkers ?? []) }}"
-          data-now="{{ $now ?? 0 }}">
+          data-now="{{ $now ?? 0 }}"
+          data-ready="{{ ($ready ?? false) ? 1 : 0 }}"
+          data-finale="{{ json_encode($finale ?? null) }}"
+          data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
+          data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}">
         <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
             <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
         </a>
@@ -30,16 +34,14 @@
                     aria-label="Тыква {{ $element['id'] }}"><span class="pumpkin__emoji" aria-hidden="true">🎃</span></button>
         @endforeach
 
-        <aside class="debug" data-debug-panel hidden aria-label="Отладка">
-            <button type="button" class="debug__button" data-action="reset">Заново</button>
-            <button type="button" class="debug__button" data-action="click-all">Клик по всем</button>
-        </aside>
+        <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
 
         <footer class="hud">
             <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
             <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>
             <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
             <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count($elements) }}</b></span>
+            <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         </footer>
     </main>

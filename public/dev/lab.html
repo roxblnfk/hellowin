@@ -9,6 +9,23 @@
         .show-hits .pumpkin {
             outline: 1px solid #f0f;
         }
+
+        /* Lab tools: right of the "?" link, clear of the console on the right. */
+        .lab-tools {
+            left: 72px;
+            right: auto;
+            justify-content: flex-start;
+            max-width: calc(100% - 460px);
+        }
+
+        @container patch (max-width: 900px) {
+            .lab-tools {
+                top: auto;
+                bottom: 96px;
+                left: 8px;
+                max-width: calc(100% - 16px);
+            }
+        }
     </style>
 </head>
 <!--
@@ -19,6 +36,12 @@
   Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
   your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
   the ?flyers=1 shot one of the first walker. The "выстрел" button launches a bird that a walker shoots down.
+  Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
+  ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
+  step N (a fake `reveal` from step 4), ?paused=1 / ?zombies=1 start with the switch on, ?owl=<line id> or
+  ?say=<text> has the owl speak at the start, ?specials=1 launches a witch, a road-runner and a zombie at the start
+  (?zshot=ms shoots the zombie). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS; zombies walk only at finale
+  step 5 with zombies on and no pause; the scene is ready when every pumpkin is done, and waits for «Следующая сцена».
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -26,9 +49,8 @@
     <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
     </a>
-    <aside class="debug" data-debug-panel hidden aria-label="Отладка">
-        <button type="button" class="debug__button" data-action="reset">Заново</button>
-        <button type="button" class="debug__button" data-action="click-all">Клик по всем</button>
+    <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
+    <aside class="debug lab-tools" data-lab-panel aria-label="Лаборатория">
         <button type="button" class="debug__button" data-lab-duck>утка</button>
         <button type="button" class="debug__button" data-lab-click>клик</button>
         <button type="button" class="debug__button" data-lab-auto aria-pressed="false">авто</button>
@@ -43,6 +65,7 @@
         <span class="hud__item">Раунд <b data-hud-round>1</b></span>
         <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
         <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
+        <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
     </footer>
 </main>
@@ -76,6 +99,8 @@
     import { bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
     import { initDebugPanel } from '/js/debug.js';
     import { initJoin, storedLook } from '/js/join.js';
+    import { createOwl } from '/js/owl.js';
+    import { createReveal } from '/js/reveal.js';
     import { ITEMS, randomLook } from '/js/pixel/characters.js';
     import { createScene } from '/js/pixel/scene.js';
 
@@ -219,27 +244,50 @@
 
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
     const engine = readSnapshot(root);
-    // HELLOWIN_SCENE_STAGE_MAX=4,6,8; the final scene keeps the last value.
-    const SCENE_STAGE_MAX = [4, 6, 8, 8];
+    // HELLOWIN_SCENE_STAGE_MAX=4,8,11; the final scene keeps the last value.
+    const SCENE_STAGE_MAX = [4, 8, 11, 11];
+    // Stand-in for the `items` of app/config/hellowin.php (what the walkers hold in each scene); an id without art
+    // yet shows an empty hand.
+    const ITEM_BY_SCENE = ['pistol', 'candle', 'book', 'book'];
+    const LAST_STEP = 5;
+    const moderator = params.get('mod') === '1';
+    // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
+    const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, lastPumpkin: null };
     const pending = new Set();
-    const deliver = (event) => later(() => client.apply({ round: engine.round, ...event }), 20 + Math.random() * 40);
+    // A random 20–60 ms of latency, but in order: the channel never reorders publications.
+    let deliveredBy = 0;
+    const deliver = (event) => {
+        const now = simulated ? simTime : performance.now();
+        deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
+        later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
+    };
     const engineSnapshot = () => ({ ...structuredClone(engine), now: serverTime() });
+    const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
+    // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
+    const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
 
     function engineClick(id) {
         const p = engine.elements.find((e) => e.id === id);
+        stats.clicks++;
         if (engine.scene < engine.sceneStages && p.stage < engine.stageMax && p.clicks < engine.threshold) p.clicks++;
+        else stats.burned++;
         deliver({ type: 'click', element: id, emoji: '🎃', clicks: p.clicks, threshold: engine.threshold, stage: p.stage });
         if (p.clicks >= engine.threshold && p.stage < engine.stageMax && !pending.has(id)) {
             pending.add(id);
+            const player = someone();
             later(() => {
                 pending.delete(id);
                 p.stage++;
                 p.clicks = 0;
-                deliver({ type: 'pumpkin', element: id, stage: p.stage });
-                if (engine.elements.every((e) => e.stage >= engine.stageMax) && engine.scene < engine.sceneStages) {
-                    engine.scene++;
-                    engine.stageMax = SCENE_STAGE_MAX[engine.scene];
-                    deliver({ type: 'scene', scene: engine.scene, stageMax: engine.stageMax });
+                stats.jobs++;
+                deliver({ type: 'pumpkin', element: id, stage: p.stage, ...(player ? { player } : {}) });
+                // The scene is ready, not switched: the moderator moves on («Следующая сцена»).
+                if (!engine.ready && engine.scene < engine.sceneStages && engine.elements.every((e) => e.stage >= engine.stageMax)) {
+                    engine.ready = true;
+                    stats.lastPumpkin = player;
+                    deliver({ type: 'ready', scene: engine.scene });
+                    if (player) deliver({ type: 'owl', line: 'last-pumpkin', params: { player } });
+                    deliver({ type: 'owl', line: 'scene-ready' });
                 }
             }, 150);
         }
@@ -249,20 +297,141 @@
         engine.round++;
         engine.scene = 0;
         engine.stageMax = SCENE_STAGE_MAX[0];
+        engine.ready = false;
+        engine.finale = null;
+        engine.zombies = false;
+        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, lastPumpkin: null });
         engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
-        deliver({ type: 'reset' });
+        engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[0]; });
+        deliver({ type: 'reset', item: ITEM_BY_SCENE[0] });
+    }
+
+    const finaleOf = (step) => (step >= 4 ? { step, reveal: structuredClone(stats) } : { step });
+
+    function engineSceneNext({ scene, force }) {
+        if (!Number.isInteger(scene) || scene < 0) throw new Error('invalid scene');
+        if (scene !== engine.scene) return { ok: true, scene: engine.scene };
+        if (engine.scene >= engine.sceneStages) throw new Error('final scene');
+        if (!engine.ready && force !== true) throw new Error('not ready');
+        if (!engine.ready) stats.lastPumpkin = null;
+        const to = engine.scene + 1;
+        later(() => {
+            stats.jobs++;
+            engine.scene = to;
+            engine.stageMax = SCENE_STAGE_MAX[to];
+            engine.ready = false;
+            engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[to]; });
+            deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, item: ITEM_BY_SCENE[to] });
+            if (to >= engine.sceneStages) {
+                engine.finale = finaleOf(0);
+                deliver({ type: 'finale', ...engine.finale });
+            }
+            deliver({ type: 'owl', line: `scene-${to}` });
+        }, 150);
+        return { ok: true, scene: to };
+    }
+
+    function engineFinaleStep({ step }) {
+        if (!Number.isInteger(step)) throw new Error('invalid step');
+        if (engine.scene < engine.sceneStages || !engine.finale) throw new Error('not final');
+        if (step === engine.finale.step + 1 && step <= LAST_STEP) {
+            engine.finale = finaleOf(step);
+            deliver({ type: 'finale', ...structuredClone(engine.finale) });
+            deliver({ type: 'owl', line: `finale-${step}` });
+        }
+        return { ok: true, step: engine.finale.step };
+    }
+
+    function engineOwl({ line, params: lineParams, text }) {
+        if (text !== undefined) {
+            if (typeof text !== 'string' || text.trim().length < 1 || text.trim().length > 200) throw new Error('invalid text');
+            deliver({ type: 'owl', text: text.trim() });
+            return { ok: true };
+        }
+        if (typeof line !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(line) || line.length > 32) throw new Error('invalid line');
+        if (lineParams !== undefined && (typeof lineParams !== 'object' || lineParams === null || Array.isArray(lineParams))) throw new Error('invalid params');
+        deliver({ type: 'owl', line, ...(lineParams && Object.keys(lineParams).length ? { params: lineParams } : {}) });
+        return { ok: true };
+    }
+
+    function engineSwitch(name, { on }) {
+        if (typeof on !== 'boolean') throw new Error('invalid on');
+        if (engine[name] !== on) {
+            engine[name] = on;
+            deliver({ type: name === 'paused' ? 'pause' : 'zombies', on });
+            if (name === 'zombies' && on) deliver({ type: 'owl', line: 'zombies' });
+        }
+        return { ok: true, on };
+    }
+
+    // Console RPCs (protocol.md, «Модератор»): `forbidden` before anything else for a non-moderator.
+    async function engineCall(method, data) {
+        if (!moderator) throw new Error('forbidden');
+        switch (method) {
+            case 'scene.next': return engineSceneNext(data);
+            case 'finale.step': return engineFinaleStep(data);
+            case 'owl.say': return engineOwl(data);
+            case 'flyer.special':
+                if (data.kind !== 'witch' && data.kind !== 'roadrunner') throw new Error('unknown kind');
+                return { ok: true, flyer: engineFlyer({ kind: data.kind }) };
+            case 'zombies': return engineSwitch('zombies', data);
+            case 'pause': return engineSwitch('paused', data);
+            case 'reset':
+                if (data.round === engine.round) engineReset();
+                return { ok: true, round: engine.round };
+            default: throw new Error('unknown method');
+        }
     }
 
     // Flyers as the server launches them: a depth picks duration and points, near ducks may start from a bush and
     // arc through `via`; a shot counts until duration + 500 ms.
     const DURATION = [16000, 6500, 4000];
     const POINTS = [3, 2, 1];
+    // HELLOWIN_FLYER_KINDS and HELLOWIN_FLYER_RARE by scene, the rare one at a 1-in-8 chance; the sunset has none.
+    const KINDS = [['duck', 'chicken'], [], ['bat'], ['bat']];
+    const RARE = ['roadrunner', null, null, null];
+    const RARE_POINTS = 5;
+    const HORIZON = 38;
+    const ZOMBIE = { duration: 14000, points: 2 };
     const live = new Map();
     let flyerSeq = 0;
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const nextId = () => `f-${(++flyerSeq).toString(16).padStart(8, '0')}`;
 
-    function engineFlyer({ depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
-        const id = `f-${(++flyerSeq).toString(16).padStart(8, '0')}`;
+    function launchFlyer(id, kind, depth, duration, points, path) {
+        const launchedAt = serverTime();
+        const expiresAt = launchedAt + duration;
+        live.set(id, { until: expiresAt + 500, points, kind, shot: false });
+        deliver({ type: 'flyer', flyer: id, kind, depth, duration, points, launchedAt, expiresAt, ...path });
+        return id;
+    }
+
+    // Runs along the horizon at the near depth's speed; never hit (engineShoot), no points.
+    function engineRoadrunner(ltr = Math.random() < 0.5) {
+        const path = { from: { x: ltr ? -8 : 108, y: HORIZON }, to: { x: ltr ? 108 : -8, y: HORIZON } };
+        return launchFlyer(nextId(), 'roadrunner', 0, DURATION[2], 0, path);
+    }
+
+    // From the patch rim out along a ray to the edge of the lawn, in config coordinates like the walkers.
+    function engineZombie(angle = Math.random() * Math.PI * 2) {
+        const from = round1(rim(angle, 1.02));
+        let k = 1.02;
+        const { x1, y1, x2, y2 } = WALK.area;
+        while (k < 6) {
+            const p = rim(angle, k + 0.05);
+            if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) break;
+            k += 0.05;
+        }
+        return launchFlyer(nextId(), 'zombie', 1, ZOMBIE.duration, ZOMBIE.points, { from, to: round1(rim(angle, k)) });
+    }
+
+    function engineFlyer({ kind = null, depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
+        const rare = RARE[engine.scene];
+        kind ??= rare && Math.random() < 0.125 ? rare : pick(KINDS[engine.scene] ?? KINDS[0]);
+        if (!kind) return null;
+        if (kind === 'roadrunner') return engineRoadrunner(ltr);
+        if (kind === 'witch') depth = Math.max(1, depth);
+        const id = nextId();
         let path;
         if (bush) {
             const b = typeof bush === 'string' ? engine.bushes.find((x) => x.id === bush) : pick(engine.bushes);
@@ -278,18 +447,19 @@
             path = { from: { x: ltr ? -8 : 108, y }, to: { x: ltr ? 108 : -8, y: y + (Math.random() - 0.5) * 12 } };
             if (Math.random() < 0.5) path.via = { x: 50, y: Math.max(2, y - 8 - Math.random() * 8) };
         }
-        const launchedAt = serverTime();
-        const expiresAt = launchedAt + DURATION[depth];
-        live.set(id, { until: expiresAt + 500, points: POINTS[depth], shot: false });
-        deliver({ type: 'flyer', flyer: id, kind: Math.random() < 0.25 ? 'chicken' : 'duck', depth, duration: DURATION[depth], points: POINTS[depth], launchedAt, expiresAt, ...path });
-        return id;
+        // Bats sway across their path (protocol.md, `wobble`).
+        if (kind === 'bat') path.wobble = { amp: 3 + Math.random() * 4, waves: 2 + Math.random() * 3 };
+        return launchFlyer(id, kind, depth, DURATION[depth], kind === 'witch' ? RARE_POINTS : POINTS[depth], path);
     }
 
     function engineShoot(id, player = null) {
         const f = live.get(id);
-        if (!f || f.shot || serverTime() > f.until) return { ok: true, hit: false };
+        if (!f || f.shot || f.kind === 'roadrunner' || serverTime() > f.until) return { ok: true, hit: false };
         f.shot = true;
-        deliver({ type: 'shot', flyer: id, points: f.points, ...(player ? { player: { id: player.id, name: player.name } } : {}) });
+        stats.shot++;
+        const by = playerOf(player);
+        deliver({ type: 'shot', flyer: id, points: f.points, ...(by ? { player: by } : {}) });
+        if (f.kind === 'witch' && by) deliver({ type: 'owl', line: 'witch-down', params: { player: by } });
         return { ok: true, hit: true, points: f.points };
     }
 
@@ -341,15 +511,70 @@
     function engineJump(stage) {
         engine.scene = SCENE_STAGE_MAX.findIndex((max) => max >= stage);
         engine.stageMax = SCENE_STAGE_MAX[engine.scene];
+        engine.ready = false;
+        engine.finale = engine.scene >= engine.sceneStages ? finaleOf(0) : null;
         engine.elements.forEach((e) => { e.stage = stage; e.clicks = 0; });
+        engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
         client.load(engineSnapshot());
+    }
+
+    // ?scene=N / ?ready=1 / ?finale=N / ?paused=1 / ?zombies=1: the state the lab starts from.
+    function startState() {
+        const sceneParam = params.has('finale') ? engine.sceneStages : Number.parseInt(params.get('scene') ?? '', 10);
+        if (Number.isInteger(sceneParam)) {
+            engine.scene = Math.max(0, Math.min(engine.sceneStages, sceneParam));
+            engine.stageMax = SCENE_STAGE_MAX[engine.scene];
+            const stage = engine.scene > 0 ? SCENE_STAGE_MAX[engine.scene - 1] : 0;
+            engine.elements.forEach((e) => { e.stage = stage; e.clicks = 0; });
+            engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
+        }
+        if (params.get('ready') === '1' && engine.scene < engine.sceneStages) {
+            engine.elements.forEach((e) => { e.stage = engine.stageMax; e.clicks = 0; });
+            engine.ready = true;
+        }
+        if (engine.scene >= engine.sceneStages) {
+            Object.assign(stats, { clicks: 5230, jobs: 312, burned: 1720, shot: 87, lastPumpkin: { id: ME, name: 'Jack' } });
+            engine.finale = finaleOf(Math.max(0, Math.min(LAST_STEP, Number.parseInt(params.get('finale') ?? '0', 10) || 0)));
+        }
+        engine.paused = params.get('paused') === '1';
+        engine.zombies = params.get('zombies') === '1';
+    }
+
+    // At the start of the run: the owl's line and the special flyers of the query.
+    function startEvents() {
+        if (params.has('owl')) deliver({ type: 'owl', line: params.get('owl'), ...(params.get('owl').match(/last-pumpkin|witch-down/) ? { params: { player: someone() ?? { id: ME, name: null } } } : {}) });
+        if (params.has('say')) deliver({ type: 'owl', text: params.get('say') });
+        if (params.get('specials') === '1') {
+            engineFlyer({ kind: 'witch', depth: 2, bush: false, ltr: true });
+            engineRoadrunner(false);
+            return engineZombie(Math.PI * 0.62);
+        }
+        return null;
     }
 
     const scene = await createScene(root, readSnapshot(root));
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
     if (params.has('hits')) scene?.showHits(true);
-    const client = createClient(root, scene, { requestState: async () => engineSnapshot(), now: clientTime });
+    const owl = createOwl(root, scene, simulated ? { now: () => simTime, later } : {});
+    const reveal = createReveal(root);
+    // The lab shows the console when it plays the moderator (?mod=1); the fake engine answers like the server would.
+    const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
+        open: params.get('ui') !== '0' ? undefined : false,
+        call: engineCall,
+        clickAll: () => engine.elements.forEach((e, i) => later(() => engineClick(e.id), i * 30)),
+    });
+    const client = createClient(root, scene, {
+        requestState: async () => engineSnapshot(),
+        now: clientTime,
+        owl,
+        reveal,
+        onChange: (model) => moderatorConsole?.update(model),
+    });
     client.start();
+    startState();
+    client.load(engineSnapshot());
+    client.setModerator(moderator && params.get('ui') !== '0');
+    if (params.get('ui') === '0') root.querySelector('[data-lab-panel]').hidden = true;
     if (params.get('me') === '1') client.setMe(ME);
     bindWalking(root, scene, () => client.canWalk(), (point) => engineMove(ME, point));
     const join = initJoin(document.querySelector('[data-join]'), { register: engineRegister });
@@ -368,19 +593,23 @@
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
-    bindShooting(root, scene, engineShoot);
-    // A flyer every 3–8 s, like the server's launcher.
+    // Your shots are yours when your character is on the field: a witch then gets the owl's `witch-down`.
+    bindShooting(root, scene, (id) => engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null));
+    // A flyer every 3–8 s, like the server's launcher; none while paused.
     const launchLater = () => setTimeout(() => {
-        engineFlyer();
+        if (!engine.paused) engineFlyer();
         launchLater();
     }, 3000 + Math.random() * 5000);
-    if (!simulated) launchLater();
-    // The lab shows the panel unless ?ui=0; the fake engine answers like the server would.
-    initDebugPanel(root.querySelector('[data-debug-panel]'), {
-        visible: params.get('ui') !== '0',
-        reset: async () => engineReset(),
-        clickAll: () => engine.elements.forEach((e, i) => later(() => engineClick(e.id), i * 30)),
-    });
+    // Zombies only in the cursed world, with zombies on and no pause (HELLOWIN_ZOMBIE_INTERVAL 4000-9000).
+    const zombieLater = () => setTimeout(() => {
+        if (engine.zombies && !engine.paused && engine.finale?.step === LAST_STEP) engineZombie();
+        zombieLater();
+    }, 4000 + Math.random() * 5000);
+    if (!simulated) {
+        launchLater();
+        zombieLater();
+        later(startEvents, 500);
+    }
     root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
         if (event.target.value !== '') engineJump(Number(event.target.value));
         event.target.value = '';
@@ -410,9 +639,12 @@
         pending.clear();
         live.clear();
         flyerSeq = 0;
+        deliveredBy = 0;
         client.load(engineSnapshot());
         let nextClick = 0;
         let target = null;
+        let zombie = null;
+        const zombieShotAt = Math.round((Number.parseInt(params.get('zshot') ?? '-1', 10)) / 16) * 16;
         for (simTime = 0; simTime < freeze; simTime += 16) {
             if (params.get('auto') === '1' && simTime >= nextClick) {
                 engineClick(randomId());
@@ -427,6 +659,8 @@
                 target = launched[Math.min(2, Math.max(0, Number.parseInt(params.get('shoot') ?? '1', 10) || 0))];
             }
             if (flyersOn && simTime === shotAt) engineShoot(target, params.get('shooter') === '1' ? engine.walkers[0] : null);
+            if (simTime === 0) zombie = startEvents();
+            if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             // Frozen bots all set off at the start, so a screenshot catches them on the way.
             if (simTime === 0) {
                 const random = seeded(99);

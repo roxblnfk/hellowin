@@ -3,8 +3,10 @@
 
 import { spreadX } from './layout.js';
 
-const SCENE_NAMES = { 0: 'День: подготовка' };
+const SCENE_NAMES = { 0: 'День: подготовка', 1: 'Закат', 2: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
+// The last finale step: past it the final scene is the cursed world.
+const CURSED_STEP = 5;
 
 const int = (value, fallback = 0) => {
     const n = Number.parseInt(value, 10);
@@ -20,6 +22,17 @@ function parseList(json) {
     }
 }
 
+function parseFinale(json) {
+    try {
+        const finale = JSON.parse(json || 'null');
+        return finale && Number.isInteger(finale.step) ? finale : null;
+    } catch {
+        return null;
+    }
+}
+
+const flag = (value) => value === '1' || value === 'true';
+
 /**
  * Snapshot as rendered by the home template: #app attributes plus one button per element.
  */
@@ -33,6 +46,10 @@ export function readSnapshot(root) {
         bushes: parseList(root.dataset.bushes),
         walkers: parseList(root.dataset.walkers),
         now: int(root.dataset.now, 0),
+        ready: flag(root.dataset.ready),
+        finale: parseFinale(root.dataset.finale),
+        paused: flag(root.dataset.paused),
+        zombies: flag(root.dataset.zombies),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
             id: el.dataset.element,
             type: el.dataset.type,
@@ -48,10 +65,14 @@ export function readSnapshot(root) {
 /**
  * @param {HTMLElement} root  #app
  * @param {object|null} scene API of pixel/scene.js, or null without a canvas
- * @param {{requestState: () => Promise<object>}} transport  resolves with a fresh snapshot (RPC `state`)
+ * @param {object} options
+ * @param {() => Promise<object>} options.requestState  resolves with a fresh snapshot (RPC `state`)
+ * @param {{say: Function}|null} [options.owl]  speech bubble of owl.js
+ * @param {{update: Function}|null} [options.reveal]  reveal panel of reveal.js
+ * @param {(model: object) => void} [options.onChange]  after every applied event or snapshot (the console repaints)
  */
-export function createClient(root, scene, { requestState, now = () => Date.now() }) {
-    const model = { ...readSnapshot(root), me: null };
+export function createClient(root, scene, { requestState, now = () => Date.now(), owl = null, reveal = null, onChange = () => {} }) {
+    const model = { ...readSnapshot(root), me: null, moderator: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     let syncing = null;
@@ -83,14 +104,34 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         };
         set('round', model.round);
         set('scene', model.scene);
-        set('scene-name', model.scene >= model.sceneStages ? 'Финал' : SCENE_NAMES[model.scene] ?? '');
+        set('scene-name', sceneName());
         set('done', model.elements.filter((e) => e.stage >= model.stageMax).length);
         set('total', model.elements.length);
+        const ready = hud('ready');
+        if (ready) ready.hidden = !model.ready;
+    }
+
+    function sceneName() {
+        if (model.scene < model.sceneStages) return SCENE_NAMES[model.scene] ?? '';
+        return (model.finale?.step ?? 0) >= CURSED_STEP ? 'Проклятый мир' : 'Финал';
+    }
+
+    // Story state shared by the HUD, the console and CSS: body attributes plus the reveal panel.
+    function paintStory() {
+        const body = document.body;
+        body.toggleAttribute('data-ready', model.ready);
+        if (model.finale) body.dataset.finaleStep = model.finale.step;
+        else delete body.dataset.finaleStep;
+        body.toggleAttribute('data-paused', model.paused);
+        body.toggleAttribute('data-zombies', model.zombies);
+        reveal?.update(model.finale);
+        paintHud();
     }
 
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
+        paintStory();
         root.dataset.round = model.round;
         root.dataset.sceneStages = model.sceneStages;
         root.dataset.stageMax = model.stageMax;
@@ -109,12 +150,17 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             threshold: snapshot.threshold,
             bushes: snapshot.bushes ?? model.bushes,
             walkers: snapshot.walkers ?? model.walkers,
+            ready: Boolean(snapshot.ready),
+            finale: snapshot.finale ?? null,
+            paused: Boolean(snapshot.paused),
+            zombies: Boolean(snapshot.zombies),
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         const known = new Map(model.elements.map((e) => [e.id, e]));
         model.elements = snapshot.elements.map((e) => ({ ...known.get(e.id), ...e, size: e.size ?? known.get(e.id)?.size ?? 'm' }));
         paintAll();
         scene?.render(snapshotOf());
+        onChange(model);
     }
 
     function snapshotOf() {
@@ -187,18 +233,51 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             scene?.pumpkin(element.id, element.stage);
         },
 
+        // The new scene is not ready yet; entering the final one, `finale {step: 0}` follows.
         scene(event) {
             model.scene = event.scene;
             model.stageMax = event.stageMax;
+            model.ready = false;
+            if (model.scene < model.sceneStages) model.finale = null;
             stageMaxByScene.set(model.scene, model.stageMax);
             paintAll();
             scene?.setScene(model.scene, model.stageMax);
             handOut(event);
         },
 
+        ready(event) {
+            if (event.scene !== model.scene) return;
+            model.ready = true;
+            paintStory();
+        },
+
+        finale(event) {
+            model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
+            paintStory();
+        },
+
+        // The bubble is a moment, not state: a resync does not bring an old line back.
+        owl(event) {
+            owl?.say(event, model.scene);
+        },
+
+        pause(event) {
+            model.paused = Boolean(event.on);
+            paintStory();
+        },
+
+        zombies(event) {
+            model.zombies = Boolean(event.on);
+            paintStory();
+        },
+
+        // The pause is about the room, not the story: it survives a reset (protocol.md, «Снимок»).
         reset(event) {
             model.round = event.round;
             model.scene = 0;
+            model.ready = false;
+            model.finale = null;
+            model.zombies = false;
             model.stageMax = stageMaxByScene.get(0) ?? DEFAULT_STAGE_MAX;
             model.elements.forEach((e) => {
                 e.stage = 0;
@@ -250,6 +329,13 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
                 return;
             }
             handler(event);
+            onChange(model);
+        },
+
+        /** Whether this connection is the moderator's (RPC `me`, `moderator`); it decides whether the console shows. */
+        setModerator(on) {
+            model.moderator = Boolean(on);
+            onChange(model);
         },
 
         start() {
@@ -262,7 +348,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], .help-link, .hud, [data-join]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture

@@ -11,6 +11,7 @@ import {
 import { ROOT, spreadLeft, spreadX } from '../layout.js';
 import { POSES, characterFrame } from './characters.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
+import { OWL, glowing } from './owl.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -213,6 +214,10 @@ export async function createScene(rootEl, snapshot) {
     const VEIL = [['outline', 0.6], ['outline', 0.6], ['outline', 0.45], ['white', 0.55], ['white', 0.3]];
     let bugs = [];
     let perch = { x: 0, y: 0 };
+    // The owl on the branch: its sprite (made again with groundLayer on every rebuild) and the line it is saying.
+    let owlSprite = null;
+    let owlAt = { x: 0, y: 0 };
+    let owlTalk = { at: -1e9, until: -1e9, hoot: false };
     let clock = 0;
 
     function toArt(element) {
@@ -499,9 +504,68 @@ export async function createScene(rootEl, snapshot) {
             x: Math.round(Math.max(artW * 0.07, artW * 0.32 - (px - def.anchor.x))),
             y: horizon + 3,
         };
-        addGround(def, foot.x, foot.y);
+        const tree = addGround(def, foot.x, foot.y);
         rootIn(foot.x, foot.y, 6, rng(5));
-        perch = { x: (foot.x - def.anchor.x + px) * layout.cssPx, y: (foot.y - def.anchor.y + py) * layout.cssPx };
+        owlAt = { x: foot.x - def.anchor.x + px, y: foot.y - def.anchor.y + py };
+        perch = { x: owlAt.x * layout.cssPx, y: owlAt.y * layout.cssPx };
+        // Sorted with the tree, just in front of it: the talons grip the branch, nearer things still cover both.
+        owlSprite = new Sprite();
+        owlSprite.zIndex = tree.zIndex + 1;
+        groundLayer.addChild(owlSprite);
+        animateOwl();
+    }
+
+    // Idle on the server clock, so the whole room sees the same blink and the same swivel: 5 s slots, a blink in
+    // each, a swivel to one side in some of them and, rarely, all the way round.
+    const OWL_SLOT_MS = 5000;
+    const OWL_HOOT_MS = 900;
+    const owlNight = new WeakMap();
+    function idleOwl(now) {
+        const slot = Math.floor(now / OWL_SLOT_MS);
+        const into = now - slot * OWL_SLOT_MS;
+        const h = mix(0x0ff1ce, slot);
+        const breath = OWL.idle[Math.floor(now / 700) % 2];
+        const blinkAt = 300 + (h % 700);
+        if (into >= blinkAt && into < blinkAt + 120) return OWL.blink;
+        const turn = (h >>> 10) % 9;
+        if (turn > 3 || into < 1500) return breath;
+        const side = turn % 2 ? OWL.turnRight : OWL.turnLeft;
+        // half, full, (back,) full, half: 150 ms per in-between frame.
+        const swivel = turn === 3
+            ? [[150, side[0]], [150, side[1]], [900, OWL.back], [150, side[1]], [150, side[0]]]
+            : [[150, side[0]], [1400, side[1]], [150, side[0]]];
+        let t = into - 1500;
+        for (const [ms, frame] of swivel) {
+            if (t < ms) return frame;
+            t -= ms;
+        }
+        return breath;
+    }
+
+    function owlFrame() {
+        if (clock < owlTalk.until) {
+            const t = clock - owlTalk.at;
+            if (owlTalk.hoot && t < OWL_HOOT_MS) return OWL.hoot;
+            if (reduced) return OWL.talk[0];
+            // Beak open and shut, and now and then the wing comes up for emphasis.
+            const beat = Math.floor(t / 160);
+            return beat % 10 >= 7 ? OWL.talk[2] : OWL.talk[beat % 2];
+        }
+        return reduced ? OWL.idle[0] : idleOwl(serverNow());
+    }
+
+    function animateOwl() {
+        if (!owlSprite) return;
+        let def = owlFrame();
+        // From the night scene on, the eyes glow.
+        if (state.scene >= 2) {
+            if (!owlNight.has(def)) owlNight.set(def, glowing(def));
+            def = owlNight.get(def);
+        }
+        const art = flyerArt(def);
+        owlSprite.texture = art.texture;
+        owlSprite.anchor.set(art.ax, art.ay);
+        owlSprite.position.set(owlAt.x, owlAt.y);
     }
 
     /**
@@ -783,6 +847,12 @@ export async function createScene(rootEl, snapshot) {
         placeBushes();
         buildPumpkins();
         buildWalkers();
+        // Ground targets outlive a resize like walkers: their sprites went with groundLayer.
+        for (const f of flyers.values()) {
+            if (!f.ground) continue;
+            f.sprite = new Sprite();
+            groundLayer.addChild(f.sprite);
+        }
         for (const particle of particles.splice(0)) particle.sprite.destroy();
         publishHitZones();
         veil.width = layout.artW;
@@ -832,20 +902,46 @@ export async function createScene(rootEl, snapshot) {
         return cache.get(def);
     }
 
-    function pathAt(f, t) {
+    // The base path in config percents: a straight line, or a quadratic curve through `via`; with its tangent.
+    function basePath(f, t) {
         const u = 1 - t;
-        const p = f.via
-            ? {
-                x: u * u * f.from.x + 2 * u * t * f.via.x + t * t * f.to.x,
-                y: u * u * f.from.y + 2 * u * t * f.via.y + t * t * f.to.y,
-            }
-            : { x: f.from.x + (f.to.x - f.from.x) * t, y: f.from.y + (f.to.y - f.from.y) * t };
+        if (!f.via) {
+            return { x: f.from.x + (f.to.x - f.from.x) * t, y: f.from.y + (f.to.y - f.from.y) * t, dx: f.to.x - f.from.x, dy: f.to.y - f.from.y };
+        }
+        return {
+            x: u * u * f.from.x + 2 * u * t * f.via.x + t * t * f.to.x,
+            y: u * u * f.from.y + 2 * u * t * f.via.y + t * t * f.to.y,
+            dx: 2 * u * (f.via.x - f.from.x) + 2 * t * (f.to.x - f.via.x),
+            dy: 2 * u * (f.via.y - f.from.y) + 2 * t * (f.to.y - f.via.y),
+        };
+    }
+
+    function pathAt(f, t) {
+        const p = basePath(f, t);
+        // `wobble` (protocol.md, bats): a sideways sway across the path, amp · sin(2π · waves · t), in screen percents.
+        if (f.wobble) {
+            const len = Math.hypot(p.dx, p.dy) || 1;
+            const off = f.wobble.amp * Math.sin(2 * Math.PI * f.wobble.waves * t);
+            return toScreenArt({ x: p.x - (p.dy / len) * off, y: p.y + (p.dx / len) * off });
+        }
         return toScreenArt(p);
     }
 
-    // Wingbeat period per depth, far to near (public/dev/flyers.html).
+    // Wingbeat period per depth, far to near (public/dev/flyers.html); the ground runners step at their own pace.
     const FLAP = [260, 130, 90];
+    const STEP_MS = { roadrunner: 70, zombie: 150 };
     const RUSTLE_MS = 600;
+    // Kinds that walk on the lawn: in groundLayer, sorted by their feet, on the walkers' coordinates.
+    const GROUND = new Set(['zombie']);
+    // A zombie collapses where it stands: hit, kneel, flat, then blinks out.
+    const COLLAPSE = { hit: 160, kneel: 420, lie: 1600, gone: 2000 };
+    // Single-pixel feathers of a shot far flyer.
+    const SPECK = { chicken: 'white', crow: 'crowDark', bat: 'bat', ghost: 'ghost', witch: 'violetDark', zombie: 'zombie' };
+
+    // Zombie paths are on the lawn in config coordinates (the walk zone), so they take the patch spread like walkers.
+    function groundPathAt(f, t) {
+        return walkerArt({ x: f.from.x + (f.to.x - f.from.x) * t, y: f.from.y + (f.to.y - f.from.y) * t });
+    }
 
     function animateFlyers() {
         for (const [id, f] of flyers) {
@@ -860,8 +956,20 @@ export async function createScene(rootEl, snapshot) {
                     flyers.delete(id);
                     continue;
                 }
-                f.pos = pathAt(f, clamp(local / f.duration, 0, 1));
-                art = flyerArt(set.fly[Math.floor(local / FLAP[clamp(f.depth, 0, 2)]) % set.fly.length], f.depth === 0);
+                const t = clamp(local / f.duration, 0, 1);
+                f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
+                art = flyerArt(set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length], f.depth === 0);
+            } else if (f.ground) {
+                const since = clock - f.shotAt;
+                if (since >= COLLAPSE.gone) {
+                    f.sprite.destroy();
+                    flyers.delete(id);
+                    continue;
+                }
+                f.pos = f.shotPos;
+                art = flyerArt(since < COLLAPSE.hit ? set.hit : set.fall[since < COLLAPSE.kneel ? 0 : 1]);
+                // Blinks out instead of fading, like the particles: alpha would add colours outside the palette.
+                f.sprite.visible = since < COLLAPSE.lie || Math.floor(since / 100) % 2 === 0;
             } else {
                 // Hit frame, then a tumble down: far birds fall behind the hills, the nearer ones off the screen.
                 const fall = (clock - f.shotAt) / 1000;
@@ -880,6 +988,7 @@ export async function createScene(rootEl, snapshot) {
             f.sprite.anchor.set(art.ax, art.ay);
             f.sprite.scale.x = f.flip ? -1 : 1;
             f.sprite.position.set(Math.round(f.pos.x), Math.round(f.pos.y));
+            if (f.ground) f.sprite.zIndex = depthKey(f.pos.x, f.pos.y);
             f.art = art;
         }
         for (const bush of bushes.values()) {
@@ -897,20 +1006,23 @@ export async function createScene(rootEl, snapshot) {
         const expiresAt = event.expiresAt ?? launchedAt + event.duration;
         if (now >= expiresAt) return;
         const sprite = new Sprite();
-        [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)].addChild(sprite);
+        const ground = GROUND.has(event.kind);
+        (ground ? groundLayer : [farFlyerLayer, midFlyerLayer, nearFlyerLayer][clamp(event.depth ?? 0, 0, 2)]).addChild(sprite);
         flyers.set(event.flyer, {
+            ground,
             kind: event.kind,
             depth: event.depth ?? 0,
             from: event.from,
             via: event.via ?? null,
             to: event.to,
+            wobble: Number.isFinite(event.wobble?.amp) && Number.isFinite(event.wobble?.waves) ? event.wobble : null,
             duration: Math.max(1, event.duration),
             launchedAt,
             expiresAt,
             flip: event.to.x < event.from.x,
             sprite,
             shotAt: null,
-            pos: toScreenArt(event.from),
+            pos: ground ? walkerArt(event.from) : toScreenArt(event.from),
         });
         const bush = event.bush && bushes.get(event.bush);
         if (bush && now - launchedAt < RUSTLE_MS) bush.rustleUntil = clock + RUSTLE_MS - (now - launchedAt);
@@ -923,9 +1035,11 @@ export async function createScene(rootEl, snapshot) {
         f.shotAt = clock;
         f.shotPos = { ...f.pos };
         f.drift = (f.flip ? -1 : 1) * 12;
+        // The body's middle: a ground target stands on its anchor, a flyer is centred on it.
+        const mid = f.ground ? { x: f.pos.x, y: f.pos.y - f.art.def.h / 2 } : f.pos;
         if (!reduced && f.depth === 0) {
             // A bird a few pixels big loses a couple of single-pixel feathers.
-            const key = f.kind === 'chicken' ? 'white' : 'duckGrayDark';
+            const key = SPECK[f.kind] ?? 'duckGrayDark';
             const speck = artTexture(`speck:${key}`, () => {
                 const c = canvas(1, 1);
                 const ctx = c.getContext('2d');
@@ -939,11 +1053,11 @@ export async function createScene(rootEl, snapshot) {
             const feathers = feathersOf(f.kind).map((def) => flyerArt(def).texture);
             for (let i = 0; i < 6; i++) {
                 const a = (i / 6) * Math.PI * 2 + 0.4;
-                spawn(feathers, f.pos.x, f.pos.y, Math.cos(a) * 24, Math.sin(a) * 14 - 10, 30, 1.2 + Math.random() * 0.3);
+                spawn(feathers, mid.x, mid.y, Math.cos(a) * 24, Math.sin(a) * 14 - 10, 30, 1.2 + Math.random() * 0.3);
             }
         }
         const score = flyerArt(digitsSprite(`+${event.points}`));
-        spawn([score.texture], f.pos.x - score.def.w / 2, f.pos.y - 14, 0, -10, 0, 1.2);
+        spawn([score.texture], f.pos.x - score.def.w / 2, f.ground ? f.pos.y - f.art.def.h - 4 : f.pos.y - 14, 0, -10, 0, 1.2);
     }
 
     /**
@@ -955,6 +1069,12 @@ export async function createScene(rootEl, snapshot) {
         const left = Math.round(f.pos.x) - (f.flip ? def.w - def.anchor.x : def.anchor.x);
         const top = Math.round(f.pos.y) - def.anchor.y;
         if (f.depth === 0) return { left, top, w: def.w, h: def.h, pixels: true };
+        if (f.ground) {
+            // The anchor is at the feet: the box covers the body above them, without the outstretched arms.
+            const w = Math.max(2, Math.round(def.w * 0.5));
+            const h = Math.max(2, Math.round(def.h * 0.85));
+            return { left: Math.round(f.pos.x - w / 2), top: Math.round(f.pos.y) - h, w, h, pixels: false };
+        }
         const w = Math.max(2, Math.round(def.w * 0.6));
         const h = Math.max(2, Math.round(def.h * 0.6));
         return { left: Math.round(f.pos.x - w / 2), top: Math.round(f.pos.y - h / 2), w, h, pixels: false };
@@ -1297,6 +1417,7 @@ export async function createScene(rootEl, snapshot) {
 
         animateFlyers();
         animateWalkers();
+        animateOwl();
         drawHits();
 
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -1463,9 +1584,17 @@ export async function createScene(rootEl, snapshot) {
             state.stageMax = stageMax ?? state.stageMax;
         },
 
-        /** Point on the tree branch where a bird can land, in CSS pixels of the scene root; follows resizes. */
+        /**
+         * Point on the tree branch where the owl sits, in CSS pixels of the scene root, plus `px` (CSS pixels per art
+         * pixel) to measure the 18-art-px owl up from it; follows resizes.
+         */
         perch() {
-            return { ...perch };
+            return { ...perch, px: layout.cssPx };
+        },
+
+        /** The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. */
+        owl({ ms, hoot = false }) {
+            owlTalk = { at: clock, until: clock + ms, hoot };
         },
 
         /**
