@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — звук</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        button { font: inherit; background: #2c2c38; color: #eee; border: 1px solid #555; padding: 4px 8px; cursor: pointer; }
+        button:hover { background: #3a3a4a; }
+        button.on { background: #5a3d1a; border-color: #fa8; }
+        .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+        .group { margin: 6px 0; }
+        .group b { display: inline-block; min-width: 90px; color: #fd8; }
+        label { display: inline-flex; gap: 6px; align-items: center; }
+        input[type=range] { width: 160px; }
+        table { border-collapse: collapse; margin-top: 6px; }
+        td, th { border: 1px solid #444; padding: 2px 8px; text-align: right; }
+        th { color: #fd8; }
+        code { color: #fd8; }
+        #result { white-space: pre-wrap; color: #9f9; }
+    </style>
+</head>
+<body>
+<p>Процедурный звук (<code>public/js/audio/</code>): всё считается формулами в воркере, сэмплов нет. Звук включается
+    первым нажатием (политика автовоспроизведения). Смена трека — на границе такта играющего, кроссфейд в такт.
+    <code>?selftest</code> — замер и проверка пика на OfflineAudioContext без звука (для headless).</p>
+<div class="row">
+    <button id="unlock">Включить звук</button>
+    <label><input type="checkbox" id="mute"> mute</label>
+    <span id="status"></span>
+</div>
+
+<h2>Музыка</h2>
+<div class="row" id="tracks"></div>
+<div class="row">
+    <label>интенсивность <input type="range" id="intensity" min="0" max="1" step="0.01" value="0.5"> <span id="intensity-value">0.5</span></label>
+    <span id="bar"></span>
+</div>
+
+<h2>Громкость шин</h2>
+<div class="row" id="volumes"></div>
+
+<h2>Эффекты</h2>
+<div class="row">
+    <label>pan <input type="range" id="pan" min="-1" max="1" step="0.1" value="0"></label>
+    <label>pitch <input type="range" id="pitch" min="-12" max="12" step="1" value="0"> <span id="pitch-value">0</span></label>
+    <button id="burst">100 случайных за 1 с</button>
+</div>
+<div id="sfx"></div>
+<div class="row">
+    <input id="line" size="60" value="RoadRunner мёртв… Ритуал на тыквах вернёт его!">
+    <button data-speak="owl">сова говорит</button>
+    <button data-speak="franken">FrankenPHP говорит</button>
+</div>
+
+<h2>Замеры генерации</h2>
+<div id="stats"></div>
+<pre id="result"></pre>
+
+<script type="module">
+    import { createAudio, trackOf } from '../js/audio/engine.js';
+    import { TRACKS } from '../js/audio/synth/music.js';
+    import { SFX } from '../js/audio/synth/sfx.js';
+
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+
+    function button(text, onClick) {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.addEventListener('click', onClick);
+        return b;
+    }
+
+    function statsTable(stats) {
+        const rows = [];
+        for (const [group, s] of Object.entries(stats.sfx)) rows.push([`эффекты ${group}`, s.ms, s.wall, '', (s.bytes / 1e6).toFixed(1)]);
+        for (const [name, s] of Object.entries(stats.tracks)) rows.push([`трек ${name}`, s.ms, s.wall, s.seconds, (s.bytes / 1e6).toFixed(1)]);
+        return `<table><tr><th>что</th><th>синтез, мс</th><th>до буфера, мс</th><th>длина, с</th><th>память, МБ</th></tr>${
+            rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+    }
+
+    async function selftest() {
+        const out = $('result');
+        const report = { userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency };
+        window.addEventListener('error', (e) => { report.error = String(e.message); });
+        try {
+            const sr = 48000;
+            // Render timings: an offline context stands in for the real one, the worker is the same.
+            const ctx = new OfflineAudioContext(2, sr * 3, sr);
+            const audio = createAudio({ context: ctx, musicRate: 1 });
+            await audio.unlock();
+            const t0 = performance.now();
+            await audio.whenReady('core');
+            report.coreWall = Math.round(performance.now() - t0);
+            await audio.whenReady('finale');
+            for (const name of Object.keys(TRACKS)) await audio.preload(name);
+            report.stats = audio.stats();
+
+            // A hundred random effects within the first second through the real graph: voice limits, buses,
+            // compressor and ceiling.
+            const names = Object.keys(SFX).filter((n) => SFX[n].group === 'core');
+            let seed = 7;
+            const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+            for (let k = 0; k < 100; k++) {
+                audio.play(names[Math.floor(rnd() * names.length)], { delay: rnd(), pan: rnd() * 2 - 1 });
+            }
+            const rendered = await ctx.startRendering();
+            let peak = 0;
+            for (let c = 0; c < rendered.numberOfChannels; c++) for (const x of rendered.getChannelData(c)) peak = Math.max(peak, Math.abs(x));
+            report.burstPeakDbfs = +(20 * Math.log10(peak)).toFixed(2);
+            report.ok = report.burstPeakDbfs <= -1 && !report.error;
+        } catch (error) {
+            report.error = String(error?.stack ?? error);
+            report.ok = false;
+        }
+        out.textContent = JSON.stringify(report, null, 2);
+        out.dataset.done = '1';
+        $('stats').innerHTML = report.stats ? statsTable(report.stats) : '';
+    }
+
+    if (params.has('selftest')) {
+        selftest();
+    } else {
+        const audio = createAudio();
+        audio.unlockOn(document);
+        $('unlock').addEventListener('click', () => audio.unlock());
+        $('mute').checked = audio.state().muted;
+        $('mute').addEventListener('change', (e) => audio.setMuted(e.target.checked));
+
+        const trackButtons = {};
+        for (const name of Object.keys(TRACKS)) {
+            trackButtons[name] = button(name, () => audio.setMusic(name));
+            $('tracks').append(trackButtons[name]);
+        }
+        $('tracks').append(button('стоп', () => audio.setMusic(null)));
+        const scenes = [{ scene: 0 }, { scene: 1 }, { scene: 2 }, { scene: 3, finale: { step: 0 } }, { scene: 3, finale: { step: 5 } }];
+        let sceneIndex = -1;
+        $('tracks').append(button('следующая сцена →', () => {
+            sceneIndex = (sceneIndex + 1) % scenes.length;
+            audio.setMusic(trackOf({ sceneStages: 3, ...scenes[sceneIndex] }));
+        }));
+
+        $('intensity').addEventListener('input', (e) => {
+            audio.setIntensity(+e.target.value);
+            $('intensity-value').textContent = e.target.value;
+        });
+
+        for (const bus of ['master', 'music', 'sfx', 'ui']) {
+            const label = document.createElement('label');
+            const input = document.createElement('input');
+            Object.assign(input, { type: 'range', min: 0, max: 1, step: 0.01, value: audio.volume(bus) });
+            input.addEventListener('input', () => audio.setVolume(bus, +input.value));
+            label.append(bus, input);
+            $('volumes').append(label);
+        }
+
+        const groups = {};
+        for (const name of Object.keys(SFX)) (groups[name.split('.')[0]] ??= []).push(name);
+        for (const [group, names] of Object.entries(groups)) {
+            const div = document.createElement('div');
+            div.className = 'row group';
+            const b = document.createElement('b');
+            b.textContent = group;
+            div.append(b, ...names.map((name) => button(`${name.split('.').slice(1).join('.') || name} ×${SFX[name].variants}`,
+                () => audio.play(name, { pan: +$('pan').value, pitch: +$('pitch').value }))));
+            $('sfx').append(div);
+        }
+        $('pitch').addEventListener('input', (e) => { $('pitch-value').textContent = e.target.value; });
+        $('burst').addEventListener('click', () => {
+            const names = Object.keys(SFX).filter((n) => SFX[n].group === 'core');
+            for (let k = 0; k < 100; k++) audio.play(names[k * 7 % names.length], { delay: (k % 50) / 50, pan: ((k % 9) - 4) / 4 });
+        });
+        document.querySelectorAll('[data-speak]').forEach((b) => b.addEventListener('click', () => {
+            audio.play(b.dataset.speak === 'owl' ? 'owl.hoot' : 'franken.grumble');
+            audio.speak(b.dataset.speak, $('line').value);
+        }));
+
+        const paint = (state) => {
+            $('status').textContent = JSON.stringify(state);
+            for (const [name, b] of Object.entries(trackButtons)) b.classList.toggle('on', state.music === name);
+            $('stats').innerHTML = statsTable(audio.stats());
+        };
+        audio.subscribe(paint);
+        paint(audio.state());
+        setInterval(() => {
+            const ctx = audio.context;
+            $('bar').textContent = ctx ? `t = ${ctx.currentTime.toFixed(2)} с, ${ctx.state}` : 'звук ещё не включён';
+        }, 200);
+    }
+</script>
+</body>
+</html>
