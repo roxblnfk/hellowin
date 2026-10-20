@@ -12,6 +12,8 @@
           data-scene-stages="{{ $sceneStages }}"
           data-stage-max="{{ $stageMax ?? 4 }}"
           data-threshold="{{ $threshold }}"
+          data-k="{{ $k ?? 1 }}"
+          data-online="{{ $online ?? 0 }}"
           data-bushes="{{ json_encode($bushes ?? []) }}"
           data-walkers="{{ json_encode($walkers ?? []) }}"
           data-now="{{ $now ?? 0 }}"

@@ -43,6 +43,11 @@ function parseFinale(json) {
 
 const flag = (value) => value === '1' || value === 'true';
 
+const num = (value, fallback) => {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? n : fallback;
+};
+
 /**
  * Snapshot as rendered by the home template: #app attributes plus one button per element.
  */
@@ -53,6 +58,8 @@ export function readSnapshot(root) {
         sceneStages: int(root.dataset.sceneStages, 1),
         stageMax: int(root.dataset.stageMax, DEFAULT_STAGE_MAX),
         threshold: int(root.dataset.threshold, 1),
+        k: num(root.dataset.k, 1),
+        online: int(root.dataset.online, 0),
         bushes: parseList(root.dataset.bushes),
         walkers: parseList(root.dataset.walkers),
         now: int(root.dataset.now, 0),
@@ -215,6 +222,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         root.dataset.sceneStages = model.sceneStages;
         root.dataset.stageMax = model.stageMax;
         root.dataset.threshold = model.threshold;
+        root.dataset.k = model.k;
+        root.dataset.online = model.online;
         paintElements();
         paintHud();
     }
@@ -227,6 +236,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             sceneStages: snapshot.sceneStages,
             stageMax: snapshot.stageMax ?? stageMaxByScene.get(snapshot.scene) ?? DEFAULT_STAGE_MAX,
             threshold: snapshot.threshold,
+            k: snapshot.k ?? model.k,
+            online: snapshot.online ?? model.online,
             bushes: snapshot.bushes ?? model.bushes,
             walkers: snapshot.walkers ?? model.walkers,
             startedAt: snapshot.startedAt ?? model.startedAt,
@@ -376,7 +387,29 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintStory();
         },
 
-        // The pause is about the room, not the story: it survives a reset (protocol.md, «Снимок»).
+        // The moderator's multiplier: every threshold at once, already multiplied by the server (the client does
+        // not know the base values). A pumpkin with enough clicks turns ready at once.
+        thresholds(event) {
+            model.k = Number(event.k);
+            root.dataset.k = model.k;
+            const { pumpkin, bonfire, circle } = event.thresholds ?? {};
+            if (pumpkin !== undefined) {
+                model.threshold = pumpkin;
+                root.dataset.threshold = pumpkin;
+            }
+            if (bonfire !== undefined && bonfireOf()) bonfireOf().threshold = bonfire;
+            if (circle !== undefined && circleOf()) circleOf().threshold = circle;
+            paintElements();
+        },
+
+        // Only `online` for now: the players' table on the page is still to come (players.md).
+        leaderboard(event) {
+            if (!Number.isInteger(event.online)) return;
+            model.online = event.online;
+            root.dataset.online = model.online;
+        },
+
+        // The pause and the multiplier are about the room, not the story: they survive a reset (protocol.md, «Снимок»).
         reset(event) {
             model.round = event.round;
             model.scene = 0;

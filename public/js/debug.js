@@ -9,6 +9,10 @@ const CONFIRM_MS = 3000;
 const NOTE_MS = 3000;
 const DONE_MS = 900;
 const LAST_STEP = 5;
+// The threshold multiplier (scenario.md, «Множитель порогов»): its range and the step of the ÷ / × buttons.
+const K_MIN = 0.1;
+const K_MAX = 10;
+const K_STEP = 1.25;
 const ERRORS = {
     forbidden: 'Нет прав',
     'not ready': 'Не готово',
@@ -17,7 +21,12 @@ const ERRORS = {
     'unknown kind': 'Нет такого',
     'invalid text': 'Пустой текст',
     busy: 'Занято',
+    'invalid k': '0,1–10',
 };
+
+const roundK = (k) => Math.round(k * 100) / 100;
+const clampK = (k) => Math.min(K_MAX, Math.max(K_MIN, roundK(k)));
+const formatK = (k) => k.toFixed(2).replace('.', ',');
 
 function rememberedOpen() {
     const param = new URLSearchParams(location.search).get('debug');
@@ -113,6 +122,23 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const zombies = button(night, { 'data-action': 'zombies', 'aria-pressed': 'false', title: 'Бредут только в проклятом мире' }, 'Зомби');
     const pause = button(night, { 'data-action': 'pause', 'aria-pressed': 'false', title: 'Летуны и зомби не запускаются' }, 'Пауза');
 
+    // The thresholds shown are the server's, from the model: the client does not know the base values.
+    const limits = group('Пороги');
+    const kForm = el('form', { class: 'console__k', 'data-k-form': '', novalidate: '' });
+    const kDown = button(kForm, { 'data-action': 'k-down', title: 'Пороги меньше' }, `÷${formatK(K_STEP)}`);
+    const kValue = el('output', { class: 'console__value', 'data-k-value': '', 'aria-label': 'Множитель порогов' });
+    kForm.append(kValue);
+    const kUp = button(kForm, { 'data-action': 'k-up', title: 'Пороги больше' }, `×${formatK(K_STEP)}`);
+    // Text, not number: a comma is typed on a phone, and an out-of-range value goes to the server, which says no.
+    const kInput = el('input', { class: 'console__input console__input--k', 'data-k-input': '', inputmode: 'decimal', 'aria-label': 'Множитель порогов, от 0,1 до 10', autocomplete: 'off' });
+    const kSet = el('button', { type: 'submit', class: 'debug__button', 'data-action': 'k-set' }, 'OK');
+    kSet.dataset.label = 'OK';
+    kForm.append(kInput, kSet);
+    limits.append(kForm);
+    const limitsInfo = el('span', { class: 'console__info', 'data-console-thresholds': '' });
+    const online = el('span', { class: 'console__info', 'data-console-online': '' });
+    limits.append(limitsInfo, online);
+
     const tools = group('Отладка');
     button(tools, { 'data-action': 'click-all' }, 'Клик по всем').addEventListener('click', () => clickAll());
 
@@ -201,6 +227,17 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     runner.addEventListener('click', () => send(runner, 'flyer.special', { kind: 'roadrunner' }, { done: true }));
     zombies.addEventListener('click', () => model && send(zombies, 'zombies', { on: !model.zombies }));
     pause.addEventListener('click', () => model && send(pause, 'pause', { on: !model.paused }));
+    kDown.addEventListener('click', () => model && send(kDown, 'thresholds', { k: clampK(model.k / K_STEP) }));
+    kUp.addEventListener('click', () => model && send(kUp, 'thresholds', { k: clampK(model.k * K_STEP) }));
+    kForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const k = Number(kInput.value.trim().replace(',', '.'));
+        if (!kInput.value.trim() || !Number.isFinite(k)) {
+            note(kSet, ERRORS['invalid k']);
+            return;
+        }
+        if (await send(kSet, 'thresholds', { k: roundK(k) }, { done: true })) kInput.value = '';
+    });
 
     const setOpen = (on) => {
         body.hidden = !on;
@@ -237,9 +274,19 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             pause.setAttribute('aria-pressed', String(model.paused));
             setLabel(pause, model.paused ? 'Пауза: вкл' : 'Пауза: выкл');
 
+            const k = Number(model.k ?? 1);
+            kValue.textContent = `×${formatK(k)}`;
+            kInput.placeholder = formatK(k);
+            const bonfire = model.elements.find((e) => e.type === 'bonfire');
+            const circle = model.elements.find((e) => e.type === 'circle');
+            limitsInfo.textContent = [`тыква ${model.threshold}`, bonfire && `костёр ${bonfire.threshold}`, circle && `круг ${circle.threshold}`]
+                .filter(Boolean).join(' · ');
+            online.textContent = `онлайн: ${model.online ?? 0}`;
+
             const parts = [final ? (current >= LAST_STEP ? 'проклятый мир' : `финал · шаг ${current}`) : `сцена ${model.scene}`];
             if (model.ready) parts.push('готова');
             if (model.paused) parts.push('пауза');
+            if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');
         },
     };
