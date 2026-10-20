@@ -76,11 +76,12 @@ return [
     'horizon' => 38,
 
     // What every character holds, by scene number; null is empty hands. The frontend draws an item by its id
-    'items' => ['pistol', 'candle', 'book', 'book'],
+    'items' => ['pistol', 'candle', 'book', 'red-flame'],
 
-    // In the finale: the item every character holds from a step on, until a later step gives another; the steps
-    // before the first one keep the item of the scene. The cursed world hands out beer
-    'finale_items' => [5 => 'beer'],
+    // In the finale: the item every character holds from a step on, until a later step gives another; null is empty
+    // hands, a step left out keeps what the previous one gave. The circle is drawn with a red flame, the cursed world
+    // hands out beer
+    'finale_items' => [0 => 'red-flame', 1 => null, 2 => null, 3 => null, 4 => null, 5 => 'beer'],
 
     // Where players' characters walk: the lawn rectangle minus the patch ellipse, in percents of the viewport like
     // the elements (players.md, «На поле»)
