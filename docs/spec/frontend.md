@@ -100,7 +100,7 @@ scene.setFinale({step, ready});      // шаг финала (null вне фин�
 | `<body>` | `data-final` | присутствует, когда `scene == sceneStages` |
 | `#app` | `data-centrifugo-url`, `data-round`, `data-scene-stages`, `data-stage-max`, `data-threshold` | из снимка |
 | `#app` | `data-bushes`, `data-walkers` | JSON `bushes` и `walkers` снимка (`$walkers ?? []`) |
-| `#app` | `data-now` | `now` снимка: смещение серверных часов |
+| `#app` | `data-now` | `now` снимка: первая оценка смещения серверных часов (дальше — замеры RPC `time`) |
 | `#app` | `data-started-at` | `startedAt` снимка: запуск RoadRunner, аптайм финала (0 — не известен) |
 | `#app` | `data-ready`, `data-paused`, `data-zombies` (`1`/`0`), `data-finale` (JSON `{step, reveal?}` или `null`) | сюжет из снимка |
 | `<body>` | `data-ready`, `data-paused`, `data-zombies` | присутствуют, пока включено (модель клиента) |
@@ -237,7 +237,10 @@ scene.setFinale({step, ready});      // шаг финала (null вне фин�
 Механика — [`scenario.md`](scenario.md), события `flyer` / `shot` и RPC `shoot` — [`protocol.md`](protocol.md).
 
 - Полёт клиент считает сам по серверному времени: прогресс `(Date.now() + offset − launchedAt) / duration`, где
-  `offset = now − Date.now()` из снимка страницы или RPC `state` (после возврата во вкладку — свежий `state`);
+  `offset` — смещение серверных часов: `now` снимка страницы — только первая оценка (он вписан при рендере, и доставка
+  страницы и загрузка скриптов, а после «Назад» из bfcache — и того больше, сдвигают его, и у двух браузеров рядом птицы
+  вылетали бы в разное время); затем при каждом подключении, возврате во вкладку и `pageshow` из bfcache клиент делает 5
+  замеров RPC `time` (без него — `state`) и берёт замер с минимальным RTT: `offset = serverNow + rtt/2 − t1`;
   летун при `Date.now() + offset >= expiresAt` не рисуется и убирается. Путь — прямая `from → to` или квадратичная
   кривая через `via`. Глубина `depth` задаёт масштаб (дальние мельче), слой (дальние позади дерева, ближние перед
   грядкой) и скорость взмахов. Утка из куста: куст шуршит, утка взлетает из его точки.

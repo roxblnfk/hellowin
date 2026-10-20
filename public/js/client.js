@@ -84,11 +84,12 @@ export function readSnapshot(root) {
  * @param {object|null} scene API of pixel/scene.js, or null without a canvas
  * @param {object} options
  * @param {() => Promise<object>} options.requestState  resolves with a fresh snapshot (RPC `state`)
+ * @param {() => Promise<number>} [options.requestTime]  resolves with the server's clock in ms (RPC `time`)
  * @param {{say: Function}|null} [options.owl]  speech bubble of owl.js
  * @param {{update: Function}|null} [options.reveal]  reveal panel of reveal.js
  * @param {(model: object) => void} [options.onChange]  after every applied event or snapshot (the console repaints)
  */
-export function createClient(root, scene, { requestState, now = () => Date.now(), owl = null, reveal = null, onChange = () => {} }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {} }) {
     const model = { ...readSnapshot(root), me: null, moderator: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
@@ -98,11 +99,16 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
     // The bonfire's last stage per scene, likewise (HELLOWIN_BONFIRE_STAGE_MAX: scene 0 has none by default).
     const bonfireMaxByScene = new Map(bonfireOf() ? [[model.scene, bonfireOf().stageMax]] : []);
     let syncing = null;
-    // Server clock minus ours, from the snapshot's `now`; 0 until one is known.
+    // Server clock minus ours. The snapshot's `now` is only a first guess: it was stamped when the page was rendered,
+    // so delivery and script loading (or a page restored from the back-forward cache) leave it behind, and every
+    // viewer would see the same broadcast flyer at a different moment. syncClock() measures it properly.
     let offset = 0;
+    let measured = false;
     const takeTime = (serverTime) => {
-        if (serverTime > 0) offset = serverTime - now();
+        if (serverTime > 0 && !measured) offset = serverTime - now();
     };
+    const CLOCK_SAMPLES = 5;
+    let clocking = null;
     takeTime(model.now);
     scene?.setServerClock(() => now() + offset);
 
@@ -421,9 +427,31 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             return model.me !== null && model.walkers.some((w) => w.id === model.me);
         },
 
-        /** Refreshes the clock offset from RPC `state` without touching the scene (after the tab comes back). */
+        /**
+         * Measures the clock offset without touching the scene: a few round trips, and the one with the shortest RTT
+         * wins — its server time is taken as read at the middle of the trip (NTP-style). Called on every connect and
+         * whenever the tab comes back.
+         */
         syncClock() {
-            return requestState().then((snapshot) => takeTime(snapshot?.now)).catch((error) => console.warn('state rpc failed', error));
+            if (clocking) return clocking;
+            clocking = (async () => {
+                let best = null;
+                for (let i = 0; i < CLOCK_SAMPLES; i++) {
+                    const sent = now();
+                    const server = await requestTime();
+                    const back = now();
+                    if (!(server > 0)) continue;
+                    const rtt = back - sent;
+                    if (!best || rtt < best.rtt) best = { rtt, offset: server + rtt / 2 - back };
+                }
+                if (best) {
+                    offset = best.offset;
+                    measured = true;
+                }
+            })()
+                .catch((error) => console.warn('clock sync failed', error))
+                .finally(() => (clocking = null));
+            return clocking;
         },
 
         /** Applies one channel event (protocol.md); events of another round trigger a resync. */

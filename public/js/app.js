@@ -92,8 +92,21 @@ async function main() {
         // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
         clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
     });
+    // The server's clock for the offset measurement: RPC `time` is cheap; a server without it answers
+    // `unknown method`, and then the full `state` snapshot carries the time instead.
+    let timeRpc = true;
+    const stateTime = () => centrifuge.rpc('state', {}).then(answer).then((reply) => reply.state.now);
+    const requestTime = () => (timeRpc
+        ? centrifuge.rpc('time', {}).then(answer).then((reply) => reply.now).catch((error) => {
+            if (error?.message !== 'unknown method') throw error;
+            timeRpc = false;
+            return stateTime();
+        })
+        : stateTime());
+
     const client = createClient(root, scene, {
         requestState: () => centrifuge.rpc('state', {}).then(answer).then((reply) => reply.state),
+        requestTime,
         owl,
         reveal,
         onChange: (model) => moderatorConsole?.update(model),
@@ -110,6 +123,7 @@ async function main() {
         setStatus('connected');
         if (connectedOnce) client.resync();
         connectedOnce = true;
+        client.syncClock();
         // Who this browser is: the walker with this id is ours and may be sent around the patch; the moderator
         // connection gets the console.
         centrifuge.rpc('me', {}).then(answer)
@@ -128,6 +142,10 @@ async function main() {
     // its first frame, and a fresh offset keeps the next flights on the server's clock.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && connectedOnce) client.syncClock();
+    });
+    // A page restored from the back-forward cache keeps its old snapshot time; measure again.
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted && connectedOnce) client.syncClock();
     });
 
     // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event. A locked
