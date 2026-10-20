@@ -58,18 +58,25 @@ body {
 }
 
 /*
- * Each pumpkin is a transparent hit zone over its sprite. The scene publishes the sprite box per size in CSS
- * pixels (--hit-*-{size}); without a canvas the button is a centred emoji instead.
+ * Each element is a transparent hit zone over its sprite. The scene publishes the sprite box per size in CSS
+ * pixels (--hit-*-{size}, --hit-*-bonfire); without a canvas the button is a centred emoji instead.
  */
-.pumpkin {
+.pumpkin,
+.bonfire,
+.circle {
     --w: var(--emoji-size);
     --h: var(--emoji-size);
     --ox: -50%;
     --oy: -50%;
+    /* Floating pumpkins carry their hit zone up with them (--float-lift comes from the scene). */
+    --lift: 0px;
     position: absolute;
-    /* --x / --y come from the config; --spread widens the patch on narrow screens (public/js/layout.js). */
-    left: calc(50% + (var(--x) - 50) * var(--spread, 1) * 1%);
-    top: calc(var(--y) * 1%);
+    /*
+     * --x / --y come from the config; --spread widens the patch on narrow screens (public/js/layout.js); --out pushes
+     * the lit pumpkins away from the root (ROOT and jumpOut in layout.js), the bonfire sits on the root and stays.
+     */
+    left: calc(50% + (var(--x) - 50) * var(--spread, 1) * var(--out, 1) * 1%);
+    top: calc((var(--root-y, 63) + (var(--y) - var(--root-y, 63)) * var(--out, 1)) * 1%);
     width: var(--w);
     height: var(--h);
     padding: 0;
@@ -81,7 +88,13 @@ body {
     cursor: pointer;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transform: translate(var(--ox), var(--oy));
+    transform: translate(var(--ox), calc(var(--oy) - var(--lift)));
+    /* The jump out takes as long as the sprites' hop (pixel/scene.js, JUMP_MS). */
+    transition: left 0.6s ease-out, top 0.6s ease-out;
+}
+
+.pumpkin[data-float] {
+    --lift: var(--float-lift, 0px);
 }
 
 .pumpkin[data-size="s"] {
@@ -113,22 +126,75 @@ body {
     --oy: var(--hit-y-l);
 }
 
-.has-canvas .pumpkin__emoji {
+.has-canvas .bonfire {
+    --w: var(--hit-w-bonfire);
+    --h: var(--hit-h-bonfire);
+    --ox: var(--hit-x-bonfire);
+    --oy: var(--hit-y-bonfire);
+}
+
+.has-canvas .circle {
+    --w: var(--hit-w-circle);
+    --h: var(--hit-h-circle);
+    --ox: var(--hit-x-circle);
+    --oy: var(--hit-y-circle);
+}
+
+.has-canvas .pumpkin__emoji,
+.has-canvas .element__emoji {
     visibility: hidden;
 }
 
-.pumpkin:focus-visible {
+/* Locked (the bonfire until every pumpkin is done, the circle outside finale step 0): it looks inert, but stays in
+   the tab order and says why. */
+.bonfire[data-locked],
+.circle[data-locked] {
+    cursor: not-allowed;
+}
+
+/*
+ * Scene 0 has no bonfire yet (the root and its foliage are there instead), the final scene none any more (the ash pit
+ * takes its place); the circle exists only in the final scene (docs/spec/scenario.md). An element of an unknown type
+ * is not drawn at all.
+ */
+body[data-scene="0"] .bonfire,
+body[data-final] .bonfire,
+body:not([data-final]) .circle,
+.element {
+    visibility: hidden;
+}
+
+.pumpkin:focus-visible,
+.bonfire:focus-visible,
+.circle:focus-visible {
     outline: calc(var(--px, 2px) * 1) dashed var(--gold);
     outline-offset: calc(var(--px, 2px) * 2);
 }
 
+.bonfire[data-locked]:focus-visible,
+.circle[data-locked]:focus-visible {
+    outline-color: var(--cream);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pumpkin,
+    .bonfire,
+    .circle {
+        transition: none;
+    }
+}
+
 /* Fallback view only: the canvas animates these states itself. */
-.patch:not(.has-canvas) .pumpkin[data-ready] .pumpkin__emoji {
+.patch:not(.has-canvas) .pumpkin[data-ready] .pumpkin__emoji,
+.patch:not(.has-canvas) .bonfire[data-ready] .element__emoji,
+.patch:not(.has-canvas) .circle[data-ready] .element__emoji {
     display: inline-block;
     filter: drop-shadow(0 0 6px var(--gold));
 }
 
-.patch:not(.has-canvas) .pumpkin[data-done] {
+.patch:not(.has-canvas) .pumpkin[data-done],
+.patch:not(.has-canvas) .bonfire[data-locked],
+.patch:not(.has-canvas) .circle[data-locked] {
     opacity: 0.6;
 }
 

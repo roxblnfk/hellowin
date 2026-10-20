@@ -24,6 +24,19 @@
         </a>
 
         @foreach($elements as $element)
+            @if($element['type'] !== 'pumpkin')
+            <!-- The bonfire, the magic circle and any later type: own threshold and last stage; an unknown type gets
+                 the neutral .element class (hidden), never a pumpkin's look. -->
+            <button type="button" class="{{ \in_array($element['type'], ['bonfire', 'circle'], true) ? $element['type'] : 'element' }}"
+                    data-element="{{ $element['id'] }}"
+                    data-type="{{ $element['type'] }}"
+                    data-stage="{{ $element['stage'] }}"
+                    data-clicks="{{ $element['clicks'] }}"
+                    data-threshold="{{ $element['threshold'] ?? 1 }}"
+                    data-stage-max="{{ $element['stageMax'] ?? 0 }}"
+                    style="--x: {{ $element['x'] }}; --y: {{ $element['y'] }}; z-index: {{ (int) round($element['y'] * 10) }}"
+                    aria-label="{{ ['bonfire' => 'Костёр', 'circle' => 'Магический круг'][$element['type']] ?? $element['id'] }}"><span class="element__emoji" aria-hidden="true">{{ ['bonfire' => '🔥', 'circle' => '⭕'][$element['type']] ?? '' }}</span></button>
+            @else
             <button type="button" class="pumpkin"
                     data-element="{{ $element['id'] }}"
                     data-type="{{ $element['type'] }}"
@@ -32,6 +45,7 @@
                     data-clicks="{{ $element['clicks'] }}"
                     style="--x: {{ $element['x'] }}; --y: {{ $element['y'] }}; z-index: {{ (int) round($element['y'] * 10) }}"
                     aria-label="Тыква {{ $element['id'] }}"><span class="pumpkin__emoji" aria-hidden="true">🎃</span></button>
+            @endif
         @endforeach
 
         <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
@@ -40,7 +54,7 @@
             <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
             <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>
             <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
-            <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count($elements) }}</b></span>
+            <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         </footer>

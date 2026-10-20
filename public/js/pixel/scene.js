@@ -8,18 +8,37 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { ROOT, spreadLeft, spreadX } from '../layout.js';
+import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
+import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { POSES, characterFrame } from './characters.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
+import { NIGHT, bakeLit, halo, paintSky, relightCanvas } from './night.js';
 import { OWL, glowing } from './owl.js';
 import { PALETTE } from './palette.js';
-import { DECOR, PARTICLES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
+import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
-// Artwork exists for the scene 0 stages; later stages reuse the last drawn one (docs/spec/scenario.md).
-const DRAWN_STAGES = 4;
 const SIZES = ['s', 'm', 'l'];
-// Back to front; glow sits above back and under body and stays hidden by day.
-const LAYERS = ['back', 'glow', 'body', 'rim', 'stem'];
+// Back to front: the aura under everything, the glow above back and under body (hidden by day), the fire on top.
+const LAYERS = ['aura', 'back', 'glow', 'body', 'rim', 'stem', 'fire'];
+// Light layers: drawn unlit in every lighting and animated by their frames (sprites.js, pumpkinLayers).
+const LIGHT_LAYERS = new Set(['aura', 'glow', 'fire']);
+// The first stage whose glow layer is the inner light; below it the glow is only the mask of the cuts.
+const LIT_STAGE = 5;
+// Frame periods of the light layers, ms.
+const FRAME_MS = { glow: 120, fire: 110, aura: 160 };
+// The jump out of scene 1: hop length and height (art px); app.css moves the buttons over the same time.
+const JUMP_MS = 600;
+const JUMP_H = 12;
+// Floating pumpkins hover this high (art px) and bob ±2 around it.
+const FLOAT_LIFT = 5;
+// Explosion frame times (bonfire.js, EXPLOSION), the screen shake, and how long the pit's embers keep dying.
+const BLAST_MS = [70, 70, 70, 120, 120, 120, 120, 120];
+const SHAKE_MS = 700;
+const EMBERS_MS = 9000;
+// Sunset: how long the palette slides from day and the sun sinks behind the hills; later scene changes are quicker.
+const SUNSET_MS = 4000;
+const FADE_MS = 3000;
+const FADE_STEPS = 10;
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const css = (color) => '#' + color.toString(16).padStart(6, '0');
@@ -87,7 +106,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, circle: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -132,7 +151,14 @@ export async function createScene(rootEl, snapshot) {
     const cloudLayer = new Container();
     const baseLayer = new Container();
     const plantLayer = new Container();
+    // Ground light under everything standing: the bonfire's and pumpkins' halos (additive), candles, float shadows.
+    const lightLayer = new Container();
     const bugLayer = new Container();
+    // The bonfire's explosion, over the ground objects around it.
+    const blastLayer = new Container();
+    const blastSprite = new Sprite();
+    blastSprite.visible = false;
+    blastLayer.addChild(blastSprite);
     // Flyers never go behind the far plan: depth 0 flies between the hills and everything standing on the ground,
     // depth 1 over the ground objects, depth 2 over depth 1.
     const farFlyerLayer = new Container();
@@ -147,7 +173,7 @@ export async function createScene(rootEl, snapshot) {
     // Full-screen veil for the new-round dim-and-flash.
     const veil = new Sprite(Texture.WHITE);
     veil.visible = false;
-    world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, farFlyerLayer, groundLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
+    world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, lightLayer, farFlyerLayer, groundLayer, blastLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
     // Debug outline of the flyers' hit boxes (public/dev/lab.html ?hits=1).
     const hitOverlay = new Graphics();
     world.addChild(hitOverlay);
@@ -157,7 +183,10 @@ export async function createScene(rootEl, snapshot) {
     // Name labels are drawn over the blown-up world at screen resolution: text rasterised into the art texture
     // would turn into blocky smudges, and a pixel font of our own would not cover Cyrillic names.
     const labelLayer = new Container();
-    app.stage.addChild(display, labelLayer);
+    // A frozen copy of the world in the old lighting, fading out over the relit one when the scene changes.
+    const fadeDisplay = new Sprite();
+    fadeDisplay.visible = false;
+    app.stage.addChild(display, fadeDisplay, labelLayer);
 
     const art = new Map();
     const artTexture = (key, make) => {
@@ -167,23 +196,38 @@ export async function createScene(rootEl, snapshot) {
         return art.get(key);
     };
 
-    function pumpkinArt(stage, size, seed = 0) {
-        const drawn = clamp(stage, 0, DRAWN_STAGES);
-        return artTexture(`pumpkin:${drawn}:${size}:${seed}`, () => {
+    // A sprite in a lighting: day art is baked as is, the rest goes through night.js (cached there per sprite).
+    const litBake = (def, lit) => (lit === 'day' ? bake(def) : bakeLit(def, lit));
+
+    /**
+     * Textures of a pumpkin stage in a lighting: the lit layers through bakeLit, the light layers (aura, glow, fire)
+     * unlit with their flicker frames. Stages past the last drawn one look like it (docs/spec/scenario.md).
+     */
+    function pumpkinArt(stage, size, seed = 0, lit = 'day', tone = 'green') {
+        const drawn = clamp(stage, 0, PUMPKIN_STAGES);
+        return artTexture(`pumpkin:${drawn}:${size}:${seed}:${lit}:${drawn >= 9 ? tone : ''}`, () => {
             // The composite gives the outline and the flash; the scene draws the layers separately.
             const def = pumpkinSprite(drawn, size, seed);
-            const { layers } = pumpkinLayers(drawn, size, seed);
-            const edge = bake(silhouette(def, 'pumpkinShine'));
-            const ring = canvas(def.w + 2, def.h + 2);
-            const ctx = ring.getContext('2d');
-            for (const [dx, dy] of [[0, 1], [2, 1], [1, 0], [1, 2]]) {
-                ctx.drawImage(edge, dx, dy);
-            }
+            const L = pumpkinLayers(drawn, size, seed, tone);
+            const outline = artTexture(`pumpkin-edge:${drawn}:${size}:${seed}`, () => {
+                const edge = bake(silhouette(def, 'pumpkinShine'));
+                const ring = canvas(def.w + 2, def.h + 2);
+                const ctx = ring.getContext('2d');
+                for (const [dx, dy] of [[0, 1], [2, 1], [1, 0], [1, 2]]) {
+                    ctx.drawImage(edge, dx, dy);
+                }
+                return { ring: texture(ring), flash: texture(bake(silhouette(def, 'white'))) };
+            });
+            const unlit = (list) => list?.map((sprite) => texture(bake(sprite))) ?? null;
             return {
                 def,
-                layers: Object.fromEntries(LAYERS.map((name) => [name, layers[name] ? texture(bake(layers[name])) : null])),
-                ring: texture(ring),
-                flash: texture(bake(silhouette(def, 'white'))),
+                layers: Object.fromEntries(LAYERS.map((name) => {
+                    const layer = L.layers[name];
+                    if (!layer) return [name, null];
+                    return [name, texture(LIGHT_LAYERS.has(name) ? bake(layer) : litBake(layer, lit))];
+                })),
+                frames: { glow: unlit(L.glowFrames), fire: unlit(L.fireFrames), aura: unlit(L.auraFrames) },
+                ...outline,
             };
         });
     }
@@ -193,11 +237,37 @@ export async function createScene(rootEl, snapshot) {
     let state = {
         round: snapshot.round,
         scene: snapshot.scene ?? 0,
-        stageMax: snapshot.stageMax ?? DRAWN_STAGES,
+        sceneStages: snapshot.sceneStages ?? 3,
+        stageMax: snapshot.stageMax ?? 4,
         threshold: snapshot.threshold ?? 1,
         elements: snapshot.elements ?? [],
         bushes: snapshot.bushes ?? [],
     };
+
+    // Lighting per scene (docs/spec/scenario.md, «Сцены 1–3»): day, sunset, night; the final scene is the blood moon.
+    const lightingOf = (scene) => (scene >= state.sceneStages ? 'blood' : ['day', 'sunset', 'night'][scene] ?? 'night');
+    let lighting = 'day';
+    // The bonfire's warm reach at night, { x, y, rx, ry, near } in art px; null without a burning bonfire.
+    let fireLight = null;
+    /**
+     * The lighting of a sprite standing at an art point: the firelight near the bonfire at night, else the scene's. A
+     * sprite is lit as a whole, so it takes a clean cut at the middle of the background's dithered edge (nearLight)
+     * rather than a coin flip of the dither at its foot.
+     */
+    const lightAt = (x, y) => (fireLight && Math.hypot((x - fireLight.x) / fireLight.rx, (y - fireLight.y) / fireLight.ry) < 0.75 ? 'firelight' : lighting);
+    /** A baked full-screen layer (lawn, vines) recoloured for the scene's lighting and the bonfire's reach. */
+    const relight = (c) => (lighting === 'day' && !fireLight ? c : relightCanvas(c, lighting, fireLight));
+    // Magic of the stages 9+ turns violet under the blood moon.
+    const toneOf = () => (lighting === 'blood' ? 'violet' : 'green');
+    const bonfireElement = () => state.elements.find((e) => e.type === 'bonfire') ?? null;
+    const pumpkinElements = () => state.elements.filter(isPumpkin);
+    // The magic circle is drawn on the bonfire's pit: its clicks shake the pit like the bonfire's shook the fire.
+    const onPit = (id) => bonfire?.ash && state.elements.some((e) => e.id === id && e.type === 'circle');
+    // The bonfire takes the root's place once the foliage is freed in scene 1; scene 0 keeps the root.
+    const hasBonfire = () => state.scene > 0 && Boolean(bonfireElement());
+    // Whether the pumpkins stand jumped out (layout.js), and when the hop started (it is over after JUMP_MS).
+    let out = false;
+    let jumpAt = -1e9;
     const pumpkins = new Map();
     // Players' characters by player id: the Walker of protocol.md plus the sprite and label drawn for it.
     const walkers = new Map();
@@ -212,6 +282,9 @@ export async function createScene(rootEl, snapshot) {
     const hazyTextures = new Map();
     let veilStart = -1e9;
     const VEIL = [['outline', 0.6], ['outline', 0.6], ['outline', 0.45], ['white', 0.55], ['white', 0.3]];
+    // The explosion's flash: white-green, then white, fading in steps.
+    const BLAST_VEIL = [['magicCore', 0.85], ['white', 0.8], ['white', 0.6], ['eyeGreen', 0.4], ['white', 0.25], ['white', 0.12]];
+    let veilFrames = VEIL;
     let bugs = [];
     let perch = { x: 0, y: 0 };
     // The owl on the branch: its sprite (made again with groundLayer on every rebuild) and the line it is saying.
@@ -219,6 +292,18 @@ export async function createScene(rootEl, snapshot) {
     let owlAt = { x: 0, y: 0 };
     let owlTalk = { at: -1e9, until: -1e9, hoot: false };
     let clock = 0;
+    // The bonfire in the middle from scene 1 (its sprites, stage and click shake), the pit in the final scene.
+    let bonfire = null;
+    // The explosion 2 → 3 starts here; the pit's embers die out after it. A frozen frame fades out over the relit
+    // world after a scene change.
+    let blastAt = -1e9;
+    let fade = null;
+    // The sinking sunset sun: its sprite, where it rests and since when it sinks.
+    let sun = null;
+    let sunSetAt = -1e9;
+    let twinkles = [];
+    // The magic circle on the pit, 0–1 (scene.circle); nothing is drawn at 0.
+    let circleProgress = 0;
 
     function toArt(element) {
         return {
@@ -230,35 +315,79 @@ export async function createScene(rootEl, snapshot) {
     function drawSky() {
         const { artW, horizon } = layout;
         const c = canvas(artW, horizon + 1);
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = css(PALETTE.sky);
-        ctx.fillRect(0, 0, artW, horizon + 1);
-        // A dithered band toward the horizon instead of a gradient: two palette colors, no blending.
-        const band = farPlan() + 6;
-        ctx.fillStyle = css(PALETTE.skyLight);
-        for (let y = horizon - band; y <= horizon; y++) {
-            const density = (y - (horizon - band)) / band;
-            for (let x = 0; x < artW; x++) {
-                const checker = (x + y) % 2 === 0;
-                if (density > 0.66 || (density > 0.33 && checker) || (checker && x % 4 === 0)) {
-                    ctx.fillRect(x, y, 1, 1);
+        // CPU-backed: the night skies are painted pixel by pixel, which a GPU canvas would queue up until a readback.
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        if (lighting === 'day') {
+            ctx.fillStyle = css(PALETTE.sky);
+            ctx.fillRect(0, 0, artW, horizon + 1);
+            // A dithered band toward the horizon instead of a gradient: two palette colors, no blending.
+            const band = farPlan() + 6;
+            ctx.fillStyle = css(PALETTE.skyLight);
+            for (let y = horizon - band; y <= horizon; y++) {
+                const density = (y - (horizon - band)) / band;
+                for (let x = 0; x < artW; x++) {
+                    const checker = (x + y) % 2 === 0;
+                    if (density > 0.66 || (density > 0.33 && checker) || (checker && x % 4 === 0)) {
+                        ctx.fillRect(x, y, 1, 1);
+                    }
                 }
             }
+        } else {
+            // Dithered bands of the lighting's sky, 1-px stars at night (night.js).
+            paintSky(ctx, artW, horizon + 1, lighting, { seed: 5 });
         }
         skyLayer.removeChildren().forEach((s) => s.destroy());
         skyLayer.addChild(new Sprite(texture(c)));
 
-        const sunDef = DECOR.sun;
-        const sun = new Sprite(artTexture('sun', () => texture(bake(sunDef))));
-        sun.position.set(Math.round(artW * 0.82) - (sunDef.w >> 1), Math.max(2, Math.round((horizon - farPlan() - sunDef.h) * 0.3)));
-        skyLayer.addChild(sun);
+        const skyX = Math.round(artW * 0.82);
+        const top = horizon - farPlan();
+        sun = null;
+        twinkles = [];
+        if (lighting === 'day') {
+            const sunDef = DECOR.sun;
+            const daySun = new Sprite(artTexture('sun', () => texture(bake(sunDef))));
+            daySun.position.set(skyX - (sunDef.w >> 1), Math.max(2, Math.round((top - sunDef.h) * 0.3)));
+            skyLayer.addChild(daySun);
+        } else if (lighting === 'sunset') {
+            // The striped sun rests half behind the hills (the base layer covers it); after the day it sinks there.
+            const def = NIGHT.sunsetSun;
+            const sprite = new Sprite(defTexture(def));
+            sprite.anchor.set(0.5);
+            sun = { sprite, x: skyX, rest: top - 3, high: Math.max(def.h >> 1, Math.round(top * 0.3)) };
+            sprite.position.set(sun.x, sun.rest);
+            skyLayer.addChild(sprite);
+        } else {
+            const [ring, moon] = lighting === 'blood' ? [NIGHT.bloodMoonHalo, NIGHT.bloodMoon] : [NIGHT.moonHalo, NIGHT.moon];
+            const y = Math.max(moon.h >> 1, Math.round(top * 0.32));
+            for (const def of [ring, moon]) {
+                const sprite = new Sprite(defTexture(def));
+                sprite.anchor.set(0.5);
+                sprite.position.set(skyX, y);
+                skyLayer.addChild(sprite);
+            }
+            // A few bigger stars twinkle (cross ↔ sparkle) over the painted 1-px ones, clear of the moon.
+            if (lighting === 'night') {
+                const random = rng(21);
+                for (let i = 0; i < Math.max(4, Math.round(artW / 70)); i++) {
+                    const x = Math.round(4 + random() * (artW - 8));
+                    const sy = Math.round(3 + random() ** 1.4 * Math.max(4, top - 10));
+                    if (Math.hypot(x - skyX, sy - y) < ring.w / 2 + 3) continue;
+                    const sprite = new Sprite();
+                    sprite.anchor.set(0.5);
+                    sprite.position.set(x, sy);
+                    skyLayer.addChild(sprite);
+                    twinkles.push({ sprite, phase: Math.floor(random() * 4) });
+                }
+            }
+        }
 
         cloudLayer.removeChildren().forEach((s) => s.destroy());
         const random = rng(7);
-        const count = Math.max(2, Math.round(artW / 90));
+        // The night sky keeps a couple of moonlit clouds; the day and the sunset more.
+        const count = Math.max(lighting === 'day' || lighting === 'sunset' ? 2 : 1, Math.round(artW / (lighting === 'day' || lighting === 'sunset' ? 90 : 200)));
         clouds = Array.from({ length: count }, (_, i) => {
             const def = DECOR.cloud[i % DECOR.cloud.length];
-            const sprite = new Sprite(artTexture(`cloud:${i % DECOR.cloud.length}`, () => texture(bake(def))));
+            const sprite = new Sprite(defTexture(def, lighting));
             cloudLayer.addChild(sprite);
             return {
                 sprite,
@@ -305,17 +434,20 @@ export async function createScene(rootEl, snapshot) {
         return { x: shape.cx + Math.cos(a) * shape.rx * r, y: shape.cy + Math.sin(a) * shape.ry * r };
     }
 
+    // Texture of a sprites.js-style sprite per lighting; 'day' (the default) also serves light sprites like halos.
     const defTextures = new Map();
-    const defTexture = (def) => {
-        if (!defTextures.has(def)) defTextures.set(def, texture(bake(def)));
-        return defTextures.get(def);
+    const defTexture = (def, lit = 'day') => {
+        if (!defTextures.has(lit)) defTextures.set(lit, new WeakMap());
+        const cache = defTextures.get(lit);
+        if (!cache.has(def)) cache.set(def, texture(litBake(def, lit)));
+        return cache.get(def);
     };
 
     // Sort key: the foot's y, then x for a stable order between objects on the same row.
     const depthKey = (x, y) => Math.round(y) * 8192 + Math.round(x) + 4096;
 
-    /** Puts a standing object on the ground with its anchor at (x, y); `sortY` overrides the depth row. */
-    function addGround(def, x, y, { tex = defTexture(def), sortY = y } = {}) {
+    /** Puts a standing object on the ground with its anchor at (x, y), lit where it stands; `sortY` overrides the depth row. */
+    function addGround(def, x, y, { tex = defTexture(def, lightAt(x, y)), sortY = y } = {}) {
         const sprite = new Sprite(tex);
         sprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
         sprite.position.set(Math.round(x), Math.round(y));
@@ -391,7 +523,8 @@ export async function createScene(rootEl, snapshot) {
     function drawBase() {
         const { artW, artH, horizon } = layout;
         const c = canvas(artW, artH);
-        const ctx = c.getContext('2d');
+        // CPU-backed: the ridge scan and the relighting (night.js) read this canvas back.
+        const ctx = c.getContext('2d', { willReadFrequently: true });
         const random = rng(42);
         const shape = patchShape();
 
@@ -491,7 +624,7 @@ export async function createScene(rootEl, snapshot) {
         placeProps(shape, random);
 
         baseLayer.removeChildren().forEach((s) => s.destroy());
-        baseLayer.addChild(new Sprite(texture(c)));
+        baseLayer.addChild(new Sprite(texture(relight(c))));
     }
 
     // At the edge of the far plan, behind the patch in depth: vines and pumpkins cover its foot.
@@ -562,7 +695,7 @@ export async function createScene(rootEl, snapshot) {
             if (!owlNight.has(def)) owlNight.set(def, glowing(def));
             def = owlNight.get(def);
         }
-        const art = flyerArt(def);
+        const art = flyerArt(def, false, lightAt(owlAt.x, owlAt.y));
         owlSprite.texture = art.texture;
         owlSprite.anchor.set(art.ax, art.ay);
         owlSprite.position.set(owlAt.x, owlAt.y);
@@ -694,15 +827,15 @@ export async function createScene(rootEl, snapshot) {
     function drawPlants() {
         const { artW, artH } = layout;
         const c = canvas(artW, artH);
-        const ctx = c.getContext('2d');
+        const ctx = c.getContext('2d', { willReadFrequently: true });
         const random = rng(9);
         const fill = (key, x, y, w = 1, h = 1) => {
             ctx.fillStyle = css(PALETTE[key]);
             ctx.fillRect(x, y, w, h);
         };
 
-        for (const element of state.elements) {
-            const { def } = pumpkinArt(element.stage ?? 0, element.size ?? 'm', seedOf(element.id));
+        for (const element of pumpkinElements()) {
+            const def = pumpkinSprite(0, element.size ?? 'm', seedOf(element.id));
             const p = toArt(element);
             const w = Math.max(4, Math.round(def.w * 0.8));
             fill('soilDark', p.x - (w >> 1), p.y - 1, w, 2);
@@ -711,7 +844,7 @@ export async function createScene(rootEl, snapshot) {
 
         const root = toArt(ROOT);
         const foliage = [];
-        for (const element of state.elements) {
+        for (const element of pumpkinElements()) {
             const seed = seedOf(element.id);
             const def = pumpkinSprite(0, element.size ?? 'm', seed);
             const p = toArt(element);
@@ -719,6 +852,11 @@ export async function createScene(rootEl, snapshot) {
             drawVine(ctx, root, stem, (def.w >> 1) + 3, seed, foliage);
         }
 
+        plantLayer.removeChildren().forEach((s) => s.destroy());
+        plantLayer.addChild(new Sprite(texture(relight(c))));
+        // From scene 1 the freed tops are the bonfire's heap (buildBonfire): no root and no leaf heap in the middle.
+        foliage.forEach((leaf) => addGround(leaf.def, leaf.x, leaf.y));
+        if (hasBonfire()) return;
         // A heap of the largest leaves around the root; the root itself stays on top of it.
         const heapLeaves = DECOR.bigLeaf ? [DECOR.bigLeaf].flat() : DECOR.leaf.slice(0, 2);
         const heap = Math.round(clamp(artW / 30, 10, 16));
@@ -726,14 +864,10 @@ export async function createScene(rootEl, snapshot) {
             const a = random() * Math.PI * 2;
             const r = Math.sqrt(random());
             const leaf = heapLeaves[Math.floor(random() * heapLeaves.length)];
-            foliage.push({ def: leaf, x: root.x + Math.cos(a) * r * 11, y: root.y + Math.sin(a) * r * 5 });
+            addGround(leaf, root.x + Math.cos(a) * r * 11, root.y + Math.sin(a) * r * 5);
         }
-        foliage.forEach((leaf) => addGround(leaf.def, leaf.x, leaf.y));
         // The root sorts in front of its heap, so the leaves frame it instead of burying it.
         addGround(DECOR.root, root.x, root.y, { sortY: root.y + 20 });
-
-        plantLayer.removeChildren().forEach((s) => s.destroy());
-        plantLayer.addChild(new Sprite(texture(c)));
     }
 
     // Two butterflies drifting lazily over the lawn on either side of the patch: a 3×1 open and a 1×2 closed frame.
@@ -765,24 +899,38 @@ export async function createScene(rootEl, snapshot) {
         return 'idle';
     }
 
+    // Halo radii per size for the lit pumpkins' ground light.
+    const HALO = { l: [16, 5], m: [13, 5], s: [10, 4] };
+
     function applyArt(p) {
-        const a = pumpkinArt(p.stage, p.size, p.seed);
+        // Lit where it will stand: after the jump out a pumpkin may leave the firelight.
+        const at = out ? p.out : p.home;
+        const a = pumpkinArt(p.stage, p.size, p.seed, lightAt(at.x, at.y), toneOf());
         p.art = a;
         for (const name of LAYERS) {
             const sprite = p.layers[name];
             sprite.texture = a.layers[name] ?? Texture.EMPTY;
-            sprite.visible = Boolean(a.layers[name]) && name !== 'glow';
+            // The glow is the inner light from stage 5 on, and only after dark; below it, a mask of the cuts.
+            sprite.visible = Boolean(a.layers[name]) && (name !== 'glow' || (p.stage >= LIT_STAGE && lighting !== 'day'));
             sprite.position.set(-a.def.anchor.x, -a.def.anchor.y);
         }
         p.ring.texture = a.ring;
         p.ring.position.set(-a.def.anchor.x - 1, -a.def.anchor.y - 1);
+        // A burning or charmed pumpkin lights the ground around it.
+        const lit = p.stage > LIT_STAGE && lighting !== 'day';
+        p.halo.visible = lit;
+        if (lit) {
+            const [rx, ry] = HALO[p.size] ?? HALO.m;
+            p.halo.texture = defTexture(halo(rx, ry, lighting === 'sunset' ? 'warm' : lighting === 'blood' ? 'violet' : 'green'));
+        }
     }
 
     function buildPumpkins() {
         flashLayer.removeChildren().forEach((c) => c.destroy());
         pumpkins.clear();
         const random = rng(3);
-        const sorted = [...state.elements].sort((a, b) => a.y - b.y);
+        const sorted = pumpkinElements().sort((a, b) => a.y - b.y);
+        const k = jumpOut(layout.width);
         for (const element of sorted) {
             const node = new Container();
             const ring = new Sprite();
@@ -791,20 +939,37 @@ export async function createScene(rootEl, snapshot) {
             const layers = Object.fromEntries(LAYERS.map((name) => [name, new Sprite()]));
             body.addChild(...LAYERS.map((name) => layers[name]));
             node.addChild(ring, body);
-            node.zIndex = depthKey(toArt(element).x, toArt(element).y);
             groundLayer.addChild(node);
+            // Ground light and the shadow of a floating pumpkin lie flat under everything standing.
+            const glow = new Sprite();
+            glow.anchor.set(0.5);
+            glow.blendMode = 'add';
+            glow.alpha = 0.35;
+            const shadow = new Sprite();
+            shadow.anchor.set(0.5);
+            shadow.alpha = 0.5;
+            lightLayer.addChild(glow, shadow);
+            const home = toArt(element);
             const p = {
                 id: element.id,
                 size: element.size ?? 'm',
                 stage: element.stage ?? 0,
                 clicks: element.clicks ?? 0,
-                home: toArt(element),
+                home,
+                // Where it lands after the jump out: the offset from the root grows by jumpOut (layout.js), like the button.
+                out: toArt({ x: ROOT.x + (element.x - ROOT.x) * k, y: ROOT.y + (element.y - ROOT.y) * k }),
+                pos: home,
+                lift: 0,
                 node,
                 seed: seedOf(element.id),
                 ring,
                 body,
                 layers,
+                halo: glow,
+                shadow,
                 phase: random() * 1000,
+                // Pumpkins leave in a ragged volley, not all at once.
+                delay: random() * 250,
                 hit: -1e9,
                 bounce: -1e9,
                 flash: null,
@@ -814,12 +979,82 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    /**
+     * The bonfire from scene 1 on (bonfire.js): the heap and its flames in place of the root, the ground light under
+     * it; in the final scene the ash pit with the magic circle. Stage and frames are set per tick (animateBonfire).
+     */
+    function buildBonfire() {
+        bonfire = null;
+        const element = bonfireElement();
+        if (!element || !hasBonfire()) return;
+        const home = toArt(element);
+        const node = new Container();
+        const base = new Sprite();
+        const fire = new Sprite();
+        const circle = new Sprite();
+        circle.anchor.set(ASH.pit.anchor.x / ASH.pit.w, ASH.pit.anchor.y / ASH.pit.h);
+        node.addChild(base, fire, circle);
+        node.position.set(home.x, home.y);
+        node.zIndex = depthKey(home.x, home.y);
+        groundLayer.addChild(node);
+        const light = new Sprite();
+        light.anchor.set(0.5);
+        light.blendMode = 'add';
+        lightLayer.addChild(light);
+        bonfire = { id: element.id, stage: element.stage ?? 0, home, node, base, fire, circle, light, hit: -1e9, flare: -1e9, ash: state.scene >= state.sceneStages };
+        animateBonfire();
+    }
+
+    function animateBonfire() {
+        if (!bonfire) return;
+        const { base, fire, circle, light, node } = bonfire;
+        const lit = lightAt(bonfire.home.x, bonfire.home.y);
+        const shake = Math.floor((clock - bonfire.hit) / 50);
+        node.position.set(bonfire.home.x + (shake >= 0 && shake < HIT.length ? HIT[shake][2] : 0), bonfire.home.y);
+        circle.visible = bonfire.ash && circleProgress > 0;
+        if (bonfire.ash) {
+            // The pit, with its embers dying out for a while after the blast; a reload shows the cold pit.
+            base.texture = defTexture(ASH.pit, lit);
+            base.anchor.set(ASH.pit.anchor.x / ASH.pit.w, ASH.pit.anchor.y / ASH.pit.h);
+            const since = clock - blastAt;
+            fire.texture = defTexture(ASH.embers);
+            fire.anchor.set(ASH.embers.anchor.x / ASH.embers.w, ASH.embers.anchor.y / ASH.embers.h);
+            const dying = since / EMBERS_MS;
+            fire.visible = !reduced && dying < 1 && Math.floor(clock / 180 + dying * 3) % (dying < 0.5 ? 4 : 2) !== 0;
+            light.visible = false;
+            if (circle.visible) {
+                const step = Math.round(clamp(circleProgress, 0, 1) * 48);
+                circle.texture = artTexture(`circle:${step}`, () => texture(bake(magicCircle(step / 48))));
+            }
+            return;
+        }
+        const stage = clamp(bonfire.stage, 0, BONFIRE_STAGES);
+        const frames = BONFIRE.stages[stage];
+        const fr = frames[reduced ? 0 : Math.floor(clock / 110) % frames.length];
+        base.texture = defTexture(fr.base, lit);
+        base.anchor.set(fr.base.anchor.x / fr.base.w, fr.base.anchor.y / fr.base.h);
+        fire.visible = Boolean(fr.fire);
+        if (fr.fire) {
+            fire.texture = defTexture(fr.fire);
+            fire.anchor.set(fr.fire.anchor.x / fr.fire.w, fr.fire.anchor.y / fr.fire.h);
+        }
+        const glow = BONFIRE.light[stage];
+        light.visible = Boolean(glow) && lighting !== 'day';
+        if (light.visible) {
+            light.texture = defTexture(glow);
+            light.position.set(bonfire.home.x, bonfire.home.y);
+            // The firelight breathes in two steps, and flares up for a moment on a new stage.
+            light.alpha = clock - bonfire.flare < 300 ? 0.8 : reduced || Math.floor(clock / 220) % 3 ? 0.55 : 0.48;
+        }
+    }
+
     // Hit zones are the core of the body, not the whole sprite: in a tight patch near pumpkins overlap far ones,
-    // and only the cores have to stay apart (app/config/hellowin.php is laid out for that).
+    // and only the cores have to stay apart (app/config/hellowin.php is laid out for that). Padded stages keep the
+    // body where it was, so the zones of stage 0 hold for every stage.
     function publishHitZones() {
+        const px = layout.cssPx;
         for (const size of SIZES) {
-            const { def } = pumpkinArt(0, size);
-            const px = layout.cssPx;
+            const def = pumpkinSprite(0, size);
             const w = Math.round(def.w * 0.72);
             const h = Math.round(def.h * 0.72);
             const lift = Math.round(def.h * 0.06);
@@ -828,7 +1063,21 @@ export async function createScene(rootEl, snapshot) {
             rootEl.style.setProperty(`--hit-x-${size}`, `${-(w >> 1) * px}px`);
             rootEl.style.setProperty(`--hit-y-${size}`, `${(def.h - def.anchor.y - lift - h) * px}px`);
         }
-        rootEl.style.setProperty('--px', `${layout.cssPx}px`);
+        // The bonfire's clickable core (BONFIRE.hit) around its foot; the frames share one anchor.
+        const { hit } = BONFIRE;
+        const { anchor } = BONFIRE.stages[0][0].base;
+        rootEl.style.setProperty('--hit-w-bonfire', `${hit.w * px}px`);
+        rootEl.style.setProperty('--hit-h-bonfire', `${hit.h * px}px`);
+        rootEl.style.setProperty('--hit-x-bonfire', `${(hit.x - anchor.x) * px}px`);
+        rootEl.style.setProperty('--hit-y-bonfire', `${(hit.y - anchor.y) * px}px`);
+        // The circle's: the pit around the same foot.
+        const pit = { w: ASH.pit.w - 8, h: ASH.pit.h - 4 };
+        rootEl.style.setProperty('--hit-w-circle', `${pit.w * px}px`);
+        rootEl.style.setProperty('--hit-h-circle', `${pit.h * px}px`);
+        rootEl.style.setProperty('--hit-x-circle', `${-(pit.w >> 1) * px}px`);
+        rootEl.style.setProperty('--hit-y-circle', `${-(pit.h >> 1) * px}px`);
+        rootEl.style.setProperty('--float-lift', `${FLOAT_LIFT * px}px`);
+        rootEl.style.setProperty('--px', `${px}px`);
     }
 
     function rebuild() {
@@ -838,7 +1087,22 @@ export async function createScene(rootEl, snapshot) {
         target = RenderTexture.create({ width: layout.artW, height: layout.artH, resolution: 1, scaleMode: 'nearest' });
         display.texture = target;
         display.scale.set(layout.cssPx);
+        // A fade frozen at the old size would not line up any more.
+        if (fade && (fade.texture.width !== layout.artW || fade.texture.height !== layout.artH)) endFade();
+        fadeDisplay.scale.set(layout.cssPx);
         groundLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+        lightLayer.removeChildren().forEach((c) => c.destroy());
+        lighting = lightingOf(state.scene);
+        out = jumpedOut(state.scene, state.stageMax, pumpkinElements());
+        // Two light sources at night: the bonfire's warm reach around the centre, cold moonlight beyond it.
+        const burning = bonfireElement();
+        if (lighting === 'night' && burning && BONFIRE.light[clamp(burning.stage ?? 0, 0, BONFIRE_STAGES)]) {
+            const shape = patchShape();
+            // Centred a little toward the viewer: it covers the whole patch and its near rim, not the hills behind it.
+            fireLight = { x: Math.round(shape.cx), y: Math.round(shape.cy + shape.ry * 0.35), rx: Math.round(shape.rx * 1.45), ry: Math.round(shape.ry * 1.65), near: 'firelight' };
+        } else {
+            fireLight = null;
+        }
         drawSky();
         drawBase();
         drawTree();
@@ -846,6 +1110,7 @@ export async function createScene(rootEl, snapshot) {
         placeBugs();
         placeBushes();
         buildPumpkins();
+        buildBonfire();
         buildWalkers();
         // Ground targets outlive a resize like walkers: their sprites went with groundLayer.
         for (const f of flyers.values()) {
@@ -861,6 +1126,33 @@ export async function createScene(rootEl, snapshot) {
         app.render();
     }
 
+    /** Freezes the world as it is now; tick() fades the copy out in steps over the relit world for `ms`. */
+    function startFade(ms) {
+        endFade();
+        const frozen = RenderTexture.create({ width: layout.artW, height: layout.artH, resolution: 1, scaleMode: 'nearest' });
+        app.renderer.render({ container: world, target: frozen, clear: true });
+        fadeDisplay.texture = frozen;
+        fadeDisplay.visible = true;
+        fade = { texture: frozen, at: clock, ms };
+    }
+
+    function endFade() {
+        if (!fade) return;
+        fadeDisplay.visible = false;
+        fadeDisplay.texture = Texture.EMPTY;
+        fade.texture.destroy(true);
+        fade = null;
+    }
+
+    /** The bonfire blows up (2 → 3): flash, shake, the fireball over the fresh pit. */
+    function startBlast() {
+        blastAt = clock;
+        veilStart = clock;
+        veilFrames = BLAST_VEIL;
+        if (!bonfire) return;
+        blastSprite.position.set(bonfire.home.x, bonfire.home.y);
+    }
+
     // Bushes and flyers use plain screen percents, without the patch spread of layout.js: they live at the screen
     // edges, and a spread would push them off a phone screen.
     const toScreenArt = (p) => ({
@@ -872,11 +1164,12 @@ export async function createScene(rootEl, snapshot) {
         bushes.clear();
         const random = rng(11);
         for (const b of [...(state.bushes ?? [])].sort((a, c) => a.y - c.y)) {
-            const idle = flyerArt(BUSH.idle[seedOf(b.id) % BUSH.idle.length]);
             const at = toScreenArt(b);
+            const lit = lightAt(at.x, at.y);
+            const idle = flyerArt(BUSH.idle[seedOf(b.id) % BUSH.idle.length], false, lit);
             const sprite = addGround(idle.def, at.x, at.y, { tex: idle.texture });
             rootIn(at.x, at.y, idle.def.w / 2 - 2, random);
-            bushes.set(b.id, { sprite, idle, rustleUntil: -1e9 });
+            bushes.set(b.id, { sprite, idle, lit, rustleUntil: -1e9 });
         }
     }
 
@@ -884,10 +1177,12 @@ export async function createScene(rootEl, snapshot) {
      * Texture plus anchor fractions of a flyers.js sprite, cached per sprite object. `hazy` mixes every pixel 28%
      * toward hazeLight for the farthest flyers: the pixels stay solid, only their colours move toward the sky.
      */
-    function flyerArt(def, hazy = false) {
-        const cache = hazy ? hazyTextures : flyerTextures;
+    function flyerArt(def, hazy = false, lit = 'day') {
+        if (!hazy && !flyerTextures.has(lit)) flyerTextures.set(lit, new Map());
+        const cache = hazy ? hazyTextures : flyerTextures.get(lit);
         if (!cache.has(def)) {
-            const c = flyerBake(def);
+            // On the ground and in the tree (owl, bushes, zombies) things take the scene's light; flyers stay as drawn.
+            const c = lit === 'day' ? flyerBake(def) : relightCanvas(flyerBake(def), lit);
             if (hazy) {
                 const ctx = c.getContext('2d');
                 const img = ctx.getImageData(0, 0, c.width, c.height);
@@ -918,6 +1213,9 @@ export async function createScene(rootEl, snapshot) {
 
     function pathAt(f, t) {
         const p = basePath(f, t);
+        // The road-runner keeps the server's x but runs on the scene's horizon line, along the foot of the hills: the
+        // config's horizon (38 %) lands a little in front of ours (37 % of the art height) and would put it on the lawn.
+        if (f.kind === 'roadrunner') return { x: toScreenArt(p).x, y: layout.horizon - 1 };
         // `wobble` (protocol.md, bats): a sideways sway across the path, amp · sin(2π · waves · t), in screen percents.
         if (f.wobble) {
             const len = Math.hypot(p.dx, p.dy) || 1;
@@ -958,7 +1256,8 @@ export async function createScene(rootEl, snapshot) {
                 }
                 const t = clamp(local / f.duration, 0, 1);
                 f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
-                art = flyerArt(set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length], f.depth === 0);
+                const frame = set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length];
+                art = f.ground ? flyerArt(frame, false, lightAt(f.pos.x, f.pos.y)) : flyerArt(frame, f.depth === 0);
             } else if (f.ground) {
                 const since = clock - f.shotAt;
                 if (since >= COLLAPSE.gone) {
@@ -967,7 +1266,7 @@ export async function createScene(rootEl, snapshot) {
                     continue;
                 }
                 f.pos = f.shotPos;
-                art = flyerArt(since < COLLAPSE.hit ? set.hit : set.fall[since < COLLAPSE.kneel ? 0 : 1]);
+                art = flyerArt(since < COLLAPSE.hit ? set.hit : set.fall[since < COLLAPSE.kneel ? 0 : 1], false, lighting);
                 // Blinks out instead of fading, like the particles: alpha would add colours outside the palette.
                 f.sprite.visible = since < COLLAPSE.lie || Math.floor(since / 100) % 2 === 0;
             } else {
@@ -992,7 +1291,7 @@ export async function createScene(rootEl, snapshot) {
             f.art = art;
         }
         for (const bush of bushes.values()) {
-            const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length]) : bush.idle;
+            const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length], false, bush.lit) : bush.idle;
             bush.sprite.texture = art.texture;
         }
     }
@@ -1121,21 +1420,36 @@ export async function createScene(rootEl, snapshot) {
         particles.push({ sprite, x, y, vx, vy, gravity, life, age: 0 });
     }
 
+    // Where a pumpkin's sprite point is now: it moves with the jump and floats up with its lift.
     function emitPoint(p, key) {
         const { def } = p.art;
         const [ex, ey] = def.emit?.[key] ?? [def.anchor.x, def.h >> 1];
-        return { x: p.home.x - def.anchor.x + ex, y: p.home.y - def.anchor.y + ey };
+        return { x: p.pos.x - def.anchor.x + ex, y: p.pos.y - p.lift - def.anchor.y + ey };
     }
 
     const between = (a, b) => a + Math.random() * (b - a);
     const sign = () => (Math.random() < 0.5 ? -1 : 1);
 
+    // Click particles follow the scene: carving bits by day, embers and cinders at sunset, green motes at night, violet
+    // hex sparks under the blood moon. A burnt click (the pumpkin is done) only gives off a couple of grey sparks.
     function burst(p, stage) {
-        if (stage >= state.stageMax) {
+        const final = state.scene >= state.sceneStages;
+        if (final) {
+            const at = emitPoint(p, 'top');
+            for (let i = 0; i < 4; i++) spawn('hex', at.x, at.y, sign() * between(6, 22), -between(20, 50), -10, between(0.6, 1));
+        } else if (stage >= state.stageMax) {
             const at = emitPoint(p, 'top');
             for (let i = 0; i < 2; i++) {
                 spawn('spark', at.x, at.y - 1, sign() * between(10, 30), -between(20, 45), 60, 0.4);
             }
+        } else if (state.scene === 1) {
+            const at = emitPoint(p, 'top');
+            for (let i = 0; i < 6; i++) {
+                spawn(i % 3 === 0 ? 'cinder' : 'ember', at.x, at.y, sign() * between(4, 22), -between(30, 70), i % 3 === 0 ? 40 : -20, between(0.6, 1));
+            }
+        } else if (state.scene >= 2) {
+            const at = emitPoint(p, 'top');
+            for (let i = 0; i < 5; i++) spawn('magic', at.x, at.y, sign() * between(4, 20), -between(15, 45), -15, between(0.7, 1.1));
         } else if (stage >= 3) {
             const at = emitPoint(p, 'top');
             for (let i = 0; i < 8; i++) {
@@ -1150,10 +1464,28 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    // Embers and cinders off the bonfire's heap (green motes once the spell has turned it); `n` of them.
+    function bonfireBurst(n) {
+        if (!bonfire) return;
+        if (bonfire.ash) {
+            // Violet hex sparks off the circle on the pit.
+            for (let i = 0; i < n; i++) spawn('hex', bonfire.home.x + between(-24, 24), bonfire.home.y + between(-6, 6), sign() * between(4, 18), -between(20, 50), -10, between(0.6, 1));
+            return;
+        }
+        const green = bonfire.stage >= 5;
+        const top = bonfire.home.y - 10 - Math.min(30, bonfire.stage * 4);
+        for (let i = 0; i < n; i++) {
+            const kind = green ? 'magic' : i % 3 === 0 ? 'cinder' : 'ember';
+            spawn(kind, bonfire.home.x + between(-10, 10), top + between(-4, 6), sign() * between(4, 26), -between(30, 80), kind === 'cinder' ? 30 : -20, between(0.6, 1.1));
+        }
+    }
+
     // Squash-and-shake frames after a click: [scaleX, scaleY, offsetX], 50 ms each.
     const HIT = [[1.15, 0.85, 1], [0.94, 1.08, -1], [1.03, 0.97, 0]];
     // Bounce frames after a stage change: [scaleX, scaleY, offsetY].
     const BOUNCE = [[0.88, 1.15, -3], [0.95, 1.06, -2], [1, 1, -1], [1.12, 0.9, 0], [1.04, 0.96, 0]];
+    // The springy hop of the jumped-out pumpkins (scenes 1–2): period, airborne share, height.
+    const SPRING = { ms: 1100, air: 0.3, h: 3 };
 
     function animatePumpkin(p) {
         const mode = pumpkinMode(p);
@@ -1162,12 +1494,51 @@ export async function createScene(rootEl, snapshot) {
         let ox = 0;
         let oy = 0;
         let skew = 0;
+
+        // Ground point: home, out after the jump, or a hop on the way there.
+        let at = out ? p.out : p.home;
+        let hopping = false;
+        if (out && !reduced) {
+            const t = (clock - jumpAt - p.delay) / JUMP_MS;
+            if (t < 1) {
+                hopping = true;
+                const k = clamp(t, 0, 1);
+                const e = 1 - (1 - k) * (1 - k);
+                at = { x: p.home.x + (p.out.x - p.home.x) * e, y: p.home.y + (p.out.y - p.home.y) * e };
+                oy = -Math.round(Math.sin(Math.PI * k) * JUMP_H);
+                if (t > 0) [sx, sy] = [0.92, 1.1];
+            } else if (t < 1 + BOUNCE.length * 60 / JUMP_MS) {
+                // Landing: the same squash as a stage change.
+                [sx, sy, oy] = BOUNCE[Math.min(BOUNCE.length - 1, Math.floor(((t - 1) * JUMP_MS) / 60))];
+                hopping = true;
+            }
+        }
+        p.pos = at;
+
+        const final = state.scene >= state.sceneStages;
+        const floating = floats(p.stage, state.scene, state.sceneStages);
+        // Floats bob like a float on water; under the blood moon slower, with a slight tilt.
+        p.lift = floating ? FLOAT_LIFT + (reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / (final ? 520 : 650)))) : 0;
+
         const hit = Math.floor((clock - p.hit) / 50);
         const bounce = Math.floor((clock - p.bounce) / 60);
-        if (hit >= 0 && hit < HIT.length) {
+        if (hopping) {
+            // The jump wins over everything else.
+        } else if (hit >= 0 && hit < HIT.length) {
             [sx, sy, ox] = HIT[hit];
         } else if (bounce >= 0 && bounce < BOUNCE.length) {
             [sx, sy, oy] = BOUNCE[bounce];
+        } else if (!reduced && floating) {
+            skew = Math.sin((clock + p.phase) / 900) * (final ? 0.06 : 0.03);
+        } else if (!reduced && out) {
+            // Jumped out: a springy hop in place, stretched in the air and squashed on landing.
+            const u = ((clock + p.phase * 3) % SPRING.ms) / SPRING.ms;
+            if (u < SPRING.air) {
+                oy = -Math.round(Math.sin((Math.PI * u) / SPRING.air) * SPRING.h);
+                [sx, sy] = [0.94, 1.07];
+            } else if (u < SPRING.air + 0.08) {
+                [sx, sy] = [1.1, 0.9];
+            }
         } else if (!reduced && mode === 'ready' && (clock + p.phase) % 1400 < 120) {
             oy = -1;
         } else if (!reduced && mode === 'done') {
@@ -1176,7 +1547,21 @@ export async function createScene(rootEl, snapshot) {
         p.ring.visible = mode === 'ready' && (reduced || Math.floor((clock + p.phase) / 220) % 2 === 0);
         p.body.scale.set(sx, sy);
         p.body.skew.x = skew;
-        p.node.position.set(p.home.x + ox, p.home.y + oy);
+        p.node.position.set(Math.round(at.x + ox), Math.round(at.y + oy - p.lift));
+        p.node.zIndex = depthKey(at.x, at.y);
+
+        // The light layers flicker through their frames, each pumpkin on its own beat.
+        for (const name of LIGHT_LAYERS) {
+            const frames = p.art.frames[name];
+            if (frames && !reduced) p.layers[name].texture = frames[Math.floor((clock + p.phase) / FRAME_MS[name]) % frames.length];
+        }
+        p.halo.position.set(Math.round(at.x), Math.round(at.y));
+        p.shadow.visible = p.lift > 0;
+        if (p.shadow.visible) {
+            const shadows = PUMPKIN_SHADOW[p.size] ?? PUMPKIN_SHADOW.m;
+            p.shadow.texture = defTexture(shadows[clamp(Math.floor((p.lift - 3) / 1.5), 0, shadows.length - 1)]);
+            p.shadow.position.set(Math.round(at.x), Math.round(at.y));
+        }
 
         if (p.flash && clock - p.flash.born > 70) {
             p.flash.sprite.destroy();
@@ -1192,11 +1577,16 @@ export async function createScene(rootEl, snapshot) {
     // Facing per idle slot: mostly toward the camera, sometimes sideways or away.
     const IDLE_FACING = [['front', false], ['front', false], ['side', false], ['side', true], ['back', false], ['front', false]];
     const poseOf = (pose) => POSES[pose] ?? { frames: 1, ms: 500 };
-    const frameTextures = new WeakMap();
-    const frameTexture = (c) => {
-        if (!frameTextures.has(c)) frameTextures.set(c, texture(c));
-        return frameTextures.get(c);
+    // Character frames per lighting: each canvas is recoloured once per lighting it shows up in (night.js).
+    const frameTextures = new Map();
+    const frameTexture = (c, lit = 'day') => {
+        if (!frameTextures.has(lit)) frameTextures.set(lit, new WeakMap());
+        const cache = frameTextures.get(lit);
+        if (!cache.has(c)) cache.set(c, texture(lit === 'day' ? c : relightCanvas(c, lit)));
+        return cache.get(c);
     };
+    // A candle casts a small warm circle at dusk and at night; the spell book a faint green one after dark.
+    const BOOK_LIGHT = halo(8, 3, 'green');
 
     // Topmost opaque row of a character frame: frames keep headroom for tall hats, the label goes over the real head.
     const frameTops = new WeakMap();
@@ -1267,12 +1657,18 @@ export async function createScene(rootEl, snapshot) {
     function addWalkerSprites(w) {
         w.sprite = new Sprite();
         groundLayer.addChild(w.sprite);
+        w.glow = new Sprite();
+        w.glow.anchor.set(0.5);
+        w.glow.blendMode = 'add';
+        lightLayer.addChild(w.glow);
         w.label?.destroy();
         w.label = walkerLabel(w);
     }
 
     function dropWalkerSprites(w) {
         w.sprite?.destroy();
+        w.glow?.destroy();
+        w.glow = null;
         w.label?.destroy();
         w.sprite = null;
         w.label = null;
@@ -1343,7 +1739,14 @@ export async function createScene(rootEl, snapshot) {
             }
             if (reduced && !s.moving) view.frame = 0;
             const f = characterFrame(w.look, view);
-            w.sprite.texture = frameTexture(f.canvas);
+            w.sprite.texture = frameTexture(f.canvas, lightAt(at.x, at.y));
+            const light = lighting === 'day' ? null : view.item === 'candle' ? NIGHT.candleLight : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
+            w.glow.visible = Boolean(light);
+            if (light) {
+                w.glow.texture = defTexture(light);
+                w.glow.alpha = light === BOOK_LIGHT ? 0.4 : 0.55;
+                w.glow.position.set(Math.round(at.x), Math.round(at.y));
+            }
             w.sprite.anchor.set(f.anchor.x / f.canvas.width, f.anchor.y / f.canvas.height);
             w.sprite.scale.x = view.flip ? -1 : 1;
             w.sprite.position.set(Math.round(at.x), Math.round(at.y));
@@ -1397,17 +1800,21 @@ export async function createScene(rootEl, snapshot) {
         }
 
         pumpkins.forEach(animatePumpkin);
+        animateBonfire();
+        animateSky();
+        animateBlast();
         // A new round: the patch dims for a moment, then a short white flash. Stepped alpha, no smooth fade.
         const since = clock - veilStart;
-        veil.visible = since < VEIL.length * 60;
+        veil.visible = since < veilFrames.length * 60;
         if (veil.visible) {
-            const [color, alpha] = VEIL[Math.floor(since / 60)];
+            const [color, alpha] = veilFrames[Math.floor(since / 60)];
             veil.tint = PALETTE[color];
             veil.alpha = alpha;
         }
 
         for (const bug of bugs) {
-            bug.sprite.visible = !reduced;
+            // Butterflies are a daytime thing.
+            bug.sprite.visible = !reduced && lighting === 'day';
             const t = clock / 1000 + bug.phase;
             const x = bug.x + Math.sin(t * 0.31) * 16 + Math.sin(t * 0.9) * 3;
             const y = bug.y + Math.sin(t * 0.47) * 5 - Math.abs(Math.sin(t * 2.3)) * 2;
@@ -1437,6 +1844,47 @@ export async function createScene(rootEl, snapshot) {
         }
 
         app.renderer.render({ container: world, target, clear: true });
+    }
+
+    // The sunset sun sinking behind the hills, the bigger stars twinkling, the frozen old lighting fading out.
+    function animateSky() {
+        if (sun) {
+            const t = reduced ? 1 : clamp((clock - sunSetAt) / SUNSET_MS, 0, 1);
+            sun.sprite.position.set(sun.x, Math.round(sun.high + (sun.rest - sun.high) * (1 - (1 - t) * (1 - t))));
+        }
+        for (const star of twinkles) {
+            const beat = reduced ? 0 : Math.floor(clock / 400) + star.phase;
+            star.sprite.texture = defTexture(NIGHT.stars[beat % 4 < 2 ? 2 : 3]);
+            star.sprite.visible = beat % 7 !== 0;
+        }
+        if (fade) {
+            const t = (clock - fade.at) / fade.ms;
+            if (t >= 1) endFade();
+            // Stepped alpha, like the round's veil: no smooth blend across the whole screen.
+            else fadeDisplay.alpha = 1 - Math.floor(t * FADE_STEPS) / FADE_STEPS;
+        }
+    }
+
+    // The explosion's frames over the pit and the screen shake under it.
+    function animateBlast() {
+        const since = clock - blastAt;
+        let t = since;
+        let frame = -1;
+        for (let i = 0; i < BLAST_MS.length && t >= 0; i++) {
+            if (t < BLAST_MS[i]) frame = i;
+            t -= BLAST_MS[i];
+        }
+        blastSprite.visible = frame >= 0 && !reduced;
+        if (blastSprite.visible) {
+            const def = EXPLOSION[frame];
+            blastSprite.texture = defTexture(def);
+            blastSprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+        }
+        // Whole art pixels, stepped every 40 ms and calming down.
+        const shaking = !reduced && since >= 0 && since < SHAKE_MS;
+        const k = shaking ? Math.ceil(3 * (1 - since / SHAKE_MS)) : 0;
+        const beat = Math.floor(since / 40);
+        display.position.set(shaking ? ((beat * 7) % 3 - 1) * k * layout.cssPx : 0, shaking ? ((beat * 5) % 3 - 1) * k * layout.cssPx : 0);
     }
 
     for (const w of snapshot.walkers ?? []) setWalker(w);
@@ -1470,10 +1918,17 @@ export async function createScene(rootEl, snapshot) {
             flyers.clear();
             if (!reduced && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
                 veilStart = clock;
+                veilFrames = VEIL;
             }
+            // A resync or reset jumps straight to the state: no hop, no blast, no fade.
+            endFade();
+            jumpAt = -1e9;
+            blastAt = -1e9;
+            sunSetAt = -1e9;
             state = {
                 round: next.round ?? state.round,
                 scene: next.scene ?? 0,
+                sceneStages: next.sceneStages ?? state.sceneStages,
                 stageMax: next.stageMax ?? state.stageMax,
                 threshold: next.threshold ?? state.threshold,
                 elements: next.elements ?? [],
@@ -1490,6 +1945,20 @@ export async function createScene(rootEl, snapshot) {
 
         click(id, { stage, clicks, threshold }) {
             const p = pumpkins.get(id);
+            if (onPit(id)) {
+                if (reduced) return;
+                bonfire.hit = clock;
+                bonfireBurst(3);
+                return;
+            }
+            if (bonfire && id === bonfire.id) {
+                if (stage !== undefined) bonfire.stage = stage;
+                if (reduced) return;
+                // Shake and a puff of embers; the pit only shakes.
+                bonfire.hit = clock;
+                bonfireBurst(3);
+                return;
+            }
             if (!p) return;
             state.threshold = threshold ?? state.threshold;
             p.clicks = clicks ?? p.clicks;
@@ -1503,15 +1972,37 @@ export async function createScene(rootEl, snapshot) {
         },
 
         pumpkin(id, stage) {
+            // The state keeps up too: a resize rebuilds from it.
+            const element = state.elements.find((e) => e.id === id);
+            if (element) element.stage = stage;
+            if (onPit(id)) {
+                if (!reduced) bonfireBurst(10);
+                return;
+            }
+            if (bonfire && id === bonfire.id) {
+                const lit = bonfire.stage < 2 && stage >= 2;
+                bonfire.stage = stage;
+                bonfire.flare = clock;
+                // The first embers at night bring the firelight's reach in with them.
+                if (lit && lighting === 'night') rebuild();
+                if (!reduced) bonfireBurst(10);
+                return;
+            }
             const p = pumpkins.get(id);
             if (!p) return;
             p.stage = stage;
             p.clicks = 0;
             applyArt(p);
+            // The last pumpkin lit in scene 1: the whole patch jumps out.
+            if (!out && jumpedOut(state.scene, state.stageMax, pumpkinElements())) {
+                out = true;
+                jumpAt = clock;
+                pumpkins.forEach(applyArt);
+            }
             if (reduced) return;
             p.flash?.sprite.destroy();
             const sprite = new Sprite(p.art.flash);
-            sprite.position.set(p.home.x - p.art.def.anchor.x, p.home.y - p.art.def.anchor.y);
+            sprite.position.set(p.pos.x - p.art.def.anchor.x, p.pos.y - p.lift - p.art.def.anchor.y);
             flashLayer.addChild(sprite);
             p.flash = { sprite, born: clock };
             p.bounce = clock + 70;
@@ -1579,9 +2070,35 @@ export async function createScene(rootEl, snapshot) {
             showHits = Boolean(on);
         },
 
+        /**
+         * Channel event `scene`: relights the world (the old lighting fades out over a few seconds, the sun sinks into
+         * the sunset), lets the pumpkins jump out from scene 2 on, and blows the bonfire up on the way into the final
+         * scene. The bonfire's lock lives in the DOM (client.js); the scene only draws its stage.
+         */
         setScene(n, stageMax) {
+            const before = lighting;
+            const wasOut = out;
+            const blast = !reduced && n >= state.sceneStages && state.scene < state.sceneStages && (bonfire?.stage ?? 0) > 0;
             state.scene = n;
             state.stageMax = stageMax ?? state.stageMax;
+            if (lightingOf(n) !== before || hasBonfire() !== Boolean(bonfire)) {
+                // The blast's flash hides the cut; otherwise the old lighting fades out over the new one.
+                if (!reduced && !blast && before !== lightingOf(n)) startFade(before === 'day' ? SUNSET_MS : FADE_MS);
+                if (before === 'day') sunSetAt = clock;
+                rebuild();
+            } else {
+                pumpkins.forEach(applyArt);
+            }
+            if (!wasOut && out) jumpAt = clock;
+            if (blast) startBlast();
+        },
+
+        /**
+         * The red magic circle on the ash pit of the final scene, drawn up to `progress` 0–1 (bonfire.js, magicCircle).
+         * Its mechanics are not settled yet (docs/spec/scenario.md): nothing calls it, and 0 draws nothing.
+         */
+        circle(progress) {
+            circleProgress = clamp(Number(progress) || 0, 0, 1);
         },
 
         /**

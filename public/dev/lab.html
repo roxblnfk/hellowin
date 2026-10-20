@@ -42,6 +42,14 @@
   ?say=<text> has the owl speak at the start, ?specials=1 launches a witch, a road-runner and a zombie at the start
   (?zshot=ms shoots the zombie). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS; zombies walk only at finale
   step 5 with zombies on and no pause; the scene is ready when every pumpkin is done, and waits for «Следующая сцена».
+  Bonfire (scenes 1–2): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
+  nothing), its own threshold ?bclicks=N (default 20, HELLOWIN_BONFIRE_CLICKS_PER_STAGE) and last stages per scene
+  0,4,7 (HELLOWIN_BONFIRE_STAGE_MAX); owl lines last-pumpkin → bonfire-open, then ready → bonfire-done → scene-ready.
+  ?bonfire=N starts the bonfire at stage N; ?next=ms presses «Следующая сцена» (forced) at that frozen-clock moment —
+  with ?scene=0 the sunset fade, with ?scene=2 the explosion.
+  Magic circle (planned in the engine, docs/spec/scenario.md «Магический круг»): clickable in the final scene at finale
+  step 0, own threshold ?cclicks=N (default 10) and CIRCLE_STAGES = 4 stages; closed → ready, circle-done, scene-ready.
+  ?circle=N starts it at stage N; ?nocircle=1 leaves it out (the patch as the backend has it today).
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -57,7 +65,7 @@
         <button type="button" class="debug__button" data-lab-shot>выстрел</button>
         <select data-lab-stage aria-label="стадия">
             <option value="">стадия…</option>
-            <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
+            <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option>
         </select>
     </aside>
     <footer class="hud">
@@ -114,7 +122,13 @@
         [71, 72.8, 'l'], [59.6, 71.1, 'm'], [60.7, 80.8, 'm'], [50.4, 82.7, 'l'], [40, 83.7, 'm'], [43.6, 74.1, 'm'],
         [29.3, 78.5, 'l'], [35.4, 69.6, 's'], [27.7, 60.2, 'm'], [40.6, 64, 's'], [35.8, 51.5, 's'], [45.2, 58.4, 's'],
     ];
-    const startStage = Math.max(0, Math.min(8, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
+    const startStage = Math.max(0, Math.min(11, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
+    // The bonfire of app/config/hellowin.php: on the root, its own threshold and last stage per scene.
+    const BONFIRE_CLICKS = Math.max(1, Number.parseInt(params.get('bclicks') ?? '20', 10) || 20);
+    const BONFIRE_STAGE_MAX = [0, 4, 7, 7];
+    // The magic circle of the final scene (HELLOWIN_CIRCLE_CLICKS_PER_STAGE, HELLOWIN_CIRCLE_STAGES; no values yet).
+    const CIRCLE_CLICKS = Math.max(1, Number.parseInt(params.get('cclicks') ?? '10', 10) || 10);
+    const CIRCLE_STAGES = 4;
 
     ELEMENTS.forEach(([x, y, size], i) => {
         const b = document.createElement('button');
@@ -132,6 +146,40 @@
         b.innerHTML = '<span class="pumpkin__emoji" aria-hidden="true">🎃</span>';
         root.insertBefore(b, root.querySelector('.hud'));
     });
+    {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'bonfire';
+        b.dataset.element = 'bonfire';
+        b.dataset.type = 'bonfire';
+        b.dataset.stage = '0';
+        b.dataset.clicks = '0';
+        b.dataset.threshold = String(BONFIRE_CLICKS);
+        b.dataset.stageMax = '0';
+        b.style.setProperty('--x', '50');
+        b.style.setProperty('--y', '63');
+        b.style.zIndex = '630';
+        b.setAttribute('aria-label', 'Костёр');
+        b.innerHTML = '<span class="element__emoji" aria-hidden="true">🔥</span>';
+        root.insertBefore(b, root.querySelector('.hud'));
+    }
+    if (params.get('nocircle') !== '1') {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'circle';
+        b.dataset.element = 'circle';
+        b.dataset.type = 'circle';
+        b.dataset.stage = '0';
+        b.dataset.clicks = '0';
+        b.dataset.threshold = String(CIRCLE_CLICKS);
+        b.dataset.stageMax = '0';
+        b.style.setProperty('--x', '50');
+        b.style.setProperty('--y', '63');
+        b.style.zIndex = '630';
+        b.setAttribute('aria-label', 'Магический круг');
+        b.innerHTML = '<span class="element__emoji" aria-hidden="true">⭕</span>';
+        root.insertBefore(b, root.querySelector('.hud'));
+    }
     if (params.has('hits')) root.classList.add('show-hits');
 
     // With ?freeze the lab runs on its own clock: headless screenshots get no animation frames, so time is stepped
@@ -266,13 +314,39 @@
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
 
+    const engineBonfire = () => engine.elements.find((e) => e.type === 'bonfire');
+    const engineCircle = () => engine.elements.find((e) => e.type === 'circle') ?? null;
+    const enginePumpkins = () => engine.elements.filter((e) => e.type === 'pumpkin');
+    const pumpkinsDone = () => enginePumpkins().every((e) => e.stage >= engine.stageMax);
+    // The scene needs its bonfire when the bonfire's last stage of the scene is above where it stands now.
+    let bonfireNeeded = false;
+
+    // The scene is ready, not switched: the moderator moves on («Следующая сцена»).
+    function sceneReady(player, line) {
+        engine.ready = true;
+        stats.lastPumpkin = player;
+        deliver({ type: 'ready', scene: engine.scene });
+        if (player) deliver({ type: 'owl', line, params: { player } });
+        deliver({ type: 'owl', line: 'scene-ready' });
+    }
+
     function engineClick(id) {
         const p = engine.elements.find((e) => e.id === id);
+        const isBonfire = p.type === 'bonfire';
+        const isCircle = p.type === 'circle';
+        const own = isBonfire || isCircle;
+        // A locked bonfire or circle: not counted, not broadcast (protocol.md, `locked`).
+        if (isBonfire && !(pumpkinsDone() && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
+        if (isCircle && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? 0) === 0 && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
+        const threshold = own ? p.threshold : engine.threshold;
+        const max = own ? p.stageMax : engine.stageMax;
+        // Pumpkins and the bonfire stop in the final scene; the circle is drawn only there.
+        const moving = isCircle || engine.scene < engine.sceneStages;
         stats.clicks++;
-        if (engine.scene < engine.sceneStages && p.stage < engine.stageMax && p.clicks < engine.threshold) p.clicks++;
+        if (moving && p.stage < max && p.clicks < threshold) p.clicks++;
         else stats.burned++;
-        deliver({ type: 'click', element: id, emoji: '🎃', clicks: p.clicks, threshold: engine.threshold, stage: p.stage });
-        if (p.clicks >= engine.threshold && p.stage < engine.stageMax && !pending.has(id)) {
+        deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage });
+        if (p.clicks >= threshold && p.stage < max && !pending.has(id)) {
             pending.add(id);
             const player = someone();
             later(() => {
@@ -281,16 +355,23 @@
                 p.clicks = 0;
                 stats.jobs++;
                 deliver({ type: 'pumpkin', element: id, stage: p.stage, ...(player ? { player } : {}) });
-                // The scene is ready, not switched: the moderator moves on («Следующая сцена»).
-                if (!engine.ready && engine.scene < engine.sceneStages && engine.elements.every((e) => e.stage >= engine.stageMax)) {
-                    engine.ready = true;
-                    stats.lastPumpkin = player;
-                    deliver({ type: 'ready', scene: engine.scene });
+                if (isCircle) {
+                    if (!engine.ready && p.stage >= p.stageMax) sceneReady(player, 'circle-done');
+                    return;
+                }
+                if (engine.ready || engine.scene >= engine.sceneStages || !pumpkinsDone()) return;
+                if (isBonfire) {
+                    if (p.stage >= p.stageMax) sceneReady(player, 'bonfire-done');
+                } else if (bonfireNeeded) {
+                    // The last pumpkin opens the bonfire instead of finishing the scene.
                     if (player) deliver({ type: 'owl', line: 'last-pumpkin', params: { player } });
-                    deliver({ type: 'owl', line: 'scene-ready' });
+                    deliver({ type: 'owl', line: 'bonfire-open' });
+                } else {
+                    sceneReady(player, 'last-pumpkin');
                 }
             }, 150);
         }
+        return { ok: true };
     }
 
     function engineReset() {
@@ -302,6 +383,9 @@
         engine.zombies = false;
         Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, lastPumpkin: null });
         engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
+        engineBonfire().stageMax = BONFIRE_STAGE_MAX[0];
+        if (engineCircle()) engineCircle().stageMax = 0;
+        bonfireNeeded = false;
         engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[0]; });
         deliver({ type: 'reset', item: ITEM_BY_SCENE[0] });
     }
@@ -320,8 +404,9 @@
             engine.scene = to;
             engine.stageMax = SCENE_STAGE_MAX[to];
             engine.ready = false;
+            setBonfireMax();
             engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[to]; });
-            deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, item: ITEM_BY_SCENE[to] });
+            deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, bonfireStageMax: engineBonfire().stageMax, item: ITEM_BY_SCENE[to] });
             if (to >= engine.sceneStages) {
                 engine.finale = finaleOf(0);
                 deliver({ type: 'finale', ...engine.finale });
@@ -507,13 +592,26 @@
         later(() => engineShoot(id, shooter ?? null), 1500);
     }
 
-    // Stages past 4 belong to later scenes: the jump moves the scene along with them.
+    // The bonfire's last stage in the current scene; whether the scene needs it (only when that is above its stage).
+    function setBonfireMax() {
+        const b = engineBonfire();
+        b.stageMax = BONFIRE_STAGE_MAX[Math.min(engine.scene, engine.sceneStages - 1)];
+        bonfireNeeded = engine.scene < engine.sceneStages && b.stageMax > b.stage;
+        // The circle's last stage is 0 before the final scene.
+        const c = engineCircle();
+        if (c) c.stageMax = engine.scene >= engine.sceneStages ? CIRCLE_STAGES : 0;
+    }
+
+    // Stages past 4 belong to later scenes: the jump moves the scene along with them; the bonfire stands where the
+    // scenes before left it.
     function engineJump(stage) {
         engine.scene = SCENE_STAGE_MAX.findIndex((max) => max >= stage);
         engine.stageMax = SCENE_STAGE_MAX[engine.scene];
         engine.ready = false;
         engine.finale = engine.scene >= engine.sceneStages ? finaleOf(0) : null;
-        engine.elements.forEach((e) => { e.stage = stage; e.clicks = 0; });
+        enginePumpkins().forEach((e) => { e.stage = stage; e.clicks = 0; });
+        Object.assign(engineBonfire(), { stage: engine.scene > 0 ? BONFIRE_STAGE_MAX[engine.scene - 1] : 0, clicks: 0 });
+        setBonfireMax();
         engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
         client.load(engineSnapshot());
     }
@@ -525,11 +623,16 @@
             engine.scene = Math.max(0, Math.min(engine.sceneStages, sceneParam));
             engine.stageMax = SCENE_STAGE_MAX[engine.scene];
             const stage = engine.scene > 0 ? SCENE_STAGE_MAX[engine.scene - 1] : 0;
-            engine.elements.forEach((e) => { e.stage = stage; e.clicks = 0; });
+            enginePumpkins().forEach((e) => { e.stage = stage; e.clicks = 0; });
+            engineBonfire().stage = engine.scene > 0 ? BONFIRE_STAGE_MAX[engine.scene - 1] : 0;
             engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
         }
+        if (params.has('bonfire')) engineBonfire().stage = Math.max(0, Math.min(7, Number.parseInt(params.get('bonfire'), 10) || 0));
+        if (params.has('circle') && engineCircle()) engineCircle().stage = Math.max(0, Math.min(CIRCLE_STAGES, Number.parseInt(params.get('circle'), 10) || 0));
+        setBonfireMax();
         if (params.get('ready') === '1' && engine.scene < engine.sceneStages) {
-            engine.elements.forEach((e) => { e.stage = engine.stageMax; e.clicks = 0; });
+            enginePumpkins().forEach((e) => { e.stage = engine.stageMax; e.clicks = 0; });
+            engineBonfire().stage = Math.max(engineBonfire().stage, engineBonfire().stageMax);
             engine.ready = true;
         }
         if (engine.scene >= engine.sceneStages) {
@@ -561,7 +664,7 @@
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
         open: params.get('ui') !== '0' ? undefined : false,
         call: engineCall,
-        clickAll: () => engine.elements.forEach((e, i) => later(() => engineClick(e.id), i * 30)),
+        clickAll: () => engine.elements.forEach((e, i) => later(() => client.clickable(e.id) && engineClick(e.id), i * 30)),
     });
     const client = createClient(root, scene, {
         requestState: async () => engineSnapshot(),
@@ -586,10 +689,18 @@
     window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);
 
-    const randomId = () => engine.elements[Math.floor(Math.random() * engine.elements.length)].id;
+    // Random clicks go where a click counts: an open bonfire, else the pumpkins (like a room would).
+    const randomId = () => {
+        const open = engine.elements.filter((e) => client.clickable(e.id));
+        const bonfire = open.find((e) => e.type === 'bonfire');
+        if (bonfire && Math.random() < 0.7) return bonfire.id;
+        const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
+        return (list.length ? list : open)[Math.floor(Math.random() * (list.length || open.length))].id;
+    };
+    // Like app.js: a locked bonfire is not even asked.
     root.addEventListener('click', (event) => {
         const el = event.target.closest('[data-element]');
-        if (el) engineClick(el.dataset.element);
+        if (el && client.clickable(el.dataset.element)) engineClick(el.dataset.element);
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
@@ -633,8 +744,10 @@
     const resetAt = Number.parseInt(params.get('reset') ?? '-1', 10);
     const flyersOn = params.get('flyers') === '1';
     const shotAt = Math.round((Number.parseInt(params.get('shotAt') ?? '896', 10) || 896) / 16) * 16;
+    const nextAt = params.has('next') ? Math.round(Number.parseInt(params.get('next'), 10) / 16) * 16 : -1;
     function simulate() {
         Object.assign(engine, structuredClone(initial));
+        setBonfireMax();
         queue.length = 0;
         pending.clear();
         live.clear();
@@ -651,6 +764,7 @@
                 nextClick += 70;
             }
             if (simTime === resetAt) engineReset();
+            if (simTime === nextAt) engineSceneNext({ scene: engine.scene, force: true });
             // ?flyers=1: one flyer per depth right away (the near one from a bush); ?shoot=N (default 1) is shot at ?shotAt=ms (default 896, a multiple of 16).
             if (flyersOn && simTime === 0) {
                 const launched = [engineFlyer({ depth: 0, bush: false, ltr: true }),

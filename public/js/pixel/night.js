@@ -153,7 +153,8 @@ export function relightCanvas(source, lighting, light = null) {
     const canvas = document.createElement('canvas');
     canvas.width = source.width;
     canvas.height = source.height;
-    const ctx = canvas.getContext('2d');
+    // Read back pixel by pixel: a CPU-backed canvas spares the slow GPU readback of getImageData.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(source, 0, 0);
     if (lighting === 'day' && !light) return canvas;
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);

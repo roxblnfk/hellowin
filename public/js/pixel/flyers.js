@@ -181,17 +181,17 @@ const FAR = {
         down: ['...p..', '..pz..', '.pPPz.', 'nnmmmm'],
         hit: ['..p...', '...z..', '.PPPz.', 'nn.mmm'],
     },
-    // Ground runners (see below): legs move, not wings. The road-runner on the horizon is the only one whose far
-    // size matters, so it is drawn bigger than a speck: tail, crest and beak must read even here.
+    // Ground runners (see below): legs move, not wings. The road-runner runs along the far horizon, so it is tiny
+    // (7×4), but the long dark tail, the violet crest and the beak still read; the legs blur in a 4-frame cycle.
     roadrunner: {
-        anchor: { x: 6, y: 5 },
+        anchor: { x: 3, y: 3 },
         fly: [
-            ['.......PP...', '......Pdwyy.', 'DD...ddd....', '..DDddld....', '.g..YllY....', '...Y....Y...'],
-            ['........PP..', '.......Pdwyy', 'DDD...ddd...', '...DDdld....', '..g..YlY....', '......YY....'],
-            ['.......PP...', '......Pdwyy.', 'DD...ddd....', '..DDddld....', '.g...lYl....', '....Y..Y....'],
-            ['........PP..', '.......Pdwyy', 'DDD...ddd...', '...DDdld....', '.....Yl.Y...', '.....Y......'],
+            ['....Pd.', 'DDdddwy', '..dl...', '.Y...Y.'],
+            ['....Pd.', 'DDdddwy', '..dl...', '..Y.Y..'],
+            ['....Pd.', 'DDdddwy', '..dl...', '...YY..'],
+            ['....Pd.', 'DDdddwy', '..dl...', '..Y.Y..'],
         ],
-        hit: ['.......P....', '...PP.dwyy..', 'DD..dddd....', '..DDddld....', '....Y..Y....', '...Y....Y...'],
+        hit: ['...P...', 'DDddwy.', '..dd...', '.Y..Y..'],
     },
     zombie: {
         anchor: { x: 1, y: 5 },
@@ -657,7 +657,7 @@ const FEATHER_LEGEND = {
 /**
  * Indexed by depth (0 — far, 2 — near): { fly: 4 wingbeat frames, hit, fall: 2 tumbling frames }.
  * `roadrunner` and `zombie` move on the ground: `fly` is their run / walk cycle. The road-runner's far sprite is
- * 12 px wide, not a 4-px speck. The zombie keeps one size at depths 1 and 2, its anchor is between the feet, and its
+ * 7×4, a little more than a speck. The zombie keeps one size at depths 1 and 2, its anchor is between the feet, and its
  * fall frames collapse in place (kneel, then flat) instead of tumbling.
  */
 export const FLYERS = {

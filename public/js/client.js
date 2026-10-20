@@ -1,7 +1,7 @@
 // Client model of docs/spec/frontend.md: applies channel events to the DOM hooks and to the pixel scene.
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
-import { spreadX } from './layout.js';
+import { bonfireOpen, circleOpen, floats, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
 
 const SCENE_NAMES = { 0: 'День: подготовка', 1: 'Закат', 2: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
@@ -50,15 +50,21 @@ export function readSnapshot(root) {
         finale: parseFinale(root.dataset.finale),
         paused: flag(root.dataset.paused),
         zombies: flag(root.dataset.zombies),
-        elements: [...root.querySelectorAll('[data-element]')].map((el) => ({
-            id: el.dataset.element,
-            type: el.dataset.type,
-            x: Number.parseFloat(el.style.getPropertyValue('--x')),
-            y: Number.parseFloat(el.style.getPropertyValue('--y')),
-            size: el.dataset.size || 'm',
-            stage: int(el.dataset.stage),
-            clicks: int(el.dataset.clicks),
-        })),
+        elements: [...root.querySelectorAll('[data-element]')].map((el) => {
+            const element = {
+                id: el.dataset.element,
+                type: el.dataset.type,
+                x: Number.parseFloat(el.style.getPropertyValue('--x')),
+                y: Number.parseFloat(el.style.getPropertyValue('--y')),
+                stage: int(el.dataset.stage),
+                clicks: int(el.dataset.clicks),
+            };
+            // The bonfire and the circle have no size, but their own threshold and last stage (protocol.md, «Снимок»).
+            if (!isPumpkin(element)) {
+                return { ...element, threshold: int(el.dataset.threshold, 1), stageMax: int(el.dataset.stageMax) };
+            }
+            return { ...element, size: el.dataset.size || 'm' };
+        }),
     };
 }
 
@@ -75,6 +81,11 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
     const model = { ...readSnapshot(root), me: null, moderator: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
+    const bonfireOf = () => model.elements.find((e) => e.type === 'bonfire') ?? null;
+    const circleOf = () => model.elements.find((e) => e.type === 'circle') ?? null;
+    const pumpkinsOf = () => model.elements.filter(isPumpkin);
+    // The bonfire's last stage per scene, likewise (HELLOWIN_BONFIRE_STAGE_MAX: scene 0 has none by default).
+    const bonfireMaxByScene = new Map(bonfireOf() ? [[model.scene, bonfireOf().stageMax]] : []);
     let syncing = null;
     // Server clock minus ours, from the snapshot's `now`; 0 until one is known.
     let offset = 0;
@@ -93,8 +104,43 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         if (!el) return;
         el.dataset.stage = element.stage;
         el.dataset.clicks = element.clicks;
+        if (!isPumpkin(element)) {
+            // The bonfire opens once every pumpkin is done, the circle at finale step 0 (layout.js); a type without a
+            // rule stays locked. A locked click is not even sent (app.js).
+            const open = element.type === 'bonfire' ? bonfireOpen(element, model.stageMax, model.elements)
+                : element.type === 'circle' ? circleOpen(element, model.scene, model.sceneStages, model.finale)
+                : false;
+            el.dataset.threshold = element.threshold;
+            el.dataset.stageMax = element.stageMax;
+            el.toggleAttribute('data-locked', !open);
+            el.setAttribute('aria-disabled', String(!open));
+            el.toggleAttribute('data-ready', element.clicks >= element.threshold && element.stage < element.stageMax);
+            el.toggleAttribute('data-done', element.stageMax > 0 && element.stage >= element.stageMax);
+            return;
+        }
         el.toggleAttribute('data-ready', element.clicks >= model.threshold && element.stage < model.stageMax);
         el.toggleAttribute('data-done', element.stage >= model.stageMax);
+        el.toggleAttribute('data-float', floats(element.stage, model.scene, model.sceneStages));
+    }
+
+    // The jump out (layout.js): its factor depends on the width, so a resize repaints it too.
+    function paintOut() {
+        const factor = jumpOut(root.clientWidth || window.innerWidth);
+        root.style.setProperty('--out', String(jumpedOut(model.scene, model.stageMax, model.elements) ? factor : 1));
+    }
+
+    // Layout and lock follow every pumpkin at once: the jump out (--out) and the bonfire opening.
+    function paintElements() {
+        model.elements.forEach(paintElement);
+        paintOut();
+        paintCircle();
+    }
+
+    // The magic circle shows on the pit only in the final scene, drawn as far as its stage has come.
+    function paintCircle() {
+        const circle = circleOf();
+        const shown = circle && model.scene >= model.sceneStages && circle.stageMax > 0;
+        scene?.circle(shown ? circle.stage / circle.stageMax : 0);
     }
 
     function paintHud() {
@@ -105,8 +151,8 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         set('round', model.round);
         set('scene', model.scene);
         set('scene-name', sceneName());
-        set('done', model.elements.filter((e) => e.stage >= model.stageMax).length);
-        set('total', model.elements.length);
+        set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
+        set('total', pumpkinsOf().length);
         const ready = hud('ready');
         if (ready) ready.hidden = !model.ready;
     }
@@ -136,7 +182,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         root.dataset.sceneStages = model.sceneStages;
         root.dataset.stageMax = model.stageMax;
         root.dataset.threshold = model.threshold;
-        model.elements.forEach(paintElement);
+        paintElements();
         paintHud();
     }
 
@@ -157,9 +203,13 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         const known = new Map(model.elements.map((e) => [e.id, e]));
-        model.elements = snapshot.elements.map((e) => ({ ...known.get(e.id), ...e, size: e.size ?? known.get(e.id)?.size ?? 'm' }));
+        model.elements = snapshot.elements.map((e) => (!isPumpkin(e)
+            ? { ...known.get(e.id), ...e }
+            : { ...known.get(e.id), ...e, size: e.size ?? known.get(e.id)?.size ?? 'm' }));
+        if (bonfireOf()) bonfireMaxByScene.set(model.scene, bonfireOf().stageMax);
         paintAll();
         scene?.render(snapshotOf());
+        paintCircle();
         onChange(model);
     }
 
@@ -183,14 +233,17 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             if (!element) return;
             element.clicks = event.clicks;
             element.stage = event.stage;
-            if (event.threshold !== undefined && event.threshold !== model.threshold) {
+            // A click on the bonfire or the circle carries its own threshold, not the pumpkins'.
+            if (!isPumpkin(element)) {
+                if (event.threshold !== undefined) element.threshold = event.threshold;
+            } else if (event.threshold !== undefined && event.threshold !== model.threshold) {
                 model.threshold = event.threshold;
                 root.dataset.threshold = model.threshold;
-                model.elements.forEach(paintElement);
+                paintElements();
             }
             paintElement(element);
             paintHud();
-            scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: model.threshold });
+            scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: element.threshold ?? model.threshold });
         },
 
         // Flyers live a few seconds and are not part of the snapshot: they are only passed on to the scene.
@@ -228,7 +281,8 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             if (!element) return;
             element.stage = event.stage;
             element.clicks = 0;
-            paintElement(element);
+            // The last pumpkin opens the bonfire and may send the patch jumping out.
+            paintElements();
             paintHud();
             scene?.pumpkin(element.id, element.stage);
         },
@@ -240,6 +294,18 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             model.ready = false;
             if (model.scene < model.sceneStages) model.finale = null;
             stageMaxByScene.set(model.scene, model.stageMax);
+            const bonfire = bonfireOf();
+            if (bonfire && event.bonfireStageMax !== undefined) {
+                bonfire.stageMax = event.bonfireStageMax;
+                bonfireMaxByScene.set(model.scene, bonfire.stageMax);
+            }
+            // Before the final scene the circle's last stage is 0; the event does not carry the new one, so it comes
+            // from a fresh snapshot, merged into the circle alone (a full render would cut the bonfire's explosion).
+            const circle = circleOf();
+            if (circle) {
+                circle.stageMax = 0;
+                if (model.scene >= model.sceneStages) refreshCircle();
+            }
             paintAll();
             scene?.setScene(model.scene, model.stageMax);
             handOut(event);
@@ -253,6 +319,8 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
 
         finale(event) {
             model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
+            // The circle takes clicks at step 0 only.
+            paintElements();
             paintStory();
         },
 
@@ -282,6 +350,8 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             model.elements.forEach((e) => {
                 e.stage = 0;
                 e.clicks = 0;
+                if (e.type === 'bonfire') e.stageMax = bonfireMaxByScene.get(0) ?? 0;
+                if (e.type === 'circle') e.stageMax = 0;
             });
             paintAll();
             handOut(event);
@@ -289,6 +359,20 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             if (!stageMaxByScene.has(0)) resync();
         },
     };
+
+    function refreshCircle() {
+        const round = model.round;
+        requestState()
+            .then((snapshot) => {
+                const fresh = snapshot?.elements?.find((e) => e.type === 'circle');
+                const circle = circleOf();
+                if (!fresh || !circle || snapshot.round !== round || model.round !== round) return;
+                Object.assign(circle, { stage: fresh.stage, clicks: fresh.clicks, threshold: fresh.threshold, stageMax: fresh.stageMax });
+                paintElements();
+                onChange(model);
+            })
+            .catch((error) => console.warn('state rpc failed', error));
+    }
 
     // The item in every walker's hand follows the scene: `scene` and `reset` carry it instead of a walker event each.
     function handOut(event) {
@@ -302,6 +386,11 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
     return {
         model,
         load,
+
+        /** Whether a click on the element would be accepted: a locked bonfire or circle is not worth an RPC. */
+        clickable(id) {
+            return !button(id)?.hasAttribute('data-locked');
+        },
         resync,
 
         /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
@@ -339,7 +428,10 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         },
 
         start() {
-            const spread = () => root.style.setProperty('--spread', String(spreadX(root.clientWidth || window.innerWidth)));
+            const spread = () => {
+                root.style.setProperty('--spread', String(spreadX(root.clientWidth || window.innerWidth)));
+                paintOut();
+            };
             spread();
             new ResizeObserver(spread).observe(root);
             paintAll();

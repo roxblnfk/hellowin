@@ -136,8 +136,9 @@ async function main() {
         if (document.visibilityState === 'visible' && connectedOnce) client.syncClock();
     });
 
-    // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event.
-    const click = (id) => centrifuge.rpc('click', { element: id })
+    // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event. A locked
+    // bonfire is not asked at all: the server would only answer `locked`.
+    const click = (id) => client.clickable(id) && centrifuge.rpc('click', { element: id })
         .then(({ data }) => {
             if (data?.ok === false) console.warn('click rejected', data.error);
         })
