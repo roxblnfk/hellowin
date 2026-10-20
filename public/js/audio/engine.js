@@ -71,6 +71,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
     let desiredMusic = null;
     let music = null;
     let switchToken = 0;
+    let utterances = 0;
     let rng = (Date.now() ^ 0x5bd1e995) >>> 0;
     const listeners = new Set();
     const sfx = new Map();
@@ -375,15 +376,82 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
 
     // ---------------------------------------------------------------- effects
 
-    function release(voice, fadeMs = 15) {
-        const now = ctx.currentTime;
-        voice.gain.gain.cancelScheduledValues(now);
-        voice.gain.gain.setTargetAtTime(0, now, fadeMs / 3000);
+    /**
+     * Fades a voice out from `when` (not before it starts) and drops it from the count at once: a released voice
+     * that stayed listed until its end would be picked again by the next limit, and the limit would stop working.
+     */
+    function release(voice, fadeMs = 15, when = ctx.currentTime) {
+        const i = voices.indexOf(voice);
+        if (i >= 0) voices.splice(i, 1);
+        const t = Math.max(when, voice.start);
+        voice.gain.gain.cancelScheduledValues(t);
+        voice.gain.gain.setTargetAtTime(0, t, fadeMs / 3000);
         try {
-            voice.src.stop(now + fadeMs / 1000 + 0.01);
+            voice.src.stop(t + fadeMs / 1000 + 0.01);
         } catch {
             // Already stopped.
         }
+    }
+
+    /**
+     * Makes room for a voice sounding over [at, end): of the groups overlapping it, those over `limit` are released,
+     * oldest first, from `at`. A group is one voice, or all syllables of one spoken line: a line never cuts its own
+     * syllables, and a line that gives way stops whole rather than stuttering.
+     */
+    function makeRoom(list, at, end, limit) {
+        const groups = new Map();
+        for (const v of list) {
+            const key = v.utterance ?? v;
+            if (!groups.has(key)) groups.set(key, { first: v.start, overlaps: false, voices: [] });
+            const g = groups.get(key);
+            g.first = Math.min(g.first, v.start);
+            g.voices.push(v);
+            if (v.start < end && v.end > at) g.overlaps = true;
+        }
+        const order = [...groups.values()].filter((g) => g.overlaps).sort((a, b) => a.first - b.first);
+        while (order.length >= limit) order.shift().voices.forEach((v) => release(v, 15, at));
+    }
+
+    function playVoice(name, { pan = 0, pitch = 0, volume: vol = 1, delay = 0 } = {}, utterance = null) {
+        const def = SFX[name];
+        if (!def || !ctx || muted) return null;
+        if (!offline && ctx.state !== 'running') return null;
+        const variants = (sfx.get(name) ?? []).filter(Boolean);
+        if (!variants.length) return null;
+
+        const now = ctx.currentTime;
+        for (let i = voices.length - 1; i >= 0; i--) if (voices[i].end <= now) voices.splice(i, 1);
+        const at = now + Math.max(0, delay);
+        const buffer = variants[Math.floor(rand() * variants.length)];
+        const rate = 2 ** (pitch / 12) * (1 + (rand() * 2 - 1) * def.jitter);
+        const end = at + buffer.duration / rate;
+        const others = (v) => v.utterance === null || v.utterance !== utterance;
+        makeRoom(voices.filter((v) => v.name === name && others(v)), at, end, def.voices);
+        makeRoom(voices.filter(others), at, end, MAX_VOICES);
+
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.playbackRate.value = rate;
+        const gain = ctx.createGain();
+        gain.gain.value = vol;
+        let tail = src.connect(gain);
+        if (pan && ctx.createStereoPanner) {
+            const panner = ctx.createStereoPanner();
+            panner.pan.value = Math.max(-1, Math.min(1, pan));
+            tail = tail.connect(panner);
+        }
+        tail.connect(nodes.buses[def.bus]);
+        const voice = { name, src, gain, start: at, end, utterance };
+        voices.push(voice);
+        src.onended = () => {
+            const i = voices.indexOf(voice);
+            if (i >= 0) voices.splice(i, 1);
+            src.disconnect();
+            gain.disconnect();
+        };
+        src.start(at);
+        if (def.duck) duck(at, def.duck);
+        return { stop: () => release(voice) };
     }
 
     function duck(at, seconds) {
@@ -448,46 +516,18 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
          * Plays an effect. `pan` −1..1, `pitch` in semitones, `volume` 0..1+, `delay` in seconds from now.
          * Returns a handle with stop(), or null when the sound is not playable yet (locked, muted, still rendering).
          */
-        play(name, { pan = 0, pitch = 0, volume: vol = 1, delay = 0 } = {}) {
-            const def = SFX[name];
-            if (!def || !ctx || muted) return null;
-            if (!offline && ctx.state !== 'running') return null;
-            const variants = (sfx.get(name) ?? []).filter(Boolean);
-            if (!variants.length) return null;
-            const own = voices.filter((v) => v.name === name);
-            if (own.length >= def.voices) release(own[0]);
-            if (voices.length >= MAX_VOICES) release(voices[0]);
-
-            const at = ctx.currentTime + Math.max(0, delay);
-            const src = ctx.createBufferSource();
-            src.buffer = variants[Math.floor(rand() * variants.length)];
-            src.playbackRate.value = 2 ** (pitch / 12) * (1 + (rand() * 2 - 1) * def.jitter);
-            const gain = ctx.createGain();
-            gain.gain.value = vol;
-            let tail = src.connect(gain);
-            if (pan && ctx.createStereoPanner) {
-                const panner = ctx.createStereoPanner();
-                panner.pan.value = Math.max(-1, Math.min(1, pan));
-                tail = tail.connect(panner);
-            }
-            tail.connect(nodes.buses[def.bus]);
-            const voice = { name, src, gain };
-            voices.push(voice);
-            src.onended = () => {
-                const i = voices.indexOf(voice);
-                if (i >= 0) voices.splice(i, 1);
-                src.disconnect();
-                gain.disconnect();
-            };
-            src.start(at);
-            if (def.duck) duck(at, def.duck);
-            return { stop: () => release(voice) };
+        play(name, options = {}) {
+            return playVoice(name, options);
         },
 
-        /** Beep-speech under a speech bubble: `who` — 'owl' or 'franken'; syllables follow the text's length and tone. */
-        speak(who, text, { pan = 0, volume: vol = 1 } = {}) {
+        /**
+         * Beep-speech under a speech bubble: `who` — 'owl' or 'franken'; syllables follow the text's length and tone.
+         * `delay` in seconds, e.g. to start after an owl.hoot. The syllables of one line never limit each other.
+         */
+        speak(who, text, { pan = 0, volume: vol = 1, delay = 0 } = {}) {
             const speaker = SPEAKERS[who];
             if (!speaker) return;
+            const utterance = ++utterances;
             const words = String(text ?? '').trim();
             const count = Math.max(2, Math.min(14, Math.round(words.replace(/\s+/g, '').length / 4)));
             const question = words.endsWith('?');
@@ -495,7 +535,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
             for (let k = 0; k < count; k++) {
                 const last = k >= count - 2;
                 const pitch = (question && last ? 3 + k - count + 2 : 0) - (!question && last ? 1.5 : 0) + (rand() - 0.5) * 2;
-                api.play(speaker.sound, { pan, pitch, volume: vol * (shout ? 1.2 : 1), delay: k * speaker.gap + rand() * 0.02 });
+                playVoice(speaker.sound, { pan, pitch, volume: vol * (shout ? 1.2 : 1), delay: Math.max(0, delay) + k * speaker.gap + rand() * 0.02 }, utterance);
             }
         },
 

@@ -1,7 +1,7 @@
 import { SVF, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
 import {
-    bell, blip, brass, chip, choir, crackle, heart, impact, kick, musicbox, noiseSweep, partials, pizz, riser, toll, tom,
-    vox, xylo,
+    bell, blip, brass, chip, choir, crackle, heart, impact, kick, musicbox, noiseSweep, partials, pizz, riser, theremin,
+    toll, tom, vox, xylo,
 } from './instruments.js';
 
 /**
@@ -221,6 +221,26 @@ export const SFX = {
                 const f = 5500 + r.rnd() * 2500;
                 blip(r, out, k * 0.06, f, f * 0.7, 0.025, { amp: 0.4, send: 0.2 });
             }
+        },
+    }),
+    // «Кар-кар»: a hoarse, buzzing «a», a narrow pulse overdriven with breath.
+    'crow.caw': fx({
+        dur: 0.9, variants: 4, voices: 3, level: -14,
+        render(r, out) {
+            const m = 50 + r.rnd() * 4;
+            const caws = 2 + Math.floor(r.rnd() * 2);
+            for (let k = 0; k < caws; k++) {
+                vox(r, out, k * 0.26, 0.2, m - k * 0.7, { vowel: 'a', to: 'o', duty: 0.12, glide: -2.5, drive: 6, amp: 0.5, breath: 0.5, send: 0.25 });
+            }
+        },
+    }),
+    // «У-у-у»: a ghost gliding up and sinking back, a wide slow vibrato over a breath of air.
+    'ghost.wail': fx({
+        dur: 2.4, variants: 3, voices: 2, level: -12,
+        render(r, out) {
+            const m = 64 + r.rnd() * 5;
+            theremin(r, out, [[0, m, 0.5], [0.5, m + 7, 0.6], [1.1, m - 2, 0.8]], { amp: 0.3, glide: 0.18, vib: 0.7, vibRate: 4.2, send: 0.8 });
+            noiseSweep(r, out, 0, 1.9, { from: 500, to: 900, q: 2, amp: 0.12, attack: 0.4, curve: 1.2, send: 0.6 });
         },
     }),
     'worm.squelch': fx({
