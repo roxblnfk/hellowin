@@ -17,6 +17,8 @@ use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\RevealBuilder;
+use App\Application\Story\StoryService;
 use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -29,6 +31,7 @@ use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\ShotTally;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\WalkerStore;
 use App\Domain\Walk\WalkZone;
@@ -63,6 +66,9 @@ final class RitualHarness
     public readonly WalkerStore $walkerStore;
     public readonly WalkService $walks;
     public readonly FakePresence $presence;
+    public readonly ShotTally $shots;
+    public readonly RevealBuilder $reveal;
+    public readonly StoryService $story;
 
     /**
      * @param positive-int $threshold
@@ -93,12 +99,15 @@ final class RitualHarness
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players, $threshold);
-        $this->transitions = new TransitionHandler($this->store, $policy, $queue, $publisher, $metrics, $this->players);
+        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players);
         $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->clock = new FrozenClock();
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']));
+        $this->shots = new ShotTally($this->storage, new Locks($this->lock));
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $threshold);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $threshold, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork']), $this->reveal);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3);
@@ -117,6 +126,7 @@ final class RitualHarness
             $this->playMetrics,
             $this->players,
             $this->clock,
+            $this->shots,
         );
         $this->presence = new FakePresence();
         $this->walks = new WalkService(

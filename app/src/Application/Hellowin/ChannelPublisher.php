@@ -112,6 +112,56 @@ final readonly class ChannelPublisher
         $this->publish(['type' => 'leaderboard', 'round' => $round, 'top' => $top]);
     }
 
+    public function ready(int $round, int $scene): void
+    {
+        $this->publish(['type' => 'ready', 'round' => $round, 'scene' => $scene]);
+    }
+
+    /**
+     * @param array|null $reveal From step {@see \App\Domain\Story\Story::REVEAL_STEP} on.
+     */
+    public function finale(int $round, int $step, ?array $reveal = null): void
+    {
+        $message = ['type' => 'finale', 'round' => $round, 'step' => $step];
+        $reveal === null or $message['reveal'] = $reveal;
+
+        $this->publish($message);
+    }
+
+    /**
+     * A line of the owl's catalogue; the frontend holds the texts and fills the params in.
+     *
+     * @param non-empty-string $line
+     * @param array<non-empty-string, mixed> $params
+     */
+    public function owl(int $round, string $line, array $params = []): void
+    {
+        $message = ['type' => 'owl', 'round' => $round, 'line' => $line];
+        $params === [] or $message['params'] = $params;
+
+        $this->publish($message);
+    }
+
+    /**
+     * The moderator's own words.
+     *
+     * @param non-empty-string $text
+     */
+    public function owlText(int $round, string $text): void
+    {
+        $this->publish(['type' => 'owl', 'round' => $round, 'text' => $text]);
+    }
+
+    public function pause(int $round, bool $on): void
+    {
+        $this->publish(['type' => 'pause', 'round' => $round, 'on' => $on]);
+    }
+
+    public function zombies(int $round, bool $on): void
+    {
+        $this->publish(['type' => 'zombies', 'round' => $round, 'on' => $on]);
+    }
+
     /**
      * Anonymous actions carry no `player` field at all.
      */

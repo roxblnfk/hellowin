@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Story\RevealBuilder;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Element\ElementRegistry;
@@ -26,6 +27,10 @@ use App\Domain\Walk\WalkerStore;
  *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
  *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size: 's'|'m'|'l', stage: int<0, max>, clicks: int<0, max>}>,
  *     walkers: list<array>,
+ *     ready: bool,
+ *     finale: array{step: int, reveal?: array}|null,
+ *     paused: bool,
+ *     zombies: bool,
  *     now: int
  * }
  */
@@ -44,6 +49,7 @@ final readonly class SnapshotFactory
         private Clock $clock = new SystemClock(),
         private ?WalkerStore $walkers = null,
         private Items $items = new Items(),
+        private ?RevealBuilder $reveal = null,
     ) {}
 
     /**
@@ -75,6 +81,10 @@ final readonly class SnapshotFactory
                 static fn(Walker $walker): array => $walker->toArray($item),
                 $this->walkers?->all() ?? [],
             )),
+            'ready' => $ritual->ready(),
+            'finale' => $this->reveal?->finale($ritual),
+            'paused' => $ritual->story->paused,
+            'zombies' => $ritual->story->zombies,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             'now' => $this->clock->now(),
         ];

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Ritual;
 
 /**
- * Pumpkins move stage by stage up to the last stage of the current scene and wait there; the scene
- * follows once every pumpkin has reached it. Nothing moves in the final scene.
+ * Pumpkins move stage by stage up to the last stage of the current scene and wait there; the scene is
+ * ready once every pumpkin has reached it. Nothing moves in the final scene.
  */
 final readonly class LockstepPolicy implements RitualPolicy
 {
@@ -44,23 +44,20 @@ final readonly class LockstepPolicy implements RitualPolicy
     }
 
     #[\Override]
-    public function sceneTransition(int $scene, array $pumpkins): ?int
+    public function sceneReady(int $scene, array $pumpkins): bool
     {
         if (!$this->moving($scene) || $pumpkins === []) {
-            return null;
+            return false;
         }
 
         $last = $this->stageMax($scene);
         foreach ($pumpkins as $pumpkin) {
             if ($pumpkin->stage < $last) {
-                return null;
+                return false;
             }
         }
 
-        /** @var int<1, max> $next */
-        $next = $scene + 1;
-
-        return $next;
+        return true;
     }
 
     /**

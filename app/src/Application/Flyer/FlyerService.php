@@ -13,6 +13,9 @@ use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\ShotTally;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Flyers over the patch: the ticker launches them and sweeps the escaped ones, players shoot them over RPC.
@@ -28,6 +31,8 @@ final readonly class FlyerService
         private PlayMetrics $metrics,
         private PlayerService $players,
         private Clock $clock,
+        private ShotTally $tally,
+        private LoggerInterface $logger = new NullLogger(),
     ) {}
 
     /**
@@ -57,9 +62,11 @@ final readonly class FlyerService
             return null;
         }
 
+        $round = $this->ritual->round();
         $shooter = $this->players->shotFlyer($player, $flyer->points);
-        $this->publisher->shot($this->ritual->round(), $flyer, $shooter);
+        $this->publisher->shot($round, $flyer, $shooter);
         $this->metrics->flyerShot($flyer);
+        $this->count($round);
 
         return $flyer->points;
     }
@@ -77,5 +84,17 @@ final readonly class FlyerService
         }
 
         return $escaped;
+    }
+
+    /**
+     * The tally only feeds the finale reveal: a failure there must not turn a hit into an error.
+     */
+    private function count(int $round): void
+    {
+        try {
+            $this->tally->add($round);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Shot is not counted for the reveal: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+        }
     }
 }

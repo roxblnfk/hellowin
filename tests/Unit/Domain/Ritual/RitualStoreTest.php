@@ -7,6 +7,7 @@ namespace Tests\Unit\Domain\Ritual;
 use App\Domain\Ritual\Pumpkin;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Story;
 use Spiral\Cache\Storage\ArrayStorage;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -35,10 +36,10 @@ final class RitualStoreTest
         $outcome = $store->click('a');
         $store->click('b');
 
-        Assert::equals($outcome->pumpkin, new Pumpkin('a', 0, 2));
+        Assert::equals($outcome->pumpkin, new Pumpkin('a', 0, 2, 2));
         Assert::same($outcome->round, 1);
         Assert::same($outcome->scene, 0);
-        Assert::equals($store->snapshot()->pumpkin('b'), new Pumpkin('b', 0, 1));
+        Assert::equals($store->snapshot()->pumpkin('b'), new Pumpkin('b', 0, 1, 1));
     }
 
     public function advancingAPumpkinStartsItsClicksOver(): void
@@ -49,8 +50,8 @@ final class RitualStoreTest
 
         $moved = $store->advancePumpkin(1, 'a', 1);
 
-        Assert::equals($moved, new Pumpkin('a', 1, 0));
-        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 0));
+        Assert::equals($moved, new Pumpkin('a', 1, 0, 2));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 0, 2));
     }
 
     public function repeatedPumpkinTransitionIsRejected(): void
@@ -60,7 +61,7 @@ final class RitualStoreTest
         $store->click('a');
 
         Assert::null($store->advancePumpkin(1, 'a', 1));
-        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 1));
+        Assert::equals($store->snapshot()->pumpkin('a'), new Pumpkin('a', 1, 1, 1));
     }
 
     public function pumpkinCannotSkipAStage(): void
@@ -102,6 +103,55 @@ final class RitualStoreTest
         Assert::same($snapshot->round, 2);
         Assert::same($snapshot->scene, 0);
         Assert::equals($snapshot->pumpkins, [new Pumpkin('a'), new Pumpkin('b')]);
+    }
+
+    public function sceneIsMarkedReadyOnce(): void
+    {
+        $store = self::store();
+
+        Assert::true($store->markReady(1, 0, 'aaaaaaaaaaaaaaaa'));
+        Assert::false($store->markReady(1, 0, 'bbbbbbbbbbbbbbbb'));
+        Assert::false($store->markReady(1, 1, null));
+        Assert::false($store->markReady(2, 0, null));
+
+        $snapshot = $store->snapshot();
+        Assert::true($snapshot->ready());
+        Assert::same($snapshot->story->lastPumpkin, 'aaaaaaaaaaaaaaaa');
+    }
+
+    public function nextSceneWaitsAgainAndTheFinalOneStartsTheFinale(): void
+    {
+        $store = self::store();
+        $store->markReady(1, 0, null);
+
+        $store->advanceScene(1, 1);
+        Assert::false($store->snapshot()->ready());
+        Assert::null($store->snapshot()->story->finale);
+
+        $store->advanceScene(1, 2, final: true);
+        Assert::same($store->snapshot()->story->finale, 0);
+    }
+
+    public function resetStartsTheStoryOverButKeepsThePause(): void
+    {
+        $store = self::store();
+        $store->markReady(1, 0, 'aaaaaaaaaaaaaaaa');
+        $store->updateStory(static fn(Story $story): Story => $story->withPaused(true)->withZombies(true));
+
+        $store->reset(1);
+
+        Assert::equals($store->snapshot()->story, new Story(paused: true));
+    }
+
+    public function storyChangeReportsBothSides(): void
+    {
+        $store = self::store();
+
+        [$before, $after] = $store->updateStory(static fn(Story $story): Story => $story->withZombies(true));
+
+        Assert::false($before->zombies);
+        Assert::true($after->zombies);
+        Assert::true($store->snapshot()->story->zombies);
     }
 
     public function resetRunsOncePerRound(): void

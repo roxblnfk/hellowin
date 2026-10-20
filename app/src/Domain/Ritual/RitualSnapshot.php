@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Story\Story;
+
 final readonly class RitualSnapshot
 {
     /**
@@ -15,6 +17,7 @@ final readonly class RitualSnapshot
         public int $round,
         public int $scene,
         public array $pumpkins,
+        public Story $story = new Story(),
     ) {}
 
     public function pumpkin(string $id): ?Pumpkin
@@ -26,5 +29,13 @@ final readonly class RitualSnapshot
         }
 
         return null;
+    }
+
+    /**
+     * The scene waits for the moderator to move on.
+     */
+    public function ready(): bool
+    {
+        return $this->story->ready === $this->scene;
     }
 }

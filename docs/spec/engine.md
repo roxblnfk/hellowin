@@ -1,7 +1,8 @@
 # Движок (backend)
 
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
-игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны, фигурки игроков на поле, роль
+игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны, фигурки игроков на поле, сюжет
+(готовность сцен, переход по кнопке, финал и разоблачение, сова, пауза), роль
 модератора (сброс — только ему).
 
 ## Классы
@@ -24,6 +25,7 @@
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
 | Фигурки: вид, путь, зона, KV | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `register`, тикер) |
 | Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo) |
+| Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 
 ## Периодический процесс (тикер)
 
@@ -131,6 +133,27 @@
 - Почему meta, а не `user`: модератор может быть и игроком (у него свой `playerSecret`), а `user` — это публичный id
   игрока в событиях и presence.
 
+## Сюжет
+
+Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
+
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin}` (`Domain/Story/Story`), пишется
+  только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
+  поэтому сброс (он берёт `scene` и все `pumpkin:{id}`) атомарно возвращает и сюжет; пауза при этом остаётся.
+- **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `zombies` меняют сюжет под локом через
+  `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
+  нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
+  только публикует.
+- **Разоблачение** (`Domain/Story/Reveal`, `Application/Story/RevealBuilder`) — числа раунда без отдельных счётчиков
+  на клик: у каждой тыквы в записи `hellowin:pumpkin:{id}` есть `accepted` — принятые клики раунда, растёт под тем же
+  локом `pumpkin:{id}`, что и `clicks`. Отсюда: `clicks` = Σ `accepted`; `jobs` = Σ `stage` + `scene` (каждая стадия
+  и каждая сцена — ровно одна выполненная задача перехода); `burned` = `clicks` − `HELLOWIN_CLICKS_PER_STAGE` × Σ
+  `stage` − Σ min(`clicks`, порог) — переход тратит ровно порог, остальное сгорело на идемпотентности или после
+  готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. Сбитые летуны — ключ `hellowin:shot`
+  `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
+  читается как 0, так что сброс его не трогает. `lastPumpkin` — игрок из задачи, отметившей последнюю готовность;
+  имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
+
 ## Поток клика
 
 1. RPC `click {element}` → `RPCService` проверяет элемент по реестру; игрок — `user` подключения (`publicId` или пусто).
@@ -150,13 +173,18 @@
   (пакет `spiral/idempotency`), ключ в payload — `{round}:{pumpkin}:{toStage}`. Внутри: RR-лок `pumpkin:{id}` →
   доменная проверка (`round` текущий и `stage == toStage - 1`) → `stage = toStage`, `clicks = 0` → лок отпущен →
   `finished + 1` игроку из payload → публикация `pumpkin` (с `player`) → `hellowin_transitions_total{kind="pumpkin"}`, `hellowin_pumpkin_stage{element}` → проверка
-  политики сцены по снимку → при необходимости задача `TransitionScene` (`pushed{kind="scene"}`).
-- **Сцена.** `TransitionScene {key, round, toScene}`, ключ `{round}:scene:{toScene}`, тоже `#[Idempotent]`. RR-лок
-  `scene` → проверка (`round` текущий и `scene == toScene - 1`) → `scene = toScene` → публикация `scene` (со `stageMax`
-  новой сцены) → `hellowin_transitions_total{kind="scene"}`, `hellowin_scene_stage`.
+  готовности сцены по снимку (`RitualPolicy::sceneReady`) → под RR-локом `scene` отметка `ready` в сюжете, только если
+  её ещё нет (две тыквы, добитые одновременно, обе видят сцену готовой — отметит одна) → событие `ready`, реплики
+  `last-pumpkin` (игрок из payload) и `scene-ready`. Сама сцена не переходит.
+- **Сцена.** RPC модератора `scene.next {scene, force?}` (`StoryService::nextScene`) по снимку проверяет: `scene`
+  текущая, не финальная, готова (или `force`) → задача `TransitionScene {key, round, toScene}`
+  (`pushed{kind="scene"}`), ключ `{round}:scene:{toScene}`, тоже `#[Idempotent]`: повторные нажатия ставят дубли,
+  выполняется одна. Обработчик: RR-лок `scene` → проверка (`round` текущий и `scene == toScene - 1`) → `scene = toScene`,
+  `ready` снят, в финальной сцене `finale = 0` → публикация `scene` (со `stageMax` новой сцены), в финальной — `finale
+  {step: 0}`, реплика `scene-{toScene}` → `hellowin_transitions_total{kind="scene"}`, `hellowin_scene_stage`.
 - **Сброс.** `ResetService::reset(?int $fromRound)` (консоль `hellowin:reset [--round=N]`): под локами `scene`
   и всех `pumpkin:{id}` сравнивает текущий `round` с `fromRound` (по умолчанию — текущий); совпал — `round + 1`,
-  сцена 0, тыквы `stage 0`/`clicks 0`, публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
+  сцена 0, тыквы `stage 0`/`clicks 0`/`accepted 0`, сюжет заново (кроме паузы), публикация `reset`; не совпал — раунд уже сброшен, ничего не делает. Это
   идемпотентность по `reset:{round}` без пакета: состояние и так защищено этими локами, а сравнение `round` под ними
   отсекает второй сброс того же раунда; ключ в Valkey дал бы второй источник правды о раунде. Сервис вызывается из любого
   места (будущее голосование) — достаточно передать раунд, который хотят завершить.
@@ -181,12 +209,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 | Что | Где | Через |
 |---|---|---|
-| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks}`) | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}` (`{stage, clicks, accepted}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `scene`, `player:{id}`, `players`, `flyer:{id}`, `walkers`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `walkers`, `shot`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза

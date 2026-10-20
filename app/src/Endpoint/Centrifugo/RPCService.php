@@ -13,6 +13,8 @@ use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\StoryRefusedException;
+use App\Application\Story\StoryService;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
@@ -28,10 +30,13 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  * Client RPC calls. Always answers with a payload — `{ok: true, …}` or `{ok: false, error: string}` —
  * so the client handles failures the same way as results.
  *
- * The player is the connection's user, set by {@see ConnectService}: the client never sends its id.
+ * The player is the connection's user, set by {@see ConnectService}: the client never sends its id. Console methods
+ * answer `forbidden` to every connection but the moderator's, whose role {@see ConnectService} put into the meta.
  */
 final readonly class RPCService implements ServiceInterface
 {
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies'];
+
     public function __construct(
         private ClickHandler $clicks,
         private SnapshotFactory $snapshot,
@@ -41,6 +46,7 @@ final readonly class RPCService implements ServiceInterface
         private LoggerInterface $logger,
         private ResetService $reset,
         private WalkService $walks,
+        private StoryService $story,
     ) {}
 
     #[\Override]
@@ -50,14 +56,25 @@ final readonly class RPCService implements ServiceInterface
 
         $player = PlayerId::isValid($request->user) ? $request->user : null;
         $moderator = ($request->meta[ConnectService::META_MODERATOR] ?? null) === true;
+        $method = (string) $request->method;
 
-        $request->respond(new RPCResponse($this->guarded((string) $request->method, fn(): array => match ($request->method) {
+        if (\in_array($method, self::CONSOLE, true) && !$moderator) {
+            $request->respond(new RPCResponse(self::fail('forbidden')));
+            return;
+        }
+
+        $request->respond(new RPCResponse($this->guarded($method, fn(): array => match ($method) {
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             'register' => $this->register($request->getData(), $player),
             'move' => $this->move($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),
-            'reset' => $moderator ? $this->reset($request->getData()) : self::fail('forbidden'),
+            'reset' => $this->reset($request->getData()),
+            'scene.next' => $this->nextScene($request->getData()),
+            'finale.step' => $this->finaleStep($request->getData()),
+            'owl.say' => $this->say($request->getData()),
+            'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
+            'zombies' => $this->toggle($request->getData(), $this->story->zombies(...)),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -84,6 +101,8 @@ final readonly class RPCService implements ServiceInterface
     {
         try {
             return $call();
+        } catch (StoryRefusedException $e) {
+            return self::fail($e->error);
         } catch (RitualBusyException|LockBusyException) {
             return self::fail('busy');
         } catch (\Throwable $e) {
@@ -140,6 +159,53 @@ final readonly class RPCService implements ServiceInterface
         }
 
         return ['ok' => true, 'round' => $this->reset->reset($round) ?? $this->snapshot->create()['round']];
+    }
+
+    private function nextScene(array $params): array
+    {
+        $scene = $params['scene'] ?? null;
+        if (!\is_int($scene) || $scene < 0) {
+            return self::fail('invalid scene');
+        }
+
+        return ['ok' => true, 'scene' => $this->story->nextScene($scene, ($params['force'] ?? false) === true)];
+    }
+
+    private function finaleStep(array $params): array
+    {
+        $step = $params['step'] ?? null;
+        if (!\is_int($step)) {
+            return self::fail('invalid step');
+        }
+
+        return ['ok' => true, 'step' => $this->story->finaleStep($step)];
+    }
+
+    /**
+     * A free text wins over a catalogue line when both come.
+     */
+    private function say(array $params): array
+    {
+        \array_key_exists('text', $params)
+            ? $this->story->sayText($params['text'])
+            : $this->story->say($params['line'] ?? null, $params['params'] ?? null);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * @param \Closure(bool): void $switch
+     */
+    private function toggle(array $params, \Closure $switch): array
+    {
+        $on = $params['on'] ?? null;
+        if (!\is_bool($on)) {
+            return self::fail('invalid on');
+        }
+
+        $switch($on);
+
+        return ['ok' => true, 'on' => $on];
     }
 
     /**

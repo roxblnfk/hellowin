@@ -30,19 +30,19 @@ final class LockstepPolicyTest
         Assert::same($policy->pumpkinTransition(new Pumpkin('p', $stage, $clicks), $scene), $expected);
     }
 
-    public function sceneFollowsWhenEveryPumpkinReachedItsLastStage(): void
+    public function sceneIsReadyWhenEveryPumpkinReachedItsLastStage(): void
     {
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
 
-        Assert::same($policy->sceneTransition(0, [new Pumpkin('a', 4), new Pumpkin('b', 4)]), 1);
-        Assert::same($policy->sceneTransition(2, [new Pumpkin('a', 8), new Pumpkin('b', 8)]), 3);
+        Assert::true($policy->sceneReady(0, [new Pumpkin('a', 4), new Pumpkin('b', 4)]));
+        Assert::true($policy->sceneReady(2, [new Pumpkin('a', 8), new Pumpkin('b', 8)]));
     }
 
     public function sceneWaitsForTheLastPumpkin(): void
     {
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
 
-        Assert::null($policy->sceneTransition(0, [new Pumpkin('a', 4), new Pumpkin('b', 3)]));
+        Assert::false($policy->sceneReady(0, [new Pumpkin('a', 4), new Pumpkin('b', 3)]));
     }
 
     public function nothingMovesInTheFinalScene(): void
@@ -50,7 +50,7 @@ final class LockstepPolicyTest
         $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6]);
 
         Assert::same($policy->finalScene(), 2);
-        Assert::null($policy->sceneTransition(2, [new Pumpkin('a', 6)]));
+        Assert::false($policy->sceneReady(2, [new Pumpkin('a', 6)]));
     }
 
     public function finalSceneKeepsTheLastStageMax(): void
@@ -62,7 +62,7 @@ final class LockstepPolicyTest
 
     public function sceneWithoutPumpkinsStays(): void
     {
-        Assert::null((new LockstepPolicy(5, [4]))->sceneTransition(0, []));
+        Assert::false((new LockstepPolicy(5, [4]))->sceneReady(0, []));
     }
 
     #[DataSet([[]], 'empty')]

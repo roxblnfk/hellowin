@@ -10,8 +10,8 @@ use Spiral\Idempotency\Attribute\Idempotent;
 use Spiral\Queue\JobHandler;
 
 /**
- * Payload: {@see TransitionQueue::scene()}. Pumpkins finishing at the same time may each push it;
- * the idempotency storage drops the duplicates by `payload.key`.
+ * Payload: {@see TransitionQueue::scene()}. Every press of the moderator's "next scene" pushes it, and so would two
+ * moderators at once; the idempotency storage drops the duplicates by `payload.key`.
  */
 #[Idempotent(storage: 'transitions', key: 'payload.key')]
 final class TransitionScene extends JobHandler

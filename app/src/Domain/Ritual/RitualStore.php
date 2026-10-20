@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Story\Story;
 use Psr\SimpleCache\CacheInterface;
 use RoadRunner\Lock\LockInterface;
 
 /**
- * Ritual state in a key-value store: the round, the scene and every pumpkin's stage and click counter.
+ * Ritual state in a key-value store: the round, the scene, every pumpkin's stage and click counters, and the story
+ * the moderator leads beside them.
  *
- * Each pumpkin is written under its own lock `pumpkin:{id}`, the scene under `scene`. A reset takes
- * `scene` and then every pumpkin lock, so no click or transition interleaves with it: a click reads
- * the round and the scene under the pumpkin lock and therefore never sees a half-reset ritual.
+ * Each pumpkin is written under its own lock `pumpkin:{id}`, the scene and the story under `scene`. A reset takes
+ * `scene` and then every pumpkin lock, so no click or transition interleaves with it: a click reads the round and
+ * the scene under the pumpkin lock and therefore never sees a half-reset ritual.
  */
 final readonly class RitualStore
 {
     private const KEY_ROUND = 'hellowin:round';
     private const KEY_SCENE = 'hellowin:scene';
+    private const KEY_STORY = 'hellowin:story';
     private const KEY_PUMPKIN = 'hellowin:pumpkin:';
     private const LOCK_SCENE = 'scene';
     private const LOCK_PUMPKIN = 'pumpkin:';
@@ -55,7 +58,7 @@ final readonly class RitualStore
 
         return $this->locked([self::LOCK_PUMPKIN . $id], function () use ($id): ClickOutcome {
             $current = $this->readPumpkin($id);
-            $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1);
+            $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1);
             $this->writePumpkin($pumpkin);
 
             return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin);
@@ -73,11 +76,12 @@ final readonly class RitualStore
         $id = $this->known($id);
 
         return $this->locked([self::LOCK_PUMPKIN . $id], function () use ($round, $id, $toStage): ?Pumpkin {
-            if ($toStage < 1 || $this->readRound() !== $round || $this->readPumpkin($id)->stage !== $toStage - 1) {
+            $current = $this->readPumpkin($id);
+            if ($toStage < 1 || $this->readRound() !== $round || $current->stage !== $toStage - 1) {
                 return null;
             }
 
-            $pumpkin = new Pumpkin($id, $toStage, 0);
+            $pumpkin = new Pumpkin($id, $toStage, 0, $current->accepted);
             $this->writePumpkin($pumpkin);
 
             return $pumpkin;
@@ -85,27 +89,68 @@ final readonly class RitualStore
     }
 
     /**
-     * Moves the scene forward if it is still one step behind it in the same round.
+     * Marks the scene ready for the moderator, once per scene of a round.
      *
-     * @return bool False when the transition is stale or already done.
+     * @param non-empty-string|null $player Who finished the last pumpkin.
+     * @return bool False when the scene is stale or already marked.
      * @throws RitualBusyException
      */
-    public function advanceScene(int $round, int $toScene): bool
+    public function markReady(int $round, int $scene, ?string $player): bool
     {
-        return $this->locked([self::LOCK_SCENE], function () use ($round, $toScene): bool {
-            if ($toScene < 1 || $this->readRound() !== $round || $this->readScene() !== $toScene - 1) {
+        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene, $player): bool {
+            $story = $this->readStory();
+            if ($scene < 0 || $this->readRound() !== $round || $this->readScene() !== $scene || $story->ready === $scene) {
                 return false;
             }
 
-            $this->storage->set(self::KEY_SCENE, $toScene);
+            $this->storage->set(self::KEY_STORY, $story->readyIn($scene, $player)->toArray());
 
             return true;
         });
     }
 
     /**
-     * Starts the next round from scene 0 with every pumpkin at stage 0. Runs once per round: a call for
-     * a round that is already over changes nothing.
+     * Moves the scene forward if it is still one step behind it in the same round.
+     *
+     * @param bool $final The new scene is the final one: the finale starts at step 0.
+     * @return bool False when the transition is stale or already done.
+     * @throws RitualBusyException
+     */
+    public function advanceScene(int $round, int $toScene, bool $final = false): bool
+    {
+        return $this->locked([self::LOCK_SCENE], function () use ($round, $toScene, $final): bool {
+            if ($toScene < 1 || $this->readRound() !== $round || $this->readScene() !== $toScene - 1) {
+                return false;
+            }
+
+            $this->storage->set(self::KEY_SCENE, $toScene);
+            $this->storage->set(self::KEY_STORY, $this->readStory()->nextScene($final)->toArray());
+
+            return true;
+        });
+    }
+
+    /**
+     * Changes the story under the scene lock.
+     *
+     * @param \Closure(Story): Story $change
+     * @return array{Story, Story} The story before and after the change.
+     * @throws RitualBusyException
+     */
+    public function updateStory(\Closure $change): array
+    {
+        return $this->locked([self::LOCK_SCENE], function () use ($change): array {
+            $before = $this->readStory();
+            $after = $change($before);
+            $after == $before or $this->storage->set(self::KEY_STORY, $after->toArray());
+
+            return [$before, $after];
+        });
+    }
+
+    /**
+     * Starts the next round from scene 0 with every pumpkin at stage 0 and the story over. Runs once per round:
+     * a call for a round that is already over changes nothing.
      *
      * @return positive-int|null The new round, null when `$fromRound` is not the current one.
      * @throws RitualBusyException
@@ -124,6 +169,7 @@ final readonly class RitualStore
                 $this->writePumpkin(new Pumpkin($id));
             }
             $this->storage->set(self::KEY_SCENE, 0);
+            $this->storage->set(self::KEY_STORY, $this->readStory()->restarted()->toArray());
             $this->storage->set(self::KEY_ROUND, ++$round);
 
             return $round;
@@ -145,7 +191,7 @@ final readonly class RitualStore
      */
     public function snapshot(): RitualSnapshot
     {
-        $keys = [self::KEY_ROUND, self::KEY_SCENE];
+        $keys = [self::KEY_ROUND, self::KEY_SCENE, self::KEY_STORY];
         foreach ($this->pumpkins as $id) {
             $keys[] = self::KEY_PUMPKIN . $id;
         }
@@ -159,6 +205,7 @@ final readonly class RitualStore
                 static fn(string $id): Pumpkin => self::toPumpkin($id, $values[self::KEY_PUMPKIN . $id] ?? null),
                 $this->pumpkins,
             ),
+            story: Story::fromArray($values[self::KEY_STORY] ?? null),
         );
     }
 
@@ -186,7 +233,12 @@ final readonly class RitualStore
     private static function toPumpkin(string $id, mixed $value): Pumpkin
     {
         return \is_array($value)
-            ? new Pumpkin($id, self::toCount($value['stage'] ?? null), self::toCount($value['clicks'] ?? null))
+            ? new Pumpkin(
+                $id,
+                self::toCount($value['stage'] ?? null),
+                self::toCount($value['clicks'] ?? null),
+                self::toCount($value['accepted'] ?? null),
+            )
             : new Pumpkin($id);
     }
 
@@ -216,6 +268,11 @@ final readonly class RitualStore
         return self::toCount($this->storage->get(self::KEY_SCENE));
     }
 
+    private function readStory(): Story
+    {
+        return Story::fromArray($this->storage->get(self::KEY_STORY));
+    }
+
     /**
      * @param non-empty-string $id
      */
@@ -226,7 +283,10 @@ final readonly class RitualStore
 
     private function writePumpkin(Pumpkin $pumpkin): void
     {
-        $this->storage->set(self::KEY_PUMPKIN . $pumpkin->id, ['stage' => $pumpkin->stage, 'clicks' => $pumpkin->clicks]);
+        $this->storage->set(
+            self::KEY_PUMPKIN . $pumpkin->id,
+            ['stage' => $pumpkin->stage, 'clicks' => $pumpkin->clicks, 'accepted' => $pumpkin->accepted],
+        );
     }
 
     /**

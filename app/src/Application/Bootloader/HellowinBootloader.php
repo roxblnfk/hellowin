@@ -16,6 +16,7 @@ use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
 use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
@@ -31,6 +32,7 @@ use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\ShotTally;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -93,6 +95,7 @@ final class HellowinBootloader extends Bootloader
                 RitualPolicy $policy,
                 Clock $clock,
                 WalkerStore $walkers,
+                RevealBuilder $reveal,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -102,7 +105,15 @@ final class HellowinBootloader extends Bootloader
                 $clock,
                 $walkers,
                 $config->getItems(),
+                $reveal,
             ),
+            ShotTally::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
+            RevealBuilder::class => static fn(HellowinConfig $config, ShotTally $shots, PlayerStore $players): RevealBuilder
+                => new RevealBuilder($shots, $players, $config->getClicksPerStage()),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

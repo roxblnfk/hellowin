@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Ritual;
 
 /**
- * When pumpkins and the scene move forward. The engine asks the policy before it queues a transition;
- * the transition itself only checks that the state is still one step behind the target.
+ * When pumpkins move forward and when a scene is ready for the next one. The engine asks the policy before it queues
+ * a pumpkin transition; the transition itself only checks that the state is still one step behind the target. The
+ * scene itself moves only when the moderator says so.
  */
 interface RitualPolicy
 {
@@ -17,9 +18,9 @@ interface RitualPolicy
 
     /**
      * @param list<Pumpkin> $pumpkins Every pumpkin of the ritual.
-     * @return int<1, max>|null Scene to move to now, null when the scene stays.
+     * @return bool Whether the scene is done and may move on; never in the final scene.
      */
-    public function sceneTransition(int $scene, array $pumpkins): ?int;
+    public function sceneReady(int $scene, array $pumpkins): bool;
 
     /**
      * @return int<0, max> The last stage a pumpkin reaches in the scene.

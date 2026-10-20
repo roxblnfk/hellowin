@@ -40,7 +40,7 @@ final class TransitionJobTest extends TestCase
     {
         $this->consume(TransitionPumpkin::class, self::pumpkinPayload(1, 'pumpkin-1', 1));
 
-        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0]);
+        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0]);
         Assert::same($this->broadcast->ofType('pumpkin'), [
             ['type' => 'pumpkin', 'round' => 1, 'element' => 'pumpkin-1', 'stage' => 1],
         ]);
@@ -67,11 +67,11 @@ final class TransitionJobTest extends TestCase
 
         $this->consume(TransitionPumpkin::class, self::pumpkinPayload(2, 'pumpkin-1', 1));
 
-        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0]);
+        Assert::same($this->stored('hellowin:pumpkin:pumpkin-1'), ['stage' => 1, 'clicks' => 0, 'accepted' => 0]);
         Assert::same(\array_column($this->broadcast->ofType('pumpkin'), 'round'), [1, 2]);
     }
 
-    public function lastPumpkinQueuesTheScene(): void
+    public function lastPumpkinMakesTheSceneReadyForTheModerator(): void
     {
         $queue = $this->fakeQueue()->getConnection();
         foreach ($this->getContainer()->get(ElementRegistry::class)->all() as $element) {
@@ -80,10 +80,9 @@ final class TransitionJobTest extends TestCase
 
         $this->consume(TransitionPumpkin::class, self::pumpkinPayload(1, 'pumpkin-1', 2));
 
-        $queue->assertPushed(
-            TransitionScene::class,
-            static fn(array $job): bool => $job['payload'] === ['key' => '1:scene:1', 'round' => 1, 'toScene' => 1],
-        );
+        $queue->assertNotPushed(TransitionScene::class);
+        Assert::same($this->broadcast->ofType('ready'), [['type' => 'ready', 'round' => 1, 'scene' => 0]]);
+        Assert::same($this->stored('hellowin:story')['ready'] ?? null, 0);
     }
 
     public function sceneJobMovesTheSceneOnce(): void
