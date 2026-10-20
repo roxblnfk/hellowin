@@ -32,6 +32,7 @@
       "allow_publish_for_subscriber": false,
       "allow_publish_for_anonymous": false,
       "allow_history_for_client": false,
+      "presence": true,
       "allow_presence_for_client": false
     }
   },

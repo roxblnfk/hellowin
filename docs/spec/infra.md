@@ -18,8 +18,10 @@ nginx: `/connection/` → `centrifugo:8000` (upgrade), `/grafana/` → `grafana:
 ## Связи
 
 - Centrifugo → RoadRunner: connect и RPC proxy по gRPC на `app:10001`. Subscribe proxy не включён: подписки
-  ограничивает конфиг Centrifugo (канал `hellowin` без namespace, клиентам — ни publish, ни subscribe).
-- RoadRunner → Centrifugo: публикация через gRPC API `centrifugo:10000` (`CENTRIFUGO_GRPC_API`).
+  ограничивает конфиг Centrifugo (канал `hellowin` без namespace, клиентам — ни publish, ни subscribe). У канала
+  включён presence (клиентам он не виден): по нему тикер узнаёт, кто подключён ([`engine.md`](engine.md), «Фигурки на
+  поле»).
+- RoadRunner → Centrifugo: публикация и запрос presence через gRPC API `centrifugo:10000` (`CENTRIFUGO_GRPC_API`).
 - PHP-воркеры → плагины RoadRunner (kv, lock, jobs, metrics, centrifuge) по goridge RPC `127.0.0.1:6001`.
 - RoadRunner KV (драйвер `redis`) → `valkey:6379` (`VALKEY_ADDR`); PHP → `valkey` напрямую только для ключей
   идемпотентности (predis, `VALKEY_DSN`). `app` стартует после healthy `valkey`.
