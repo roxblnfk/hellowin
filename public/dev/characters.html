@@ -129,7 +129,7 @@
         cell(() => ({ look: { ...base, body: b.id, hat: 'none', face: p.id }, dir, pose: 'idle' }), `${b.id} ${dir}`))), p.id]));
     section('eyes', 'Цвет глаз', [[null, CATALOG.eyes.flatMap((e) => ['smile', 'skull', 'cyclops'].map((face) =>
         cell(() => ({ look: { ...base, hat: 'none', face, eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${face}`)))]]);
-    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire'].flatMap((body) => DIRS.map((dir) =>
+    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat'].flatMap((body) => DIRS.map((dir) =>
         cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
     section('item', 'Предметы: idle / walk / fidget по направлениям', ITEMS.map((it) => [it.label, DIRS.flatMap((dir) => ['idle', 'walk', 'fidget'].map((pose) =>
         cell(() => ({ look: base, dir, pose, item: it.id }), `${dir} ${pose}`))), it.id]));

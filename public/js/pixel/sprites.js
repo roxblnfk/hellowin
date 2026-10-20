@@ -41,6 +41,8 @@ const PUMPKIN_LEGEND = {
     M: 'soil',
     h: 'leafDark',
     H: 'leaf',
+    // The cat-ears cap: the pink inside of the ears.
+    k: 'blush',
 };
 
 // The inner light (chars w s l o d in back and glow, the cut flesh f in rim) per stage: warm candlelight, then in
@@ -292,7 +294,25 @@ export function paintSmoke(g, x, y, height, frame, { width = 3, drift = 1 } = {}
 }
 
 // Caps for stage 8, picked by seed; append new ones at the end — reordering changes every pumpkin.
-const CAPS = ['lid', 'witch', 'hookah', 'crown'];
+const CAPS = ['lid', 'witch', 'hookah', 'crown', 'cat'];
+// The first four were picked evenly; each cap appended later takes an even slice off the bottom of every earlier
+// cap's share, so a pumpkin keeps its cap unless it lands in the new cap's slice.
+const FIRST_CAPS = 4;
+
+function pickCap(r) {
+    let i = Math.floor(r * FIRST_CAPS);
+    let u = r * FIRST_CAPS - i;
+    for (let k = FIRST_CAPS; k < CAPS.length; k++) {
+        const slice = 1 / (k + 1);
+        if (u < slice) {
+            i = k;
+            u /= slice;
+        } else {
+            u = (u - slice) / (1 - slice);
+        }
+    }
+    return CAPS[i];
+}
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
     let c = n;
@@ -578,7 +598,7 @@ function dressUp(st, size, seed, { def, look, kind: kind0, top: top0, tones, gri
     const lit = LIT[size];
     const rnd = mulberry32((seed ^ 0x5bd1e995) >>> 0);
     // The order of draws is part of the contract, as in pumpkinLook.
-    const capName = CAPS[Math.floor(rnd() * CAPS.length)];
+    const capName = pickCap(rnd());
     const capSeed = Math.floor(rnd() * 4294967296);
     const firePhase = rnd() * 6.28;
 
@@ -674,7 +694,7 @@ function dressUp(st, size, seed, { def, look, kind: kind0, top: top0, tones, gri
             }
         };
         CAP_PAINTERS[capName]({
-            put, ocx, ocy, o, size, def, look, tones, top, ox, rnd: mulberry32(capSeed),
+            put, ocx, ocy, o, size, def, look, tones, top, ox, kind, rnd: mulberry32(capSeed),
             flames: (tongues) => flames(tongues),
             smoke: (x, y, height, opts) => {
                 burning = true;
@@ -869,6 +889,49 @@ const CAP_PAINTERS = {
             put(xx, yb, (xx - x0) % 4 === 2 && size !== 's' ? 'q' : 'j');
         }
         flames(tips.map((cx, i) => ({ x: cx, y: yb - 1 - hs, len: hs + 1, wid: size === 's' ? 2 : 3, phase: i * 1.7, sway: 0.5 })));
+    },
+
+    // Cat ears grown from the pumpkin's own skin on both sides of the cut, leaning out, pink inside; whiskers scored
+    // into the cheeks beside the mouth make it read as a cat and not as horns.
+    cat({ put, ocx, ocy, o, size, def, look, top, ox, kind }) {
+        const H = { l: 10, m: 8, s: 6 }[size];
+        const half = { l: 4.8, m: 4, s: 3 }[size];
+        const lean = size === 's' ? 1 : 2;
+        const yb = Math.round(ocy) + 1;
+        for (const side of [-1, 1]) {
+            const bx = ocx + side * o.rx * 0.62;
+            for (let k = 0; k <= H; k++) {
+                const t = k / H;
+                const cx = bx + side * lean * t;
+                const hw = half * (1 - t);
+                const a = Math.round(cx - hw);
+                const b = Math.round(cx + hw);
+                for (let x = a; x <= b; x++) {
+                    let ch = x - cx < -hw * 0.3 ? 'l' : x - cx > hw * 0.35 ? 'd' : 'o';
+                    if (k >= 1 && k <= H - 3 && Math.abs(x - cx + 0.3) < hw - 1.9) ch = 'k';
+                    // Edges like the body's: lit on the top-left, dark on the right.
+                    if (x === b) ch = 'O';
+                    else if (x === a || k === H) ch = 'D';
+                    put(x, yb - k, ch);
+                }
+            }
+        }
+        // Whiskers: two short strokes fanning out from each corner of the mouth, only on solid skin.
+        const holes = look.mouth.flatMap((row, y) => [...row].map((ch, x) => (ch === '#' ? [x + def.mouthAt[0] + ox, y + def.mouthAt[1] + top] : null)))
+            .filter(Boolean);
+        const mx0 = Math.min(...holes.map(([x]) => x));
+        const mx1 = Math.max(...holes.map(([x]) => x));
+        const my = Math.min(...holes.filter(([x]) => x === mx0 || x === mx1).map(([, y]) => y));
+        const len = size === 's' ? 2 : 3;
+        for (const [x0, dir] of [[mx0 - 2, -1], [mx1 + 2, 1]]) {
+            for (let i = 0; i < len; i++) {
+                for (const [dy, rise] of [[0, -1], [2, 1]]) {
+                    const x = x0 + dir * i;
+                    const y = my + dy + (i === len - 1 ? rise : 0);
+                    if (kind[y]?.[x] === 'skin') put(x, y, 'O');
+                }
+            }
+        }
     },
 };
 

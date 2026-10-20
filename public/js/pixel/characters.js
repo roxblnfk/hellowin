@@ -66,6 +66,8 @@ const DARK = {
     gold: 'pumpkinGold',
     stem: 'stemDark',
     stemLight: 'stem',
+    crowLight: 'crow',
+    crow: 'crowDark',
 };
 const dark = (key) => DARK[key] ?? key;
 
@@ -257,6 +259,8 @@ function rig(dir, pose, frame) {
 // Bodies. torso(i, y, dir, w): i — column inside the torso box, y — local row (patterns stay put when the torso
 // drops); rows below TORSO_BOTTOM belong to the skirt. leg(i, yy, y): i — column 0..2, yy — row from the hip.
 // sleeve(i, n, dx): step along the arm. hair(c, r, dir, inHead): head-box coordinates, may reach one pixel outside.
+// Optional: headPaint(g, x0, y0, dir, ears) paints over the head under the face (ears — no hat on), whiskers(r)
+// returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back).
 
 const pick = (s, i) => PICK[s[i]] ?? null;
 const PICK = {
@@ -267,6 +271,83 @@ const PICK = {
 };
 /** Torso pattern from rows keyed by local y; rows missing from the map use the fallback colour. */
 const rowsPattern = (map, fallback) => (i, y) => (map[y] ? pick(map[y], i) : null) ?? fallback;
+
+// Cat ears over the head box, rows from three pixels above it: F — fur, f — the shaded fur, p — the pink inside. The
+// body's own ears and the «Ушки» hat share them, so a cat in that hat looks the same plus the band.
+const CAT_EARS = {
+    front: [
+        '.F........F.',
+        '.FF......Ff.',
+        '.FpF....Fpf.',
+        '.FppF..Fppf.',
+    ],
+    side: [
+        '..F.....f...',
+        '..FF...ff...',
+        '..FpF..fff..',
+        '..FppF.fff..',
+    ],
+    back: [
+        '.F........F.',
+        '.fF......Ff.',
+        '.fFF....FFf.',
+        '.fFFF..FFFf.',
+    ],
+};
+
+function catEars(g, x0, y0, dir, fur) {
+    stamp(g, x0, y0 - 3, CAT_EARS[dir], { F: fur, f: dark(fur), p: 'blush' });
+}
+
+// The muzzle under the face slot: the face's mouth lands on white, so it stays readable on black fur.
+const CAT_MUZZLE = {
+    front: ['', '', '', '', '', '', '', '....WnnW....', '...WWWWWW...', '....WWWW....'],
+    side: ['', '', '', '', '', '', '', '.........WWn', '........WWWW', '.........WWW'],
+};
+// Whiskers fan out past the cheeks. They go on without an outline: outlined, a one-pixel line turns into a fat bar.
+const CAT_WHISKERS = {
+    front: [[0, 8], [-1, 7], [-2, 7], [0, 9], [-1, 10], [-2, 10], [11, 8], [12, 7], [13, 7], [11, 9], [12, 10], [13, 10]],
+    side: [[12, 7], [13, 6], [12, 9], [13, 10]],
+};
+
+function catHead(g, x0, y0, dir, ears) {
+    if (ears) catEars(g, x0, y0, dir, 'crow');
+    if (dir === 'back') return;
+    stamp(g, x0, y0, CAT_MUZZLE[dir], { W: 'white', n: 'blush' });
+}
+
+function catWhiskers(r) {
+    const g = blank();
+    (CAT_WHISKERS[r.dir] ?? []).forEach(([c, rr]) => put(g, r.head.x + c, r.head.y + rr, 'grayLight'));
+    return g;
+}
+
+// The tail: a polyline from the rump, local coordinates per direction; the upper part swings with the pose. From the
+// back it hangs in front of the body, so it is drawn over the torso there.
+const CAT_TAIL = {
+    front: [[4, -6], [7, -6], [9, -8], [10, -11], [10, -13], [9, -15]],
+    side: [[-3, -6], [-6, -6], [-8, -8], [-9, -11], [-9, -13], [-8, -15]],
+    back: [[-1, -6], [-4, -5], [-7, -6], [-9, -8], [-10, -11], [-10, -13], [-9, -15]],
+};
+
+function catTail(g, r) {
+    const swing = r.pose === 'walk' || r.pose === 'ritual' ? [-1, 0, 1, 0][r.frame] : r.pose === 'fidget' ? (r.frame ? 1 : -1) : 0;
+    const pts = CAT_TAIL[r.dir].map(([x, y], i, all) => {
+        const t = i / (all.length - 1);
+        return [x + r.sx + Math.round(swing * 2 * t * t), y + (i ? r.bob : 0)];
+    });
+    for (let s = 0; s < pts.length - 1; s++) {
+        const [[x1, y1], [x2, y2]] = [pts[s], pts[s + 1]];
+        const n = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        for (let k = 0; k <= n; k++) {
+            const x = Math.round(x1 + ((x2 - x1) * k) / (n || 1));
+            const y = Math.round(y1 + ((y2 - y1) * k) / (n || 1));
+            put(g, x, y, 'crow');
+            // Thick at the root, thin to the tip.
+            if (s < 2) put(g, x, y - 1, 'crow');
+        }
+    }
+}
 
 const BODIES = {
     skeleton: {
@@ -407,6 +488,24 @@ const BODIES = {
             return dir === 'side' ? (r === -1 && c >= 2 && c % 3 === 0) || (c === -1 && (r === 4 || r === 6)) : tufts;
         },
         hairColor: (c, r, inHead) => (inHead ? 'hayDark' : 'hayLight'),
+    },
+    // A black tuxedo cat: the crow ramp stays a step above the outline at night, the white bib, muzzle and paws carry
+    // the shape. Ears, muzzle and whiskers come from headPaint, the tail from tail.
+    cat: {
+        label: 'Кот',
+        skin: 'crow',
+        torso: (i, y, dir) => {
+            if (dir === 'front' && y >= -10 && y <= -7 && i >= (y === -10 || y === -7 ? 4 : 3) && i <= (y === -10 || y === -7 ? 5 : 6)) return 'white';
+            if (dir === 'side' && y >= -10 && y <= -8 && i >= 4) return 'white';
+            return 'crow';
+        },
+        sleeve: () => 'crow',
+        leg: () => 'crow',
+        shoe: 'white',
+        hand: 'white',
+        headPaint: catHead,
+        whiskers: catWhiskers,
+        tail: catTail,
     },
 };
 
@@ -605,6 +704,15 @@ function witchDoctor(g, x0, y0, dir) {
     stamp(g, x0 + (dir === 'side' ? -1 : 0), y0 - 6, WD_CROWN, HAT_LEGEND);
 }
 
+// «Ушки»: the cat's ears on a thin band over the crown, black like the cat's so the pink inside carries the shape.
+const EAR_BAND = { front: [1, 10], side: [3, 8], back: [1, 10] };
+
+function catEarsHat(g, x0, y0, dir) {
+    const [a, b] = EAR_BAND[dir];
+    for (let c = a; c <= b; c++) put(g, x0 + c, y0 + 1, 'crowLight');
+    catEars(g, x0, y0, dir, 'crow');
+}
+
 const HATS = {
     none: { label: 'Нет', paint: () => {} },
     pumpkin: { label: 'Тыква', paint: (g, x0, y0) => pumpkinHat(g, x0, y0) },
@@ -621,6 +729,7 @@ const HATS = {
             ? stamp(g, x0, y0 - 4, HORNS.side, HAT_LEGEND)
             : stamp(g, x0, y0 - 4, HORNS.front, HAT_LEGEND)),
     },
+    'cat-ears': { label: 'Ушки', paint: catEarsHat },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1029,7 +1138,7 @@ function drawArm(g, body, arm) {
     }
 }
 
-function drawHead(body, face, r) {
+function drawHead(body, face, r, ears) {
     const g = blank();
     const { x: x0, y: y0 } = r.head;
     HEAD_MASK.forEach((row, rr) => [...row].forEach((ch, c) => {
@@ -1047,6 +1156,7 @@ function drawHead(body, face, r) {
             }
         }
     }
+    if (body.headPaint) body.headPaint(g, x0, y0, r.dir, ears);
     const rows = face[r.dir];
     if (rows) stamp(g, x0, y0, rows, FACE_LEGEND);
     return g;
@@ -1071,11 +1181,15 @@ function compose(look, dir, pose, frame, item) {
     };
 
     layer((g) => cloak.paint(g, r, 'back'));
+    if (body.tail && dir !== 'back') layer((g) => body.tail(g, r));
     over(out, outlined(drawLegs(body, r)));
     const free = r.arms.filter((a, i) => !((shoot || holding) && i === r.itemArm));
     layer((g) => free.filter((a) => a.far).forEach((a) => drawArm(g, body, a)));
     over(out, outlined(drawTorso(body, r)));
-    over(out, outlined(drawHead(body, FACES[look.face], r)));
+    if (body.tail && dir === 'back') layer((g) => body.tail(g, r));
+    // A body's own ears (the cat) show only bare-headed: every hat sits where they stand, the «Ушки» hat brings its own.
+    over(out, outlined(drawHead(body, FACES[look.face], r, look.hat === 'none')));
+    if (body.whiskers) over(out, body.whiskers(r));
     layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
     layer((g) => HATS[look.hat].paint(g, r.head.x, r.head.y, dir));
     layer((g) => cloak.paint(g, r, 'front'));
