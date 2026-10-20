@@ -98,8 +98,8 @@
 может использовать его или игнорировать.
 
 Особые летуны (**запланировано**): `roadrunner` — бежит по горизонту (`depth` 0, `from`/`to` на линии горизонта
-`horizon` из `app/config/hellowin.php`), `points` 0, выстрел по нему всегда `hit:false` (сервер шлёт сове `roadrunner` с
-игроком); `witch` — редкий, очки `HELLOWIN_FLYER_RARE_POINTS`; `zombie` — наземная цель проклятого мира: путь по
+`horizon` из `app/config/hellowin.php`), `points` 0, выстрел по нему всегда `hit:false`, без реплик
+совы; `witch` — редкий, очки `HELLOWIN_FLYER_RARE_POINTS`; `zombie` — наземная цель проклятого мира: путь по
 лужайке (зона `walk`) от края грядки наружу, `depth` 1, `via` нет, очки `HELLOWIN_ZOMBIE_POINTS`, частота
 `HELLOWIN_ZOMBIE_INTERVAL`.
 
