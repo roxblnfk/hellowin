@@ -150,7 +150,6 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         const walker = id && model.walkers.find((w) => w.id === id);
         const fire = walker && SHOT_SOUNDS[walker.item];
         if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
-        if (id && id === model.me) play('points');
     }
 
     // My own walker's steps, on a timer rather than as delayed sounds: a newer move cancels the ones not yet heard.
