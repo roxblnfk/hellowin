@@ -51,6 +51,8 @@ const MAGIC = {
     violet: { w: 'violetHot', s: 'eyeViolet', l: 'violetGlow', o: 'violet', d: 'violetDark', f: 'violetLight' },
     // The cursed world after the finale: FrankenPHP's lime.
     franken: { w: 'frankenGlowCore', s: 'frankenGlowHot', l: 'frankenGlow', o: 'frankenGlowDark', d: 'frankenGlowDeep', f: 'frankenGlowHot' },
+    // Spent: the finale's lightning puts the light out, the hollow inside goes dark (finale steps 2–4).
+    spent: { w: 'inner', s: 'inner', l: 'inner', o: 'innerDark', d: 'innerDark', f: 'fleshDark' },
 };
 // Fire chars core → edge: w s l d D, plus smoke g G. The same flames burn warm, green or violet.
 const FIRE = {

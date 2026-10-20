@@ -106,6 +106,9 @@ export const EMISSIVE = new Set([
     'flameCore', 'magicCore', 'eerieHot', 'eerieMid', 'eyeGreen', 'eerieDark', 'eerieDeep', 'violetHot', 'eyeViolet',
     'violetGlow', 'ember', 'rune', 'runeDark', 'moonLight', 'moon', 'moonShade', 'bloodMoonLight', 'bloodMoon',
     'bloodMoonShade', 'sunsetSun', 'sunsetGlow',
+    // The finale's light (finale.js, FINALE_EMISSIVE): FrankenPHP's sparks and the cursed glow, lightning, the column.
+    'frankenGlowCore', 'frankenGlowHot', 'frankenGlow', 'frankenGlowDark', 'frankenGlowDeep',
+    'lightningCore', 'lightning', 'lightningEdge', 'columnCore',
 ]);
 const EMISSIVE_COLORS = new Set([...EMISSIVE].map((key) => PALETTE[key]));
 

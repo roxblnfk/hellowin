@@ -11,9 +11,11 @@ import {
 import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { POSES, characterFrame } from './characters.js';
+import { frankenHalo } from './finale.js';
+import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
-import { NIGHT, bakeLit, halo, paintSky, relightCanvas } from './night.js';
-import { OWL, glowing } from './owl.js';
+import { NIGHT, bakeLit, halo, litColor, paintSky, relightCanvas } from './night.js';
+import { OWL, OWL_FLIGHT, glowing } from './owl.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -106,7 +108,7 @@ function measure(rootEl) {
 /**
  * Pixi scene of docs/spec/frontend.md. The scene keeps no game state of its own beyond what the calls pass in.
  *
- * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, circle: Function, step: Function}>}
+ * @returns {Promise<null|{render: Function, click: Function, pumpkin: Function, setScene: Function, setServerClock: Function, flyer: Function, shot: Function, flyerAt: Function, walker: Function, move: Function, leave: Function, setMe: Function, groundAt: Function, perch: Function, circle: Function, setFinale: Function, step: Function}>}
  *          null when no renderer can start.
  */
 export async function createScene(rootEl, snapshot) {
@@ -170,10 +172,12 @@ export async function createScene(rootEl, snapshot) {
     groundLayer.sortableChildren = true;
     const particleLayer = new Container();
     const flashLayer = new Container();
+    // The finale's lightning, over everything but the veil.
+    const fxLayer = new Container();
     // Full-screen veil for the new-round dim-and-flash.
     const veil = new Sprite(Texture.WHITE);
     veil.visible = false;
-    world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, lightLayer, farFlyerLayer, groundLayer, blastLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, veil);
+    world.addChild(skyLayer, cloudLayer, baseLayer, plantLayer, lightLayer, farFlyerLayer, groundLayer, blastLayer, bugLayer, midFlyerLayer, nearFlyerLayer, particleLayer, flashLayer, fxLayer, veil);
     // Debug outline of the flyers' hit boxes (public/dev/lab.html ?hits=1).
     const hitOverlay = new Graphics();
     world.addChild(hitOverlay);
@@ -244,8 +248,19 @@ export async function createScene(rootEl, snapshot) {
         bushes: snapshot.bushes ?? [],
     };
 
-    // Lighting per scene (docs/spec/scenario.md, «Сцены 1–3»): day, sunset, night; the final scene is the blood moon.
-    const lightingOf = (scene) => (scene >= state.sceneStages ? 'blood' : ['day', 'sunset', 'night'][scene] ?? 'night');
+    // The finale (docs/spec/scenario.md, «Финал»): the step (null outside the final scene), whether the circle is
+    // closed, and when the step and step 1 began on the scene clock. -1e9 is a step settled long ago: a reload, a
+    // resync and reduced motion show the end of the step, never its animation.
+    const finale = { step: null, ready: false, at: -1e9, pullAt: -1e9 };
+    const sinceStep = () => clock - finale.at;
+    const inFinale = () => state.scene >= state.sceneStages && finale.step !== null;
+
+    // Lighting per scene (docs/spec/scenario.md, «Сцены 1–3»): day, sunset, night; the final scene is the blood moon
+    // until the lightning of finale step 2, then the night again.
+    const lightingOf = (scene) => {
+        if (scene < state.sceneStages) return ['day', 'sunset', 'night'][scene] ?? 'night';
+        return finale.step !== null && nightOf(finale.step, sinceStep()) ? 'night' : 'blood';
+    };
     let lighting = 'day';
     // The bonfire's warm reach at night, { x, y, rx, ry, near } in art px; null without a burning bonfire.
     let fireLight = null;
@@ -257,8 +272,12 @@ export async function createScene(rootEl, snapshot) {
     const lightAt = (x, y) => (fireLight && Math.hypot((x - fireLight.x) / fireLight.rx, (y - fireLight.y) / fireLight.ry) < 0.75 ? 'firelight' : lighting);
     /** A baked full-screen layer (lawn, vines) recoloured for the scene's lighting and the bonfire's reach. */
     const relight = (c) => (lighting === 'day' && !fireLight ? c : relightCanvas(c, lighting, fireLight));
-    // Magic of the stages 9+ turns violet under the blood moon.
-    const toneOf = () => (lighting === 'blood' ? 'violet' : 'green');
+    // The floating pumpkins' lights go out with the lightning and come back green at step 5.
+    const darkPumpkins = () => inFinale() && lightsOut(finale.step, sinceStep());
+    let darkShown = false;
+    // Magic of the stages 9+ turns violet under the blood moon and FrankenPHP's lime in the cursed world; spent while
+    // the lights are out.
+    const toneOf = () => (darkPumpkins() ? 'spent' : inFinale() && finale.step >= 5 ? 'franken' : lighting === 'blood' ? 'violet' : 'green');
     const bonfireElement = () => state.elements.find((e) => e.type === 'bonfire') ?? null;
     const pumpkinElements = () => state.elements.filter(isPumpkin);
     // The magic circle is drawn on the bonfire's pit: its clicks shake the pit like the bonfire's shook the fire.
@@ -435,11 +454,12 @@ export async function createScene(rootEl, snapshot) {
     }
 
     // Texture of a sprites.js-style sprite per lighting; 'day' (the default) also serves light sprites like halos.
+    // `baker` replaces the lighting for a sprite of its own rules (FrankenPHP's half-lit lime).
     const defTextures = new Map();
-    const defTexture = (def, lit = 'day') => {
+    const defTexture = (def, lit = 'day', baker = litBake) => {
         if (!defTextures.has(lit)) defTextures.set(lit, new WeakMap());
         const cache = defTextures.get(lit);
-        if (!cache.has(def)) cache.set(def, texture(litBake(def, lit)));
+        if (!cache.has(def)) cache.set(def, texture(baker(def, lit)));
         return cache.get(def);
     };
 
@@ -548,7 +568,10 @@ export async function createScene(rootEl, snapshot) {
 
         const image = ctx.createImageData(artW, artH - horizon);
         const rgb = (key) => [(PALETTE[key] >> 16) & 255, (PALETTE[key] >> 8) & 255, PALETTE[key] & 255];
-        const COLORS = Object.fromEntries(['soil', 'soilDark', 'soilLight', 'leaf', 'leafDark', 'leafLight', 'leafShine'].map((k) => [k, rgb(k)]));
+        const COLORS = Object.fromEntries(['soil', 'soilDark', 'soilLight', 'leaf', 'leafDark', 'leafLight', 'leafShine', 'ash', 'ashDark'].map((k) => [k, rgb(k)]));
+        // From the blast on the patch is scorched and bare (bareOf): charcoal furrows, ash specks, no grass.
+        const bare = bareOf();
+        const SCORCH = { soilLight: 'soil', soil: 'soilDark', soilDark: 'ashDark' };
         const vp = { x: shape.cx, y: horizon - (shape.cy - horizon) * 0.6 };
         const fan = (shape.cy + shape.ry - vp.y) / 10;
         for (let y = horizon; y < artH; y++) {
@@ -564,6 +587,7 @@ export async function createScene(rootEl, snapshot) {
                         : f < 0.3 ? 'soilLight'
                         : random() < 0.03 ? (random() < 0.5 ? 'soilDark' : 'soilLight')
                         : 'soil';
+                    if (bare) key = (x * 7 + y * 13) % 23 === 0 ? 'ash' : SCORCH[key];
                 } else if (d < 1.1 && random() < (1.1 - d) * 6) {
                     // Clods of dug soil scattered over the rim.
                     key = random() < 0.6 ? 'soilDark' : 'soilLight';
@@ -594,8 +618,10 @@ export async function createScene(rootEl, snapshot) {
             const y = Math.round(p.y);
             const tall = 2 + Math.floor(random() * 2);
             ctx.fillStyle = css(PALETTE[random() < 0.5 ? 'leaf' : 'leafDark']);
+            const tuft = random() < 0.4;
+            if (bare) continue;
             ctx.fillRect(x, y - tall + 1, 1, tall);
-            if (random() < 0.4) ctx.fillRect(x + 1, y - 1, 1, 1);
+            if (tuft) ctx.fillRect(x + 1, y - 1, 1, 1);
         }
 
         // Rejection sampling: sparse inside the patch, denser outside and toward the edges, rarer and smaller far off.
@@ -618,7 +644,8 @@ export async function createScene(rootEl, snapshot) {
                 const list = d < 1 ? DECOR.grass : random() < 0.08 && DECOR.flower?.length ? DECOR.flower : random() < 0.55 ? weeds : DECOR.grass;
                 def = list[Math.floor(random() * list.length)];
             }
-            picks.push({ def, x, y });
+            // No undergrowth on the scorched patch.
+            if (!(bare && d < 1)) picks.push({ def, x, y });
         }
         picks.forEach((p) => addGround(p.def, p.x, p.y));
         placeProps(shape, random);
@@ -648,6 +675,17 @@ export async function createScene(rootEl, snapshot) {
         animateOwl();
     }
 
+    // At finale step 5 the owl flies off the branch once its last line is over, and is gone. A line after that brings
+    // it back to the branch for the line and sends it off again (provisional, docs/spec/frontend.md).
+    const OWL_TAKEOFF_MS = 150;
+    const OWL_FLY_MS = 2500;
+    const OWL_RETURN_MS = 1800;
+    // The owl does not leave before this long into step 5: the farewell line may still wait for the bubble (owl.js).
+    const OWL_STAY_MS = 3000;
+    let owlFlight = { mode: 'perched', at: 0, leave: false };
+    // Off the top of the screen, up and to the left of the branch.
+    const owlAway = () => ({ x: owlAt.x - layout.artW * 0.35, y: -OWL_FLIGHT.fly[0].h - 4 });
+
     // Idle on the server clock, so the whole room sees the same blink and the same swivel: 5 s slots, a blink in
     // each, a swivel to one side in some of them and, rarely, all the way round.
     const OWL_SLOT_MS = 5000;
@@ -676,7 +714,7 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function owlFrame() {
-        if (clock < owlTalk.until) {
+        if (clock >= owlTalk.at && clock < owlTalk.until) {
             const t = clock - owlTalk.at;
             if (owlTalk.hoot && t < OWL_HOOT_MS) return OWL.hoot;
             if (reduced) return OWL.talk[0];
@@ -687,9 +725,42 @@ export async function createScene(rootEl, snapshot) {
         return reduced ? OWL.idle[0] : idleOwl(serverNow());
     }
 
+    // The owl's frame and point: on the branch, or taking off, flying away and coming back (owlFlight).
+    function owlPose() {
+        const f = owlFlight;
+        if (f.mode === 'perched' && f.leave && clock >= owlTalk.until && sinceStep() > OWL_STAY_MS) {
+            owlFlight = { mode: reduced ? 'away' : 'leaving', at: clock, leave: false };
+        }
+        const t = clock - owlFlight.at;
+        const wing = OWL_FLIGHT.fly[Math.floor(clock / 90) % OWL_FLIGHT.fly.length];
+        if (owlFlight.mode === 'leaving') {
+            if (t < OWL_TAKEOFF_MS) return { def: OWL_FLIGHT.takeOff, at: owlAt };
+            const k = (t - OWL_TAKEOFF_MS) / OWL_FLY_MS;
+            if (k >= 1) owlFlight = { mode: 'away', at: clock, leave: false };
+            else {
+                const away = owlAway();
+                return { def: wing, at: { x: owlAt.x + (away.x - owlAt.x) * k * k, y: owlAt.y + (away.y - owlAt.y) * k } };
+            }
+        }
+        if (owlFlight.mode === 'returning') {
+            const k = t / OWL_RETURN_MS;
+            if (k >= 1) owlFlight = { mode: 'perched', at: clock, leave: true };
+            else {
+                const away = owlAway();
+                const e = 1 - (1 - k) * (1 - k);
+                return { def: k > 0.9 ? OWL_FLIGHT.takeOff : wing, at: { x: away.x + (owlAt.x - away.x) * e, y: away.y + (owlAt.y - away.y) * e } };
+            }
+        }
+        if (owlFlight.mode === 'away') return null;
+        return { def: owlFrame(), at: owlAt };
+    }
+
     function animateOwl() {
         if (!owlSprite) return;
-        let def = owlFrame();
+        const pose = owlPose();
+        owlSprite.visible = Boolean(pose);
+        if (!pose) return;
+        let { def } = pose;
         // From the night scene on, the eyes glow.
         if (state.scene >= 2) {
             if (!owlNight.has(def)) owlNight.set(def, glowing(def));
@@ -698,7 +769,7 @@ export async function createScene(rootEl, snapshot) {
         const art = flyerArt(def, false, lightAt(owlAt.x, owlAt.y));
         owlSprite.texture = art.texture;
         owlSprite.anchor.set(art.ax, art.ay);
-        owlSprite.position.set(owlAt.x, owlAt.y);
+        owlSprite.position.set(Math.round(pose.at.x), Math.round(pose.at.y));
     }
 
     /**
@@ -825,6 +896,11 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function drawPlants() {
+        burn = null;
+        if (bareOf()) {
+            plantLayer.removeChildren().forEach((s) => s.destroy());
+            if (!burningOf()) return;
+        }
         const { artW, artH } = layout;
         const c = canvas(artW, artH);
         const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -853,6 +929,10 @@ export async function createScene(rootEl, snapshot) {
         }
 
         plantLayer.removeChildren().forEach((s) => s.destroy());
+        if (bareOf()) {
+            startBurn(relight(c), foliage);
+            return;
+        }
         plantLayer.addChild(new Sprite(texture(relight(c))));
         // From scene 1 the freed tops are the bonfire's heap (buildBonfire): no root and no leaf heap in the middle.
         foliage.forEach((leaf) => addGround(leaf.def, leaf.x, leaf.y));
@@ -868,6 +948,97 @@ export async function createScene(rootEl, snapshot) {
         }
         // The root sorts in front of its heap, so the leaves frame it instead of burying it.
         addGround(DECOR.root, root.x, root.y, { sortY: root.y + 20 });
+    }
+
+    // The blast of 2 → 3 burns the foliage away (docs/spec/frontend.md, «Взрыв 2 → 3»): vines, leaves and tendrils char
+    // and smoulder, crumble to ash in BURN_FRAMES steps and are gone; from then on the patch is bare. A reload, a resync
+    // or reduced motion shows the bare patch at once.
+    const BURN_START = 250;
+    const BURN_STEP = 380;
+    const BURN_FRAMES = 6;
+    const BURN_END = BURN_START + BURN_STEP * BURN_FRAMES;
+    const bareOf = () => state.scene >= state.sceneStages;
+    const burningOf = () => !reduced && clock - blastAt < BURN_END;
+    let burn = null;
+
+    /**
+     * Charred frames of a baked canvas: the first darkened with ember specks, then charcoal and ash crumbling away in
+     * blobs (2-px value noise over a Bayer step) with glowing embers along the crumbling edge.
+     */
+    const charCache = new WeakMap();
+    function charFrames(src) {
+        if (charCache.has(src)) return charCache.get(src);
+        const { width: w, height: h } = src;
+        const data = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+        const rgbOf = (c) => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+        const ash = rgbOf(litColor(PALETTE.ash, lighting));
+        const coal = rgbOf(litColor(PALETTE.ashDark, lighting));
+        const ember = rgbOf(PALETTE.ember);
+        const frames = Array.from({ length: BURN_FRAMES }, (_, k) => {
+            const out = canvas(w, h);
+            const octx = out.getContext('2d');
+            const img = octx.createImageData(w, h);
+            const gone = [0, 0.08, 0.28, 0.5, 0.7, 0.88][k];
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 3] === 0) continue;
+                const x = (i >> 2) % w;
+                const y = Math.floor((i >> 2) / w);
+                const n = (mix((x >> 1) * 73856093, (y >> 1) + 0xb07) / 4294967296) * 0.75 + (((x & 1) * 2 + (y & 1)) / 4) * 0.25;
+                if (n < gone) continue;
+                let c;
+                if (k === 0) {
+                    c = mix(x, y * 31 + 7) % 100 < 5 ? ember : [data[i] * 0.45, data[i + 1] * 0.4, data[i + 2] * 0.45];
+                } else {
+                    const lum = (data[i] * 3 + data[i + 1] * 6 + data[i + 2]) / 2550;
+                    c = n < gone + 0.07 && k < BURN_FRAMES - 1 ? ember : lum > 0.3 ? ash : coal;
+                }
+                img.data[i] = c[0];
+                img.data[i + 1] = c[1];
+                img.data[i + 2] = c[2];
+                img.data[i + 3] = 255;
+            }
+            octx.putImageData(img, 0, 0);
+            return texture(out);
+        });
+        charCache.set(src, frames);
+        return frames;
+    }
+
+    // The vines' canvas and the foliage as sprites of their own, with their charred frames; points along them for the
+    // embers.
+    function startBurn(vines, foliage) {
+        const sprite = new Sprite(texture(vines));
+        plantLayer.addChild(sprite);
+        const leaves = foliage.map((leaf) => {
+            const lit = lightAt(leaf.x, leaf.y);
+            const s = addGround(leaf.def, leaf.x, leaf.y);
+            return { sprite: s, frames: charFrames(litBake(leaf.def, lit)), x: leaf.x, y: leaf.y - (leaf.def.h >> 1) };
+        });
+        burn = { vines: { sprite, frames: charFrames(vines) }, leaves, step: -1 };
+    }
+
+    function animateBurn() {
+        if (!burn) return;
+        const t = clock - blastAt;
+        if (t >= BURN_END) {
+            burn.vines.sprite.destroy();
+            burn.leaves.forEach((l) => l.sprite.destroy());
+            burn = null;
+            return;
+        }
+        const step = t < BURN_START ? -1 : Math.floor((t - BURN_START) / BURN_STEP);
+        if (step !== burn.step && step >= 0) {
+            burn.step = step;
+            burn.vines.sprite.texture = burn.vines.frames[step];
+            burn.leaves.forEach((l) => (l.sprite.texture = l.frames[step]));
+        }
+        // Embers and cinders lift off the smouldering foliage while it burns.
+        if (step >= 0 && step < BURN_FRAMES - 1 && burn.leaves.length) {
+            for (let i = 0; i < 2; i++) {
+                const l = burn.leaves[Math.floor(Math.random() * burn.leaves.length)];
+                spawn(i ? 'cinder' : 'ember', l.x + between(-3, 3), l.y, sign() * between(2, 12), -between(15, 40), i ? 30 : -15, between(0.5, 0.9));
+            }
+        }
     }
 
     // Two butterflies drifting lazily over the lawn on either side of the patch: a 3×1 open and a 1×2 closed frame.
@@ -907,21 +1078,26 @@ export async function createScene(rootEl, snapshot) {
         const at = out ? p.out : p.home;
         const a = pumpkinArt(p.stage, p.size, p.seed, lightAt(at.x, at.y), toneOf());
         p.art = a;
+        const dark = darkPumpkins();
+        darkShown = dark;
         for (const name of LAYERS) {
             const sprite = p.layers[name];
             sprite.texture = a.layers[name] ?? Texture.EMPTY;
-            // The glow is the inner light from stage 5 on, and only after dark; below it, a mask of the cuts.
-            sprite.visible = Boolean(a.layers[name]) && (name !== 'glow' || (p.stage >= LIT_STAGE && lighting !== 'day'));
+            // The glow is the inner light from stage 5 on, and only after dark; below it, a mask of the cuts. The
+            // finale puts every light out for a while (darkPumpkins).
+            sprite.visible = Boolean(a.layers[name]) && (name !== 'glow' || (p.stage >= LIT_STAGE && lighting !== 'day')) && !(dark && LIGHT_LAYERS.has(name));
             sprite.position.set(-a.def.anchor.x, -a.def.anchor.y);
         }
         p.ring.texture = a.ring;
         p.ring.position.set(-a.def.anchor.x - 1, -a.def.anchor.y - 1);
-        // A burning or charmed pumpkin lights the ground around it.
-        const lit = p.stage > LIT_STAGE && lighting !== 'day';
+        // A burning or charmed pumpkin lights the ground around it; in the cursed world in FrankenPHP's lime.
+        const lit = p.stage > LIT_STAGE && lighting !== 'day' && !dark;
         p.halo.visible = lit;
         if (lit) {
             const [rx, ry] = HALO[p.size] ?? HALO.m;
-            p.halo.texture = defTexture(halo(rx, ry, lighting === 'sunset' ? 'warm' : lighting === 'blood' ? 'violet' : 'green'));
+            p.halo.texture = toneOf() === 'franken'
+                ? defTexture(artTexture(`franken-halo:${rx}:${ry}`, () => frankenHalo(rx, ry)))
+                : defTexture(halo(rx, ry, lighting === 'sunset' ? 'warm' : lighting === 'blood' ? 'violet' : 'green'));
         }
     }
 
@@ -977,6 +1153,69 @@ export async function createScene(rootEl, snapshot) {
             applyArt(p);
             pumpkins.set(p.id, p);
         }
+        // Places in the round dance of finale step 1: evenly around the circle, in the order the pumpkins stand
+        // around it, so each one only slides over to its neighbour's side.
+        const c = centre();
+        const shape = patchShape();
+        const around = (p) => {
+            const rest = out ? p.out : p.home;
+            return Math.atan2((rest.y - c.y) / shape.ry, (rest.x - c.x) / shape.rx);
+        };
+        const ring = [...pumpkins.values()].sort((a, b) => around(a) - around(b));
+        const first = ring.length ? around(ring[0]) : 0;
+        ring.forEach((p, i) => (p.dance = first + (i / ring.length) * Math.PI * 2));
+    }
+
+    // The circle's foot in art px: the bonfire's spot, where FrankenPHP will stand.
+    const centre = () => toArt(bonfireElement() ?? ROOT);
+
+    // The round dance of finale step 1 at scene time `c`: pulled from its place onto a ring around the circle over
+    // FINALE_T.pull, turning slowly. Returns the ground point and how far the pull has come.
+    function danceAt(p, c) {
+        const shape = patchShape();
+        const mid = centre();
+        const k = clamp((c - finale.pullAt) / FINALE_T.pull, 0, 1);
+        const e = k * k * (3 - 2 * k);
+        const a = p.dance + (reduced ? 0 : c / 1700);
+        // Wide enough for the whole patch to hold hands around FrankenPHP without hiding him.
+        // On a phone, inside the screen.
+        const rx = Math.min(shape.rx * 0.92, layout.artW / 2 - 22);
+        const target = { x: mid.x + Math.cos(a) * rx, y: mid.y + 4 + Math.sin(a) * shape.ry * 0.72 };
+        const rest = out ? p.out : p.home;
+        return { at: { x: rest.x + (target.x - rest.x) * e, y: rest.y + (target.y - rest.y) * e }, k: e };
+    }
+
+    /**
+     * A pumpkin in the finale: { at, lift, squash? } or null outside it. Step 1 dances, step 2 flings them back to
+     * their places as the lights go out and they drop, steps 3–4 they lie there, step 5 they rise and float again.
+     */
+    function finalePumpkin(p) {
+        if (!inFinale() || finale.step < 1) return null;
+        const t = sinceStep();
+        const rest = out ? p.out : p.home;
+        const bob = reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / 520));
+        if (finale.step === 1 || (finale.step === 2 && t < FINALE_T.reveal)) {
+            const { at, k } = danceAt(p, clock);
+            return { at, lift: FLOAT_LIFT + Math.round(6 * k) + (reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / 260))) };
+        }
+        if (finale.step === 2) {
+            const k = (t - FINALE_T.reveal) / FINALE_T.fling;
+            if (k < 1) {
+                const from = danceAt(p, finale.at + FINALE_T.reveal);
+                const e = 1 - (1 - k) * (1 - k);
+                return {
+                    at: { x: from.at.x + (rest.x - from.at.x) * e, y: from.at.y + (rest.y - from.at.y) * e },
+                    lift: Math.max(0, Math.round((1 - k * k) * (FLOAT_LIFT + 6) + Math.sin(Math.PI * k) * 8)),
+                };
+            }
+            const b = Math.floor((t - FINALE_T.reveal - FINALE_T.fling) / 60);
+            return { at: rest, lift: 0, squash: b < BOUNCE.length ? BOUNCE[b] : null };
+        }
+        if (finale.step === 5) {
+            const k = clamp(t / FINALE_T.rise5, 0, 1);
+            return { at: rest, lift: Math.round(FLOAT_LIFT * (1 - (1 - k) * (1 - k))) + (k >= 1 ? bob : 0) };
+        }
+        return { at: rest, lift: 0 };
     }
 
     /**
@@ -1096,7 +1335,7 @@ export async function createScene(rootEl, snapshot) {
         out = jumpedOut(state.scene, state.stageMax, pumpkinElements());
         // Two light sources at night: the bonfire's warm reach around the centre, cold moonlight beyond it.
         const burning = bonfireElement();
-        if (lighting === 'night' && burning && BONFIRE.light[clamp(burning.stage ?? 0, 0, BONFIRE_STAGES)]) {
+        if (lighting === 'night' && state.scene < state.sceneStages && burning && BONFIRE.light[clamp(burning.stage ?? 0, 0, BONFIRE_STAGES)]) {
             const shape = patchShape();
             // Centred a little toward the viewer: it covers the whole patch and its near rim, not the hills behind it.
             fireLight = { x: Math.round(shape.cx), y: Math.round(shape.cy + shape.ry * 0.35), rx: Math.round(shape.rx * 1.45), ry: Math.round(shape.ry * 1.65), near: 'firelight' };
@@ -1111,6 +1350,7 @@ export async function createScene(rootEl, snapshot) {
         placeBushes();
         buildPumpkins();
         buildBonfire();
+        stage.build();
         buildWalkers();
         // Ground targets outlive a resize like walkers: their sprites went with groundLayer.
         for (const f of flyers.values()) {
@@ -1477,8 +1717,10 @@ export async function createScene(rootEl, snapshot) {
     function burst(p, stage) {
         const final = state.scene >= state.sceneStages;
         if (final) {
+            // Green motes in the cursed world, where the pumpkins glow FrankenPHP's lime.
             const at = emitPoint(p, 'top');
-            for (let i = 0; i < 4; i++) spawn('hex', at.x, at.y, sign() * between(6, 22), -between(20, 50), -10, between(0.6, 1));
+            const kind = finale.step >= 5 ? 'magic' : 'hex';
+            for (let i = 0; i < 4; i++) spawn(kind, at.x, at.y, sign() * between(6, 22), -between(20, 50), -10, between(0.6, 1));
         } else if (stage >= state.stageMax) {
             const at = emitPoint(p, 'top');
             for (let i = 0; i < 2; i++) {
@@ -1555,17 +1797,25 @@ export async function createScene(rootEl, snapshot) {
                 hopping = true;
             }
         }
-        p.pos = at;
-
         const final = state.scene >= state.sceneStages;
-        const floating = floats(p.stage, state.scene, state.sceneStages);
+        // The finale moves the pumpkins itself: the round dance, the drop, the rise of the cursed world.
+        const staged = finalePumpkin(p);
+        if (staged) at = staged.at;
+        p.pos = at;
+        const floating = staged ? staged.lift > 0 : floats(p.stage, state.scene, state.sceneStages);
         // Floats bob like a float on water; under the blood moon slower, with a slight tilt.
-        p.lift = floating ? FLOAT_LIFT + (reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / (final ? 520 : 650)))) : 0;
+        p.lift = staged ? staged.lift : floating ? FLOAT_LIFT + (reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / (final ? 520 : 650)))) : 0;
 
         const hit = Math.floor((clock - p.hit) / 50);
         const bounce = Math.floor((clock - p.bounce) / 60);
         if (hopping) {
             // The jump wins over everything else.
+        } else if (staged?.squash && !reduced) {
+            // Landing after the drop of finale step 2.
+            [sx, sy, oy] = staged.squash;
+        } else if (staged && !floating) {
+            // Lying on the ground after the drop: still, apart from a click's shake.
+            if (hit >= 0 && hit < HIT.length) [sx, sy, ox] = HIT[hit];
         } else if (hit >= 0 && hit < HIT.length) {
             [sx, sy, ox] = HIT[hit];
         } else if (bounce >= 0 && bounce < BOUNCE.length) {
@@ -1673,11 +1923,53 @@ export async function createScene(rootEl, snapshot) {
                 const k = lengths[i] > 0 ? clamp(left / lengths[i], 0, 1) : 1;
                 const a = path[i];
                 const b = path[i + 1];
-                return { at: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }, from: a, to: b, moving: t < 1 };
+                return { at: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }, from: a, to: b, moving: t < 1, index: i };
             }
             left -= lengths[i];
         }
-        return { at: path[0], from: path[0], to: path[0], moving: false };
+        return { at: path[0], from: path[0], to: path[0], moving: false, index: 0 };
+    }
+
+    /*
+     * Walking never jumps (docs/spec/frontend.md, «Ходьба»). A walker is drawn along its own track: a path in config
+     * coordinates run on the scene clock. A new walk (a `move`, a changed `walker`, a snapshot) continues from where
+     * the walker is drawn now, through the server path's points still ahead of it, at the server's speed — so it may
+     * arrive a little after `arrivesAt`, which nobody can see. Latency and the clock offset only shift the timing, never
+     * the position. A walker drawn too far from where the server has it (a long tab sleep) snaps, and so does one that
+     * appears for the first time — it starts where the server has it now.
+     */
+    const SNAP_DISTANCE = 15;
+    // Config units per ms when a walk does not tell (a standing walker): the last speed seen, HELLOWIN_WALK_SPEED-like.
+    let walkSpeed = 12 / 1000;
+    const pathLength = (path) => path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0);
+
+    function trackFrom(start, rest) {
+        const path = [start, ...rest].filter((p, i, all) => i === 0 || Math.hypot(p.x - all[i - 1].x, p.y - all[i - 1].y) > 0.01);
+        return { path, startedAt: clock, arrivesAt: clock + pathLength(path) / walkSpeed };
+    }
+
+    /** A new walk for walker `w`: continue from the drawn point, or start where the server has it now. */
+    function retrack(w, walk) {
+        const path = walk?.path?.length ? walk.path : [{ x: ROOT.x, y: 94 }];
+        const span = (walk?.arrivesAt ?? 0) - (walk?.startedAt ?? 0);
+        const total = pathLength(path);
+        if (span > 0 && total > 0) walkSpeed = total / span;
+        const server = walkAt(walk, serverNow());
+        if (!w.drawn || Math.hypot(w.drawn.x - server.at.x, w.drawn.y - server.at.y) > SNAP_DISTANCE) {
+            w.track = trackFrom(server.at, path.slice(server.index + 1));
+            return;
+        }
+        // The segment of the server path nearest to the drawn point: the points before its end are behind the walker.
+        let best = { d: Infinity, i: 0 };
+        for (let i = 0; i < path.length - 1; i++) {
+            const a = path[i];
+            const b = path[i + 1];
+            const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 || 1;
+            const k = clamp(((w.drawn.x - a.x) * (b.x - a.x) + (w.drawn.y - a.y) * (b.y - a.y)) / len2, 0, 1);
+            const d = Math.hypot(w.drawn.x - (a.x + (b.x - a.x) * k), w.drawn.y - (a.y + (b.y - a.y) * k));
+            if (d < best.d) best = { d, i };
+        }
+        w.track = trackFrom({ ...w.drawn }, path.length > 1 ? path.slice(best.i + 1) : path);
     }
 
     function walkerLabel(w) {
@@ -1703,6 +1995,9 @@ export async function createScene(rootEl, snapshot) {
         w.glow.anchor.set(0.5);
         w.glow.blendMode = 'add';
         lightLayer.addChild(w.glow);
+        // The ritual's palm lights, drawn unlit over the relit frame (characters.js, `glow`).
+        w.palms = new Sprite();
+        groundLayer.addChild(w.palms);
         w.label?.destroy();
         w.label = walkerLabel(w);
     }
@@ -1711,6 +2006,8 @@ export async function createScene(rootEl, snapshot) {
         w.sprite?.destroy();
         w.glow?.destroy();
         w.glow = null;
+        w.palms?.destroy();
+        w.palms = null;
         w.label?.destroy();
         w.sprite = null;
         w.label = null;
@@ -1725,6 +2022,7 @@ export async function createScene(rootEl, snapshot) {
     function setWalker(data) {
         const old = walkers.get(data.id);
         const w = { shoot: null, ...old, ...data, seed: seedOf(data.id) };
+        if (!old || data.walk !== old.walk) retrack(w, w.walk);
         if (!old) {
             walkers.set(w.id, w);
             addWalkerSprites(w);
@@ -1748,7 +2046,9 @@ export async function createScene(rootEl, snapshot) {
         const into = shifted - slot * slotMs;
         const frame = (pose) => Math.floor((now + w.seed) / poseOf(pose).ms) % poseOf(pose).frames;
         // Until the first slot that starts after arrival the walker keeps facing the way it came.
-        if (now - into < (w.walk?.arrivesAt ?? 0)) {
+        // The track runs on the scene clock: its arrival on the server clock is as long ago as on ours.
+        const arrived = now - (clock - (w.track?.arrivesAt ?? -1e12));
+        if (now - into < arrived) {
             const [dir, flip] = s.from === s.to ? ['front', false] : facing(s.from, s.to);
             return { dir, flip, pose: 'idle', frame: frame('idle') };
         }
@@ -1761,20 +2061,38 @@ export async function createScene(rootEl, snapshot) {
         return { dir, flip, pose: 'idle', frame: frame('idle') };
     }
 
+    // Facing the circle from an art point: sideways when it is more to the side, else toward or away from the camera.
+    function towardCentre(at) {
+        const c = centre();
+        const dx = c.x - at.x;
+        const dy = c.y - at.y;
+        if (Math.abs(dx) >= Math.abs(dy) * 0.8) return ['side', dx < 0];
+        return dy < 0 ? ['back', false] : ['front', false];
+    }
+
     function animateWalkers() {
         const now = serverNow();
+        const ritual = inFinale() && ritualOf(finale.step, finale.ready, sinceStep());
         for (const w of walkers.values()) {
             if (!w.sprite) continue;
-            const s = walkAt(w.walk, now);
+            const s = walkAt(w.track, clock);
+            w.drawn = s.at;
             const at = walkerArt(s.at);
             let view;
             if (s.moving) {
                 const [dir, flip] = facing(s.from, s.to);
                 const walk = poseOf('walk');
-                view = { dir, flip, pose: 'walk', frame: Math.floor((now - w.walk.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
+                view = { dir, flip, pose: 'walk', frame: Math.floor((clock - w.track.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
             } else if (w.shoot && clock < w.shoot.until) {
                 const shoot = poseOf('shoot');
                 view = { ...w.shoot, pose: 'shoot', frame: Math.floor((clock - w.shoot.at) / shoot.ms) % shoot.frames, item: 'pistol' };
+            } else if (ritual) {
+                // Hands up toward the circle, swaying on their own beat; a walker on the way walks normally and joins in
+                // once it stands.
+                w.shoot = null;
+                const [dir, flip] = towardCentre(at);
+                const pose = poseOf('ritual');
+                view = { dir, flip, pose: 'ritual', frame: Math.floor((now + w.seed) / pose.ms) % pose.frames, item: null };
             } else {
                 w.shoot = null;
                 view = { ...idleOf(w, s, now), item: w.item ?? null };
@@ -1793,6 +2111,14 @@ export async function createScene(rootEl, snapshot) {
             w.sprite.scale.x = view.flip ? -1 : 1;
             w.sprite.position.set(Math.round(at.x), Math.round(at.y));
             w.sprite.zIndex = depthKey(at.x, at.y);
+            w.palms.visible = Boolean(f.glow);
+            if (f.glow) {
+                w.palms.texture = frameTexture(f.glow);
+                w.palms.anchor.copyFrom(w.sprite.anchor);
+                w.palms.scale.x = w.sprite.scale.x;
+                w.palms.position.copyFrom(w.sprite.position);
+                w.palms.zIndex = w.sprite.zIndex + 0.5;
+            }
             // The label stays whole on screen even when its walker is held at the edge.
             const half = w.label.width / 2 + 2;
             w.label.position.set(Math.round(clamp(Math.round(at.x) * layout.cssPx, half, layout.width - half)), Math.round((Math.round(at.y) - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
@@ -1803,9 +2129,9 @@ export async function createScene(rootEl, snapshot) {
     function walkerShot(event) {
         const w = walkers.get(event.player?.id);
         if (!w || !w.sprite) return;
-        if (walkAt(w.walk, serverNow()).moving) return;
+        if (walkAt(w.track, clock).moving) return;
         const f = flyers.get(event.flyer);
-        const me = walkerArt(walkAt(w.walk, serverNow()).at);
+        const me = walkerArt(walkAt(w.track, clock).at);
         const dx = f ? f.pos.x - me.x : 0;
         // The sky is beyond the patch: a bird straight ahead means turning away from the camera.
         const [dir, flip] = Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
@@ -1830,6 +2156,12 @@ export async function createScene(rootEl, snapshot) {
         const dt = Math.min(ticker.deltaMS, 50);
         clock += dt;
         const seconds = dt / 1000;
+        // The moon turns normal under the third strike of finale step 2: a cut, the lightning's flash covers it.
+        if (inFinale() && lightingOf(state.scene) !== lighting) {
+            rebuild();
+            return;
+        }
+        if (darkPumpkins() !== darkShown) pumpkins.forEach(applyArt);
 
         if (!reduced) {
             for (const cloud of clouds) {
@@ -1845,6 +2177,7 @@ export async function createScene(rootEl, snapshot) {
         animateBonfire();
         animateSky();
         animateBlast();
+        animateBurn();
         // A new round: the patch dims for a moment, then a short white flash. Stepped alpha, no smooth fade.
         const since = clock - veilStart;
         veil.visible = since < veilFrames.length * 60;
@@ -1867,6 +2200,7 @@ export async function createScene(rootEl, snapshot) {
         animateFlyers();
         animateWalkers();
         animateOwl();
+        stage.animate(inFinale() ? finale.step : null, sinceStep());
         drawHits();
 
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -1924,11 +2258,46 @@ export async function createScene(rootEl, snapshot) {
         }
         // Whole art pixels, stepped every 40 ms and calming down.
         const shaking = !reduced && since >= 0 && since < SHAKE_MS;
-        const k = shaking ? Math.ceil(3 * (1 - since / SHAKE_MS)) : 0;
-        const beat = Math.floor(since / 40);
-        display.position.set(shaking ? ((beat * 7) % 3 - 1) * k * layout.cssPx : 0, shaking ? ((beat * 5) % 3 - 1) * k * layout.cssPx : 0);
+        // The ground of finale step 1 rumbles in the same whole-pixel steps.
+        const rumble = reduced || !inFinale() ? 0 : rumbleAt(finale.step, sinceStep());
+        const k = shaking ? Math.ceil(3 * (1 - since / SHAKE_MS)) : rumble;
+        const beat = Math.floor((shaking ? since : clock) / 40);
+        display.position.set(k ? ((beat * 7) % 3 - 1) * k * layout.cssPx : 0, k ? ((beat * 5) % 3 - 1) * k * layout.cssPx : 0);
     }
 
+    // A lightning strike flashes the whole screen white-blue for a moment.
+    const STRIKE_VEIL = [['lightningCore', 0.45], ['lightning', 0.25], ['lightning', 0.1]];
+    const stage = createFinaleStage({
+        ground: groundLayer,
+        light: lightLayer,
+        far: farFlyerLayer,
+        fx: fxLayer,
+        labels: labelLayer,
+        layout: () => layout,
+        lighting: () => lighting,
+        centre,
+        clock: () => clock,
+        serverNow: () => serverNow(),
+        reduced: () => reduced,
+        defTexture,
+        flyerArt,
+        depthKey,
+        strike: () => {
+            veilStart = clock;
+            veilFrames = STRIKE_VEIL;
+        },
+    });
+
+    /** Takes the finale's step and the circle's state as they are, without animating into them. */
+    function settleFinale(step, ready) {
+        finale.step = step;
+        finale.ready = Boolean(ready);
+        finale.at = -1e9;
+        finale.pullAt = -1e9;
+        owlFlight = { mode: step !== null && step >= 5 ? 'away' : 'perched', at: 0, leave: false };
+    }
+
+    settleFinale(snapshot.finale?.step ?? null, snapshot.ready);
     for (const w of snapshot.walkers ?? []) setWalker(w);
     rebuild();
     app.ticker.add(tick);
@@ -1976,11 +2345,18 @@ export async function createScene(rootEl, snapshot) {
                 elements: next.elements ?? [],
                 bushes: next.bushes ?? state.bushes,
             };
+            settleFinale(state.scene >= state.sceneStages ? next.finale?.step ?? null : null, next.ready);
             // Walkers outlive rounds (players.md, «На поле»): the snapshot's list replaces ours as a whole.
             if (next.walkers) {
+                const drawn = new Map([...walkers.values()].map((w) => [w.id, w.drawn]));
                 for (const w of walkers.values()) dropWalkerSprites(w);
                 walkers.clear();
-                for (const w of next.walkers) walkers.set(w.id, { shoot: null, ...w, seed: seedOf(w.id) });
+                for (const data of next.walkers) {
+                    // One already on screen walks on from where it is drawn instead of jumping to the snapshot.
+                    const w = { shoot: null, ...data, seed: seedOf(data.id), drawn: drawn.get(data.id) ?? null };
+                    retrack(w, w.walk);
+                    walkers.set(w.id, w);
+                }
             }
             rebuild();
         },
@@ -2072,6 +2448,7 @@ export async function createScene(rootEl, snapshot) {
             if (!w) return;
             w.walk = walk;
             w.shoot = null;
+            retrack(w, walk);
         },
 
         /** Channel event `leave`: the player has no connections left. */
@@ -2107,6 +2484,12 @@ export async function createScene(rootEl, snapshot) {
             serverNow = fn;
         },
 
+        /** Where walker `id` is drawn, config coordinates (null if none); a development aid for public/dev/lab.html. */
+        walkerAt(id) {
+            const p = walkers.get(id)?.drawn;
+            return p ? { ...p } : null;
+        },
+
         /** Outlines the flyers' hit boxes; a development aid for public/dev/lab.html. */
         showHits(on) {
             showHits = Boolean(on);
@@ -2123,6 +2506,7 @@ export async function createScene(rootEl, snapshot) {
             const blast = !reduced && n >= state.sceneStages && state.scene < state.sceneStages && (bonfire?.stage ?? 0) > 0;
             state.scene = n;
             state.stageMax = stageMax ?? state.stageMax;
+            if (blast) blastAt = clock;
             if (lightingOf(n) !== before || hasBonfire() !== Boolean(bonfire)) {
                 // The blast's flash hides the cut; otherwise the old lighting fades out over the new one.
                 if (!reduced && !blast && before !== lightingOf(n)) startFade(before === 'day' ? SUNSET_MS : FADE_MS);
@@ -2151,9 +2535,40 @@ export async function createScene(rootEl, snapshot) {
             return { ...perch, px: layout.cssPx };
         },
 
-        /** The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. */
+        /**
+         * The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. Returns the ms
+         * until it starts: an owl that has flown away (finale step 5) first comes back to the branch.
+         */
         owl({ ms, hoot = false }) {
-            owlTalk = { at: clock, until: clock + ms, hoot };
+            let delay = 0;
+            if (owlFlight.mode === 'away' || owlFlight.mode === 'leaving') {
+                owlFlight = reduced ? { mode: 'perched', at: clock, leave: true } : { mode: 'returning', at: clock, leave: false };
+                delay = reduced ? 0 : OWL_RETURN_MS;
+            } else if (owlFlight.mode === 'returning') {
+                delay = Math.max(0, OWL_RETURN_MS - (clock - owlFlight.at));
+            }
+            owlTalk = { at: clock + delay, until: clock + delay + ms, hoot };
+            return delay;
+        },
+
+        /**
+         * The finale's step (null outside the final scene) and whether the circle is closed (`ready`). The next step
+         * plays its animation from now; any other change — a reload, a resync, reduced motion — shows the step settled.
+         */
+        setFinale({ step = null, ready = false } = {}) {
+            const prev = finale.step;
+            finale.ready = Boolean(ready);
+            if (step === prev) return;
+            if (reduced || prev === null || step !== prev + 1) settleFinale(step, ready);
+            else {
+                finale.step = step;
+                finale.at = clock;
+                if (step === 1) finale.pullAt = clock;
+                // The owl leaves the branch once its last line is over.
+                if (step === 5) owlFlight = { mode: 'perched', at: clock, leave: true };
+            }
+            if (lightingOf(state.scene) !== lighting) rebuild();
+            else pumpkins.forEach(applyArt);
         },
 
         /**

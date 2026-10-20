@@ -603,71 +603,128 @@ body:not([data-final]) .circle,
     }
 }
 
-/* Finale step 4 (public/js/reveal.js): the evening's numbers. A placeholder look until the finale art. */
+/* Finale step 4 (public/js/reveal.js): the evening's numbers, big, on a pixel panel with a stepped gold frame. */
 .reveal {
     position: absolute;
     top: 50%;
     left: 50%;
     z-index: 1003;
-    width: min(440px, calc(100% - 32px));
-    max-height: calc(100% - 120px);
+    width: min(620px, calc(100% - 32px));
+    max-height: calc(100% - 132px);
     overflow-y: auto;
-    padding: 16px 20px 18px;
+    padding: 18px 22px 20px;
     font: 700 14px/1.35 var(--pixel-font);
     color: var(--cream);
     background: var(--outline);
-    box-shadow: 0 0 0 2px var(--gold), 0 0 0 4px var(--outline), 0 6px 0 4px var(--outline);
+    box-shadow:
+        0 0 0 2px var(--gold),
+        0 0 0 4px var(--outline),
+        0 0 0 6px var(--soil),
+        0 0 0 8px var(--outline),
+        0 8px 0 6px var(--outline);
     transform: translate(-50%, -50%);
+    /* Above the HUD's bottom edge on short screens. */
+    margin-top: -24px;
 }
 
 .reveal[hidden] {
     display: none;
 }
 
-.reveal__title {
-    margin: 0 0 12px;
-    font-size: 18px;
-    color: var(--gold);
+.reveal__kicker {
+    margin: 0;
+    font-size: 12px;
+    color: var(--accent);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.16em;
 }
 
-.reveal__list {
+.reveal__title {
+    margin: 2px 40px 6px 0;
+    font-size: 24px;
+    line-height: 1.15;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--soil);
+}
+
+.reveal__lead {
+    margin: 0 0 14px;
+    font-weight: 400;
+    color: var(--sky-light);
+}
+
+.reveal__grid {
     display: grid;
-    gap: 8px;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
     margin: 0;
 }
 
-.reveal__row {
-    display: grid;
-    grid-template-columns: 6ch 1fr;
-    gap: 12px;
-    align-items: baseline;
+/* A card: the number big on top, the caption under it, the mechanism in small print. */
+.reveal__card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px 11px;
+    background: #3a2230;
+    box-shadow: inset 0 0 0 2px var(--soil-dark), inset 0 -4px 0 0 var(--soil-dark);
+}
+
+.reveal__card[hidden] {
+    display: none;
 }
 
 .reveal__number {
-    font-size: 18px;
-    color: var(--accent);
-    text-align: right;
+    order: -1;
+    margin: 0;
+    font-size: 32px;
+    line-height: 1.1;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--soil);
+    font-variant-numeric: tabular-nums;
 }
 
 .reveal__label {
     margin: 0;
+    color: var(--cream);
+}
+
+.reveal__note {
+    margin: 0;
+    font-size: 12px;
     font-weight: 400;
+    color: var(--sky-light);
+}
+
+/* The punchline: the server's uptime across the whole width, in the green of a live connection. */
+.reveal__card--uptime {
+    grid-column: 1 / -1;
+    background: #1f3326;
+    box-shadow: inset 0 0 0 2px var(--ok), inset 0 -4px 0 0 #2d5a32;
+}
+
+.reveal__card--uptime .reveal__number {
+    font-size: 36px;
+    color: var(--ok);
+    text-shadow: 2px 2px 0 #14261a;
+}
+
+.reveal__card--uptime .reveal__note {
+    color: var(--cream);
 }
 
 .reveal__last {
-    margin: 12px 0;
+    margin: 14px 0 12px;
     color: var(--sky-light);
 }
 
 .reveal__link {
     display: inline-block;
-    padding: 7px 10px;
+    padding: 8px 12px;
     color: var(--outline);
     text-decoration: none;
     background: var(--gold);
-    box-shadow: 0 0 0 2px var(--soil);
+    box-shadow: 0 0 0 2px var(--soil), 0 4px 0 0 var(--soil);
 }
 
 .reveal__link:hover,
@@ -677,12 +734,12 @@ body:not([data-final]) .circle,
 
 .reveal__close {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 28px;
-    height: 28px;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
     border: 0;
-    font: 700 18px/1 var(--pixel-font);
+    font: 700 20px/1 var(--pixel-font);
     color: var(--cream);
     background: var(--soil-dark);
     cursor: pointer;
@@ -690,6 +747,40 @@ body:not([data-final]) .circle,
 
 .reveal__close:focus-visible {
     outline: 2px dashed var(--gold);
+}
+
+@container patch (max-width: 600px) {
+    .reveal {
+        width: calc(100% - 24px);
+        max-height: calc(100% - 150px);
+        padding: 14px 14px 16px;
+    }
+
+    .reveal__title {
+        font-size: 19px;
+    }
+
+    .reveal__grid {
+        gap: 8px;
+    }
+
+    .reveal__card {
+        padding: 8px 10px 9px;
+    }
+
+    .reveal__number {
+        font-size: 24px;
+    }
+
+    .reveal__card--uptime .reveal__number {
+        font-size: 28px;
+    }
+}
+
+@container patch (max-width: 380px) {
+    .reveal__grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .hud__ready {

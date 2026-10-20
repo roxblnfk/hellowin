@@ -170,7 +170,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     });
     step.addEventListener('click', () => {
         const current = model?.finale?.step ?? 0;
-        if (current < LAST_STEP) send(step, 'finale.step', { step: current + 1 });
+        if (!model || current >= LAST_STEP) return;
+        // Step 1 waits for the closed circle; going without it asks first, like an unready scene.
+        const force = current === 0 && !model.ready;
+        if (force && !armed(step, 'Круг не замкнут. Точно?')) return;
+        send(step, 'finale.step', force ? { step: 1, force: true } : { step: current + 1 });
     });
     reset.addEventListener('click', () => {
         if (model && armed(reset, 'Точно?')) send(reset, 'reset', { round: model.round });
@@ -226,6 +230,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             setLabel(next, model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
             step.hidden = !final;
             step.disabled = current >= LAST_STEP;
+            step.toggleAttribute('data-ready', final && current === 0 && model.ready);
             setLabel(step, current >= LAST_STEP ? 'Финал пройден' : `Шаг финала ${current + 1}`);
             zombies.setAttribute('aria-pressed', String(model.zombies));
             setLabel(zombies, model.zombies ? 'Зомби: вкл' : 'Зомби: выкл');

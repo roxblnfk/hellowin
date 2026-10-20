@@ -53,6 +53,12 @@
   step 0 (the bonfire before it, never both), own threshold ?cclicks=N (default 10) and CIRCLE_STAGES = 4 stages, the
   last stage in `scene.circleStageMax`; closed → ready, circle-done, scene-ready. ?circle=N starts it at stage N;
   ?nocircle=1 leaves it out.
+  Finale (docs/spec/scenario.md «Финал»): step 1 only from the closed circle (`not ready` without it, «Шаг финала 1» on
+  the console forces it after a confirm); on step 2 every walker gets a `move` outward to the edge of the lawn, like
+  the server's scatter; the snapshot's `startedAt` is 3 h 07 min before the start (the HUD's uptime from step 3, the
+  reveal's from step 4). ?finale=N starts settled at step N (bots stand around the circle and do not wander until
+  step 2); ?play=ms with ?freeze presses «Шаг финала» (forced) at that frozen-clock moment, so ?finale=1&play=0&freeze=1600
+  captures the lightning of step 2 mid-way; ?ritual=1 starts at step 0 with the circle closed.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
@@ -77,6 +83,7 @@
         <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
         <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
         <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
+        <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
     </footer>
 </main>
@@ -203,6 +210,9 @@
     const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
     const clientTime = () => serverTime() + skew;
     root.dataset.now = String(serverTime());
+    // RoadRunner has been up a while when the lab starts: the finale's uptime (protocol.md, `startedAt`).
+    const UPTIME = (3 * 60 + 7) * 60000 + 20000;
+    root.dataset.startedAt = String(serverTime() - UPTIME);
 
     // Walking of players.md («На поле»): the zone of app/config/hellowin.php (`walk`), the lawn rectangle minus the
     // patch ellipse, and HELLOWIN_WALK_SPEED in percents per second along the path.
@@ -277,6 +287,9 @@
     const botCount = Math.max(0, Math.min(BOT_NAMES.length, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
     const standing = (p, at) => ({ path: [p], startedAt: at, arrivesAt: at });
     const spawnPoint = (random = Math.random) => clampToZone({ x: 8 + random() * 84, y: 91 + random() * 5 });
+    // In the finale the bots start around the patch, as a room gathered for the ritual would.
+    const finaleStart = params.has('finale') || params.get('ritual') === '1';
+    const gatherPoint = (i, n) => clampToZone(rim(Math.PI * (0.08 + (0.84 * i) / Math.max(1, n - 1)), 1.12));
     const startWalkers = [];
     for (let i = 0; i < botCount; i++) {
         const random = seeded(1000 + i);
@@ -285,7 +298,7 @@
             name: BOT_NAMES[i],
             look: randomLook(random),
             item: i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
-            walk: standing(spawnPoint(random), serverTime()),
+            walk: standing(finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     if (params.get('me') === '1') {
@@ -419,15 +432,32 @@
         return { ok: true, scene: to };
     }
 
-    function engineFinaleStep({ step }) {
+    function engineFinaleStep({ step, force }) {
         if (!Number.isInteger(step)) throw new Error('invalid step');
         if (engine.scene < engine.sceneStages || !engine.finale) throw new Error('not final');
         if (step === engine.finale.step + 1 && step <= LAST_STEP) {
+            // Step 1 waits for the closed circle unless forced.
+            if (step === 1 && !engine.ready && force !== true) throw new Error('not ready');
             engine.finale = finaleOf(step);
             deliver({ type: 'finale', ...structuredClone(engine.finale) });
+            // Step 2 scatters the walkers: each one outward from the patch to the edge of the lawn.
+            if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
         }
         return { ok: true, step: engine.finale.step };
+    }
+
+    // Straight out from the patch centre through the walker, to the edge of the walk zone.
+    function scatterTarget(p) {
+        const a = Math.atan2(p.y - WALK.patch.cy, p.x - WALK.patch.cx);
+        const { x1, y1, x2, y2 } = WALK.area;
+        let k = 0;
+        while (k < 200) {
+            const q = { x: p.x + Math.cos(a) * (k + 1), y: p.y + Math.sin(a) * (k + 1) };
+            if (q.x < x1 || q.x > x2 || q.y < y1 || q.y > y2) break;
+            k++;
+        }
+        return { x: p.x + Math.cos(a) * k, y: p.y + Math.sin(a) * k };
     }
 
     function engineOwl({ line, params: lineParams, text }) {
@@ -603,7 +633,9 @@
     function wander(id) {
         later(() => {
             if (!engine.walkers.some((w) => w.id === id)) return;
-            engineMove(id, randomTarget());
+            // Through the ritual (closed circle, step 1) the bots stand with their hands up.
+            const ritual = engine.scene >= engine.sceneStages && (engine.finale?.step === 1 || (engine.finale?.step === 0 && engine.ready));
+            if (!ritual) engineMove(id, randomTarget());
             wander(id);
         }, 3000 + Math.random() * 6000);
     }
@@ -658,8 +690,23 @@
             engineBonfire().stage = Math.max(engineBonfire().stage, engineBonfire().stageMax);
             engine.ready = true;
         }
+        if (params.get('ritual') === '1') {
+            engine.scene = engine.sceneStages;
+            engine.stageMax = SCENE_STAGE_MAX[engine.scene];
+            enginePumpkins().forEach((e) => { e.stage = engine.stageMax; e.clicks = 0; });
+            engineBonfire().stage = BONFIRE_STAGE_MAX[engine.scene - 1];
+            setBonfireMax();
+            if (engineCircle()) engineCircle().stage = CIRCLE_STAGES;
+            engine.ready = true;
+            engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
+        }
         if (engine.scene >= engine.sceneStages) {
             Object.assign(stats, { clicks: 5230, jobs: 312, burned: 1720, shot: 87, lastPumpkin: { id: ME, name: 'Jack' } });
+            // From step 1 on the circle is closed and the scene stays ready (protocol.md).
+            if ((Number.parseInt(params.get('finale') ?? '0', 10) || 0) >= 1 && engineCircle()) {
+                engineCircle().stage = CIRCLE_STAGES;
+                engine.ready = true;
+            }
             engine.finale = finaleOf(Math.max(0, Math.min(LAST_STEP, Number.parseInt(params.get('finale') ?? '0', 10) || 0)));
         }
         engine.paused = params.get('paused') === '1';
@@ -701,6 +748,7 @@
         onChange: (model) => moderatorConsole?.update(model),
     });
     client.start();
+    client.setStatus('connected');
     startState();
     client.load(engineSnapshot());
     client.setModerator(moderator && params.get('ui') !== '0');
@@ -772,6 +820,7 @@
     const flyersOn = params.get('flyers') === '1';
     const shotAt = Math.round((Number.parseInt(params.get('shotAt') ?? '896', 10) || 896) / 16) * 16;
     const nextAt = params.has('next') ? Math.round(Number.parseInt(params.get('next'), 10) / 16) * 16 : -1;
+    const playAt = params.has('play') ? Math.round(Number.parseInt(params.get('play'), 10) / 16) * 16 : -1;
     function simulate() {
         Object.assign(engine, structuredClone(initial));
         setBonfireMax();
@@ -794,6 +843,7 @@
             }
             if (simTime === resetAt) engineReset();
             if (simTime === nextAt) engineSceneNext({ scene: engine.scene, force: true });
+            if (simTime === playAt && engine.finale) engineFinaleStep({ step: engine.finale.step + 1, force: true });
             // ?flyers=1: one flyer per depth right away (the near one from a bush); ?shoot=N (default 1) is shot at ?shotAt=ms (default 896, a multiple of 16).
             if (flyersOn && simTime === 0) {
                 const launched = [engineFlyer({ depth: 0, bush: false, ltr: true }),
@@ -806,7 +856,7 @@
             if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             if (worm && simTime === wormShotAt) engineShoot(worm, engine.walkers[0] ?? null);
             // Frozen bots all set off at the start, so a screenshot catches them on the way.
-            if (simTime === 0) {
+            if (simTime === 0 && !finaleStart) {
                 const random = seeded(99);
                 // The ?shooter=1 walker stays put: a walker on the way does not stop to shoot.
                 wanderers().filter((w, i) => !(i === 0 && params.get('shooter') === '1')).forEach((w) => engineMove(w.id, randomTarget(random)));

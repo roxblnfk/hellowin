@@ -3,7 +3,8 @@
 
 /**
  * id → { text, scenes?: {[scene]: text} — the line in that scene instead, hoot?: a dramatic line, the owl puffs up
- * first; button?: label on the moderator's console; auto?: the server says it by itself }. `{player}` is the player's name from `params.player.name`.
+ * first; button?: label on the moderator's console; auto?: the server says it by itself; then?: a second line said
+ * right after this one }. `{player}` is the player's name from `params.player.name`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
 export const LINES = {
@@ -23,8 +24,8 @@ export const LINES = {
     'circle-done': { auto: true, hoot: true, text: 'Круг замкнул {player}! Земля дрожит…' },
     'witch-down': { auto: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
     'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!' },
-    'finale-2': { auto: true, hoot: true, text: '…Это не он.' },
-    'finale-3': { auto: true, hoot: true, text: 'Он никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
+    'finale-2': { auto: true, hoot: true, text: 'Что это? Что мы… ЧТО ВЫ НАДЕЛАЛИ?' },
+    'finale-3': { auto: true, hoot: true, text: 'Походу… ошибочка вышла.', then: 'Он никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
     'finale-4': { auto: true, hoot: true, text: 'Вот числа вечера. Каждый клик прошёл через него, а лишние он отбросил — чтобы тыква не перешла дважды.' },
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
@@ -107,17 +108,26 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         bubble.style.setProperty('--tail-x', `${Math.round(Math.min(Math.max(12, perch.x - left), w - 16))}px`);
     }
 
-    function show({ text, hoot }) {
+    function show({ text, hoot, then = null }) {
         const mine = ++token;
         shownAt = now();
         textEl.textContent = text;
-        bubble.hidden = false;
-        place();
         const ms = showMs(text);
-        scene?.owl?.({ ms, hoot });
+        // An owl that has flown away comes back to the branch first: the bubble waits for it.
+        const delay = Number(scene?.owl?.({ ms, hoot })) || 0;
+        const open = () => {
+            bubble.hidden = false;
+            place();
+        };
+        bubble.hidden = true;
+        if (delay > 0) later(() => mine === token && open(), delay);
+        else open();
         later(() => {
-            if (mine === token) bubble.hidden = true;
-        }, ms);
+            if (mine !== token) return;
+            bubble.hidden = true;
+            // A two-part line goes on at once, unless another line has taken the bubble meanwhile.
+            if (then) show({ text: then, hoot: false });
+        }, delay + ms);
     }
 
     function flush() {
@@ -136,7 +146,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         say(event, scene = 0) {
             const text = lineText(event, scene);
             if (!text) return;
-            const line = { text, hoot: Boolean(!event.text && LINES[event.line]?.hoot) };
+            const catalog = event.text ? null : LINES[event.line];
+            const line = { text, hoot: Boolean(catalog?.hoot), then: catalog?.then ?? null };
             const left = MIN_MS - (now() - shownAt);
             // A clock that went back (the lab replaying a frozen run) counts as a free bubble too.
             if (bubble.hidden || left <= 0 || left > MIN_MS) {

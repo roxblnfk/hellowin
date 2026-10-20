@@ -3,8 +3,6 @@ import { initDebugPanel } from './debug.js';
 import { createOwl } from './owl.js';
 import { createReveal } from './reveal.js';
 
-const STATUS = { connecting: 'подключение…', connected: 'на связи', disconnected: 'нет связи' };
-
 const root = document.getElementById('app');
 const SECRET_KEY = 'hellowin.secret';
 
@@ -102,12 +100,8 @@ async function main() {
     });
     client.start();
 
-    const statusEl = root.querySelector('[data-status]');
-    const setStatus = (status) => {
-        if (!statusEl) return;
-        statusEl.dataset.status = status;
-        statusEl.textContent = STATUS[status];
-    };
+    // The HUD's connection line is the client's: from finale step 3 it tells RoadRunner's uptime instead.
+    const setStatus = (status) => client.setStatus(status);
 
     let connectedOnce = false;
     centrifuge.on('connecting', () => setStatus('connecting'));

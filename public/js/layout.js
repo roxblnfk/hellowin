@@ -39,8 +39,14 @@ export function jumpedOut(scene, stageMax, elements) {
     return scene === 1 && pumpkins.length > 0 && pumpkins.every((e) => e.stage >= stageMax);
 }
 
-/** Whether a pumpkin floats: the last stage of the spell, or anything in the final scene. */
-export const floats = (stage, scene, finalScene) => stage >= FLOAT_STAGE || scene >= finalScene;
+/**
+ * Whether a pumpkin floats: the last stage of the spell, or anything in the final scene — except finale steps 2–4,
+ * when the pumpkins have dropped to the ground (docs/spec/scenario.md, «Финал»).
+ */
+export function floats(stage, scene, finalScene, step = null) {
+    if (scene >= finalScene && step >= 2 && step <= 4) return false;
+    return stage >= FLOAT_STAGE || scene >= finalScene;
+}
 
 /**
  * Whether the bonfire takes clicks: before the final scene (there the circle on its pit does), every pumpkin of the

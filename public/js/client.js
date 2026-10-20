@@ -7,6 +7,16 @@ const SCENE_NAMES = { 0: 'День: подготовка', 1: 'Закат', 2: '
 const DEFAULT_STAGE_MAX = 4;
 // The last finale step: past it the final scene is the cursed world.
 const CURSED_STEP = 5;
+// From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
+const RUNNER_STEP = 3;
+// The HUD's connection line; through the evening the other side seems to answer.
+const STATUS = { connecting: 'подключение…', connected: 'связь с потусторонним: есть', disconnected: 'нет связи' };
+
+/** Uptime as «Ч ч ММ мин» (scenario.md, «Финал»): hours unbounded, minutes two digits. */
+export function formatUptime(ms) {
+    const minutes = Math.max(0, Math.floor(ms / 60000));
+    return `${Math.floor(minutes / 60)} ч ${String(minutes % 60).padStart(2, '0')} мин`;
+}
 
 const int = (value, fallback = 0) => {
     const n = Number.parseInt(value, 10);
@@ -46,6 +56,7 @@ export function readSnapshot(root) {
         bushes: parseList(root.dataset.bushes),
         walkers: parseList(root.dataset.walkers),
         now: int(root.dataset.now, 0),
+        startedAt: int(root.dataset.startedAt, 0),
         ready: flag(root.dataset.ready),
         finale: parseFinale(root.dataset.finale),
         paused: flag(root.dataset.paused),
@@ -120,7 +131,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         }
         el.toggleAttribute('data-ready', element.clicks >= model.threshold && element.stage < model.stageMax);
         el.toggleAttribute('data-done', element.stage >= model.stageMax);
-        el.toggleAttribute('data-float', floats(element.stage, model.scene, model.sceneStages));
+        el.toggleAttribute('data-float', floats(element.stage, model.scene, model.sceneStages, model.finale?.step));
     }
 
     // The jump out (layout.js): its factor depends on the width, so a resize repaints it too.
@@ -154,7 +165,8 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
         set('total', pumpkinsOf().length);
         const ready = hud('ready');
-        if (ready) ready.hidden = !model.ready;
+        // In the final scene `ready` stays on through the finale; it waits for the moderator only at step 0.
+        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= 1);
     }
 
     function sceneName() {
@@ -170,8 +182,23 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         else delete body.dataset.finaleStep;
         body.toggleAttribute('data-paused', model.paused);
         body.toggleAttribute('data-zombies', model.zombies);
-        reveal?.update(model.finale);
+        reveal?.update(model.finale, uptime());
+        paintStatus();
         paintHud();
+    }
+
+    // Since RoadRunner started, on the server clock (protocol.md, `startedAt`); null when the server did not say.
+    const uptime = () => (model.startedAt > 0 ? Math.max(0, now() + offset - model.startedAt) : null);
+    let status = null;
+
+    // The connection line of the HUD: «на связи» with the other side all evening, RoadRunner from finale step 3.
+    function paintStatus() {
+        const node = root.querySelector('[data-status]');
+        if (!node || status === null) return;
+        node.dataset.status = status;
+        const runner = status === 'connected' && model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= RUNNER_STEP;
+        const up = uptime();
+        node.textContent = !runner ? STATUS[status] : up === null ? 'RoadRunner: работает' : `RoadRunner: работает · аптайм ${formatUptime(up)}`;
     }
 
     function paintAll() {
@@ -196,6 +223,7 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             threshold: snapshot.threshold,
             bushes: snapshot.bushes ?? model.bushes,
             walkers: snapshot.walkers ?? model.walkers,
+            startedAt: snapshot.startedAt ?? model.startedAt,
             ready: Boolean(snapshot.ready),
             finale: snapshot.finale ?? null,
             paused: Boolean(snapshot.paused),
@@ -211,6 +239,11 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
         scene?.render(snapshotOf());
         paintCircle();
         onChange(model);
+    }
+
+    // The scene plays the finale's step; `ready` at step 0 is the closed circle, the cue for the ritual pose.
+    function paintFinale() {
+        scene?.setFinale({ step: model.scene >= model.sceneStages ? model.finale?.step ?? null : null, ready: model.ready });
     }
 
     function snapshotOf() {
@@ -311,13 +344,15 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             if (event.scene !== model.scene) return;
             model.ready = true;
             paintStory();
+            paintFinale();
         },
 
         finale(event) {
             model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
-            // The circle takes clicks at step 0 only.
+            // The circle takes clicks at step 0 only; the pumpkins drop at step 2 and float again at step 5.
             paintElements();
             paintStory();
+            paintFinale();
         },
 
         // The bubble is a moment, not state: a resync does not bring an old line back.
@@ -403,6 +438,12 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             onChange(model);
         },
 
+        /** The connection's state for the HUD line: 'connecting', 'connected' or 'disconnected'. */
+        setStatus(next) {
+            status = next;
+            paintStatus();
+        },
+
         /** Whether this connection is the moderator's (RPC `me`, `moderator`); it decides whether the console shows. */
         setModerator(on) {
             model.moderator = Boolean(on);
@@ -417,6 +458,16 @@ export function createClient(root, scene, { requestState, now = () => Date.now()
             spread();
             new ResizeObserver(spread).observe(root);
             paintAll();
+            // The uptime ticks in the HUD and on the reveal: repaint when its minute changes.
+            let shown = null;
+            setInterval(() => {
+                const up = uptime();
+                const minute = up === null ? null : Math.floor(up / 60000);
+                if (minute === shown) return;
+                shown = minute;
+                paintStatus();
+                reveal?.update(model.finale, up);
+            }, 1000);
         },
     };
 }

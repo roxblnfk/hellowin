@@ -15,6 +15,7 @@
           data-bushes="{{ json_encode($bushes ?? []) }}"
           data-walkers="{{ json_encode($walkers ?? []) }}"
           data-now="{{ $now ?? 0 }}"
+          data-started-at="{{ $startedAt ?? 0 }}"
           data-ready="{{ ($ready ?? false) ? 1 : 0 }}"
           data-finale="{{ json_encode($finale ?? null) }}"
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
@@ -56,6 +57,7 @@
             <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
             <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
+            <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         </footer>
     </main>
