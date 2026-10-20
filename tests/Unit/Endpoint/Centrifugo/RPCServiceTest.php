@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Endpoint\Centrifugo;
 
-use App\Application\Config\HellowinConfig;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Endpoint\Centrifugo\ConnectService;
 use App\Endpoint\Centrifugo\RPCService;
 use Psr\Log\NullLogger;
 use RoadRunner\Centrifugal\Proxy\DTO\V1\RPCResponse;
@@ -180,8 +180,8 @@ final class RPCServiceTest
     {
         $ritual = new RitualHarness();
 
-        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null, 'top' => []]);
-        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'top' => []]);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null, 'top' => [], 'moderator' => false]);
+        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'top' => [], 'moderator' => false]);
     }
 
     public function firstShotHitsAndTheSecondMisses(): void
@@ -243,8 +243,8 @@ final class RPCServiceTest
         $ritual = new RitualHarness();
         $ritual->click('pumpkin-1', 2);
 
-        Assert::same($this->call($ritual, 'reset', ['round' => 1]), ['ok' => true, 'round' => 2]);
-        Assert::same($this->call($ritual, 'reset', ['round' => 1]), ['ok' => true, 'round' => 2]);
+        Assert::same($this->call($ritual, 'reset', ['round' => 1], moderator: true), ['ok' => true, 'round' => 2]);
+        Assert::same($this->call($ritual, 'reset', ['round' => 1], moderator: true), ['ok' => true, 'round' => 2]);
         Assert::count($ritual->broadcast->ofType('reset'), 1);
         Assert::same($this->call($ritual, 'state', [])['state']['elements'][0]['clicks'], 0);
     }
@@ -254,15 +254,20 @@ final class RPCServiceTest
     #[DataSet([['round' => 0]], 'zero')]
     public function resetNeedsTheRound(array $params): void
     {
-        Assert::same($this->call(new RitualHarness(), 'reset', $params), ['ok' => false, 'error' => 'invalid round']);
+        Assert::same($this->call(new RitualHarness(), 'reset', $params, moderator: true), ['ok' => false, 'error' => 'invalid round']);
     }
 
-    public function resetCanBeDisabled(): void
+    public function onlyTheModeratorResets(): void
     {
         $ritual = new RitualHarness();
 
-        Assert::same($this->call($ritual, 'reset', ['round' => 1], resetRpc: false), ['ok' => false, 'error' => 'reset disabled']);
+        Assert::same($this->call($ritual, 'reset', ['round' => 1], self::PLAYER), ['ok' => false, 'error' => 'forbidden']);
         Assert::blank($ritual->broadcast->ofType('reset'));
+    }
+
+    public function meTellsTheModeratorItsRole(): void
+    {
+        Assert::true($this->call(new RitualHarness(), 'me', [], moderator: true)['moderator']);
     }
 
     public function registerWithALookPutsTheCharacterOnTheLawn(): void
@@ -335,7 +340,7 @@ final class RPCServiceTest
         $this->worker = new SpyWorker();
     }
 
-    private function call(RitualHarness $ritual, string $method, array $params, string $user = '', bool $resetRpc = true): array
+    private function call(RitualHarness $ritual, string $method, array $params, string $user = '', bool $moderator = false): array
     {
         $service = new RPCService(
             $ritual->clicks,
@@ -345,7 +350,6 @@ final class RPCServiceTest
             $ritual->flyers,
             new NullLogger(),
             $ritual->reset,
-            new HellowinConfig(['reset_rpc' => $resetRpc]),
             $ritual->walks,
         );
         $service->handle(new RPC(
@@ -356,7 +360,7 @@ final class RPCServiceTest
             encoding: 'json',
             user: $user,
             method: $method,
-            meta: [],
+            meta: $moderator ? [ConnectService::META_MODERATOR => true] : [],
             data: $params,
             headers: [],
         ));

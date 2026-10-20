@@ -59,10 +59,27 @@ final class ConnectServiceTest
         Assert::same(self::connect(['playerSecret' => $secret])->getUser(), '');
     }
 
-    private static function connect(array $data): ConnectResult
+    public function moderatorSecretPutsTheRoleIntoTheMeta(): void
+    {
+        $result = self::connect(['playerSecret' => self::SECRET, 'moderatorSecret' => 'owl-secret'], 'owl-secret');
+
+        Assert::same(\json_decode($result->getMeta(), true), [ConnectService::META_MODERATOR => true]);
+        Assert::same($result->getUser(), PlayerId::fromSecret(self::SECRET));
+    }
+
+    #[DataSet(['owl-secret', 'wrong'], 'wrong secret')]
+    #[DataSet(['owl-secret', null], 'no secret')]
+    #[DataSet(['owl-secret', ['owl-secret']], 'array')]
+    #[DataSet(['', ''], 'console off')]
+    public function otherConnectionsHaveNoRole(string $expected, mixed $secret): void
+    {
+        Assert::same(self::connect(['moderatorSecret' => $secret], $expected)->getMeta(), '');
+    }
+
+    private static function connect(array $data, string $moderatorSecret = ''): ConnectResult
     {
         $worker = new SpyWorker();
-        $service = new ConnectService(new HellowinConfig(['channel' => 'spooky']));
+        $service = new ConnectService(new HellowinConfig(['channel' => 'spooky', 'moderator_secret' => $moderatorSecret]));
 
         $service->handle(new Connect(
             worker: $worker,

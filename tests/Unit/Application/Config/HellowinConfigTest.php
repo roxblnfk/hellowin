@@ -45,6 +45,16 @@ final class HellowinConfigTest
         (new HellowinConfig(['clicks_per_stage' => $value]))->getClicksPerStage();
     }
 
+    #[DataSet([null, null], 'default')]
+    #[DataSet(['  ', null], 'blank')]
+    #[DataSet([' owl ', 'owl'], 'trimmed')]
+    public function moderatorSecretIsOptional(?string $value, ?string $expected): void
+    {
+        $config = $value === null ? new HellowinConfig() : new HellowinConfig(['moderator_secret' => $value]);
+
+        Assert::same($config->getModeratorSecret(), $expected);
+    }
+
     public function sceneStageMaxDefaultsToThreeScenes(): void
     {
         Assert::same((new HellowinConfig())->getSceneStageMax(), [4, 6, 8]);

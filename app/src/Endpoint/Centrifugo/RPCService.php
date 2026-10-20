@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
-use App\Application\Config\HellowinConfig;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ResetService;
@@ -41,7 +40,6 @@ final readonly class RPCService implements ServiceInterface
         private FlyerService $flyers,
         private LoggerInterface $logger,
         private ResetService $reset,
-        private HellowinConfig $config,
         private WalkService $walks,
     ) {}
 
@@ -51,6 +49,7 @@ final readonly class RPCService implements ServiceInterface
         \assert($request instanceof RPC);
 
         $player = PlayerId::isValid($request->user) ? $request->user : null;
+        $moderator = ($request->meta[ConnectService::META_MODERATOR] ?? null) === true;
 
         $request->respond(new RPCResponse($this->guarded((string) $request->method, fn(): array => match ($request->method) {
             'click' => $this->click($request->getData(), $player),
@@ -58,11 +57,12 @@ final readonly class RPCService implements ServiceInterface
             'register' => $this->register($request->getData(), $player),
             'move' => $this->move($request->getData(), $player),
             'shoot' => $this->shoot($request->getData(), $player),
-            'reset' => $this->reset($request->getData()),
+            'reset' => $moderator ? $this->reset($request->getData()) : self::fail('forbidden'),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
                 'top' => $this->leaderboard->last(),
+                'moderator' => $moderator,
             ],
             default => self::fail('unknown method'),
         })));
@@ -129,15 +129,11 @@ final readonly class RPCService implements ServiceInterface
     }
 
     /**
-     * The client names the round it sees, so two people pressing "Заново" at once restart the ritual only once:
-     * the second call finds that round over and gets the current one.
+     * The client names the round it sees, so a repeated press of "Заново" restarts the ritual only once: the second
+     * call finds that round over and gets the current one.
      */
     private function reset(array $params): array
     {
-        if (!$this->config->isResetRpcEnabled()) {
-            return self::fail('reset disabled');
-        }
-
         $round = $params['round'] ?? null;
         if (!\is_int($round) || $round < 1) {
             return self::fail('invalid round');

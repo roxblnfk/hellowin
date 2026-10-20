@@ -23,7 +23,7 @@ final class HellowinConfig extends InjectableConfig
         'storage' => 'hellowin',
         'centrifugo_url' => '/connection/websocket',
         'clicks_per_stage' => 5,
-        'reset_rpc' => true,
+        'moderator_secret' => '',
         'scene_stage_max' => '4,6,8',
         'valkey_dsn' => 'tcp://valkey:6379',
         'elements' => [],
@@ -113,17 +113,28 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Whether clients may restart the ritual with RPC `reset`.
+     * The secret that makes a connection the moderator's.
+     *
+     * @return non-empty-string|null Null turns the console off: nobody is the moderator.
      */
-    public function isResetRpcEnabled(): bool
+    public function getModeratorSecret(): ?string
     {
         /** @var mixed $value */
-        $value = $this->config['reset_rpc'] ?? null;
-        \is_string($value) and $value = \filter_var(\trim($value), \FILTER_VALIDATE_BOOLEAN, \FILTER_NULL_ON_FAILURE);
+        $value = $this->config['moderator_secret'] ?? null;
+        $value === null || \is_string($value) or throw new \InvalidArgumentException(
+            'Config "hellowin.moderator_secret" (env HELLOWIN_MODERATOR_SECRET) must be a string.',
+        );
+        $value = \trim((string) $value);
 
-        return \is_bool($value)
-            ? $value
-            : throw new \InvalidArgumentException('Config "hellowin.reset_rpc" (env HELLOWIN_RESET_RPC) must be true or false.');
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * @return float The horizon line in percents of the screen from the top.
+     */
+    public function getHorizon(): float
+    {
+        return self::float($this->config['horizon'] ?? null, 'horizon');
     }
 
     /**

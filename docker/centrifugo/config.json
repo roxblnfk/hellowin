@@ -18,7 +18,8 @@
   "rpc": {
     "proxy": {
       "endpoint": "grpc://app:10001",
-      "timeout": "3s"
+      "timeout": "3s",
+      "include_connection_meta": true
     },
     "without_namespace": {
       "proxy_enabled": true
