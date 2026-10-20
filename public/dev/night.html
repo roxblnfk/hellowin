@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — закат, ночь, кровавая луна</title>
+    <style>
+        body { margin: 0; padding: 16px; background: #1b1b22; color: #ddd; font: 13px/1.4 monospace; }
+        h2 { margin: 18px 0 6px; font-size: 14px; color: #fff; }
+        canvas { image-rendering: pixelated; display: block; }
+        .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px; background: #2a2630; }
+        .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cell span { font-size: 11px; color: #ccc; }
+        table { border-collapse: collapse; }
+        td { padding: 0; }
+    </style>
+</head>
+<!--
+  Art for scenes 1–3: pumpkin stages 5–11, caps, bonfire, explosion, ash pit and magic circle, items, lighting.
+  Query: ?t=ms freezes the clock at that moment (otherwise everything animates), ?zoom=N scales the sheets (default 3),
+  ?only=id,id shows only those sections (mock, stages, caps, frames, float, bonfire, explosion, ash, items, particles,
+  lighting).
+-->
+<body>
+<h2>Закат, ночь, кровавая луна (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,stages,caps,frames,float,bonfire,explosion,ash,items,particles,lighting)</h2>
+<div id="out"></div>
+<script type="module">
+    import { PALETTE } from '../js/pixel/palette.js';
+    import { DECOR, PARTICLES, PUMPKIN_SHADOW, bake, pumpkinLayers, pumpkinSprite, seedOf } from '../js/pixel/sprites.js';
+    import { BONFIRE, BONFIRE_STAGES, EXPLOSION, ASH } from '../js/pixel/bonfire.js';
+    import { LIGHTINGS, LIT_PALETTE, NIGHT, bakeLit, halo, longShadow, nearLight, paintSky, relightCanvas } from '../js/pixel/night.js';
+    import { characterFrame, randomLook } from '../js/pixel/characters.js';
+
+    const params = new URLSearchParams(location.search);
+    const frozen = params.has('t') ? Number(params.get('t')) : null;
+    const zoom = Math.max(1, Math.round(Number(params.get('zoom')) || 3));
+    const only = params.get('only')?.split(',');
+    const out = document.getElementById('out');
+    const now = () => frozen ?? performance.now();
+    const css = (c) => `#${c.toString(16).padStart(6, '0')}`;
+    const animated = [];
+
+    function section(id, title, items, bg = '#2a2630') {
+        if (only && !only.includes(id)) return;
+        const h = document.createElement('h2');
+        h.textContent = title;
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.background = bg;
+        row.append(...items);
+        out.append(h, row);
+    }
+
+    // A canvas cell redrawn every animation tick by draw(ctx, t).
+    function cell(w, h, scale, draw, label) {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        c.style.width = `${w * scale}px`;
+        c.style.height = `${h * scale}px`;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const paint = (t) => {
+            ctx.clearRect(0, 0, w, h);
+            draw(ctx, t);
+        };
+        paint(now());
+        animated.push(paint);
+        const box = document.createElement('div');
+        box.className = 'cell';
+        box.append(c);
+        if (label) {
+            const s = document.createElement('span');
+            s.textContent = label;
+            box.append(s);
+        }
+        return box;
+    }
+
+    const frameAt = (t, n, ms) => Math.floor(t / ms) % n;
+    const stamp = (ctx, canvas, def, x, y) => ctx.drawImage(canvas, Math.round(x - def.anchor.x), Math.round(y - def.anchor.y));
+    const additive = (ctx, canvas, def, x, y, alpha) => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha;
+        stamp(ctx, canvas, def, x, y);
+        ctx.restore();
+    };
+    const ground = { day: 'soil', sunset: 'soil', night: 'soil', firelight: 'soil', blood: 'soil' };
+
+    // A pumpkin in a lighting: aura, back, glow, body, rim, cap, fire — light layers unlit, the rest through bakeLit.
+    // By day the glow stays hidden, as in the scene.
+    function drawPumpkin(ctx, L, lighting, t, x, y) {
+        const at = (list, ms) => list[frameAt(t + (L.w * 37) % 500, list.length, ms)];
+        const draw = (sprite, light) => sprite && stamp(ctx, light ? bake(sprite) : bakeLit(sprite, lighting), L, x, y);
+        if (L.auraFrames) draw(at(L.auraFrames, 160), true);
+        draw(L.layers.back);
+        if (L.glowFrames && lighting !== 'day') draw(at(L.glowFrames, 120), true);
+        draw(L.layers.body);
+        draw(L.layers.rim);
+        draw(L.layers.stem);
+        if (L.fireFrames) draw(at(L.fireFrames, 110), true);
+    }
+
+    const SIZES = ['l', 'm', 's'];
+    const IDS = ['m', 's', 's', 's', 'm', 's', 'l', 'm', 'm', 'l', 'm', 'm', 'l', 's', 'm', 's', 's', 's']
+        .map((size, i) => ({ id: `pumpkin-${i + 1}`, size }));
+    const SHOW = { l: 'pumpkin-7', m: 'pumpkin-1', s: 'pumpkin-2' };
+    const STAGES = [4, 5, 6, 7, 8, 9, 10, 11];
+    const BG = { sunset: LIT_PALETTE.sunset.soil, night: LIT_PALETTE.night.soil, blood: LIT_PALETTE.blood.soil, day: PALETTE.soil };
+
+    // ------------------------------------------------------------------ mock compositions
+    const MW = 320;
+    const MH = 180;
+    const HORIZON = 62;
+    const CENTRE = { x: 166, y: 124 };
+    const RING = [
+        [-70, -18, 'm', 'pumpkin-1'], [-38, -30, 's', 'pumpkin-2'], [6, -34, 's', 'pumpkin-3'], [44, -28, 'm', 'pumpkin-5'],
+        [78, -12, 's', 'pumpkin-6'], [96, 14, 'l', 'pumpkin-7'], [60, 38, 'm', 'pumpkin-8'], [14, 46, 'l', 'pumpkin-10'],
+        [-34, 44, 'm', 'pumpkin-11'], [-80, 26, 'l', 'pumpkin-13'], [-100, 0, 's', 'pumpkin-14'],
+    ];
+    const pick = (list, i) => list[i % list.length];
+    const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+    // The day background, as the scene bakes it: far plan, lawn, the dug patch with furrows, vines to the pumpkins.
+    function dayBackground() {
+        const c = document.createElement('canvas');
+        c.width = MW;
+        c.height = MH;
+        const ctx = c.getContext('2d');
+        const r = rnd(9);
+        for (let x = 0; x < MW; x += DECOR.hills.w) ctx.drawImage(bake(DECOR.hills), x, HORIZON - DECOR.hills.h);
+        for (let x = 6; x < MW; x += 22 + r() * 30) stamp(ctx, bake(pick(DECOR.farTree, Math.floor(r() * 3))), pick(DECOR.farTree, 0), x, HORIZON);
+        const g = (k) => css(PALETTE[k]);
+        for (let y = HORIZON; y < MH; y++) {
+            for (let x = 0; x < MW; x++) {
+                const d = Math.hypot((x - CENTRE.x) / 132, (y - CENTRE.y + 4) / 52);
+                const checker = (x + y) % 2 === 0;
+                let k;
+                if (d < 0.9 || (d < 1 && checker)) {
+                    const lane = ((((x - CENTRE.x) / (y - HORIZON + 30)) * 9) % 1 + 1) % 1;
+                    k = lane < 0.2 ? 'soilDark' : lane < 0.3 ? 'soilLight' : 'soil';
+                } else {
+                    const n = r();
+                    k = n < 0.06 ? 'leafLight' : n < 0.18 || (y % 4 === 0 && checker && y > 120) ? 'leafDark' : 'leaf';
+                }
+                ctx.fillStyle = g(k);
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+        // Vines from the centre to each pumpkin.
+        for (const [dx, dy] of RING) {
+            for (let i = 0; i <= 60; i++) {
+                const t = i / 60;
+                const x = Math.round(CENTRE.x + dx * t + Math.sin(t * 6 + dx) * 4);
+                const y = Math.round(CENTRE.y + dy * t + Math.cos(t * 5 + dy) * 2);
+                ctx.fillStyle = g('leafDark');
+                ctx.fillRect(x - 1, y, 3, 2);
+                ctx.fillStyle = g('leafLight');
+                ctx.fillRect(x, y, 1, 1);
+                if (i % 9 === 4) stamp(ctx, bake(pick(DECOR.leaf, i)), pick(DECOR.leaf, i), x, y + 2);
+            }
+        }
+        stamp(ctx, bake(DECOR.tree), DECOR.tree, 34, 118);
+        const weeds = [[10, 150], [300, 140], [250, 170], [30, 170], [290, 100], [120, 80], [210, 78]];
+        weeds.forEach(([x, y], i) => stamp(ctx, bake(pick(DECOR.weed, i)), pick(DECOR.weed, i), x, y));
+        return c;
+    }
+    const DAY_BG = dayBackground();
+    const FIRE_LIGHT = { x: CENTRE.x, y: CENTRE.y, rx: 120, ry: 50, near: 'firelight' };
+    const BACKGROUNDS = {
+        sunset: relightCanvas(DAY_BG, 'sunset'),
+        night: relightCanvas(DAY_BG, 'night', FIRE_LIGHT),
+        blood: relightCanvas(DAY_BG, 'blood'),
+    };
+    const looks = Array.from({ length: 4 }, (_, i) => randomLook(rnd(31 + i * 7)));
+
+    function mock(scene) {
+        const lighting = ['sunset', 'night', 'blood'][scene - 1];
+        return cell(MW, MH, Math.max(2, zoom - 1) , (ctx, t) => {
+            paintSky(ctx, MW, HORIZON + 1, lighting, { seed: 5 });
+            if (scene === 1) {
+                const sun = NIGHT.sunsetSun;
+                stamp(ctx, bake(sun), sun, 252, HORIZON - 6);
+            } else {
+                const [moon, ring] = scene === 2 ? [NIGHT.moon, NIGHT.moonHalo] : [NIGHT.bloodMoon, NIGHT.bloodMoonHalo];
+                stamp(ctx, bake(ring), ring, 250, 22);
+                stamp(ctx, bake(moon), moon, 250, 22);
+                if (scene === 2) {
+                    for (const [i, [x, y]] of [[40, 10], [120, 18], [180, 8], [300, 30]].entries()) {
+                        const s = NIGHT.stars[2 + ((frameAt(t, 2, 400) + i) % 2)];
+                        stamp(ctx, bake(s), s, x, y);
+                    }
+                }
+            }
+            ctx.drawImage(BACKGROUNDS[lighting], 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h,
+                0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h);
+            // Ground light first, additive.
+            if (scene === 1) {
+                const light = BONFIRE.light[4];
+                additive(ctx, bake(light), light, CENTRE.x, CENTRE.y, 0.45);
+            } else if (scene === 2) {
+                const light = BONFIRE.light[7];
+                additive(ctx, bake(light), light, CENTRE.x, CENTRE.y, 0.5);
+            }
+            const items = [];
+            RING.forEach(([dx, dy, size, id], i) => {
+                const seed = seedOf(id);
+                const stage = scene === 1 ? [6, 7, 8, 8, 5, 8, 7, 8, 6, 8, 7][i] : scene === 2 ? [10, 11, 11, 10, 11, 11, 9, 11, 10, 11, 11][i] : 11;
+                const L = pumpkinLayers(stage, size, seed, scene === 3 ? 'violet' : 'green');
+                const x = CENTRE.x + dx;
+                const y = CENTRE.y + dy;
+                const float = stage >= 11 ? 4 + Math.round(2 * Math.sin(t / (scene === 3 ? 420 : 600) + i)) : 0;
+                items.push({ y, draw: () => {
+                    const lit = scene === 2 && nearLight(x, y, FIRE_LIGHT) ? 'firelight' : lighting;
+                    if (scene === 1) {
+                        const sh = longShadow(pumpkinSprite(stage, size, seed), { dir: -1, len: 1.6, squash: 0.22 });
+                        ctx.globalAlpha = 0.35;
+                        stamp(ctx, bake(sh), sh, x, y);
+                        ctx.globalAlpha = 1;
+                    }
+                    if (float) {
+                        const sh = PUMPKIN_SHADOW[size][Math.min(2, Math.floor(float / 2))];
+                        ctx.globalAlpha = 0.5;
+                        stamp(ctx, bake(sh), sh, x, y - 1);
+                        ctx.globalAlpha = 1;
+                    }
+                    if (stage >= 6 || scene > 1) {
+                        const h = halo(size === 'l' ? 16 : size === 'm' ? 13 : 10, size === 's' ? 4 : 5, scene === 1 ? 'warm' : scene === 2 ? 'green' : 'violet');
+                        additive(ctx, bake(h), h, x, y, 0.35);
+                    }
+                    drawPumpkin(ctx, L, lit, t + i * 97, x, y - float);
+                } });
+            });
+            // The bonfire, or the pit with the circle.
+            items.push({ y: CENTRE.y, draw: () => {
+                if (scene === 3) {
+                    stamp(ctx, bakeLit(ASH.pit, 'blood'), ASH.pit, CENTRE.x, CENTRE.y);
+                    const circle = ASH.circle[frameAt(t, 12, 300) % ASH.circle.length];
+                    stamp(ctx, bake(circle), circle, CENTRE.x, CENTRE.y);
+                    return;
+                }
+                const stage = scene === 1 ? 4 : 7;
+                const frames = BONFIRE.stages[stage];
+                const fr = frames[frameAt(t, frames.length, 110)];
+                const foot = { x: CENTRE.x, y: CENTRE.y + 4 };
+                stamp(ctx, bakeLit(fr.base, scene === 1 ? 'sunset' : 'firelight'), fr.base, foot.x, foot.y);
+                if (fr.fire) stamp(ctx, bake(fr.fire), fr.fire, foot.x, foot.y);
+            } });
+            // Walkers on the lawn: candles at dusk, books at night.
+            [[70, 160], [250, 158], [118, 172], [286, 128]].forEach(([x, y], i) => {
+                if (scene === 3) return;
+                items.push({ y, draw: () => {
+                    const item = scene === 1 ? 'candle' : 'book';
+                    if (scene === 1) {
+                        const h = NIGHT.candleLight;
+                        additive(ctx, bake(h), h, x, y, 0.55);
+                    }
+                    const { canvas, anchor } = characterFrame(looks[i], { dir: i % 2 ? 'side' : 'front', pose: 'idle', frame: frameAt(t, 2, 600), item });
+                    const lit = relightCanvas(canvas, scene === 2 && nearLight(x, y, FIRE_LIGHT) ? 'firelight' : lighting);
+                    ctx.drawImage(lit, x - anchor.x, y - anchor.y);
+                } });
+            });
+            items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+        });
+    }
+    section('mock', 'Сцена 1 «Закат: зажигание» — тыквы горят, костёр разожжён, свечи у фигурок', [mock(1)]);
+    section('mock', 'Сцена 2 «Ночь: заклинание» — луна, зелёный костёр, тёплый круг у центра, тыквы парят', [mock(2)]);
+    section('mock', 'Сцена 3 «Кровавая луна» — пепелище, круг проступает, фиолетовые тыквы', [mock(3)]);
+
+    // ------------------------------------------------------------------ stages
+    for (const size of SIZES) {
+        for (const lighting of ['sunset', 'night', 'blood']) {
+            const seed = seedOf(SHOW[size]);
+            const tone = lighting === 'blood' ? 'violet' : 'green';
+            section('stages', `${SHOW[size]} (${size}), стадии 4–11, ${lighting}, ${zoom}×`, STAGES.map((st) => {
+                const L = pumpkinLayers(st, size, seed, tone);
+                const big = pumpkinLayers(11, size, seed);
+                return cell(big.w, big.h, zoom, (ctx, t) => {
+                    ctx.fillStyle = css(BG[lighting]);
+                    ctx.fillRect(0, 0, big.w, big.h);
+                    drawPumpkin(ctx, L, lighting, t, big.w >> 1, big.h);
+                }, `stage ${st}`);
+            }));
+        }
+    }
+    section('stages', 'день (свечение скрыто) — стадии 4–11, l m s', SIZES.flatMap((size) => STAGES.map((st) => {
+        const L = pumpkinLayers(st, size, seedOf(SHOW[size]));
+        return cell(L.w, L.h, Math.max(1, zoom - 1), (ctx, t) => drawPumpkin(ctx, L, 'day', t, L.w >> 1, L.h), `${size}${st}`);
+    })), '#8ccff0');
+    section('stages', 'стадии 4–11 в 1× (масштаб сцены, ночь)', SIZES.flatMap((size) => STAGES.map((st) => {
+        const L = pumpkinLayers(st, size, seedOf(SHOW[size]));
+        return cell(L.w, L.h, 1, (ctx, t) => {
+            ctx.fillStyle = css(BG.night);
+            ctx.fillRect(0, 0, L.w, L.h);
+            drawPumpkin(ctx, L, 'night', t, L.w >> 1, L.h);
+        });
+    })));
+
+    // ------------------------------------------------------------------ caps
+    const capIds = {};
+    for (let i = 1; i < 400; i++) {
+        for (const size of SIZES) {
+            const L = pumpkinLayers(8, size, seedOf(`pumpkin-${i}`));
+            capIds[`${size}:${L.cap}`] ??= `pumpkin-${i}`;
+        }
+    }
+    for (const size of SIZES) {
+        section('caps', `колпаки стадии 8, ${size}: верхушка, шляпа, кальян, корона — закат и ночь (стадия 10)`, ['lid', 'witch', 'hookah', 'crown'].flatMap((cap) => {
+            const id = capIds[`${size}:${cap}`];
+            if (!id) return [];
+            return [8, 10].map((st) => {
+                const L = pumpkinLayers(st, size, seedOf(id));
+                const lighting = st === 8 ? 'sunset' : 'night';
+                return cell(L.w, L.h, zoom, (ctx, t) => {
+                    ctx.fillStyle = css(BG[lighting]);
+                    ctx.fillRect(0, 0, L.w, L.h);
+                    drawPumpkin(ctx, L, lighting, t, L.w >> 1, L.h);
+                }, `${cap} ${id} st${st}`);
+            });
+        }));
+    }
+    section('caps', '18 реальных id: стадия 8 (закат) и 11 (ночь)', IDS.flatMap(({ id, size }) => [8, 11].map((st) => {
+        const L = pumpkinLayers(st, size, seedOf(id));
+        const lighting = st === 8 ? 'sunset' : 'night';
+        return cell(L.w, L.h, 2, (ctx, t) => {
+            ctx.fillStyle = css(BG[lighting]);
+            ctx.fillRect(0, 0, L.w, L.h);
+            drawPumpkin(ctx, L, lighting, t, L.w >> 1, L.h);
+        }, `${id} ${st}`);
+    })));
+
+    // ------------------------------------------------------------------ frames
+    {
+        const seed = seedOf('pumpkin-7');
+        const items = [];
+        for (const st of [5, 6, 7, 8, 10, 11]) {
+            const L = pumpkinLayers(st, 'l', seed);
+            for (const [name, list] of [['glow', L.glowFrames], ['fire', L.fireFrames], ['aura', L.auraFrames]]) {
+                (list ?? []).forEach((sprite, i) => items.push(cell(L.w, L.h, Math.max(2, zoom), (ctx) => {
+                    ctx.fillStyle = '#141018';
+                    ctx.fillRect(0, 0, L.w, L.h);
+                    ctx.drawImage(bake(sprite), 0, 0);
+                }, `${st} ${name}${i}`)));
+            }
+        }
+        section('frames', 'кадры glow / fire / aura (l, pumpkin-7)', items);
+    }
+
+    // ------------------------------------------------------------------ floating
+    section('float', 'тени под парящими тыквами (низко / средне / высоко) и парение стадии 11', [
+        ...SIZES.flatMap((size) => PUMPKIN_SHADOW[size].map((s, i) => cell(s.w, s.h, zoom * 2, (ctx) => {
+            ctx.fillStyle = css(BG.night);
+            ctx.fillRect(0, 0, s.w, s.h);
+            ctx.globalAlpha = 0.5;
+            ctx.drawImage(bake(s), 0, 0);
+            ctx.globalAlpha = 1;
+        }, `${size}${i}`))),
+        ...[['green', 'night'], ['violet', 'blood']].map(([tone, lighting]) => cell(150, 70, zoom, (ctx, t) => {
+            ctx.fillStyle = css(BG[lighting]);
+            ctx.fillRect(0, 0, 150, 70);
+            SIZES.forEach((size, i) => {
+                const L = pumpkinLayers(11, size, seedOf(SHOW[size]), tone);
+                const x = 26 + i * 48;
+                const lift = 4 + Math.round(2 * Math.sin(t / 500 + i));
+                const s = PUMPKIN_SHADOW[size][Math.min(2, Math.floor(lift / 2))];
+                ctx.globalAlpha = 0.5;
+                stamp(ctx, bake(s), s, x, 66);
+                ctx.globalAlpha = 1;
+                drawPumpkin(ctx, L, lighting, t + i * 50, x, 66 - lift);
+            });
+        }, tone)),
+    ]);
+
+    // ------------------------------------------------------------------ bonfire
+    const bonfireCell = (st, lighting, scale, withLight = true) => cell(96, 92, scale, (ctx, t) => {
+        ctx.fillStyle = css(BG[lighting === 'firelight' ? 'night' : lighting]);
+        ctx.fillRect(0, 0, 96, 92);
+        const foot = { x: 48, y: 86 };
+        if (withLight && BONFIRE.light[st]) additive(ctx, bake(BONFIRE.light[st]), BONFIRE.light[st], foot.x, foot.y, 0.55);
+        const frames = BONFIRE.stages[st];
+        const fr = frames[frameAt(t, frames.length, 110)];
+        stamp(ctx, bakeLit(fr.base, lighting), fr.base, foot.x, foot.y);
+        if (fr.fire) stamp(ctx, bake(fr.fire), fr.fire, foot.x, foot.y);
+    }, `stage ${st} ${lighting}`);
+    section('bonfire', `костёр, стадии 0–${BONFIRE_STAGES} (0–4 закат, 5–7 ночь у огня), ${zoom}×`,
+        [...Array(BONFIRE_STAGES + 1).keys()].map((st) => bonfireCell(st, st <= 4 ? 'sunset' : 'firelight', zoom)));
+    section('bonfire', 'костёр днём и при луне, без света, 2×', [...Array(BONFIRE_STAGES + 1).keys()].flatMap((st) => [
+        bonfireCell(st, 'day', 2, false),
+    ]), '#8ccff0');
+    section('bonfire', 'кадры стадии 4 и 7', [4, 7].flatMap((st) => BONFIRE.stages[st].map((fr, i) => cell(fr.base.w, fr.base.h, zoom, (ctx) => {
+        ctx.fillStyle = '#141018';
+        ctx.fillRect(0, 0, fr.base.w, fr.base.h);
+        ctx.drawImage(bakeLit(fr.base, 'firelight'), 0, 0);
+        if (fr.fire) ctx.drawImage(bake(fr.fire), 0, 0);
+    }, `${st}.${i}`))));
+
+    // ------------------------------------------------------------------ explosion
+    section('explosion', 'взрыв, 8 кадров + цикл', [
+        ...EXPLOSION.map((s, i) => cell(s.w, s.h, 2, (ctx) => {
+            ctx.fillStyle = css(BG.night);
+            ctx.fillRect(0, 0, s.w, s.h);
+            ctx.drawImage(bake(s), 0, 0);
+        }, `${i}`)),
+        cell(EXPLOSION[0].w, EXPLOSION[0].h, zoom, (ctx, t) => {
+            ctx.fillStyle = css(BG.night);
+            ctx.fillRect(0, 0, EXPLOSION[0].w, EXPLOSION[0].h);
+            const f = Math.floor((t % 1800) / 110);
+            if (f < EXPLOSION.length) ctx.drawImage(bake(EXPLOSION[f]), 0, 0);
+            else ctx.drawImage(bakeLit(ASH.pit, 'night'), 66 - ASH.pit.anchor.x, 108 - ASH.pit.anchor.y);
+        }, 'loop'),
+    ]);
+
+    // ------------------------------------------------------------------ ash pit
+    section('ash', 'пепелище и красный круг, 8 кадров (кровавая луна)', [
+        cell(ASH.pit.w, ASH.pit.h, zoom * 2, (ctx) => {
+            ctx.fillStyle = css(LIT_PALETTE.blood.leaf);
+            ctx.fillRect(0, 0, ASH.pit.w, ASH.pit.h);
+            ctx.drawImage(bakeLit(ASH.pit, 'blood'), 0, 0);
+            ctx.drawImage(bake(ASH.embers), 0, 0);
+        }, 'pit'),
+        ...ASH.circle.map((c, i) => cell(c.w, c.h, zoom, (ctx) => {
+            ctx.fillStyle = css(LIT_PALETTE.blood.leaf);
+            ctx.fillRect(0, 0, c.w, c.h);
+            ctx.drawImage(bakeLit(ASH.pit, 'blood'), 0, 0);
+            ctx.drawImage(bake(c), 0, 0);
+        }, `circle ${i}`)),
+    ]);
+
+    // ------------------------------------------------------------------ items
+    section('items', 'свеча и магическая книга в руке (закат / ночь) и круг света свечи', [
+        ...['candle', 'book'].flatMap((item) => ['front', 'side'].map((dir) => {
+            const lighting = item === 'candle' ? 'sunset' : 'night';
+            return cell(40, 44, zoom, (ctx, t) => {
+                ctx.fillStyle = css(LIT_PALETTE[lighting].leaf);
+                ctx.fillRect(0, 0, 40, 44);
+                if (item === 'candle') additive(ctx, bake(NIGHT.candleLight), NIGHT.candleLight, 20, 40, 0.55);
+                const { canvas, anchor } = characterFrame(looks[0], { dir, pose: 'idle', frame: frameAt(t, 2, 600), item });
+                ctx.drawImage(relightCanvas(canvas, lighting), 20 - anchor.x, 40 - anchor.y);
+            }, `${item} ${dir}`);
+        })),
+        cell(NIGHT.candleLight.w, NIGHT.candleLight.h, zoom * 2, (ctx) => ctx.drawImage(bake(NIGHT.candleLight), 0, 0), 'candleLight'),
+    ]);
+
+    // ------------------------------------------------------------------ particles and sky bits
+    section('particles', 'частицы: ember, cinder, magic, hex; луна, кровавая луна, звёзды, закатное солнце', [
+        ...['ember', 'cinder', 'magic', 'hex'].flatMap((k) => PARTICLES[k].map((p, i) => cell(p.w, p.h, 8, (ctx) => ctx.drawImage(bake(p), 0, 0), `${k}${i}`))),
+        ...['moonHalo', 'moon', 'bloodMoonHalo', 'bloodMoon', 'sunsetSun'].map((k) => cell(NIGHT[k].w, NIGHT[k].h, zoom, (ctx) => {
+            ctx.fillStyle = css(PALETTE[k.startsWith('blood') ? 'bloodHigh' : k === 'sunsetSun' ? 'sunsetMid' : 'nightHigh']);
+            ctx.fillRect(0, 0, NIGHT[k].w, NIGHT[k].h);
+            ctx.drawImage(bake(NIGHT[k]), 0, 0);
+        }, k)),
+        ...NIGHT.stars.map((s, i) => cell(s.w, s.h, 8, (ctx) => {
+            ctx.fillStyle = css(PALETTE.nightHigh);
+            ctx.fillRect(0, 0, s.w, s.h);
+            ctx.drawImage(bake(s), 0, 0);
+        }, `star${i}`)),
+    ], '#3a3444');
+
+    // ------------------------------------------------------------------ lighting
+    {
+        const keys = Object.keys(PALETTE);
+        const table = document.createElement('canvas');
+        const sw = 6;
+        table.width = keys.length * sw;
+        table.height = LIGHTINGS.length * sw;
+        const ctx = table.getContext('2d');
+        LIGHTINGS.forEach((name, row) => keys.forEach((k, i) => {
+            ctx.fillStyle = css(LIT_PALETTE[name][k]);
+            ctx.fillRect(i * sw, row * sw, sw, sw);
+        }));
+        table.style.width = `${table.width * 2}px`;
+        table.style.height = `${table.height * 2}px`;
+        const box = document.createElement('div');
+        box.className = 'cell';
+        box.append(table);
+        const s = document.createElement('span');
+        s.textContent = `палитра по строкам: ${LIGHTINGS.join(' / ')}`;
+        box.append(s);
+        section('lighting', 'освещение: палитра и перекраска существующих элементов', [
+            box,
+            ...LIGHTINGS.map((name) => cell(200, 110, 2, (c2) => {
+                paintSky(c2, 200, 40, name === 'firelight' ? 'night' : name, { seed: 3 });
+                c2.drawImage(relightCanvas(DAY_BG, name), 0, 40 - DECOR.hills.h, 200, 110, 0, 40 - DECOR.hills.h, 200, 110);
+                stamp(c2, bakeLit(DECOR.tree, name), DECOR.tree, 40, 108);
+                stamp(c2, bakeLit(DECOR.hay, name), DECOR.hay, 120, 100);
+                stamp(c2, bakeLit(DECOR.fence[0], name), DECOR.fence[0], 160, 96);
+                stamp(c2, bakeLit(pumpkinSprite(4, 'm', seedOf('pumpkin-1')), name), pumpkinSprite(4, 'm'), 150, 108);
+            }, name)),
+        ]);
+    }
+
+    if (frozen === null) {
+        setInterval(() => {
+            const t = now();
+            animated.forEach((paint) => paint(t));
+        }, 100);
+    }
+</script>
+</body>
+</html>

@@ -717,6 +717,8 @@ const CLOAKS = {
 const ITEM_LEGEND = {
     w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', g: 'grayLight', a: 'gray', k: 'barkDark',
     b: 'bark', B: 'barkLight', h: 'hay', H: 'hayDark', L: 'hayLight', s: 'stemLight',
+    // The magic book: glowing green lines on cream pages in a violet binding.
+    e: 'eyeGreen', E: 'eerieHot', v: 'violetDark',
 };
 
 // From the side the broom leans forward, so the stick clears the face.
@@ -746,6 +748,18 @@ const ITEM_DEFS = {
         label: 'Пистоль',
         front: { rows: ['.a..', '.g..', '.g..', '.g..', '.ga.', 'Bbb.', '.Bb.', '..b.'], grip: [1, 5] },
         side: { rows: ['..a.', '..g.', '..g.', '..g.', '.ag.', '.bbB', '.bB.', '.b..'], grip: [1, 5] },
+    },
+    // A wax candle on a tin dish, carried at dusk: the flame stays static like the torch's, white core in yellow.
+    candle: {
+        label: 'Свеча',
+        front: { rows: ['..Y..', '.YwY.', '..y..', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7] },
+        side: { rows: ['..Y..', '.YwY.', '..y..', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7] },
+    },
+    // An open spell book held up in front, its lines glowing green, two motes rising off the pages.
+    book: {
+        label: 'Магическая книга',
+        front: { rows: ['.E...E.', '.cc.cc.', 'ceeveEc', 'cEevcec', 'ceeveec', 'vvvvvvv'], grip: [3, 5] },
+        side: { rows: ['.E..', 'vcc.', 'veE.', 'vee.', 'vce.', 'vvvv'], grip: [1, 5] },
     },
     // Items have no frames of their own, so the flame is static: a white-hot core in a lopsided tongue of fire over
     // a rag wrapping, so it reads as a flame and not as a lollipop. Gripped low, the flame clears the head.

@@ -111,10 +111,10 @@
         .map((size, i) => ({ id: `pumpkin-${i + 1}`, size }));
     if (!only || only === 'ids') {
         const h = document.createElement('h2');
-        h.textContent = '18 реальных id × стадии 0–4, 3×';
+        h.textContent = `18 реальных id × стадии 0–${PUMPKIN_STAGES}, 3×`;
         const table = document.createElement('div');
         table.className = 'sky';
-        table.style.cssText = 'display:grid;grid-template-columns:repeat(6,auto);gap:6px 14px;padding:10px;justify-content:start;align-items:end';
+        table.style.cssText = `display:grid;grid-template-columns:repeat(${stages.length + 1},auto);gap:6px 14px;padding:10px;justify-content:start;align-items:end`;
         for (const { id, size } of IDS) {
             const label = document.createElement('span');
             label.textContent = `${id} ${size}`;

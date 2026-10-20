@@ -22,6 +22,39 @@ const PUMPKIN_LEGEND = {
     F: 'fleshDark',
     c: 'cream',
     e: 'seedShade',
+    // Stages 5+: the white-hot core of the inner light, and the caps of stage 8 — a witch hat (violet, crimson band,
+    // gold buckle), a hookah (brass, steel, clay bowl, green hose), a gold crown with crimson gems.
+    w: 'flameCore',
+    a: 'violetLight',
+    A: 'violet',
+    n: 'violetDark',
+    q: 'crimson',
+    Q: 'crimsonDark',
+    b: 'gold',
+    j: 'hayDark',
+    g: 'grayLight',
+    G: 'gray',
+    K: 'steelDark',
+    P: 'copper',
+    p: 'copperLight',
+    m: 'soilLight',
+    M: 'soil',
+    h: 'leafDark',
+    H: 'leaf',
+};
+
+// The inner light (chars w s l o d in back and glow, the cut flesh f in rim) per stage: warm candlelight, then in
+// scene 2 a green cast at the edges (9) and full dark-magic green (10+); the blood-moon variant swaps green for violet.
+const GREENISH = { l: 'eyeGreen', o: 'eerieDark', d: 'eerieDeep', f: 'leafShine' };
+const MAGIC = {
+    green: { w: 'magicCore', s: 'eerieHot', l: 'eyeGreen', o: 'eerieDark', d: 'eerieDeep', f: 'leafShine' },
+    violet: { w: 'violetHot', s: 'eyeViolet', l: 'violetGlow', o: 'violet', d: 'violetDark', f: 'violetLight' },
+};
+// Fire chars core → edge: w s l d D, plus smoke g G. The same flames burn warm, green or violet.
+const FIRE = {
+    warm: { '.': null, w: 'flameCore', s: 'pumpkinShine', l: 'pumpkinLight', d: 'pumpkinDark', D: 'pumpkinDeep', g: 'grayLight', G: 'gray' },
+    green: { '.': null, w: 'magicCore', s: 'eyeGreen', l: 'eerieMid', d: 'eerieDark', D: 'eerieDeep', g: 'ecto', G: 'eerieDark' },
+    violet: { '.': null, w: 'violetHot', s: 'eyeViolet', l: 'violetGlow', d: 'violet', D: 'violetDark', g: 'violetLight', G: 'violet' },
 };
 
 // A pumpkin is assembled per size from a generated body (lobes, skin ramp, silhouette tweak) and hand-drawn masks
@@ -143,7 +176,118 @@ const SKINS = [
     { d: 'pumpkinGoldDark', o: 'pumpkinGold', l: 'pumpkinGoldLight' },
 ];
 
-export const PUMPKIN_STAGES = 4;
+/**
+ * Stages drawn: 0–4 carve the face (scene 0); 5 a small glow inside, 6 the glow grows, 7 fire out of the top, 8 a cap
+ * on and flame jets from the eyes (scene 1); 9 a green cast in the cuts, 10 green radiance, 11 floating (scene 2).
+ * Stages past it look like the last one.
+ */
+export const PUMPKIN_STAGES = 11;
+
+// Per size for stages 5+: how far the inner light reaches (art px); from stage 7 the padding above (fire, caps) and
+// at the sides (eye jets, aura); the top fire's height, the eye jets' length × width, the aura's reach.
+const LIT = {
+    l: { reach: 15, padTop: 18, padSide: 7, fire: 21, jet: [12, 5], aura: 3 },
+    m: { reach: 12, padTop: 15, padSide: 6, fire: 17, jet: [9, 4], aura: 2 },
+    s: { reach: 9, padTop: 12, padSide: 5, fire: 12, jet: [7, 3], aura: 2 },
+};
+
+// Inner light per stage: reach multiplier and ramp from the source out; 'X' leaves the far corners unlit.
+const GLOW_STAGES = {
+    5: { k: 0.75, ramp: ['s', 'l', 'o', 'X'] },
+    6: { k: 1, ramp: ['s', 'l', 'o', 'd'] },
+    7: { k: 1.25, ramp: ['s', 'l', 'o', 'd'] },
+    8: { k: 1.6, ramp: ['w', 's', 'l', 'o'] },
+    9: { k: 1.4, ramp: ['s', 'l', 'o', 'd'] },
+    10: { k: 1.6, ramp: ['w', 's', 'l', 'o'] },
+    11: { k: 1.7, ramp: ['w', 's', 'l', 'o'] },
+};
+// Light intensity per glow frame: the reach is scaled by it, so cycling the frames flickers.
+const FLICKER = [0.86, 1, 1.14];
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+
+/**
+ * Paints flame tongues into a char grid (w s l d D, core → edge). A tongue is { x, y, len, wid, ang, phase, sway }:
+ * base point and size in art px, angle from straight up in radians. frame (0–3) changes height and sway; allow(x, y)
+ * keeps pixels off. Shared with the bonfire.
+ */
+export function paintFlames(g, tongues, frame, allow = () => true) {
+    const h = g.length;
+    const w = g[0].length;
+    const heat = Array.from({ length: h }, () => new Float32Array(w));
+    const at = Array.from({ length: h }, () => new Float32Array(w));
+    const touch = (x, y, i, u) => {
+        if (y >= 0 && y < h && x >= 0 && x < w && i > heat[y][x]) {
+            heat[y][x] = i;
+            at[y][x] = u;
+        }
+    };
+    tongues.forEach((t, n) => {
+        const ph = (t.phase ?? 0) + (frame * Math.PI) / 2;
+        const len = t.len * (0.86 + 0.14 * Math.sin(ph) + 0.06 * Math.sin(ph * 2.3 + n));
+        const sway = (t.sway ?? 1) * t.wid * 0.45;
+        const ang = t.ang ?? 0;
+        const ux = Math.sin(ang);
+        const uy = -Math.cos(ang);
+        const R = Math.ceil(len + t.wid);
+        for (let y = Math.floor(t.y - R); y <= t.y + R; y++) {
+            for (let x = Math.floor(t.x - R); x <= t.x + R; x++) {
+                const dx = x - t.x;
+                const dy = y - t.y;
+                const u = (dx * ux + dy * uy) / len;
+                if (u < -0.08 || u > 1) continue;
+                const v = dx * -uy + dy * ux;
+                const c = sway * Math.sin(u * 3 + ph) * u;
+                // Widest a fifth of the way up, then tapering to the tip.
+                const hw = (t.wid / 2) * (u < 0.2 ? 0.7 + 1.5 * Math.max(0, u) : ((1 - u) / 0.8) ** 0.75);
+                touch(x, y, (1 - Math.abs(v - c) / Math.max(0.5, hw)) * (1 - 0.35 * u), u);
+            }
+        }
+        // Every few frames a tongue throws off a lick of flame above its tip.
+        if ((frame + n) % 3 === 0) {
+            const tip = len * 1.18;
+            const x = Math.round(t.x + ux * tip + sway * Math.sin(3 + ph));
+            const y = Math.round(t.y + uy * tip);
+            touch(x, y, 0.32, 1);
+            touch(x, y - 1, 0.2, 1);
+        }
+    });
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = heat[y][x];
+            if (i <= 0 || !allow(x, y)) continue;
+            g[y][x] = i > 0.74 && at[y][x] < 0.45 ? 'w' : i > 0.5 ? 's' : i > 0.28 ? 'l' : i > 0.1 ? 'd' : 'D';
+        }
+    }
+}
+
+/**
+ * Paints a smoke column (g light, G shade) rising from (x, y) for `height` px: puffs that grow and drift as they
+ * rise, thinning out in Bayer steps toward the top. frame (0–3) moves the puffs up one step.
+ */
+export function paintSmoke(g, x, y, height, frame, { width = 3, drift = 1 } = {}) {
+    const h = g.length;
+    const w = g[0].length;
+    const step = Math.max(2, Math.round(width * 0.9));
+    for (let k = -1; k * step < height; k++) {
+        const rise = k * step + (frame * step) / 4;
+        if (rise < 0 || rise > height) continue;
+        const t = rise / height;
+        const cx = x + drift * Math.sin(rise * 0.35 + 1) * (1 + t * 2);
+        const cy = y - rise;
+        const r = width * (0.5 + t * 0.8);
+        for (let yy = Math.floor(cy - r); yy <= cy + r; yy++) {
+            for (let xx = Math.floor(cx - r); xx <= cx + r; xx++) {
+                const d = Math.hypot(xx - cx, (yy - cy) * 1.2) / r;
+                if (d > 1 || yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
+                if (BAYER[yy & 3][xx & 3] / 16 >= (1 - t) * 1.3 - d * 0.4) continue;
+                g[yy][xx] = (xx - cx) + (yy - cy) < -r * 0.3 ? 'g' : 'G';
+            }
+        }
+    }
+}
+
+// Caps for stage 8, picked by seed; append new ones at the end — reordering changes every pumpkin.
+const CAPS = ['lid', 'witch', 'hookah', 'crown'];
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
     let c = n;
@@ -281,11 +425,16 @@ const layersCache = new Map();
 /**
  * The pumpkin as aligned layers, drawn back → body → rim → stem; glow goes above back and under body, only at night.
  * Every layer has the same w×h and anchor. seed is an unsigned 32-bit number, normally seedOf(id).
+ *
+ * Stages 5+ add (null where a stage has none): layers.fire — flames and smoke over everything, light; layers.aura —
+ * magic light around the silhouette, under everything; glowFrames[3], fireFrames[4], auraFrames[3] to animate them;
+ * the stem slot holds the stage-8 cap, named in `cap`. From stage 7 the sprite is padded (LIT), so w×h grow; the
+ * anchor stays at the foot. tone 'green' | 'violet' colours the magic of stages 9+ (violet: the blood moon).
  */
-export function pumpkinLayers(stage, size, seed = 0) {
+export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
     const def = PUMPKIN_SIZES[size] ?? PUMPKIN_SIZES.m;
     const st = Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0));
-    const key = `${size}:${st}:${seed >>> 0}`;
+    const key = `${size}:${st}:${seed >>> 0}${st >= 9 ? `:${tone}` : ''}`;
     if (layersCache.has(key)) {
         return layersCache.get(key);
     }
@@ -372,24 +521,369 @@ export function pumpkinLayers(stage, size, seed = 0) {
         ? centre(look.eyes[order[st]], def.eyesAt[order[st]])
         : centre(look.mouth, def.mouthAt);
     const emit = { cut, top: [Math.round(def.opening.cx), top + Math.round(def.opening.cy)] };
-    const anchor = { x: w >> 1, y: h };
+    let grids = { back, body, rim, glow, stem: st < 3 ? stem : null };
+    let extra = null;
+    if (st >= 5) {
+        extra = dressUp(st, PUMPKIN_SIZES[size] ? size : 'm', seed >>> 0, { def, look, kind, top, tones, grids, emit });
+        grids = extra.grids;
+    }
+    const pw = grids.body[0].length;
+    const ph = grids.body.length;
+    const anchor = { x: pw >> 1, y: ph };
     const legend = { ...PUMPKIN_LEGEND, ...look.skin };
+    const magic = MAGIC[tone] ?? MAGIC.green;
+    const cast = { l: magic.l, o: magic.o, d: magic.d, f: magic.f };
+    // The inner light: warm up to stage 8, a magic cast at the edges at 9, full magic from 10.
+    const lightLegend = st >= 10 ? { ...PUMPKIN_LEGEND, ...magic } : st === 9 ? { ...PUMPKIN_LEGEND, ...cast } : PUMPKIN_LEGEND;
+    const glowLegend = st >= 5 ? lightLegend : { '.': null, w: 'white' };
+    const fireLegend = st >= 9 ? FIRE[tone] ?? FIRE.green : FIRE.warm;
     const result = {
-        w,
-        h,
+        w: pw,
+        h: ph,
         anchor,
         emit,
         layers: {
-            back: layerSprite(back, PUMPKIN_LEGEND, anchor),
-            body: layerSprite(body, legend, anchor),
-            rim: layerSprite(rim, PUMPKIN_LEGEND, anchor),
-            stem: st < 3 ? layerSprite(stem, PUMPKIN_LEGEND, anchor) : null,
-            glow: layerSprite(glow, { '.': null, w: 'white' }, anchor),
+            back: layerSprite(grids.back, lightLegend, anchor),
+            body: layerSprite(grids.body, legend, anchor),
+            rim: layerSprite(grids.rim, st >= 9 ? { ...PUMPKIN_LEGEND, f: magic.f } : PUMPKIN_LEGEND, anchor),
+            // From stage 8 the stem slot holds the cap; the lid reuses the skin colours.
+            stem: grids.stem ? layerSprite(grids.stem, st >= 8 ? legend : PUMPKIN_LEGEND, anchor) : null,
+            glow: layerSprite(grids.glow, glowLegend, anchor),
+            fire: extra?.fireFrames ? layerSprite(extra.fireFrames[0], fireLegend, anchor) : null,
+            aura: extra?.auraFrames ? layerSprite(extra.auraFrames[0], glowLegend, anchor) : null,
         },
     };
+    if (extra) {
+        result.glowFrames = extra.glowFrames.map((g) => layerSprite(g, glowLegend, anchor));
+        if (extra.fireFrames) result.fireFrames = extra.fireFrames.map((g) => layerSprite(g, fireLegend, anchor));
+        if (extra.auraFrames) result.auraFrames = extra.auraFrames.map((g) => layerSprite(g, glowLegend, anchor));
+        result.cap = extra.cap;
+    }
     layersCache.set(key, result);
     return result;
 }
+
+/**
+ * Stages 5+ on top of the hollow face of stage 4: the inner light (5, 6), fire out of the top (7), a cap and eye jets
+ * (8), magic glow (9, 10), the aura with motes (10, 11). From stage 7 the grids are padded above and at the sides.
+ * Draws from its own random stream, so pumpkinLook — and with it every earlier stage — stays as it was.
+ */
+function dressUp(st, size, seed, { def, look, kind: kind0, top: top0, tones, grids, emit }) {
+    const lit = LIT[size];
+    const rnd = mulberry32((seed ^ 0x5bd1e995) >>> 0);
+    // The order of draws is part of the contract, as in pumpkinLook.
+    const capName = CAPS[Math.floor(rnd() * CAPS.length)];
+    const capSeed = Math.floor(rnd() * 4294967296);
+    const firePhase = rnd() * 6.28;
+
+    const big = st >= 7;
+    const ox = big ? lit.padSide : 0;
+    const oy = big ? lit.padTop : 0;
+    const pad = (g) => (!big ? g : [
+        ...Array.from({ length: oy }, () => Array(g[0].length + 2 * ox).fill('.')),
+        ...g.map((row) => [...Array(ox).fill('.'), ...row, ...Array(ox).fill('.')]),
+    ]);
+    const kind = pad(kind0);
+    const back = pad(grids.back);
+    const body = pad(grids.body);
+    const rim = pad(grids.rim);
+    const h = kind.length;
+    const w = kind[0].length;
+    const top = top0 + oy;
+    const blank = () => Array.from({ length: h }, () => Array(w).fill('.'));
+    const o = def.opening;
+    const ocx = o.cx + ox;
+    const ocy = top + o.cy;
+    const inside = (x, y) => {
+        const k = kind[y]?.[x];
+        return k !== undefined && k !== '.' && k !== 'skin';
+    };
+
+    // The light sits low inside, behind the mouth; once it burns out of the top it fills the middle.
+    const floor = top + def.mouthAt[1] + look.mouth.length - 1;
+    const light = [Math.round(ocx), st >= 7 ? Math.round((floor + ocy) / 2) : floor - 1];
+    const { k: reachK, ramp } = GLOW_STAGES[Math.min(st, 11)];
+    const band = (x, y, k) => {
+        const d = Math.hypot(x - light[0], (y - light[1]) * 0.85) / (lit.reach * reachK * k)
+            + (BAYER[y & 3][x & 3] / 16 - 0.5) * 0.18;
+        return ramp[d < 0.3 ? 0 : d < 0.62 ? 1 : d < 1 ? 2 : 3];
+    };
+    const glowFrames = FLICKER.map((k) => {
+        const g = blank();
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (!inside(x, y)) continue;
+                const ch = band(x, y, k);
+                if (ch !== 'X') g[y][x] = ch;
+            }
+        }
+        return g;
+    });
+    // The back carries the steady light too, so the pumpkin reads lit with the glow layer hidden.
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (inside(x, y)) back[y][x] = glowFrames[1][y][x] === '.' ? 'X' : glowFrames[1][y][x];
+        }
+    }
+
+    const fireFrames = [0, 1, 2, 3].map(blank);
+    let burning = false;
+    const flames = (tongues, allow) => {
+        burning = true;
+        fireFrames.forEach((g, f) => paintFlames(g, tongues, f, allow));
+    };
+    if (st === 7) {
+        // Fire out of the top cut: tongues across the opening, kept behind the near lip and the skin.
+        const n = size === 'l' ? 4 : size === 'm' ? 3 : 2;
+        const spread = o.rx * 0.55;
+        flames(Array.from({ length: n }, (_, i) => ({
+            x: ocx + (n === 1 ? 0 : -spread + (2 * spread * i) / (n - 1)),
+            y: ocy,
+            len: lit.fire * (i === 1 || n === 2 ? 1 : 0.7),
+            wid: o.rx * 0.62,
+            phase: firePhase + i * 1.9,
+        })), (x, y) => ['.', 'open', 'wall'].includes(kind[y]?.[x] ?? '.'));
+    }
+    if (st === 8) {
+        // Jets of flame out of both eyes, slanting up and away from the face.
+        const [len, wid] = lit.jet;
+        emit.eyes = [0, 1].map((i) => {
+            const mask = look.eyes[i];
+            const [ex, ey] = def.eyesAt[i];
+            return [ex + ox + (i ? mask[0].length - 2 : 1), top + ey + (mask.length >> 1)];
+        });
+        flames(emit.eyes.map(([x, y], i) => ({ x, y, len, wid, ang: i ? 1.05 : -1.05, phase: firePhase + i * 2.6, sway: 0.6 })));
+    }
+
+    let cap = null;
+    let capTop = null;
+    if (st >= 8) {
+        cap = blank();
+        const put = (x, y, ch) => {
+            x = Math.round(x);
+            y = Math.round(y);
+            if (y >= 0 && y < h && x >= 0 && x < w) {
+                cap[y][x] = ch;
+                capTop = capTop === null ? y : Math.min(capTop, y);
+            }
+        };
+        CAP_PAINTERS[capName]({
+            put, ocx, ocy, o, size, def, look, tones, top, ox, rnd: mulberry32(capSeed),
+            flames: (tongues) => flames(tongues),
+            smoke: (x, y, height, opts) => {
+                burning = true;
+                fireFrames.forEach((g, f) => paintSmoke(g, x, y, height, f, opts));
+            },
+        });
+    }
+
+    let auraFrames = null;
+    if (st >= 10) {
+        // A dithered ring of magic light around the silhouette, pulsing over three frames; motes drift at 11.
+        const solid = (x, y) => [body, rim, cap].some((g) => g && (g[y]?.[x] ?? '.') !== '.');
+        const R = lit.aura + (st >= 11 ? 1 : 0);
+        const dist = blank().map((row) => row.map(() => Infinity));
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (!solid(x, y)) continue;
+                for (let dy = -R; dy <= R; dy++) {
+                    for (let dx = -R; dx <= R; dx++) {
+                        const d = Math.hypot(dx, dy);
+                        if (d <= R + 0.5 && dist[y + dy]?.[x + dx] > d) dist[y + dy][x + dx] = d;
+                    }
+                }
+            }
+        }
+        const motes = mulberry32((seed * 7 + st) >>> 0);
+        auraFrames = [0, 1, 2].map((f) => {
+            const g = blank();
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const d = dist[y][x];
+                    if (d === Infinity || solid(x, y)) continue;
+                    const density = (0.8 - (d - 1) / (R + 0.5)) * (f === 1 ? 1.1 : f === 2 ? 0.85 : 0.95);
+                    if (BAYER[(y + f) & 3][(x + 2 * f) & 3] / 16 < density) g[y][x] = d <= 1.5 ? 'l' : 'o';
+                }
+            }
+            if (st >= 11) {
+                for (let i = 0; i < 6; i++) {
+                    const x = Math.floor(motes() * w);
+                    const y = Math.floor(motes() * (h - oy * 0.5) + oy * 0.5);
+                    if (!solid(x, y) && g[y]?.[x] !== undefined) g[y][x] = i % 3 ? 's' : 'w';
+                }
+            }
+            return g;
+        });
+    }
+
+    if (big) {
+        emit.cut = [emit.cut[0] + ox, emit.cut[1] + oy];
+        emit.top = [emit.top[0] + ox, emit.top[1] + oy];
+    }
+    emit.light = light;
+    if (cap) emit.cap = [Math.round(ocx), capTop];
+    return {
+        grids: { back, body, rim, glow: glowFrames[1], stem: cap },
+        glowFrames,
+        fireFrames: burning ? fireFrames : null,
+        auraFrames,
+        cap: cap ? capName : null,
+    };
+}
+
+// Cap painters: put(x, y, ch) in sprite coords onto the stem layer (PUMPKIN_LEGEND chars plus the skin), ocx/ocy is
+// the centre of the top cut, flames/smoke paint the animated fire layer.
+const CAP_PAINTERS = {
+    // The pumpkin's own top put back a pixel high, so the cut lip and the light under it show, with the stem chopped
+    // to a stump, its pale cut face up.
+    lid({ put, o, def, look, tones, top, ox }) {
+        const lift = 1;
+        const inLid = (x, y) => tones[y]?.[x] !== undefined && tones[y][x] !== '.'
+            && (y < o.top || ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 <= 1);
+        for (let y = 0; y <= Math.ceil(o.cy + o.ry); y++) {
+            for (let x = 0; x < def.w; x++) {
+                if (!inLid(x, y)) continue;
+                let ch = tones[y][x];
+                if (!inLid(x, y + 1) || !inLid(x + 1, y)) ch = 'O';
+                else if (!inLid(x, y - 1) || !inLid(x - 1, y)) ch = x < def.w * 0.6 ? 'D' : 'O';
+                put(x + ox, top + y - lift, ch);
+            }
+        }
+        const n = Math.min(3, look.stem.length);
+        const stemX = def.stemX + look.stemShift + ox;
+        look.stem.slice(-n).forEach((row, dy) => [...row].forEach((ch, dx) => {
+            if (ch !== '.') put(stemX + dx, top - lift - (n - 1 - dy), dy === 0 ? 'c' : ch);
+        }));
+    },
+
+    // A witch hat: the brim rests on the cut, the cone bends over at the tip; a crimson band with a gold buckle.
+    witch({ put, ocx, ocy, o, size, rnd }) {
+        const lean = rnd() < 0.5 ? -1 : 1;
+        const H = { l: 17, m: 14, s: 10 }[size];
+        const brx = o.rx + (size === 's' ? 2 : 3);
+        const bry = Math.max(1.6, o.ry * 0.62);
+        const by = ocy - o.ry * 0.3;
+        const brim = (front) => {
+            for (let y = Math.floor(by - bry); y <= Math.ceil(by + bry); y++) {
+                for (let x = Math.floor(ocx - brx); x <= Math.ceil(ocx + brx); x++) {
+                    const e = ((x - ocx) / brx) ** 2 + ((y - by) / bry) ** 2;
+                    if (e > 1 || (y >= by) !== front) continue;
+                    const edge = ((x - ocx) / brx) ** 2 + ((y + 1 - by) / bry) ** 2 > 1;
+                    put(x, y, front ? (edge ? 'O' : 'n') : 'A');
+                }
+            }
+        };
+        brim(false);
+        const baseHW = o.rx * 0.58;
+        for (let k = 0; k <= H; k++) {
+            const t = k / H;
+            const cx = ocx + lean * Math.max(0, t - 0.5) ** 2 * H * 1.1;
+            const hw = baseHW * (1 - t) ** 0.85 + 0.45;
+            const a = Math.round(cx - hw);
+            const b = Math.round(cx + hw);
+            for (let x = a; x <= b; x++) {
+                const rel = (x - a) / Math.max(1, b - a);
+                put(x, by - 1 - k, x === b && b > a ? 'O' : rel < 0.3 ? 'a' : rel > 0.75 ? 'n' : 'A');
+            }
+        }
+        const bandRows = size === 's' ? 1 : 2;
+        const bw = Math.round(baseHW * 0.92);
+        for (let r = 0; r < bandRows; r++) {
+            for (let x = Math.round(ocx - bw); x <= Math.round(ocx + bw); x++) put(x, by - 1 - r, r === 0 ? 'Q' : 'q');
+        }
+        put(ocx, by - 1, 'b');
+        if (size !== 's') put(ocx, by - 2, 'b');
+        brim(true);
+    },
+
+    // A hookah: a brass shaft with a bulb rises out of the cut to a tray and a clay bowl with a glowing coal; a green
+    // hose curls down one side. Smoke rises from the bowl.
+    hookah({ put, ocx, ocy, size, rnd, flames, smoke }) {
+        const side = rnd() < 0.5 ? -1 : 1;
+        const shaft = { l: 13, m: 10, s: 7 }[size];
+        const thick = size === 's' ? 1 : 2;
+        const x = Math.round(ocx) - (thick - 1);
+        const y0 = Math.round(ocy);
+        for (let k = 0; k <= shaft; k++) {
+            for (let i = 0; i < thick; i++) put(x + i, y0 - k, k % 5 === 4 ? 'K' : i === 0 ? 'p' : 'P');
+        }
+        // The bulb a third of the way up, and the hose leaving it.
+        const bulbY = y0 - Math.round(shaft * 0.3);
+        const br = size === 'l' ? 2.6 : size === 'm' ? 2.1 : 1.5;
+        const mid = x + (thick - 1) / 2;
+        for (let y = Math.floor(bulbY - br); y <= bulbY + br; y++) {
+            for (let xx = Math.floor(mid - br); xx <= mid + br; xx++) {
+                const d = Math.hypot(xx - mid, y - bulbY);
+                if (d <= br) put(xx, y, d > br - 1 && xx > mid ? 'K' : xx < mid ? 'p' : 'P');
+            }
+        }
+        const hoseLen = { l: 12, m: 9, s: 6 }[size];
+        let hx = Math.round(mid + side * (br + 1));
+        let hy = bulbY;
+        for (let k = 0; k < hoseLen; k++) {
+            put(hx, hy, 'h');
+            put(hx, hy - 1, 'H');
+            if (k / hoseLen < 0.45 || k % 2 === 0) hx += side;
+            else hy += 1;
+        }
+        put(hx, hy, 'p');
+        put(hx, hy + 1, 'p');
+        // Tray and bowl.
+        const ty = y0 - shaft - 1;
+        const tw = { l: 4, m: 3, s: 2 }[size];
+        for (let xx = x - tw; xx <= x + thick - 1 + tw; xx++) put(xx, ty, xx === x + thick - 1 + tw ? 'G' : 'g');
+        const bowlH = size === 's' ? 2 : 3;
+        for (let r = 1; r <= bowlH; r++) {
+            const half = tw - 1 - (r === 1 ? 1 : 0);
+            for (let xx = x - half; xx <= x + thick - 1 + half; xx++) put(xx, ty - r, xx <= mid ? 'm' : 'M');
+        }
+        const coal = ty - bowlH;
+        flames([{ x: mid, y: coal, len: size === 's' ? 2 : 3, wid: thick + 1, sway: 0.3 }]);
+        smoke(mid, coal - 3, { l: 12, m: 10, s: 7 }[size], { width: size === 's' ? 1.6 : 2.2, drift: side });
+    },
+
+    // A gold crown of spikes on the cut, crimson gems on the band, a small flame on every spike.
+    crown({ put, ocx, ocy, o, size, flames }) {
+        const W = Math.round(o.rx * 1.7);
+        const x0 = Math.round(ocx - W / 2);
+        const yb = Math.round(ocy);
+        const n = size === 'l' ? 5 : size === 'm' ? 4 : 3;
+        const hs = { l: 5, m: 4, s: 3 }[size];
+        const tips = [];
+        for (let i = 0; i < n; i++) {
+            const cx = x0 + Math.round((W * (i + 0.5)) / n);
+            tips.push(cx);
+            for (let k = 0; k < hs; k++) {
+                const half = Math.max(0, Math.round((1 - k / hs) * (size === 's' ? 1.4 : 2.2)));
+                for (let xx = cx - half; xx <= cx + half; xx++) put(xx, yb - 2 - k, xx > cx ? 'j' : 'b');
+            }
+        }
+        for (let xx = x0; xx <= x0 + W; xx++) {
+            put(xx, yb - 1, xx === x0 + W ? 'j' : 'b');
+            put(xx, yb, (xx - x0) % 4 === 2 && size !== 's' ? 'q' : 'j');
+        }
+        flames(tips.map((cx, i) => ({ x: cx, y: yb - 1 - hs, len: hs + 1, wid: size === 's' ? 2 : 3, phase: i * 1.7, sway: 0.5 })));
+    },
+};
+
+// Soft shadows for floating pumpkins, per size: [low, mid, high] — the higher it floats, the smaller and fainter.
+// Dithered outline pixels; the scene draws them at the pumpkin's home point with alpha ~0.5.
+function floatShadow(rx, ry, density) {
+    const g = Array.from({ length: 2 * ry + 1 }, () => Array(2 * rx + 1).fill('.'));
+    for (let y = 0; y <= 2 * ry; y++) {
+        for (let x = 0; x <= 2 * rx; x++) {
+            const d = Math.hypot((x - rx) / (rx + 0.5), (y - ry) / (ry + 0.5));
+            if (d <= 1 && BAYER[y & 3][x & 3] / 16 < density * (1.25 - d)) g[y][x] = 'O';
+        }
+    }
+    return layerSprite(g, { '.': null, O: 'outline' }, { x: rx, y: ry });
+}
+
+export const PUMPKIN_SHADOW = {
+    l: [floatShadow(17, 3, 1), floatShadow(15, 3, 0.8), floatShadow(13, 2, 0.6)],
+    m: [floatShadow(13, 2, 1), floatShadow(12, 2, 0.8), floatShadow(10, 2, 0.6)],
+    s: [floatShadow(10, 2, 1), floatShadow(9, 2, 0.8), floatShadow(7, 1, 0.6)],
+};
 
 const pumpkinCache = new Map();
 
@@ -448,6 +942,18 @@ const BITS = {
     g: 'grayLight',
     G: 'gray',
     w: 'white',
+    s: 'pumpkinShine',
+    W: 'flameCore',
+    r: 'ember',
+    a: 'ash',
+    A: 'ashLight',
+    m: 'magicCore',
+    h: 'eerieHot',
+    n: 'eyeGreen',
+    N: 'eerieDark',
+    v: 'violetHot',
+    V: 'eyeViolet',
+    u: 'violetGlow',
 };
 
 export const PARTICLES = {
@@ -471,6 +977,32 @@ export const PARTICLES = {
         sprite(['.g.', 'gwg', '.g.'], BITS),
         sprite(['g.', '.G'], BITS),
         sprite(['G', 'g'], BITS),
+    ],
+    // Scene 1, lighting the pumpkins: hot embers that cool from white through yellow to orange.
+    ember: [
+        sprite(['.s.', 'sWs', '.l.'], BITS),
+        sprite(['W', 's'], BITS),
+        sprite(['s.', '.l'], BITS),
+        sprite(['l', 'd'], BITS),
+    ],
+    // Flecks of burnt skin and ash drifting off the burning pumpkins and the bonfire.
+    cinder: [
+        sprite(['rd', '.a'], BITS),
+        sprite(['A', 'a'], BITS),
+        sprite(['a.', 'Aa'], BITS),
+    ],
+    // Scene 2, the spell: green motes, a four-point twinkle and dots.
+    magic: [
+        sprite(['.n.', 'nmn', '.n.'], BITS),
+        sprite(['h', 'N'], BITS),
+        sprite(['..h..', '..n..', 'hnmnh', '..n..', '..h..'], BITS),
+        sprite(['m.', '.n'], BITS),
+    ],
+    // Scene 3, the violet energy of the blood moon.
+    hex: [
+        sprite(['.V.', 'VvV', '.V.'], BITS),
+        sprite(['v', 'u'], BITS),
+        sprite(['..V..', '..u..', 'VuvuV', '..u..', '..V..'], BITS),
     ],
 };
 
