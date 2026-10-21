@@ -130,9 +130,11 @@ return [
 
         // The bar of scene 0 (docs/spec/protocol.md, «Бар»): the floor minus the obstacles — tables are ellipses
         // {cx, cy, rx, ry}, the counter a rectangle {x1, y1, x2, y2}; a mug is taken standing on the line `counter`,
-        // new characters appear in the band `spawn`, and two characters at most `clink_reach` apart clink by
-        // themselves. The frontend draws the bar over these numbers, each table with its benches and the counter half a
-        // character inside its obstacle: characters walk by their feet, so their bodies keep off the furniture
+        // characters put back on the floor at once appear in the band `spawn`, a new one walks in through the entrance
+        // door `door` (its threshold, where the back wall meets the floor), and two characters at most `clink_reach`
+        // apart clink by themselves. The frontend draws the bar over these numbers, each table with its benches and the
+        // counter half a character inside its obstacle: characters walk by their feet, so their bodies keep off the
+        // furniture
         'bar' => [
             'area' => ['x1' => 3, 'y1' => 50, 'x2' => 94, 'y2' => 97],
             'obstacles' => [
@@ -143,6 +145,23 @@ return [
             ],
             'counter' => ['x1' => 66, 'x2' => 92, 'y' => 62],
             'spawn' => ['y1' => 90, 'y2' => 94],
+            'door' => ['x' => 12, 'y' => 50],
+            // Where a fly lands besides the table tops and the counter: a band x1..x2 at the height y (a point when
+            // x1 == x2), y the top of the surface a fly stands on. The frontend draws these things exactly there: the
+            // beam, the door's lintel, the hearth's mantel, the shelves over the counter, the shields' rims and the
+            // barrels' lids
+            'perches' => [
+                ['x1' => 3, 'x2' => 97, 'y' => 8, 'name' => 'beam'],
+                ['x1' => 9, 'x2' => 15, 'y' => 30, 'name' => 'lintel'],
+                ['x1' => 45, 'x2' => 55, 'y' => 36, 'name' => 'mantel'],
+                ['x1' => 67, 'x2' => 91, 'y' => 26, 'name' => 'shelf-top'],
+                ['x1' => 67, 'x2' => 91, 'y' => 33, 'name' => 'shelf'],
+                ['x1' => 25, 'x2' => 25, 'y' => 33, 'name' => 'shield-1'],
+                ['x1' => 36, 'x2' => 36, 'y' => 33, 'name' => 'shield-2'],
+                ['x1' => 31, 'x2' => 31, 'y' => 20, 'name' => 'shield-3'],
+                ['x1' => 61, 'x2' => 61, 'y' => 20, 'name' => 'shield-4'],
+                ['x1' => 18, 'x2' => 22, 'y' => 45, 'name' => 'barrels'],
+            ],
             'clink_reach' => 10,
         ],
     ],
