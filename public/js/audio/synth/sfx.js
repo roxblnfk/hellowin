@@ -10,7 +10,7 @@ import {
  * one at random and jitters the rate), `voices` (how many may sound at once), `bus` (sfx or ui), `duck` (seconds the
  * music dips under it), `jitter` (rate spread, 0 for the tuned ones), `stereo` (kept wide — the stingers; the rest
  * are folded to mono and panned at play time, half the memory), `group` (`core` renders on unlock, `finale` when the
- * finale comes near).
+ * finale comes near), `lowpass` (Hz) and `attack` (seconds) to soften the sounds that come in crowds.
  */
 
 const TAU = 2 * Math.PI;
@@ -51,7 +51,7 @@ function steps(r, out, t, n, gap, { amp = 0.3, tone = 700, accel = 1, crescendo 
     }
 }
 
-const fx = (def) => ({ variants: 1, voices: 4, bus: 'sfx', level: -6, jitter: 0.04, duck: 0, stereo: false, group: 'core', ...def });
+const fx = (def) => ({ variants: 1, voices: 4, bus: 'sfx', level: -6, jitter: 0.04, duck: 0, stereo: false, group: 'core', lowpass: 0, attack: 0, ...def });
 
 export const SFX = {
     // ---------------------------------------------------------------- pumpkins, scene 0
@@ -299,7 +299,7 @@ export const SFX = {
         },
     }),
     'zombie.groan': fx({
-        dur: 1.8, variants: 3, voices: 2, level: -17,
+        dur: 1.8, variants: 3, voices: 2, lowpass: 1200, attack: 0.06, level: -29,
         render(r, out) {
             vox(r, out, 0, 1.4, 38 + r.rnd() * 4, { vowel: 'u', to: 'o', duty: 0.15, glide: -3, drive: 4, amp: 0.5, breath: 0.25, send: 0.4 });
         },
@@ -685,7 +685,7 @@ export const SFX = {
     // ---------------------------------------------------------------- the rapier: zombies, the word, the boss
     // Falls apart: bones crack, limbs thud down one after another, a last short groan.
     'zombie.die.pieces': fx({
-        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -13,
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, lowpass: 1800, attack: 0.012, level: -19,
         render(r, out) {
             for (let k = 0; k < 4; k++) noiseSweep(r, out, k * 0.05 + r.rnd() * 0.03, 0.03, { from: 3000, to: 2000, q: 2, amp: 0.4, curve: 3, pan: (r.rnd() - 0.5) * 0.6 });
             for (let k = 0; k < 5; k++) {
@@ -699,7 +699,7 @@ export const SFX = {
     // The head flies off: a lashing wet pop, a whistle falling away into the distance, a splat on the ground, while the
     // body slumps down behind.
     'zombie.die.head': fx({
-        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -10,
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, lowpass: 1800, attack: 0.012, level: -20,
         render(r, out) {
             thump(r, out, 0, { f0: 480, f1: 160, dur: 0.06, amp: 0.7 });
             noiseSweep(r, out, 0, 0.1, { from: 2400, to: 700, q: 4, amp: 0.5, curve: 1.5 });
@@ -724,7 +724,7 @@ export const SFX = {
     }),
     // Bursts: a low boom and wet splats flying off.
     'zombie.die.meat': fx({
-        group: 'finale', dur: 1.4, variants: 3, voices: 2, level: -12,
+        group: 'finale', dur: 1.4, variants: 3, voices: 2, lowpass: 1600, attack: 0.015, level: -21,
         render(r, out) {
             thump(r, out, 0, { f0: 120, f1: 40, dur: 0.35, amp: 0.8 });
             noiseSweep(r, out, 0, 0.3, { from: 1800, to: 300, q: 3, amp: 0.6, curve: 1.2 });
@@ -737,7 +737,7 @@ export const SFX = {
     }),
     // Crumbles to dust: a soft whoosh and sand trickling away, a sigh.
     'zombie.die.dust': fx({
-        group: 'finale', dur: 2, variants: 3, voices: 2, level: -12,
+        group: 'finale', dur: 2, variants: 3, voices: 2, lowpass: 2200, attack: 0.02, level: -22,
         render(r, out) {
             noiseSweep(r, out, 0, 0.5, { from: 400, to: 1800, q: 0.7, amp: 0.5, mode: 'lp', attack: 0.15, curve: 1.5 });
             noiseSweep(r, out, 0.1, 1.8, { from: 6000, to: 2500, q: 0.8, amp: 0.35, mode: 'hp', attack: 0.1, curve: 1.6, grain: 300 });
@@ -746,7 +746,7 @@ export const SFX = {
     }),
     // Burns up: flames catch, crackle, and a moan rising into the smoke.
     'zombie.die.burn': fx({
-        group: 'finale', dur: 2, variants: 3, voices: 2, level: -13,
+        group: 'finale', dur: 2, variants: 3, voices: 2, lowpass: 1800, attack: 0.015, level: -24,
         render(r, out) {
             noiseSweep(r, out, 0, 1.4, { from: 200, to: 1800, q: 0.7, amp: 0.7, mode: 'lp', attack: 0.1, curve: 1.6 });
             crackle(r, out, 0.1, 1.6, { rate: 60, amp: 0.35 });
@@ -755,7 +755,7 @@ export const SFX = {
     }),
     // Sinks into the ground: a gloop, a falling slide and the earth closing over.
     'zombie.die.sink': fx({
-        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -13,
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, lowpass: 1600, attack: 0.015, level: -20,
         render(r, out) {
             blip(r, out, 0, 520, 90, 0.9, { amp: 0.3, send: 0.3 });
             bubbles(r, out, 0.1, 4, { spread: 0.5, low: 120, high: 300, amp: 0.3 });
@@ -799,7 +799,7 @@ export const SFX = {
     }),
     // A player turns into a zombie: a woozy wobble sliding down into a groan.
     'player.zombify': fx({
-        group: 'finale', dur: 1.8, variants: 2, voices: 2, level: -14,
+        group: 'finale', dur: 1.8, variants: 2, voices: 2, lowpass: 1800, attack: 0.02, level: -20,
         render(r, out) {
             theremin(r, out, [[0, 72, 0.3], [0.3, 60, 0.4], [0.7, 50, 0.5]], { amp: 0.25, glide: 0.12, vib: 1.2, vibRate: 7, send: 0.5 });
             vox(r, out, 0.9, 0.7, 40, { vowel: 'u', to: 'o', duty: 0.15, glide: -2, drive: 2, amp: 0.25, breath: 0.3, send: 0.4 });
@@ -892,6 +892,16 @@ export const SFX = {
     }),
 };
 
+/** Rounds off a sound that sounds many at once: a low-pass over all of it and a fade-in over its first transient. */
+function soften(ch, sr, { lowpass = 0, attack = 0 }) {
+    if (lowpass) {
+        const f = new SVF(sr).set(lowpass, 0.6);
+        for (let i = 0; i < ch.length; i++) ch[i] = f.tick(ch[i]);
+    }
+    const n = Math.min(ch.length, Math.round(attack * sr));
+    for (let i = 0; i < n; i++) ch[i] *= Math.sin((Math.PI / 2) * (i / n));
+}
+
 /** Renders one variant of an effect: [L, R] for a stereo sound, [mono] otherwise; peak at the sound's level. */
 export function renderSfx(name, variant, sr) {
     const def = SFX[name];
@@ -908,6 +918,7 @@ export function renderSfx(name, variant, sr) {
         out.R[r.n - 1 - i] *= g;
     }
     let channels = [out.L, out.R];
+    for (const ch of channels) soften(ch, sr, def);
     if (!def.stereo) {
         for (let i = 0; i < r.n; i++) out.L[i] = (out.L[i] + out.R[i]) * 0.5;
         channels = [out.L];
