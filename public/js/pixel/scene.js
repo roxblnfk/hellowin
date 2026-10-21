@@ -15,6 +15,7 @@ import { createBubbles } from './bubble.js';
 import { BAR_TOASTS, TOASTS } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
+import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, glowing, pourFrame } from './owl.js';
@@ -1701,6 +1702,23 @@ export async function createScene(rootEl, snapshot) {
     const LANTERN_HALO = [halo(2, 2, 'franken'), halo(4, 3, 'franken'), halo(6, 5, 'franken')];
     const LANTERN_ALPHA = [0.12, 0.35, 0.6];
 
+    // A fly's wings beat every FLY_FLAP_MS. Sitting, it rubs its legs for FLY_RUB_MS of every FLY_IDLE_MS and twitches
+    // its wings once. Shot, it shows the hit frame, drops for FLY_DROP_MS unless it sat, and lies as a splat until
+    // FLY_GONE_MS, blinking out over the last 300 ms.
+    const FLY_FLAP_MS = 35;
+    const FLY_IDLE_MS = 1400;
+    const FLY_RUB_MS = 420;
+    const FLY_HIT_MS = 120;
+    const FLY_DROP_MS = 260;
+    const FLY_GONE_MS = 1200;
+
+    function flySitFrame(set, since, phase) {
+        const at = (since + phase) % FLY_IDLE_MS;
+        if (at < FLY_RUB_MS) return set.sit[1 + (Math.floor(at / 90) % 2)];
+        if (at >= 900 && at < 990) return set.sit[3];
+        return set.sit[0];
+    }
+
     // Zombie and worm paths are on the lawn in config coordinates (the walk zone), so they take the patch spread like
     // walkers. A worm meanders: `wobble` sways it across the path, in config percents.
     function groundPathAt(f, t) {
@@ -1744,12 +1762,36 @@ export async function createScene(rootEl, snapshot) {
                 }
                 const t = clamp(local / f.duration, 0, 1);
                 let frame;
-                if (set.emerge) ({ pos: f.pos, frame } = wormAt(f, set, local));
+                if (f.plan) {
+                    // A fly's loops are round on this screen: its aspect goes into the path (fly-path.js).
+                    const p = flyAt(f.plan, local, layout.width / Math.max(1, layout.height));
+                    f.pos = toScreenArt(p);
+                    f.flip = flip = p.left;
+                    f.sitting = p.sitting;
+                    frame = p.sitting ? flySitFrame(set, p.since, f.phase) : set.fly[Math.floor(local / FLY_FLAP_MS) % set.fly.length];
+                } else if (set.emerge) ({ pos: f.pos, frame } = wormAt(f, set, local));
                 else {
                     f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
                     frame = set.fly[Math.floor(local / (STEP_MS[f.kind] ?? FLAP[clamp(f.depth, 0, 2)])) % set.fly.length];
                 }
                 art = f.ground ? flyerArt(frame, false, lightAt(f.pos.x, f.pos.y)) : flyerArt(frame, f.depth === 0);
+            } else if (f.plan) {
+                const since = clock - f.shotAt;
+                if (since >= FLY_GONE_MS) {
+                    dropFlyer(f);
+                    flyers.delete(id);
+                    continue;
+                }
+                const drop = f.shotSitting ? 0 : FLY_DROP_MS;
+                const fall = Math.min(since - FLY_HIT_MS, drop) / 1000;
+                f.pos = since < FLY_HIT_MS ? f.shotPos : { x: f.shotPos.x, y: f.shotPos.y + 180 * Math.max(0, fall) ** 2 };
+                if (since >= FLY_HIT_MS + drop && !f.splatted) {
+                    f.splatted = true;
+                    splat(f);
+                }
+                const def = since < FLY_HIT_MS ? set.hit : since < FLY_HIT_MS + drop ? set.fall[Math.floor(since / 70) % 2] : set.splat;
+                art = flyerArt(def);
+                f.sprite.visible = since < FLY_GONE_MS - 300 || Math.floor(since / 100) % 2 === 0;
             } else if (f.ground) {
                 const since = clock - f.shotAt;
                 const collapse = COLLAPSE[f.kind] ?? COLLAPSE.zombie;
@@ -1790,6 +1832,13 @@ export async function createScene(rootEl, snapshot) {
             const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length], false, bush.lit) : bush.idle;
             bush.sprite.texture = art.texture;
         }
+    }
+
+    // A fly hitting the surface: a few dark drops thrown out of the splat, no feathers.
+    function splat(f) {
+        if (reduced) return;
+        const drop = speckTexture('crowDark');
+        for (const [vx, vy] of [[-14, -16], [12, -18], [-6, -22], [17, -9]]) spawn([drop], f.pos.x, f.pos.y - 1, vx, vy, 90, 0.4);
     }
 
     function dropFlyer(f) {
@@ -1857,6 +1906,9 @@ export async function createScene(rootEl, snapshot) {
             launchedAt,
             expiresAt,
             flip: event.to.x < event.from.x,
+            // A fly loops between its stops (fly-path.js): the whole flight is planned once from the event.
+            plan: event.kind === 'fly' ? flyPlan(event) : null,
+            sitting: false,
             sprite,
             glow,
             halo,
@@ -1869,27 +1921,30 @@ export async function createScene(rootEl, snapshot) {
         animateFlyers();
     }
 
+    // A single pixel of a palette colour, for feathers of far birds and drops of a fly.
+    const speckTexture = (key) => artTexture(`speck:${key}`, () => {
+        const c = canvas(1, 1);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = css(PALETTE[key]);
+        ctx.fillRect(0, 0, 1, 1);
+        return texture(c);
+    });
+
     function down(event) {
         const f = flyers.get(event.flyer);
         if (!f || f.shotAt !== null) return;
         f.shotAt = clock;
         f.shotPos = { ...f.pos };
         f.drift = (f.flip ? -1 : 1) * 12;
+        f.shotSitting = f.sitting;
         // The body's middle: a ground target stands on its anchor, a flyer is centred on it.
         const mid = f.ground ? { x: f.pos.x, y: f.pos.y - f.art.def.h / 2 } : f.pos;
         if (!reduced && f.depth === 0) {
             // A bird a few pixels big loses a couple of single-pixel feathers.
-            const key = SPECK[f.kind] ?? 'duckGrayDark';
-            const speck = artTexture(`speck:${key}`, () => {
-                const c = canvas(1, 1);
-                const ctx = c.getContext('2d');
-                ctx.fillStyle = css(PALETTE[key]);
-                ctx.fillRect(0, 0, 1, 1);
-                return texture(c);
-            });
+            const speck = speckTexture(SPECK[f.kind] ?? 'duckGrayDark');
             spawn([speck], f.pos.x, f.pos.y, -6, -8, 20, 1);
             spawn([speck], f.pos.x, f.pos.y, 7, -5, 20, 1.1);
-        } else if (!reduced) {
+        } else if (!reduced && !f.plan) {
             // Bits of a ground target take the light it stood in, like the target itself.
             const feathers = feathersOf(f.kind).map((def) => flyerArt(def, false, f.ground ? lightAt(mid.x, mid.y) : 'day').texture);
             for (let i = 0; i < 6; i++) {
@@ -3079,8 +3134,12 @@ export async function createScene(rootEl, snapshot) {
         const f = flyers.get(event.flyer);
         const me = walkerArt(walkAt(w.track, clock).at);
         const dx = f ? f.pos.x - me.x : 0;
-        // The sky is beyond the patch: a bird straight ahead means turning away from the camera.
-        const [dir, flip] = Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
+        const dy = f ? f.pos.y - me.y : 0;
+        // The sky is beyond the patch: a bird straight ahead means turning away from the camera. A fly in the bar can
+        // be anywhere in the hall, in front as well: it is aimed at like a clicked pumpkin.
+        const [dir, flip] = isBar(state.scene)
+            ? (Math.abs(dx) >= Math.abs(dy) * 0.8 ? ['side', dx < 0] : dy > 0 ? ['front', false] : ['back', false])
+            : Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
         const item = w.item ?? null;
         const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
         w.shoot = { dir, flip, item, target: f ? { ...f.pos } : null, at: clock, until, sparked: false, puffs: 0, fired: 0 };

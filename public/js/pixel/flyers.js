@@ -846,6 +846,48 @@ function fireflySet() {
     });
 }
 
+// A fly of the bar: a dark speck ~6×4 with a red eye, head to the right, one size at every depth. The wings are the
+// brightest pixels it has, two tones swapped every frame, so the fast flicker reads as see-through and stays apart
+// from the warm wood. Drawn as it is and lit by the hall's fire like any flyer, nothing emissive. The anchor is under
+// its feet: a sitting fly stands on its stop.
+const FLY_LEGEND = { '.': null, O: 'outline', k: 'crowDark', c: 'crowLight', r: 'crimson', w: 'white', W: 'ghostShade' };
+const FLY = {
+    fly: [
+        ['..wW..', '..w...', 'OkkcOr', '.OkkO.', '......'],
+        ['......', '.wWw..', 'OkkcOr', '.OkkO.', '......'],
+        ['......', '......', 'OkkcOr', '.OkkO.', '..Ww..'],
+        ['......', '.WwW..', 'OkkcOr', '.OkkO.', '......'],
+    ],
+    // Wings folded back over the body, a pale roof on the dark; then the front legs rubbed together (two frames) and a
+    // twitch of the wings.
+    sit: [
+        ['......', '.wWW..', 'WkkcOr', '.OkkO.', '.O.O..'],
+        ['......', '.wWW..', 'WkkcOr', '.OkkOO', '.O..O.'],
+        ['......', '.wWW..', 'WkkcOr', '.OkkOO', '.O.O..'],
+        ['.W.w..', 'w.W...', 'OkkcOr', '.OkkO.', '.O.O..'],
+    ],
+    hit: ['.w..w.', '..ww..', 'OkkcOr', '.OkkO.', '.O.O..'],
+    // Where a shot fly ends up: a dark smear with a drop of red.
+    splat: ['k..r..k', '.kOOOk.', 'k.kOk.k'],
+};
+
+function flySet() {
+    const make = (rows) => ({
+        ...sprite(rows, FLY_LEGEND, { x: 3, y: 4 }),
+        // One body box for every frame, so the hit box does not jump with the wings.
+        box: { x: 0, y: 1, w: 6, h: 4 },
+    });
+    const hit = make(FLY.hit);
+    const set = {
+        fly: FLY.fly.map(make),
+        sit: FLY.sit.map(make),
+        hit,
+        fall: [rotate90(hit), rotate180(hit)],
+        splat: sprite(FLY.splat, FLY_LEGEND, { x: 3, y: 2 }),
+    };
+    return [set, set, set];
+}
+
 function poseSet(def, kind, { post = (s) => s } = {}) {
     return DEPTH_W.map((w, depth) => {
         if (depth === 0) return farSet(kind);
@@ -884,7 +926,9 @@ const FEATHER_LEGEND = {
  * every depth, anchor on the ground under its middle, `box` — the opaque bounds; besides the crawl it has `emerge` (3
  * frames, out of a mound) and `burrow` (2, into one), its `hit` writhes and `fall` sinks it into the ground in place.
  * `firefly` adds `glow` (its lantern: dim, mid, bright, on the same grid, to draw unlit over the body) and `lantern` —
- * the lantern pixel, for the halo.
+ * the lantern pixel, for the halo. `fly` (the bar's) is one 6×5 set at every depth, anchored under its feet, with a
+ * fixed body `box`; besides 4 fast wing frames it has `sit` (wings folded, two leg-rub frames, a wing twitch) and
+ * `splat` — what is left of a shot fly.
  */
 export const FLYERS = {
     duck: flyerSet(DUCK),
@@ -897,6 +941,7 @@ export const FLYERS = {
     zombie: zombieSet(),
     worm: wormSet(),
     firefly: fireflySet(),
+    fly: flySet(),
     // Each feather knows whose it is, so a burst can pick the right ones.
     feathers: [
         { ...sprite(['.G', 'Gg', 'g.'], FEATHER_LEGEND), kind: 'duck' },

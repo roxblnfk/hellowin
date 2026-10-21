@@ -14,7 +14,9 @@
         .night { background: #1a1834; }
         /* The lawn under the blood moon (night.js, LIGHTINGS.blood); sprites on it are relit the same way. */
         .blood { background: #2a0e14; }
-        .night .cell span, .dusk .cell span, .blood .cell span { color: #eee; }
+        /* The bar's floor boards in its firelight. */
+        .wood { background: #8a4a2a; }
+        .night .cell span, .dusk .cell span, .blood .cell span, .wood .cell span { color: #eee; }
         .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .cell span { font-size: 11px; color: #123; }
         .grass .cell span { color: #eee; }
@@ -76,6 +78,7 @@
         zombie: ['grass', 'night'],
         worm: ['grass', 'night', 'blood'],
         firefly: ['night', 'blood'],
+        fly: ['wood'],
     };
     const only = params.get('only')?.split(',');
     for (const [kind, bgs] of Object.entries(BACKDROPS)) {
@@ -86,6 +89,9 @@
             section(`${kind}: fly ×4, hit, fall ×2 — depth 0/1/2, ${zoom}× (${bg})`, bg, FLYERS[kind].flatMap((set, depth, all) => (depth && set === all[depth - 1] ? [] : [
                 ...(set.emerge ?? []).map((s, i) => view(s, zoom, `d${depth} emerge${i}`, lit)),
                 ...set.fly.map((s, i) => view(s, zoom, `d${depth} fly${i}`, lit)),
+                // The fly sitting on a stop and the splat it leaves.
+                ...(set.sit ?? []).map((s, i) => view(s, zoom, `d${depth} sit${i}`, lit)),
+                ...(set.splat ? [view(set.splat, zoom, `d${depth} splat`, lit)] : []),
                 ...(set.burrow ?? []).map((s, i) => view(s, zoom, `d${depth} burrow${i}`, lit)),
                 // The firefly's lantern levels (dim, mid, bright) over the mid-stroke frame.
                 ...(set.glow ?? []).map((g, i) => view(set.fly[1], zoom, `d${depth} glow${i}`, lit, g)),

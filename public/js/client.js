@@ -6,7 +6,7 @@ import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jump
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
 // The counter outside the bar (protocol.md, `bar` in the snapshot); `drunk` and `target` — the hall's goal.
-const NO_BAR = Object.freeze({ mugs: 0, pouring: null, drunk: 0, target: 0 });
+const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target: 0 });
 // The last finale step: past it the final scene is the cursed world.
 const CURSED_STEP = 5;
 // From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
@@ -47,7 +47,8 @@ function parseFinale(json) {
 export function barOf(bar) {
     if (!bar || !Number.isInteger(bar.mugs)) return { ...NO_BAR };
     const count = (n) => (Number.isInteger(n) && n >= 0 ? n : 0);
-    return { mugs: bar.mugs, pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target) };
+    // `max` — how many mugs the counter is set for (0 — not told); the counter's slots cap the drawing anyway.
+    return { mugs: bar.mugs, max: count(bar.max), pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target) };
 }
 
 /** «Выпито 12 из 30» and how full the meter is, 0–1 (full once the goal is reached). */
@@ -427,7 +428,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
 
         mugs(event) {
-            model.bar = { ...model.bar, mugs: event.mugs, pouring: null };
+            model.bar = { ...model.bar, mugs: event.mugs, max: Number.isInteger(event.max) && event.max >= 0 ? event.max : model.bar.max, pouring: null };
             paintBar();
             scene?.mugs?.(event.mugs);
         },
@@ -493,7 +494,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (circle) circle.stageMax = event.circleStageMax ?? 0;
             // Out of the bar the mugs on the counter and in hand are gone (protocol.md, «Бар»).
             if (!isBar(model.scene)) {
-                model.bar = { ...NO_BAR };
+                model.bar = { ...NO_BAR, max: model.bar.max };
                 model.clinked = false;
             }
             paintAll();

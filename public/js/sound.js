@@ -2,6 +2,7 @@
 // of the server clock; a click of the visitor's own plays nothing but the HUD's and the console's buttons.
 
 import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
+import { flyAt, flyPlan } from './pixel/fly-path.js';
 import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, isBar } from './layout.js';
@@ -17,6 +18,7 @@ const FLYER_SOUNDS = {
     roadrunner: 'runner.steps',
     crow: 'crow.caw',
     ghost: 'ghost.wail',
+    fly: 'fly.buzz',
 };
 const SHOT_SOUNDS = { pistol: 'shot.pistol', candle: 'shot.candle', book: 'shot.book', beer: 'shot.beer', 'red-flame': 'shot.redflame' };
 const DEPTH_VOLUME = [0.5, 0.75, 1];
@@ -44,8 +46,9 @@ export const panOf = (x) => (Number.isFinite(x) ? clamp((x - 50) / 50, -1, 1) * 
 const isPumpkin = (e) => e?.type === 'pumpkin';
 const lastPoint = (walk) => walk?.path?.[walk.path.length - 1] ?? null;
 
-/** x of a flyer at server time `now`, in percent: along its curve through `via`, or straight. */
+/** x of a flyer at server time `now`, in percent: along its curve through `via`, or straight; a fly along its loops. */
 function flyerX(f, now) {
+    if (f.kind === 'fly') return flyAt(f.plan ??= flyPlan(f), now - f.launchedAt).x;
     const k = clamp((now - f.launchedAt) / Math.max(1, f.duration), 0, 1);
     const from = f.from?.x ?? 50;
     const to = f.to?.x ?? from;
