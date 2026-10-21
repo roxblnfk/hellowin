@@ -606,6 +606,45 @@ export function murmur(r, out, t, dur, midi, { amp = 0.3, glide = 0, cutoff = 90
     }
 }
 
+/**
+ * One «м-иип» syllable: a band-limited saw with a breath of noise through formants — first the closed-lip «м» (a low
+ * nasal hum), then a quick glide into «ии» (F1 ≈ 300 Hz, F2 ≈ 2.3 kHz, F3 ≈ 3 kHz). The pitch scoops up fast at the
+ * start and the syllable is cut off at the end; a notch near 1 kHz keeps it nasal, a low-pass keeps it under 4 kHz.
+ */
+export function meep(r, out, t, f0, { amp = 0.3, dur = 0.16, pan = 0, send = 0.2, f2 = 2300 } = {}) {
+    const sr = r.sr;
+    const i0 = r.at(t);
+    const n = Math.round(dur * sr);
+    const saw = new Saw(sr, r.rnd());
+    const f1 = new SVF(sr);
+    const f2f = new SVF(sr);
+    const f3 = new SVF(sr);
+    const nasal = new SVF(sr).set(1000, 2);
+    // The voice's body around the fundamental: without it the «ии» is all formant, a whistle.
+    const body = new SVF(sr).set(900, 0.7);
+    const lp = new SVF(sr).set(3800, 0.6);
+    const [pl, pr] = panLR(pan);
+    const m = 0.035;
+    const glide = 0.025;
+    for (let i = 0; i < n; i++) {
+        const s = i / sr;
+        // 0 in the «м», 1 in the «ии».
+        const v = clamp((s - m) / glide, 0, 1);
+        const pitch = f0 * (0.78 + 0.27 * Math.min(1, s / 0.045) - 0.04 * Math.max(0, (s - 0.06) / (dur - 0.06)));
+        const x = saw.next(pitch) * 0.8 + r.noise() * 0.08;
+        f1.run(x, 250 + 50 * v, 5);
+        f2f.run(x, 1300 + (f2 - 1300) * v, 9);
+        f3.run(x, 2700 + 300 * v, 10);
+        body.tick(x);
+        let y = f1.bp * (1 - 0.3 * v) + f2f.bp * 0.4 * v + f3.bp * 0.22 * v + f1.lp * 0.25 * (1 - v) + body.lp * 0.35;
+        nasal.tick(y);
+        y -= nasal.bp * 0.5;
+        const e = Math.min(1, s / 0.01) * (0.45 + 0.55 * v) * Math.min(1, (n - i) / (0.006 * sr));
+        const val = lp.tick(y) * e * amp;
+        out.put(i0 + i, val * pl, val * pr, send);
+    }
+}
+
 // ---------------------------------------------------------------- noise and nature
 
 /** Filtered noise burst with a moving band: squelch, whoosh, scrape — the workhorse of the effects. */

@@ -1,7 +1,7 @@
 import { SVF, Saw, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
 import {
-    bell, bird, blip, brass, chip, choir, crackle, heart, impact, kick, murmur, musicbox, noiseSweep, partials, pizz, riser,
-    theremin, toll, tom, vox, xylo,
+    bell, bird, blip, brass, chip, choir, crackle, heart, impact, kick, meep, murmur, musicbox, noiseSweep, partials, pizz,
+    riser, theremin, toll, tom, vox, xylo,
 } from './instruments.js';
 
 /**
@@ -466,15 +466,24 @@ export const SFX = {
             thump(r, out, 0.8, { f0: 1400, f1: 900, dur: 0.02, amp: 0.15 });
         },
     }),
-    // RoadRunner raises his mug in the bar: a soft, friendly «мип-мип» — round sines sliding up, not the finale's
-    // bright chirp — and a little clink of the mug.
+    // RoadRunner raises his mug in the bar: his «м-иип! м-иип!» a little lower and rounder than in the finale, and a
+    // little clink of the mug.
     'bar.meep': fx({
-        dur: 0.7, variants: 3, voices: 1, level: -19, jitter: 0.03,
+        dur: 0.8, variants: 3, voices: 1, level: -16, jitter: 0.02,
         render(r, out, v) {
-            const root = [86, 88, 84][v];
-            murmur(r, out, 0, 0.11, root, { glide: 1.5, cutoff: 3200, breath: 0, amp: 0.5, send: 0.25 });
-            murmur(r, out, 0.17, 0.13, root + 5, { glide: 1.5, cutoff: 3200, breath: 0, amp: 0.5, send: 0.25 });
-            partials(r, out, 0.36, 2200 + r.rnd() * 300, [[1, 1, 12], [2.32, 0.5, 16], [4.25, 0.25, 22]], { amp: 0.12, dur: 0.3, send: 0.3 });
+            const f0 = [620, 580, 660][v];
+            meep(r, out, 0, f0, { amp: 0.4, dur: 0.15, f2: 2200, send: 0.3 });
+            meep(r, out, 0.25, f0 * 1.03, { amp: 0.4, dur: 0.15, f2: 2200, send: 0.3 });
+            partials(r, out, 0.48, 2200 + r.rnd() * 300, [[1, 1, 12], [2.32, 0.5, 16], [4.25, 0.25, 22]], { amp: 0.1, dur: 0.3, send: 0.3 });
+        },
+    }),
+    // The moderator pokes RoadRunner: the same «м-иип! м-иип!», mono and without dipping the music, in any scene.
+    'rr.meep': fx({
+        dur: 0.7, variants: 3, voices: 1, level: -12, jitter: 0.02,
+        render(r, out, v) {
+            const f0 = [640, 600, 690][v];
+            meep(r, out, 0, f0, { amp: 0.4, send: 0.25 });
+            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, send: 0.25 });
         },
     }),
     // A full mug set down on the counter: a heavy wooden knock with a slosh.
@@ -592,14 +601,13 @@ export const SFX = {
             noiseSweep(r, out, 3.9, 0.8, { from: 600, to: 3000, q: 0.7, amp: 0.4, mode: 'lp', attack: 0.4, curve: 2 });
         },
     }),
-    // Step 3: «мип-мип» — two bright chirped tones, the second a fourth up; our own signal.
+    // Step 3: «м-иип! м-иип!» — RoadRunner's own voice: two nasal syllables, closed-lip «м» opening into «ии».
     'finale.meep': fx({
-        stereo: true, group: 'finale', dur: 0.8, voices: 1, level: -9, jitter: 0, duck: 0.8,
-        render(r, out) {
-            for (const [t, m] of [[0, 88], [0.2, 93]]) {
-                vox(r, out, t, 0.14, m, { vowel: 'i', duty: 0.3, glide: 1.5, drive: 2, amp: 0.4, send: 0.2 });
-                chip(r, out, t, 0.12, m, { duty: 0.5, amp: 0.25, slide: -2, send: 0.2 });
-            }
+        stereo: true, group: 'finale', dur: 0.8, variants: 3, voices: 1, level: -6, jitter: 0, duck: 0.8,
+        render(r, out, v) {
+            const f0 = [640, 600, 690][v];
+            meep(r, out, 0, f0, { amp: 0.4, send: 0.25 });
+            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, send: 0.25 });
         },
     }),
     // Step 4: the reveal fanfare — brass climbing into a bright choir chord with a bell.
