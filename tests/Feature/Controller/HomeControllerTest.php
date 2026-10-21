@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature\Controller;
 
 use App\Application\Config\HellowinConfig;
+use App\Domain\Flyer\Flyer;
+use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\Point;
+use App\Domain\Story\Story;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Testing\Attribute\Config;
@@ -50,6 +54,24 @@ final class HomeControllerTest extends TestCase
         $this->fakeHttp()->get('/')
             ->assertOk()
             ->assertBodyContains(\sprintf('data-bar-layout="%s"', \htmlspecialchars(\json_encode($layout, \JSON_THROW_ON_ERROR), \ENT_QUOTES)));
+    }
+
+    public function homePageCarriesNoWanderingZombiesOutOfTheCursedWorld(): void
+    {
+        $this->fakeHttp()->get('/')->assertOk()->assertBodyContains('data-flyers="[]"');
+    }
+
+    public function homePageCarriesTheWanderingZombiesOfTheCursedWorld(): void
+    {
+        $zombie = Flyer::wanderer('f-0000beef', 1, new Point(38.5, 81), 2, 1_000);
+        $this->getContainer()->get(FlyerStore::class)->add($zombie);
+        $storage = $this->getContainer()->get(CacheStorageProviderInterface::class)->storage('hellowin');
+        $storage->set('hellowin:scene', 3);
+        $storage->set('hellowin:story', (new Story(finale: Story::CURSED_STEP))->toArray());
+
+        $this->fakeHttp()->get('/')
+            ->assertOk()
+            ->assertBodyContains(\sprintf('data-flyers="%s"', \htmlspecialchars(\json_encode([$zombie->toEvent()], \JSON_THROW_ON_ERROR), \ENT_QUOTES)));
     }
 
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8')]

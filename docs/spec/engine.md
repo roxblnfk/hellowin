@@ -159,7 +159,8 @@
 Правила — [`players.md`](players.md), «Персонаж», «На поле»; события и RPC — [`protocol.md`](protocol.md).
 
 - **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt, clink?, clinkedAt?, item?, clinked?,
-  takeAt?, takeFrom?, zombieAt?}` (`item`, `clinked`, `takeAt` — бар и проклятый мир, см. «Бар»; `takeFrom` — тыква,
+  takeAt?, takeFrom?, zombieAt?, clinkedUntil?, busyUntil?}` (`item`, `clinked`, `takeAt`, `clinkedUntil`,
+  `busyUntil` — бар и проклятый мир, см. «Бар»; `takeFrom` — тыква,
   за пивом из которой идёт фигурка; `zombieAt` — зомби-игрок и время его следующего хода, см. «Рапира»), меняется под
   RR-локом `walkers`.
   Один ключ — снимок читает фигурки одним запросом; сброс раунда его не трогает, позиции переживают сброс. `name` и
@@ -281,8 +282,15 @@
   вызвавшего и партнёра пиво, расстояние между их позициями сейчас не больше `walk.bar.clink_reach` — `clinked: true`
   только вызвавшему, без событий: автоматическое чоканье рисует каждый браузер сам, и сервер не даёт одному браузеру
   засчитать его за другого.
-- **«Выпить»** (`drink`, `BarService::drink`): под локом `walkers` — фигурка, бар, `beer` (`no beer`), `clinked` —
-  или фигурка на поле одна, по тем же `walkers`, что видит клиент (`not clinked`) → руки пустые; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
+- **Сервер держит длительности анимаций** (против пропуска кликами): засчитанное чоканье ставит кружке `clinkedUntil` —
+  у чоканья по клику (с фигуркой, тыквой, RoadRunner) `at + walk.clink_duration`, у `clink.auto` — `now +
+  walk.clink_duration`; уже чокнутая кружка его не меняет (`Walker::clinkedMug`), так что повторное чоканье — `{ok:true}`
+  без изменений. `drink` ставит `busyUntil = now + HELLOWIN_DRINK_MS`, пиво тыквы — `busyUntil = прибытие +
+  HELLOWIN_BEER_HANDOVER_MS` (это же `until` события `take`). До `busyUntil` — `busy` у `drink`, `bar.take`, `beer`;
+  до `clinkedUntil` — `busy` у `drink`.
+- **«Выпить»** (`drink`, `BarService::drink`): под локом `walkers` — фигурка, бар, `beer` (`no beer`), `busyUntil`
+  (`busy`), `clinked` — или фигурка на поле одна, по тем же `walkers`, что видит клиент (`not clinked`), `clinkedUntil`
+  (`busy`) → руки пустые, `busyUntil`; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
   (под локом `bar`; счёт другого раунда читается как 0 — сброс его не трогает), события `drink` и `drinks`.
 - **Цель и готовность.** Цель — `barTarget` в сюжете `hellowin:story` (рядом с `k`, переживает сброс; `null` —
   `HELLOWIN_BAR_DRINKS`). `bar.target {delta}` меняет её под локом `scene` (не ниже 1; вернувшаяся к env — снова
@@ -612,6 +620,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_BAR_POUR_MS` | 2500 | мс розлива одной кружки |
 | `HELLOWIN_BAR_DRINKS` | 30 | базовая цель бара: столько кружек за раунд — и бар готов; действующую модератор двигает (`bar.target`, `barTarget` в сюжете) |
 | `HELLOWIN_BAR_RUMOR_CHANCE` | 0.33 | вероятность `rumor` у розлива: случайное 0…2³¹−1 в `pour` и `pouring` |
+| `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
+| `HELLOWIN_BEER_HANDOVER_MS` | 900 | мс передачи пива тыквой: `until` события `take` и `busyUntil` (`hellowin.rapier.beer_handover_ms`) |
 | `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
 | `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |

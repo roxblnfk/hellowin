@@ -284,6 +284,11 @@ final class BarServiceTest
         Assert::same($ritual->playerStore->find(self::A)?->drinks, 1);
         Assert::same($ritual->snapshot->create()['bar']['drunk'], 1);
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'no beer');
+        // The sip plays before the next mug
+        $ritual->clock->now += 1199;
+        Assert::same(self::refusal(static fn() => $ritual->walks->toCounter(self::A)), 'busy');
+        $ritual->clock->now += 1;
+        Assert::notNull($ritual->walks->toCounter(self::A));
     }
 
     public function barIsReadyOnceTheRoomHasDrunkItsGoal(): void
@@ -294,6 +299,7 @@ final class BarServiceTest
         for ($i = 0; $i < 5; ++$i) {
             self::give($ritual, self::A, clinked: true);
             $ritual->bar->drink(self::A);
+            $ritual->clock->now += 1200;
         }
 
         Assert::same(\array_column($ritual->broadcast->ofType('drinks'), 'drunk'), [1, 2, 3, 4, 5]);
@@ -430,7 +436,7 @@ final class BarServiceTest
     {
         $ritual->walkerStore->update(static function (array $walkers) use ($id, $clinked): array {
             $walker = $walkers[$id]->tookMug(true);
-            $walkers[$id] = $clinked ? $walker->clinkedMug() : $walker;
+            $walkers[$id] = $clinked ? $walker->clinkedMug(0) : $walker;
 
             return [$walkers, null];
         });

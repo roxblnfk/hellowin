@@ -38,22 +38,27 @@ return [
 
     // The bar of scene 0: one full mug per player on the floor, up to the `mugs` the counter has room for; the owl
     // pours one in `pour_ms` milliseconds and mutters a rumour over every pour with the chance `rumor_chance`; the room
-    // leaves for the patch once it has drunk `drinks` mugs in the round — the moderator moves this goal on the console
+    // leaves for the patch once it has drunk `drinks` mugs in the round — the moderator moves this goal on the console.
+    // A sip plays `drink_ms` milliseconds, in the bar and in the cursed world: the server takes no mug and lets none be
+    // drunk meanwhile, so a click never skips the animation
     'bar' => [
         'mugs' => env('HELLOWIN_BAR_MUGS', 12),
         'pour_ms' => env('HELLOWIN_BAR_POUR_MS', 2500),
         'drinks' => env('HELLOWIN_BAR_DRINKS', 30),
         'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),
+        'drink_ms' => env('HELLOWIN_DRINK_MS', 1200),
     ],
 
     // The end of the night (docs/spec/scenario.md, «Рапира»): the cursed world wants `cursed_per_player` mugs drunk
     // and as many zombies slain per player on the floor; FrankenPHP wakes with `boss_hp_base` health plus
-    // `boss_hp_per_player` per player, times the threshold multiplier; the dawn ranks its shooters, `dawn_board` rows at most
+    // `boss_hp_per_player` per player, times the threshold multiplier; the dawn ranks its shooters, `dawn_board` rows at most.
+    // A pumpkin hands its beer over for `beer_handover_ms` milliseconds after the character arrives
     'rapier' => [
         'cursed_per_player' => env('HELLOWIN_CURSED_PER_PLAYER', 5),
         'boss_hp_base' => env('HELLOWIN_BOSS_HP_BASE', 40),
         'boss_hp_per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 5),
         'dawn_board' => env('HELLOWIN_DAWN_BOARD', 200),
+        'beer_handover_ms' => env('HELLOWIN_BEER_HANDOVER_MS', 900),
     ],
 
     // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): the faces are HMAC-SHA256 of the attempt under

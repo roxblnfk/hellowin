@@ -41,6 +41,7 @@ final readonly class BarService
      * @param positive-int $pourMs Milliseconds the owl pours one mug.
      * @param positive-int $drinks Mugs the room drinks before it may leave, unless the moderator moved the goal.
      * @param float $rumorChance Probability that the owl mutters a rumour over a pour.
+     * @param positive-int $drinkMs Milliseconds a sip plays: no mug is taken or drunk meanwhile.
      */
     public function __construct(
         private BarStore $bar,
@@ -56,6 +57,7 @@ final readonly class BarService
         private float $rumorChance = 0.0,
         private Randomizer $random = new Randomizer(),
         private ?CursedService $cursed = null,
+        private int $drinkMs = 1200,
     ) {}
 
     /**
@@ -171,22 +173,27 @@ final readonly class BarService
      * @param non-empty-string $id
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws BarRefusedException `not bar` — neither the bar nor the cursed world, `no beer` or `not clinked`.
+     * @throws BarRefusedException `not bar` — neither the bar nor the cursed world, `no beer`, `not clinked` or `busy`:
+     *         the clink of the mug, the last sip or the hand-over of a pumpkin is still playing, so a click never skips
+     *         an animation.
      * @throws LockBusyException
      * @throws RitualBusyException
      */
     public function drink(string $id): void
     {
+        $now = $this->clock->now();
         $inBar = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            function (array $walkers) use ($id): array {
+            function (array $walkers) use ($id, $now): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $walker->zombie() and throw new ZombifiedException();
                 $inBar = $this->policy->bar($this->ritual->scene());
                 $inBar || $this->ritual->story()->cursed() or throw new BarRefusedException('not bar');
                 $walker->hasBeer() or throw new BarRefusedException('no beer');
+                $walker->busyAt($now) and throw new BarRefusedException('busy');
                 $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
-                $walkers[$id] = $walker->emptyHanded();
+                $walker->mugClinking($now) and throw new BarRefusedException('busy');
+                $walkers[$id] = $walker->drank($now + $this->drinkMs);
 
                 return [$walkers, $inBar];
             },

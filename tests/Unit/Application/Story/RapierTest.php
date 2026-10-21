@@ -80,8 +80,14 @@ final class RapierTest
         $ritual->walks->beers();
         $ritual->walks->beers();
 
-        Assert::same($ritual->broadcast->ofType('take'), [['type' => 'take', 'round' => 1, 'player' => ['id' => self::JILL], 'pumpkin' => ['id' => 'pumpkin-2'], 'ok' => true]]);
+        $until = $walk->arrivesAt + 900;
+        Assert::same($ritual->broadcast->ofType('take'), [['type' => 'take', 'round' => 1, 'player' => ['id' => self::JILL], 'pumpkin' => ['id' => 'pumpkin-2'], 'ok' => true, 'until' => $until]]);
         Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id')[self::JILL], 'beer');
+        // The pumpkin is still handing the mug over
+        $ritual->clock->now = $until - 1;
+        Assert::same(self::refusal(static fn() => $ritual->walks->toPumpkin(self::JILL, 'pumpkin-2')), 'busy');
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JILL)), 'busy');
+        $ritual->clock->now = $until;
         Assert::same(self::refusal(static fn() => $ritual->walks->toPumpkin(self::JILL, 'pumpkin-2')), 'has beer');
     }
 
@@ -121,7 +127,11 @@ final class RapierTest
         Assert::same($ritual->broadcast->ofType('cursed')[0]['drunk'], 1);
         Assert::same($ritual->playerStore->find(self::JACK)?->drinks, 1);
 
+        // The sip plays: no second mug, however fast the clicks
         self::refill($ritual, self::JACK);
+        $ritual->clock->now += 1199;
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'busy');
+        $ritual->clock->now += 1;
         $ritual->bar->drink(self::JACK);
         self::slay($ritual, 2);
 
@@ -144,6 +154,8 @@ final class RapierTest
         $walk = $ritual->walks->clink(self::JACK, Clink::PUMPKIN, 'pumpkin-2');
         $ritual->clock->now = $walk->arrivesAt;
         $ritual->walks->clinks();
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'busy');
+        $ritual->clock->now += 3200;
         $ritual->bar->drink(self::JACK);
 
         Assert::same($ritual->broadcast->ofType('drink')[0]['player'], ['id' => self::JACK]);
@@ -156,6 +168,11 @@ final class RapierTest
         self::move($ritual, self::JILL, 22, 90);
 
         $ritual->walks->clinkAuto(self::JACK, self::JILL);
+        $ritual->clock->now += 3000;
+        // Clinking the same mug again changes nothing: it is drunk when the first clink has played
+        $ritual->walks->clinkAuto(self::JACK, self::JILL);
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'busy');
+        $ritual->clock->now += 200;
         $ritual->bar->drink(self::JACK);
 
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JILL)), 'not clinked');

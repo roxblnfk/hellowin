@@ -318,6 +318,22 @@ final class HellowinConfigTest
         Assert::same((new HellowinConfig(['rapier' => ['dawn_board' => '10']]))->getDawnBoard(), 10);
     }
 
+    public function animationLengthsComeFromTheConfig(): void
+    {
+        $config = new HellowinConfig();
+        Assert::same([$config->getDrinkMs(), $config->getBeerHandoverMs()], [1200, 900]);
+
+        $config = new HellowinConfig(['bar' => ['drink_ms' => '1500'], 'rapier' => ['beer_handover_ms' => '600']]);
+        Assert::same([$config->getDrinkMs(), $config->getBeerHandoverMs()], [1500, 600]);
+    }
+
+    public function rejectsAnEmptySip(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DRINK_MS');
+
+        (new HellowinConfig(['bar' => ['drink_ms' => '0']]))->getDrinkMs();
+    }
+
     public function rejectsAnEmptyDawnBoard(): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DAWN_BOARD');

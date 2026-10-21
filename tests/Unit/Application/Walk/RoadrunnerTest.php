@@ -65,6 +65,8 @@ final class RoadrunnerTest
         Assert::count($clinks, 1);
         Assert::same([$clinks[0]['player'], $clinks[0]['roadrunner'], $clinks[0]['at']], [['id' => self::JACK], true, $walk->arrivesAt]);
         Assert::int($clinks[0]['toast'])->greaterThanOrEqual(0);
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'busy');
+        $ritual->clock->now = $walk->arrivesAt + 3200;
         $ritual->bar->drink(self::JACK);
         Assert::count($ritual->broadcast->ofType('drink'), 1);
     }

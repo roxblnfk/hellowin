@@ -255,6 +255,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getBarDrinks(),
                 $config->getBarRumorChance(),
                 cursed: $cursed,
+                drinkMs: $config->getDrinkMs(),
             ),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
@@ -293,6 +294,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getWalkReach(),
                 bar: $config->getBarLayout(),
                 policy: $policy,
+                handover: $config->getBeerHandoverMs(),
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,

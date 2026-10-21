@@ -48,6 +48,8 @@ final readonly class WalkService
      * @param BarLayout|null $bar Where characters walk in the bar; without it, or without the policy, they walk the
      *        lawn there too.
      * @param RitualPolicy|null $policy Tells the bar from the other scenes.
+     * @param positive-int $handover Milliseconds a pumpkin hands a beer over: the mug is in hand that long after the
+     *        arrival.
      */
     public function __construct(
         private WalkerStore $store,
@@ -69,6 +71,7 @@ final readonly class WalkService
         private Randomizer $random = new Randomizer(),
         private ?BarLayout $bar = null,
         private ?RitualPolicy $policy = null,
+        private int $handover = 900,
     ) {}
 
     /**
@@ -154,8 +157,8 @@ final readonly class WalkService
      * @param non-empty-string $id
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws ClinkRefusedException `not cursed` — not the goal step, `has beer` or `no target` — no such reachable
-     *         pumpkin.
+     * @throws ClinkRefusedException `not cursed` — not the goal step, `busy` — a sip or a hand-over plays, `has beer`
+     *         or `no target` — no such reachable pumpkin.
      * @throws LockBusyException
      */
     public function toPumpkin(string $id, string $pumpkin): Walk
@@ -167,6 +170,7 @@ final readonly class WalkService
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $walker->zombie() and throw new ZombifiedException();
                 $this->ritual->story()->finale === Story::CURSED_STEP or throw new ClinkRefusedException('not cursed');
+                $walker->busyAt($now) and throw new ClinkRefusedException('busy');
                 $walker->hasBeer() and throw new ClinkRefusedException('has beer');
                 $element = $this->elements->find($pumpkin);
                 $element !== null && $element->type === Element::TYPE_PUMPKIN && $element->reachable
@@ -188,7 +192,8 @@ final readonly class WalkService
 
     /**
      * Characters that have reached their pumpkin: each gets its beer while the world is still on its goal step — the
-     * ticker calls it every tick. Under the lawn lock, so a beer is handed out once.
+     * ticker calls it every tick. Under the lawn lock, so a beer is handed out once. The mug is in hand `$handover`
+     * after the arrival: the clients play the hand-over meanwhile, and the hands are busy.
      *
      * @throws LockBusyException
      */
@@ -210,8 +215,9 @@ final readonly class WalkService
                         continue;
                     }
                     $ok = $open && !$walker->zombie() && !$walker->hasBeer();
-                    $ok and $handed[] = [$id, (string) $walker->takeFrom];
-                    $walkers[$id] = $walker->tookMug($ok);
+                    $until = (int) $walker->takeAt + $this->handover;
+                    $ok and $handed[] = [$id, (string) $walker->takeFrom, $until];
+                    $walkers[$id] = $walker->tookMug($ok, $until);
                 }
 
                 return [$walkers, $handed];
@@ -219,9 +225,9 @@ final readonly class WalkService
         );
 
         $round = $this->ritual->round();
-        foreach ($handed as [$id, $pumpkin]) {
+        foreach ($handed as [$id, $pumpkin, $until]) {
             /** @var non-empty-string $pumpkin */
-            $this->publisher->beer($round, $id, $pumpkin);
+            $this->publisher->beer($round, $id, $pumpkin, $until);
         }
     }
 
@@ -308,7 +314,7 @@ final readonly class WalkService
      *
      * @param non-empty-string $id
      * @throws NoCharacterException The player has no character on the lawn.
-     * @throws BarRefusedException `not bar` or `has beer`.
+     * @throws BarRefusedException `not bar`, `has beer` or `busy` — a sip plays.
      * @throws LockBusyException
      */
     public function toCounter(string $id): Walk
@@ -321,6 +327,7 @@ final readonly class WalkService
                 $bar = $this->bar;
                 $bar !== null && $this->barIn($this->ritual->scene()) or throw new BarRefusedException('not bar');
                 $walker->hasBeer() and throw new BarRefusedException('has beer');
+                $walker->busyAt($now) and throw new BarRefusedException('busy');
 
                 $from = self::rounded($walker->walk->positionAt($now));
                 $taken = [];
@@ -436,9 +443,10 @@ final readonly class WalkService
         $open = $ritual->story->cursed() || $inBar;
         $pumpkins = $ritual->story->finale === Story::CURSED_STEP;
         $roadrunner = $inBar && $ritual->story->roadrunner;
+        $until = $now + $this->clinkDuration;
         $met = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            static function (array $walkers) use ($now, $open, $pumpkins, $roadrunner): array {
+            static function (array $walkers) use ($now, $until, $open, $pumpkins, $roadrunner): array {
                 $met = [];
                 foreach (\array_keys($walkers) as $id) {
                     // Read again: a clink earlier in the loop may have clinked this character's mug
@@ -458,8 +466,8 @@ final readonly class WalkService
                     $happens = $inPlace && $open && $mugs;
                     $walkers[$id] = $walker->clinked($happens ? $now : null);
                     if ($happens) {
-                        $walkers[$id] = $walkers[$id]->clinkedMug();
-                        $target === null or $walkers[$target->id] = $walkers[$target->id]->clinkedMug();
+                        $walkers[$id] = $walkers[$id]->clinkedMug($until);
+                        $target === null or $walkers[$target->id] = $walkers[$target->id]->clinkedMug($until);
                     }
                     $happens and $met[] = [$id, $clink];
                 }
@@ -510,7 +518,7 @@ final readonly class WalkService
                     && \hypot($there->x - $here->x, $there->y - $here->y) <= $reach
                     or throw new BarRefusedException('no target');
 
-                $walkers[$id] = $walker->clinkedMug();
+                $walkers[$id] = $walker->clinkedMug($now + $this->clinkDuration);
 
                 return [$walkers, null];
             },

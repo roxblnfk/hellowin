@@ -266,10 +266,11 @@ final readonly class ChannelPublisher
      *
      * @param non-empty-string $player
      * @param non-empty-string $pumpkin
+     * @param int $until Unix time in milliseconds when the mug is in hand: the hand-over plays until then.
      */
-    public function beer(int $round, string $player, string $pumpkin): void
+    public function beer(int $round, string $player, string $pumpkin, int $until): void
     {
-        $this->publish(['type' => 'take', 'round' => $round, 'player' => ['id' => $player], 'pumpkin' => ['id' => $pumpkin], 'ok' => true]);
+        $this->publish(['type' => 'take', 'round' => $round, 'player' => ['id' => $player], 'pumpkin' => ['id' => $pumpkin], 'ok' => true, 'until' => $until]);
     }
 
     /**

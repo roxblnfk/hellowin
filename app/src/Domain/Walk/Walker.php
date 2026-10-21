@@ -40,6 +40,10 @@ final readonly class Walker
      *        `$takeFrom`, for a mug; any new walk cancels it.
      * @param non-empty-string|null $takeFrom The pumpkin the character walks to for a beer; null — the bar's counter.
      * @param int|null $zombieAt Unix time in milliseconds of the next shamble of a zombie; null — not a zombie.
+     * @param int|null $clinkedUntil Unix time in milliseconds when the clink of the mug in hand has played: the mug
+     *        may not be drunk before it, so a click never skips the animation.
+     * @param int|null $busyUntil Unix time in milliseconds until which the hands are busy: a sip plays, or a pumpkin
+     *        is still handing a mug over; no mug is taken or drunk before it.
      */
     public function __construct(
         public string $id,
@@ -54,6 +58,8 @@ final readonly class Walker
         public ?int $takeAt = null,
         public ?string $takeFrom = null,
         public ?int $zombieAt = null,
+        public ?int $clinkedUntil = null,
+        public ?int $busyUntil = null,
     ) {}
 
     public static function fromArray(mixed $id, mixed $value): ?self
@@ -79,6 +85,11 @@ final readonly class Walker
         /** @var mixed $item */
         $item = $value['item'] ?? null;
         $item = \in_array($item, self::ITEMS, true) ? $item : null;
+        $clinked = $item === self::BEER && ($value['clinked'] ?? false) === true;
+        /** @var mixed $clinkedUntil */
+        $clinkedUntil = $value['clinkedUntil'] ?? null;
+        /** @var mixed $busyUntil */
+        $busyUntil = $value['busyUntil'] ?? null;
 
         return $look !== null && $walk !== null && \is_int($seenAt)
             ? new self(
@@ -90,10 +101,12 @@ final readonly class Walker
                 Clink::fromArray($value['clink'] ?? null),
                 \is_int($clinkedAt) ? $clinkedAt : null,
                 $item,
-                $item === self::BEER && ($value['clinked'] ?? false) === true,
+                $clinked,
                 \is_int($takeAt) ? $takeAt : null,
                 \is_int($takeAt) && \is_string($takeFrom) && $takeFrom !== '' ? $takeFrom : null,
                 \is_int($zombieAt) ? $zombieAt : null,
+                $clinked && \is_int($clinkedUntil) ? $clinkedUntil : null,
+                \is_int($busyUntil) ? $busyUntil : null,
             )
             : null;
     }
@@ -124,28 +137,43 @@ final readonly class Walker
 
     /**
      * The walk for a mug is over: with a fresh mug, not clinked yet, or with nothing when the counter was empty.
+     *
+     * @param int|null $handedAt Unix time in milliseconds when the mug is in hand after a hand-over; null — at once.
      */
-    public function tookMug(bool $taken): self
+    public function tookMug(bool $taken, ?int $handedAt = null): self
     {
         return $taken
-            ? $this->with(item: self::BEER, clinked: false, takeAt: null)
+            ? $this->with(item: self::BEER, clinked: false, takeAt: null, clinkedUntil: null, busyUntil: $handedAt ?? false)
             : $this->with(takeAt: null);
     }
 
     /**
-     * The mug in hand counts a clink: now it may be drunk.
+     * The mug in hand counts a clink: it may be drunk once the clink has played. A mug clinked already keeps its
+     * clink, so clinking it again changes nothing.
+     *
+     * @param int $until Unix time in milliseconds when the clink has played.
      */
-    public function clinkedMug(): self
+    public function clinkedMug(int $until): self
     {
-        return $this->with(clinked: $this->item === self::BEER);
+        return $this->item === self::BEER && !$this->clinked ? $this->with(clinked: true, clinkedUntil: $until) : $this;
     }
 
     /**
-     * Empty hands: the mug is drunk, or the room has left the bar.
+     * Empty hands: the room has left the bar.
      */
     public function emptyHanded(): self
     {
-        return $this->with(item: null, clinked: false);
+        return $this->with(item: null, clinked: false, clinkedUntil: null);
+    }
+
+    /**
+     * The mug is drunk: empty hands, busy with the sip until `$until`.
+     *
+     * @param int $until Unix time in milliseconds.
+     */
+    public function drank(int $until): self
+    {
+        return $this->with(item: null, clinked: false, clinkedUntil: null, busyUntil: $until);
     }
 
     /**
@@ -153,7 +181,7 @@ final readonly class Walker
      */
     public function withBeer(): self
     {
-        return $this->with(item: self::BEER, clinked: false, takeAt: null);
+        return $this->with(item: self::BEER, clinked: false, takeAt: null, clinkedUntil: null);
     }
 
     /**
@@ -161,7 +189,27 @@ final readonly class Walker
      */
     public function armed(): self
     {
-        return $this->with(item: self::RAPIER, clinked: false);
+        return $this->with(item: self::RAPIER, clinked: false, clinkedUntil: null);
+    }
+
+    /**
+     * Whether the clink of the mug in hand is still playing.
+     *
+     * @param int $now Unix time in milliseconds.
+     */
+    public function mugClinking(int $now): bool
+    {
+        return $this->clinkedUntil !== null && $now < $this->clinkedUntil;
+    }
+
+    /**
+     * Whether a sip or a hand-over is still playing.
+     *
+     * @param int $now Unix time in milliseconds.
+     */
+    public function busyAt(int $now): bool
+    {
+        return $this->busyUntil !== null && $now < $this->busyUntil;
     }
 
     /**
@@ -254,7 +302,7 @@ final readonly class Walker
      */
     public function dressed(?string $name, Look $look): self
     {
-        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt);
+        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt, $this->clinkedUntil, $this->busyUntil);
     }
 
     /**
@@ -288,7 +336,7 @@ final readonly class Walker
     }
 
     /**
-     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int}
+     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int, clinkedUntil?: int, busyUntil?: int}
      */
     public function toRecord(): array
     {
@@ -305,6 +353,8 @@ final readonly class Walker
         $this->takeAt === null or $record['takeAt'] = $this->takeAt;
         $this->takeFrom === null or $record['takeFrom'] = $this->takeFrom;
         $this->zombieAt === null or $record['zombieAt'] = $this->zombieAt;
+        $this->clinkedUntil === null or $record['clinkedUntil'] = $this->clinkedUntil;
+        $this->busyUntil === null or $record['busyUntil'] = $this->busyUntil;
 
         return $record;
     }
@@ -325,6 +375,8 @@ final readonly class Walker
         ?string $takeFrom = null,
         int|false|null $zombieAt = false,
         ?int $seenAt = null,
+        int|false|null $clinkedUntil = false,
+        int|false|null $busyUntil = false,
     ): self {
         return new self(
             $this->id,
@@ -339,6 +391,8 @@ final readonly class Walker
             $takeAt === false ? $this->takeAt : $takeAt,
             $takeAt === false ? $this->takeFrom : $takeFrom,
             $zombieAt === false ? $this->zombieAt : $zombieAt,
+            $clinkedUntil === false ? $this->clinkedUntil : $clinkedUntil,
+            $busyUntil === false ? $this->busyUntil : $busyUntil,
         );
     }
 }

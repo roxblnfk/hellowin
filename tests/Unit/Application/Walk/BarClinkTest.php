@@ -44,6 +44,10 @@ final class BarClinkTest
         Assert::count($ritual->broadcast->ofType('clink'), 1);
         Assert::true($ritual->walkerStore->all()[self::A]->clinked);
         Assert::true($ritual->walkerStore->all()[self::B]->clinked);
+        // Not before the clink has played, for either mug
+        $ritual->clock->now = $walk->arrivesAt + 3199;
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::B)), 'busy');
+        $ritual->clock->now = $walk->arrivesAt + 3200;
         $ritual->bar->drink(self::B);
         Assert::count($ritual->broadcast->ofType('drink'), 1);
     }
@@ -141,6 +145,7 @@ final class BarClinkTest
         self::give($ritual, self::A, clinked: true);
         $ritual->bar->drink(self::A);
         self::give($ritual, self::A);
+        $ritual->clock->now += 1200;
 
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'not clinked');
     }
@@ -164,7 +169,7 @@ final class BarClinkTest
     {
         $ritual->walkerStore->update(static function (array $walkers) use ($id, $clinked): array {
             $walker = $walkers[$id]->tookMug(true);
-            $walkers[$id] = $clinked ? $walker->clinkedMug() : $walker;
+            $walkers[$id] = $clinked ? $walker->clinkedMug(0) : $walker;
 
             return [$walkers, null];
         });

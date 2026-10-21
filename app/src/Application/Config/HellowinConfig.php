@@ -37,8 +37,8 @@ final class HellowinConfig extends InjectableConfig
         'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
-        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
-        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5, 'dawn_board' => 200],
+        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
+        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5, 'dawn_board' => 200, 'beer_handover_ms' => 900],
         'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
@@ -283,6 +283,22 @@ final class HellowinConfig extends InjectableConfig
         return \is_float($value) && $value >= 0.0 && $value <= 1.0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.bar.rumor_chance" (env HELLOWIN_BAR_RUMOR_CHANCE) must be a probability from 0 to 1.');
+    }
+
+    /**
+     * @return positive-int Milliseconds a sip plays: no mug is taken or drunk meanwhile.
+     */
+    public function getDrinkMs(): int
+    {
+        return self::positiveInt($this->bar()['drink_ms'] ?? null, 'bar.drink_ms', 'HELLOWIN_DRINK_MS');
+    }
+
+    /**
+     * @return positive-int Milliseconds a pumpkin of the cursed world hands its beer over after the character arrives.
+     */
+    public function getBeerHandoverMs(): int
+    {
+        return self::positiveInt($this->rapier()['beer_handover_ms'] ?? null, 'rapier.beer_handover_ms', 'HELLOWIN_BEER_HANDOVER_MS');
     }
 
     /**
