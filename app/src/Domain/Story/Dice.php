@@ -39,6 +39,8 @@ final readonly class Dice
         $stored = $value['players'] ?? null;
         /** @var mixed $last */
         foreach (\is_array($stored) ? $stored : [] as $id => $last) {
+            // A key of digits only comes back from a PHP array as an int
+            $id = (string) $id;
             /** @var mixed $attempt */
             $attempt = \is_array($last) ? $last['attempt'] ?? null : null;
             /** @var mixed $at */

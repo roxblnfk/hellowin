@@ -110,6 +110,19 @@ final class DiceTest
         Assert::same($ritual->dice->roll(self::JACK, 2)['attempt'], 2);
     }
 
+    public function playerWithAnIdOfDigitsKeepsTheLastAttempt(): void
+    {
+        $ritual = self::dice();
+        $digits = '1234567890123456';
+        $ritual->players->register($digits, 'Joe', self::LOOK);
+        $ritual->walks->move($digits, 40, 90);
+        $ritual->dice->roll($digits, 1);
+
+        $ritual->clock->now += self::COOLDOWN;
+
+        Assert::same($ritual->dice->roll($digits, 2)['attempt'], 2);
+    }
+
     public function rollIsRefusedOutsideTheDiceAndWithoutACharacter(): void
     {
         $ritual = self::finale();
