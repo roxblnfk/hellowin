@@ -3,6 +3,7 @@
 
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
 import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf } from './dice.js';
+import { createDawnTable, dawnOf } from './dawn.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
@@ -17,6 +18,8 @@ const DAWN_STEP = 7;
 const RUNNER_STEP = 3;
 // The finale step the hall rolls the dice on (scenario.md, «Кости 6-6-6»).
 const DICE_STEP = 1;
+// Up to this width of #app the dawn's table is a phone's folded strip (docs/spec/frontend.md, «Топ рассвета»).
+const DAWN_COMPACT_PX = 600;
 // A `meep` older than this by its `at` is not drawn (docs/spec/frontend.md, «Пульт модератора», «Мип-мип»).
 const MEEP_STALE_MS = 1500;
 const OWL_TRY = 'Дайте я попробую!';
@@ -133,6 +136,7 @@ export function readSnapshot(root) {
         cursed: cursedOf(parseJson(root.dataset.cursed, null)),
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
+        dawn: dawnOf(parseJson(root.dataset.dawn, null)),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => {
             const element = {
                 id: el.dataset.element,
@@ -200,6 +204,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const roller = createRoller((attempt) => (roll ? roll(attempt) : Promise.resolve(null)));
     const reduced = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
     const dicePanel = createDicePanel(root, { now, reduced });
+    const dawnTable = createDawnTable(root, { reduced });
     let seenAttempt = 0;
     let diceLoop = false;
 
@@ -408,6 +413,16 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         animateDice();
     }
 
+    // The dawn's top shooters at the side (docs/spec/frontend.md, «Топ рассвета»): only at step 7; my place is my index
+    // in the board. On a phone the folded strip sits on the HUD, whose height wraps with the width.
+    function paintDawn() {
+        root.dataset.dawn = JSON.stringify(model.dawn);
+        const width = root.clientWidth || window.innerWidth;
+        const hudHeight = root.querySelector('.hud')?.offsetHeight;
+        if (hudHeight) root.style.setProperty('--hud-h', `${hudHeight}px`);
+        dawnTable.paint({ dawn: model.dawn, me: model.me, shown: step() === DAWN_STEP, compact: width <= DAWN_COMPACT_PX });
+    }
+
     // The moderator's hit zone over RoadRunner of the finale (shown by the scene only while he is on screen).
     function paintMeep() {
         const zone = root.querySelector('[data-rr-meep]');
@@ -430,6 +445,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintRapier();
         paintDice();
         paintMeep();
+        paintDawn();
     }
 
     function load(snapshot) {
@@ -455,6 +471,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
+            dawn: dawnOf(snapshot.dawn),
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
@@ -645,6 +662,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.scene = event.scene;
             model.stageMax = event.stageMax;
             model.ready = false;
+            model.dawn = null;
             if (model.scene < model.sceneStages) {
                 model.finale = null;
                 model.dice = null;
@@ -684,6 +702,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (event.step === CURSED_STEP || event.step === DICE_STEP) model.ready = false;
             if (event.step === DICE_STEP) model.owlRolls = 0;
             if (event.step < DICE_STEP) model.dice = null;
+            // The dawn's count starts empty with the step (protocol.md, «Топ рассвета»); its first hit brings the board.
+            model.dawn = event.step === DAWN_STEP ? model.dawn ?? { board: [] } : null;
             // The dawn lifts every zombie and fells FrankenPHP, whether his health ran out or the moderator forced it.
             const lifted = event.step >= DAWN_STEP ? model.walkers.filter((w) => w.zombie) : [];
             lifted.forEach((w) => delete w.zombie);
@@ -703,6 +723,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintRapier();
             paintDice();
             paintMeep();
+            paintDawn();
         },
 
         // The dice come on with step 1 and go off with the first 6-6-6 (`winner`) or a forced step 2; the silhouette's
@@ -738,6 +759,12 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         meep(event) {
             if (now() + offset - event.at > MEEP_STALE_MS) return;
             scene?.meep?.(event.flyer ?? null);
+        },
+
+        // A counted hit at the dawn: the whole ranking again, which replaces ours.
+        dawn(event) {
+            model.dawn = dawnOf(event);
+            paintDawn();
         },
 
         // The goal of step 5: mugs drunk and zombies slain against their targets (readiness itself comes as `ready`).
@@ -836,6 +863,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.cursed = null;
             model.boss = null;
             model.dice = null;
+            model.dawn = null;
             forgetDice();
             wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.
@@ -944,6 +972,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.me = id ?? null;
             paintBar();
             scene?.setMe(model.me);
+            paintDawn();
             sound?.me(model.me, model);
         },
 
@@ -1137,6 +1166,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const spread = () => {
                 root.style.setProperty('--spread', String(spreadX(root.clientWidth || window.innerWidth)));
                 paintOut();
+                paintDawn();
             };
             spread();
             new ResizeObserver(spread).observe(root);
@@ -1157,7 +1187,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice, [data-dawn-toggle]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture

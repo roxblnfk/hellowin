@@ -1691,3 +1691,188 @@ body:not([data-final]) .circle,
     outline: calc(var(--px, 2px) * 1) dashed var(--gold);
     outline-offset: calc(var(--px, 2px) * 2);
 }
+
+/*
+ * The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»; client.js and dawn.js): at the right in the middle of
+ * the height, under the console and clear of the corner controls, «место · имя · счёт», my row gold. Presses go
+ * through it to the ducks behind; only a phone's toggle takes them.
+ */
+.dawn-top {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    z-index: 1002;
+    width: 236px;
+    padding: 8px 10px 10px;
+    font: 700 13px/1.3 var(--pixel-font);
+    color: var(--cream);
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--gold), 0 0 0 4px var(--outline), 0 4px 0 2px var(--outline);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.dawn-top[hidden],
+.dawn-top__empty[hidden],
+.dawn-top__row[hidden] {
+    display: none;
+}
+
+/* The open console covers the right edge: the table steps out to its left. */
+.patch:has(.console:not([hidden]):not(.console--closed)) .dawn-top:not([data-compact]) {
+    right: calc(min(360px, 100% - 88px) + 32px);
+}
+
+.dawn-top__title {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: 2px 2px 0 var(--soil);
+}
+
+.dawn-top__toggle {
+    display: none;
+}
+
+.dawn-top__list {
+    position: relative;
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    /* A newcomer rides in from beyond the right edge, a dropped row falls out at the bottom. */
+    overflow: hidden;
+}
+
+.dawn-top__row {
+    display: grid;
+    grid-template-columns: 2.6em 1fr auto;
+    gap: 6px;
+    align-items: baseline;
+    margin: 0;
+    padding: 2px 6px;
+    background: #3a2230;
+}
+
+.dawn-top__place {
+    color: var(--sky-light);
+    font-variant-numeric: tabular-nums;
+}
+
+.dawn-top__name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.dawn-top__shots {
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+}
+
+.dawn-top__row[data-dawn-me],
+.dawn-top__row[data-dawn-me] .dawn-top__place,
+.dawn-top__row[data-dawn-me] .dawn-top__shots {
+    color: var(--outline);
+}
+
+.dawn-top__row[data-dawn-me] {
+    background: var(--gold);
+    box-shadow: inset 0 -2px 0 0 var(--wait);
+}
+
+/* Who just climbed flashes cream for a moment, in three hard steps. */
+.dawn-top__row[data-dawn-up] {
+    animation: dawn-up 0.6s steps(3) both;
+}
+
+@keyframes dawn-up {
+    0% { background: var(--cream); }
+}
+
+/* Pushed out of the top: it keeps its old spot while it drops away (dawn.js). */
+.dawn-top__row--gone {
+    position: absolute;
+    left: 0;
+    right: 0;
+}
+
+/* My place below the top, under a dashed line: «#23 · ты · 4». */
+.dawn-top__row--mine {
+    position: relative;
+    margin-top: 12px;
+}
+
+.dawn-top__row--mine::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -8px;
+    border-top: 2px dashed var(--soil);
+}
+
+.dawn-top__empty {
+    margin: 0;
+    color: var(--sky-light);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dawn-top__row[data-dawn-up] {
+        animation: none;
+    }
+}
+
+/* A phone: a strip «#3 · ты · 7 · топ ▾» over the HUD (--hud-h from client.js), unfolding into five rows and mine. */
+.dawn-top[data-compact] {
+    top: auto;
+    right: auto;
+    left: 50%;
+    bottom: calc(var(--hud-h, 40px) + 24px);
+    width: min(300px, calc(100% - 32px));
+    padding: 0 8px 8px;
+    font-size: 12px;
+    transform: translateX(-50%);
+}
+
+.dawn-top[data-compact][data-folded] {
+    padding-bottom: 0;
+}
+
+.dawn-top[data-compact] .dawn-top__title,
+.dawn-top[data-folded] .dawn-top__list,
+.dawn-top[data-folded] .dawn-top__empty,
+.dawn-top[data-folded] .dawn-top__row--mine {
+    display: none;
+}
+
+.dawn-top[data-compact] .dawn-top__toggle {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    width: 100%;
+    padding: 7px 4px;
+    border: 0;
+    font: inherit;
+    color: var(--gold);
+    background: none;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.dawn-top__toggle::after {
+    content: '▴';
+    color: var(--cream);
+}
+
+.dawn-top[data-folded] .dawn-top__toggle::after {
+    content: '▾';
+}
+
+.dawn-top__toggle:focus-visible {
+    outline: 2px dashed var(--gold);
+    outline-offset: -4px;
+}

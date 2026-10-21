@@ -26,7 +26,8 @@
           data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}"
           data-cursed="{{ json_encode($cursed ?? null) }}"
           data-boss="{{ json_encode($boss ?? null) }}"
-          data-dice="{{ json_encode($dice ?? null) }}">
+          data-dice="{{ json_encode($dice ?? null) }}"
+          data-dawn="{{ json_encode($dawn ?? null) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
@@ -86,6 +87,15 @@
             <p class="dice__note" data-dice-note role="status"></p>
             <div class="dice__faces" data-dice-faces hidden><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span></div>
             <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
+        </section>
+        <!-- The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»): at the side on a wide screen, a folded strip
+             over the HUD on a phone. -->
+        <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
+            <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки рассвета</h2>
+            <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
+            <ol class="dawn-top__list" id="dawn-top-list" data-dawn-list></ol>
+            <p class="dawn-top__empty" data-dawn-empty>Сбивайте уток рапирой!</p>
+            <p class="dawn-top__row dawn-top__row--mine" data-dawn-mine hidden></p>
         </section>
         <!-- The moderator's hit zone over RoadRunner of the finale: a click makes him meep. -->
         <button type="button" class="rr-meep" data-rr-meep hidden aria-label="RoadRunner: мип-мип" title="Мип-мип"></button>

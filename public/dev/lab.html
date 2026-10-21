@@ -118,6 +118,10 @@
   rolling, 1800 — landed. Meep (?mod=1): a click on a runner on the horizon, on RoadRunner of the finale (step 3+) or
   behind the counter is `meep`; ?meep=ms sends one at that frozen moment (?meepflyer=1 — over the first runner flyer).
   ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice).
+  The dawn's top (docs/spec/frontend.md, «Топ рассвета»): every hit of a player at step 7 counts and sends the whole board
+  (`dawn`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
+  the field) fire at thicker flyers; ?dawnboard=15 — a board of 15 at once, me 12th (with ?me=1 — my row under the line);
+  ?dawntop=8&freeze=ms — the overtakes of a seeded run at that moment; ?dawnopen=1 — a phone's table unfolded.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
@@ -143,6 +147,14 @@
         <p class="dice__note" data-dice-note role="status"></p>
         <div class="dice__faces" data-dice-faces hidden><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span></div>
         <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
+    </section>
+    <!-- The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»). -->
+    <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
+        <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки рассвета</h2>
+        <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
+        <ol class="dawn-top__list" id="dawn-top-list" data-dawn-list></ol>
+        <p class="dawn-top__empty" data-dawn-empty>Сбивайте уток рапирой!</p>
+        <p class="dawn-top__row dawn-top__row--mine" data-dawn-mine hidden></p>
     </section>
     <!-- The moderator's hit zone over RoadRunner of the finale: a click makes him meep. -->
     <button type="button" class="rr-meep" data-rr-meep hidden aria-label="RoadRunner: мип-мип" title="Мип-мип"></button>
@@ -213,6 +225,14 @@
     const root = document.getElementById('app');
     // ?w=390: headless windows have a minimum width, so narrow layouts are checked in a narrowed #app.
     if (params.has('w')) root.style.width = `${Number.parseInt(params.get('w'), 10)}px`;
+    // ?dawnopen=1|0: the phone's dawn table starts unfolded or folded (its remembered choice, dawn.js).
+    if (params.has('dawnopen')) {
+        try {
+            localStorage.setItem('hellowin:dawn-top', params.get('dawnopen') === '1' ? 'open' : 'closed');
+        } catch {
+            // Without storage the strip starts folded anyway.
+        }
+    }
     // Same set as the elements of app/config/hellowin.php: an uneven flat ring around the root at 50% / 63%.
     const ELEMENTS = [
         [47.8, 51.2, 'm'], [55.7, 55, 's'], [66.2, 48.3, 's'], [62.8, 56, 's'], [71.2, 58.4, 'm'], [64.7, 63.7, 's'],
@@ -620,6 +640,8 @@
         engine.cursed = null;
         engine.dice = null;
         diceForget();
+        dawnScores.clear();
+        engine.dawn = null;
         engine.boss = null;
         Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
         cursedReadySaid = false;
@@ -716,6 +738,8 @@
             if (step === LAST_STEP) {
                 engine.walkers.forEach((w) => delete w.zombie);
                 if (engine.boss) engine.boss.hp = 0;
+                dawnScores.clear();
+                engine.dawn = { board: [] };
             }
             const item = itemOfFinale(step);
             if (item !== undefined) engine.walkers.forEach((w) => { w.item = item; w.clinked = false; });
@@ -961,6 +985,7 @@
         stats.shot++;
         const by = playerOf(player);
         deliver({ type: 'shot', flyer: id, points: f.points, ...(by ? { player: by } : {}) });
+        if (by && dawnOn()) dawnHit(by);
         if (f.kind === 'witch' && by) deliver({ type: 'owl', line: 'witch-down', params: { player: by } });
         // A zombie worker slain from step 5 on counts for the cursed world's goal.
         if (f.kind === 'zombie' && engine.cursed) {
@@ -1453,6 +1478,57 @@
         later(diceBots, 100);
     }
 
+    // The dawn's top like DawnService: a player's hit at step 7 counts, and the whole board goes out after the `shot` —
+    // most hits first, of equal ones the earlier, then the id.
+    const dawnScores = new Map();
+    const dawnOn = () => engine.scene >= engine.sceneStages && engine.finale?.step === LAST_STEP;
+    function dawnBoard() {
+        return [...dawnScores]
+            .sort(([a, x], [b, y]) => y.shots - x.shots || x.at - y.at || (a < b ? -1 : a > b ? 1 : 0))
+            .map(([id, s]) => ({ player: { id, name: s.name }, shots: s.shots }));
+    }
+    function dawnHit(player) {
+        dawnScores.set(player.id, { shots: (dawnScores.get(player.id)?.shots ?? 0) + 1, at: serverTime(), name: player.name ?? null });
+        engine.dawn = { board: dawnBoard() };
+        deliver({ type: 'dawn', board: structuredClone(engine.dawn.board) });
+    }
+    const DAWN_NAMES = ['Ann', 'Lilith', 'Vlad', 'Пугало', 'Призрак Оля', 'Gremlin', 'Банши', 'Nosferatu', 'Скелетон', 'Moth', 'Леший', 'Wisp'];
+    // ?dawnboard=N: a board of N shooters at the start of the dawn, me 12th with 4 hits (or last of a shorter one).
+    function dawnSeed() {
+        dawnScores.clear();
+        if (!dawnOn()) return;
+        const others = [...wanderers().map(playerOf), ...DAWN_NAMES.map((name, i) => ({ id: `lab-dawn-${String(i).padStart(8, '0')}`, name }))];
+        const n = Math.min(others.length + 1, Math.max(0, Number.parseInt(params.get('dawnboard') ?? '0', 10) || 0));
+        const mine = Math.min(11, n - 1);
+        for (let i = 0, o = 0; i < n; i++) {
+            const player = i === mine ? { id: ME, name: 'Я' } : others[o++];
+            const shots = i === mine ? 4 : Math.max(1, 21 - Math.round(i * 1.6));
+            dawnScores.set(player.id, { shots, at: serverTime() - 60000 + i * 1000, name: player.name });
+        }
+        engine.dawn = { board: dawnBoard() };
+    }
+    // ?dawntop=N: N shooters (the bots on the field first, then shooters off it) of different aim fire at the flyers of
+    // the dawn, which come thicker; seeded, so a frozen run (?freeze) replays the same overtakes.
+    const dawnTop = Math.max(0, Math.min(20, Number.parseInt(params.get('dawntop') ?? '0', 10) || 0));
+    let dawnRandom = seeded(1807);
+    function dawnShooters() {
+        const field = wanderers().map(playerOf);
+        const off = DAWN_NAMES.map((name, i) => ({ id: `lab-dawn-${String(i).padStart(8, '0')}`, name }));
+        return [...field, ...off].slice(0, dawnTop).map((player, i) => ({ player, aim: 0.3 + 0.7 * (((i * 7) % dawnTop) + 1) / dawnTop }));
+    }
+    function dawnBots() {
+        if (dawnTop && dawnOn() && !engine.paused) {
+            const open = [...live].filter(([, f]) => !f.shot && f.kind !== 'roadrunner' && serverTime() < f.until - 600);
+            if (open.length < 3) engineFlyer();
+            const shooters = dawnShooters();
+            const sum = shooters.reduce((s, x) => s + x.aim, 0);
+            let pick = dawnRandom() * sum;
+            const shooter = shooters.find((x) => (pick -= x.aim) <= 0) ?? shooters[0];
+            if (open.length && dawnRandom() < shooter.aim) engineShoot(open[Math.floor(dawnRandom() * open.length)][0], shooter.player);
+        }
+        later(dawnBots, 220 + Math.floor(dawnRandom() * 260));
+    }
+
     // The bots' evening in the bar: empty hands go to the counter, a mug in hand looks for company (a clink by click
     // with another beer, or standing by it so the planner clinks), a clinked mug is drunk after a while. Bots report
     // their own automatic clinks like a browser would (botAutoClinks).
@@ -1631,6 +1707,7 @@
                 if (me) me.zombie = true;
             }
         }
+        dawnSeed();
         engine.paused = params.get('paused') === '1';
         // The cursed world's zombies come on by themselves (steps 5–6) unless the query says otherwise.
         const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
@@ -1809,6 +1886,7 @@
         zombieWalks();
         strikeBots();
         diceBots();
+        dawnBots();
         if (barDemo) barDemoSteps();
         walkInSteps();
         if (rrClinkStart) later(rrClinkSteps, 300);
@@ -1863,6 +1941,8 @@
         simTime = 0;
         diceForget();
         client.forgetDice();
+        dawnRandom = seeded(1807);
+        dawnSeed();
         forcedRoll = rollParam.length === 3 && rollParam.every((n) => n >= 1 && n <= 6) ? rollParam : null;
         if (engine.dice?.on) wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + 300 + i * 450));
         client.load(engineSnapshot());
@@ -1908,6 +1988,7 @@
                 zombieWalks();
                 strikeBots();
                 diceBots();
+                dawnBots();
                 // My «Бросить», pressed at the start of a frozen run.
                 if (params.get('dice') === '1' && params.get('me') === '1') root.querySelector('[data-dice-roll]')?.click();
                 if (barDemo) barDemoSteps();
@@ -1929,6 +2010,14 @@
             scene?.step(16);
             client.frame();
         }
+        // DOM animations (the dawn table's slides) run on the wall clock: the frozen frame shows where they end.
+        document.getAnimations?.().forEach((a) => {
+            try {
+                a.finish();
+            } catch {
+                // An endless one (the dice's shake) has no end to jump to.
+            }
+        });
     }
 
     // ?fps=1 logs the frame rate every 2 s (counts animation frames, the same ones Pixi renders on).
