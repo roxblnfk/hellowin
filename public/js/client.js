@@ -361,18 +361,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (zombie) zombie.hidden = !zombified();
     }
 
-    // The HP bar flinches at a strike: the attribute is taken off and put back so a burst restarts the flash.
-    let hitTimer = 0;
-    function flashHp() {
-        const hp = root.querySelector('[data-boss-hp]');
-        if (!hp) return;
-        hp.removeAttribute('data-hit');
-        void hp.offsetWidth;
-        hp.setAttribute('data-hit', '');
-        clearTimeout(hitTimer);
-        hitTimer = setTimeout(() => hp.removeAttribute('data-hit'), 160);
-    }
-
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
@@ -663,7 +651,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.strike?.(event);
             scene?.boss?.(model.boss && { ...model.boss });
             paintRapier();
-            flashHp();
         },
 
         // The magic word, checked by the server only: the rapier in hand, or a zombie worker the server walks around.
