@@ -579,7 +579,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между зомби в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_DURATION` | 14000 | мс пути зомби от края грядки до края лужайки |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
-| `HELLOWIN_CURSED_PER_PLAYER` | 2 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
+| `HELLOWIN_CURSED_PER_PLAYER` | 5 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
 | `HELLOWIN_BOSS_HP_BASE` | 40 | здоровье FrankenPHP при пробуждении без игроков, до множителя `k` |
 | `HELLOWIN_BOSS_HP_PER_PLAYER` | 5 | добавка к здоровью FrankenPHP на каждого игрока на поле |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |

@@ -38,7 +38,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
-        'rapier' => ['cursed_per_player' => 2, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5],
+        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],

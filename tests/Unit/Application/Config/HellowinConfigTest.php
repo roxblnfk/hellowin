@@ -288,7 +288,7 @@ final class HellowinConfigTest
     public function rapierNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
-        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [2, 40, 5]);
+        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [5, 40, 5]);
 
         $config = new HellowinConfig(['rapier' => ['cursed_per_player' => '3', 'boss_hp_base' => '100', 'boss_hp_per_player' => '0']]);
         Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [3, 100, 0]);
