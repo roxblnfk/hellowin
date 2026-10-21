@@ -149,9 +149,9 @@ final readonly class Story
     }
 
     /**
-     * @param positive-int $target
+     * @param positive-int|null $target Null goes back to the configured goal.
      */
-    public function withBarTarget(int $target): self
+    public function withBarTarget(?int $target): self
     {
         return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $target);
     }

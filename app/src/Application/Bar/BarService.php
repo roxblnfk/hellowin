@@ -204,9 +204,12 @@ final readonly class BarService
     {
         \is_int($delta) or throw new BarRefusedException('invalid delta');
 
-        [$before, $after] = $this->ritual->updateStory(
-            fn(Story $story): Story => $story->withBarTarget(\max(1, $this->target($story) + $delta)),
-        );
+        // A goal moved back to the configured one is no longer the moderator's: a new env value takes effect again
+        [$before, $after] = $this->ritual->updateStory(function (Story $story) use ($delta): Story {
+            $target = \max(1, $this->target($story) + $delta);
+
+            return $story->withBarTarget($target === $this->drinks ? null : $target);
+        });
         $target = $this->target($after);
         if ($target === $this->target($before)) {
             return $target;

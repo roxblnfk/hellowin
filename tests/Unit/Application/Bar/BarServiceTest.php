@@ -238,6 +238,17 @@ final class BarServiceTest
         Assert::same(self::refusal(static fn() => $ritual->bar->moveTarget('5')), 'invalid delta');
     }
 
+    public function goalMovedBackIsTheConfiguredOneAgain(): void
+    {
+        $ritual = self::bar();
+
+        $ritual->bar->moveTarget(5);
+        Assert::same($ritual->store->story()->barTarget, 9);
+        $ritual->bar->moveTarget(-5);
+
+        Assert::null($ritual->store->story()->barTarget);
+    }
+
     public function goalOutlivesTheResetAndTheCountDoesNot(): void
     {
         $ritual = self::bar();
