@@ -626,6 +626,52 @@ export const SFX = {
         },
     }),
 
+    // ---------------------------------------------------------------- the dice of step 1: rolling for 6-6-6
+    // Three dice tumbling: each its own run of knocks on wood, spacing out and softening as it slows, over a faint roll.
+    'dice.roll': fx({
+        group: 'finale', dur: 2, variants: 4, voices: 3, level: -15,
+        render(r, out) {
+            for (let d = 0; d < 3; d++) {
+                const pan = (d - 1) * 0.35 + (r.rnd() - 0.5) * 0.2;
+                let t = r.rnd() * 0.08;
+                let gap = 0.025 + r.rnd() * 0.015;
+                let a = 0.5;
+                while (t < 1.75 && a > 0.04) {
+                    const tone = 1800 + r.rnd() * 1800;
+                    noiseSweep(r, out, t, 0.012, { from: tone, to: tone * 0.8, q: 3, amp: a, curve: 3, pan, send: 0.05 });
+                    thump(r, out, t, { f0: 700 + r.rnd() * 300, f1: 450, dur: 0.02, amp: a * 0.5, pan });
+                    t += gap * (0.7 + r.rnd() * 0.6);
+                    gap *= 1.18;
+                    a *= 0.88;
+                }
+            }
+            noiseSweep(r, out, 0, 1.6, { from: 900, to: 300, q: 0.7, amp: 0.06, mode: 'lp', attack: 0.05, curve: 1.5, grain: 40 });
+        },
+    }),
+    // The dice settle: three last little knocks.
+    'dice.land': fx({
+        group: 'finale', dur: 0.35, variants: 3, voices: 3, level: -13,
+        render(r, out) {
+            [0, 0.05 + r.rnd() * 0.03, 0.13 + r.rnd() * 0.05].forEach((t, k) => {
+                const pan = (k - 1) * 0.3;
+                noiseSweep(r, out, t, 0.012, { from: 2600, to: 2000, q: 3, amp: 0.5 - k * 0.1, curve: 3, pan });
+                thump(r, out, t, { f0: 800, f1: 500, dur: 0.025, amp: 0.3, pan });
+            });
+        },
+    }),
+    // 6-6-6: three tolls with a choir chord each, climbing a semitone — and a cheeky little chip «ta-da» after.
+    'dice.666': fx({
+        group: 'finale', stereo: true, dur: 4.5, voices: 1, level: -5, jitter: 0, duck: 3.2,
+        render(r, out) {
+            [[0, 0], [0.55, 1], [1.1, 2]].forEach(([t, up], k) => {
+                toll(r, out, t, 52 + up, { amp: 0.22, dur: 3, pan: (k - 1) * 0.4 });
+                choir(r, out, t, 0.42, [40, 47, 52, 55].map((m) => m + 12 + up), { amp: 0.2, vowel: 'a', attack: 0.03, release: 0.8, send: 0.9 });
+                tom(r, out, t, { amp: 0.6, tone: 45, send: 0.6 });
+            });
+            [72, 76, 79, 84].forEach((m, k) => chip(r, out, 2.5 + k * 0.07, k === 3 ? 0.25 : 0.06, m, { duty: 0.25, amp: 0.1, decay: k === 3 ? 6 : 0, send: 0.3 }));
+        },
+    }),
+
     // ---------------------------------------------------------------- the rapier: zombies, the word, the boss
     // Falls apart: bones crack, limbs thud down one after another, a last short groan.
     'zombie.die.pieces': fx({
