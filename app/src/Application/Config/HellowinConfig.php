@@ -36,7 +36,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
-        'bar' => ['mugs' => 5, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
+        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -239,7 +239,8 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Full mugs the counter of the bar holds at most.
+     * @return positive-int Full mugs the counter of the bar has room for; the owl pours one per player on the floor up
+     *         to it.
      */
     public function getBarMugs(): int
     {

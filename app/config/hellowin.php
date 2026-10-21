@@ -36,11 +36,11 @@ return [
     'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
     'circle_stages' => env('HELLOWIN_CIRCLE_STAGES', 4),
 
-    // The bar of scene 0: at most `mugs` full mugs on the counter, the owl pours one in `pour_ms` milliseconds and
-    // mutters a rumour over every pour with the chance `rumor_chance`; the room leaves for the patch once it has
-    // drunk `drinks` mugs in the round — the moderator moves this goal on the console
+    // The bar of scene 0: one full mug per player on the floor, up to the `mugs` the counter has room for; the owl
+    // pours one in `pour_ms` milliseconds and mutters a rumour over every pour with the chance `rumor_chance`; the room
+    // leaves for the patch once it has drunk `drinks` mugs in the round — the moderator moves this goal on the console
     'bar' => [
-        'mugs' => env('HELLOWIN_BAR_MUGS', 5),
+        'mugs' => env('HELLOWIN_BAR_MUGS', 12),
         'pour_ms' => env('HELLOWIN_BAR_POUR_MS', 2500),
         'drinks' => env('HELLOWIN_BAR_DRINKS', 30),
         'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),

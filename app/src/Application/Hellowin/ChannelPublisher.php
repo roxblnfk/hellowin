@@ -107,10 +107,11 @@ final readonly class ChannelPublisher
      * The owl put a poured mug on the counter.
      *
      * @param int<0, max> $mugs Mugs on the counter now.
+     * @param positive-int $max Mugs the owl pours up to for the players on the floor.
      */
-    public function mugs(int $round, int $mugs): void
+    public function mugs(int $round, int $mugs, int $max): void
     {
-        $this->publish(['type' => 'mugs', 'round' => $round, 'mugs' => $mugs]);
+        $this->publish(['type' => 'mugs', 'round' => $round, 'mugs' => $mugs, 'max' => $max]);
     }
 
     /**

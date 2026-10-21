@@ -122,7 +122,7 @@ final class RPCServiceTest
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'reachable' => false, 'stage' => 0, 'clicks' => 2],
             ],
             'walkers' => [],
-            'bar' => ['mugs' => 0, 'pouring' => null, 'drunk' => 0, 'target' => 4],
+            'bar' => ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4],
             'ready' => false,
             'finale' => null,
             'paused' => false,

@@ -124,7 +124,7 @@
 | `move` | `player: {id}`, `walk: <Walk>`, `clink?` — цель, если фигурка идёт чокаться по клику (`{walker: {id}}` или `{pumpkin: {id}}`) | фигурка пошла; `move` без `clink` отменяет её недошедшее чоканье |
 | `clink` | `player: {id}` — подошедший, `walker?: {id}` или `pumpkin?: {id}` — цель, `toast` — целое ≥ 0 (индекс тоста: клиент берёт `toast % TOASTS.length`), `at` — серверное время встречи, мс | чоканье по клику (**реализовано**): публикуется в момент встречи (тикер, с точностью до ~200 мс), если цель на месте, — ровно одно на клик; не случилось — события нет, `clink` пропадает у фигурки в следующем снимке; анимация ~3 с от `at`; пришедшее с опозданием (фон, переподключение) старше 3 с клиент не играет. В баре — так же, только с `walker`; засчитывает чоканье кружкам обоих |
 | `pour` | `since`, `until` — серверное время в мс: начало розлива и когда сова поставит налитую кружку; `rumor?` — целое ≥ 0: сова приговаривает (клиент берёт `rumor % RUMORS.length`), сервер добавляет его с вероятностью `HELLOWIN_BAR_RUMOR_CHANCE` | сова начала наливать кружку (бар): фронтенд играет розлив от `since` до `until`, фаза пены у всех одна |
-| `mugs` | `mugs` — сколько кружек на стойке | сова поставила налитую кружку (бар) |
+| `mugs` | `mugs` — сколько кружек на стойке, `max` — до скольких сова наливает сейчас (см. `bar` снимка) | сова поставила налитую кружку (бар) |
 | `take` | `player: {id}`, `ok` — `true` / `false`, `mugs` (при `ok: true`) — сколько кружек осталось | `bar.take` дошёл до стойки: `ok: true` — у игрока пиво (`item: beer`), кружка ушла со стойки; `ok: false` — кружки не было, руки пустые. Ровно одно событие на дошедшую попытку; отменённая события не даёт |
 | `drink` | `player: {id}` | игрок выпил пиво: анимация глотка ~1,2 с, затем `item` фигурки — `null` |
 | `drinks` | `drunk`, `target` | выпито за раунд и цель бара: после каждого `drink` и смены цели; шкала в HUD |
@@ -170,9 +170,9 @@
 {"type":"pumpkin","round":1,"element":"bonfire","stage":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"}}
 {"type":"scene","round":1,"scene":2,"stageMax":8,"bonfireStageMax":4,"circleStageMax":0,"item":"candle"}
 {"type":"scene","round":1,"scene":1,"stageMax":4,"bonfireStageMax":0,"circleStageMax":0,"item":"pistol","walkers":[{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"pistol","walk":{"path":[{"x":31.5,"y":88}],"startedAt":1760900007000,"arrivesAt":1760900007000}}]}
-{"type":"reset","round":2,"item":null,"walkers":[],"bar":{"mugs":5,"pouring":null}}
+{"type":"reset","round":2,"item":null,"walkers":[],"bar":{"mugs":1,"max":1,"pouring":null,"drunk":0,"target":30}}
 {"type":"pour","round":1,"since":1760900002000,"until":1760900004500}
-{"type":"mugs","round":1,"mugs":4}
+{"type":"mugs","round":1,"mugs":4,"max":6}
 {"type":"take","round":1,"player":{"id":"3f9c0a7d12b4e856"},"ok":true,"mugs":3}
 {"type":"take","round":1,"player":{"id":"8a01b2c3d4e5f607"},"ok":false}
 {"type":"drink","round":1,"player":{"id":"3f9c0a7d12b4e856"}}
@@ -208,7 +208,7 @@
                {"id":"bonfire","type":"bonfire","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0},
                {"id":"circle","type":"circle","x":50,"y":63,"stage":0,"clicks":0,"threshold":20,"stageMax":0}],
   "walkers": [{"id":"3f9c0a7d12b4e856","name":"Jack","look":{"body":"skeleton","cloak":"cape","face":"grin","eyes":"green","hat":"pumpkin"},"item":"beer","walk":{"path":[{"x":40,"y":94}],"startedAt":1760900001000,"arrivesAt":1760900001000}}],
-  "bar": {"mugs": 3, "pouring": {"since": 1760899999800, "until": 1760900002300, "rumor": 912}, "drunk": 12, "target": 30},
+  "bar": {"mugs": 3, "max": 6, "pouring": {"since": 1760899999800, "until": 1760900002300, "rumor": 912}, "drunk": 12, "target": 30},
   "ready": true,
   "finale": null,
   "paused": false,
@@ -240,9 +240,9 @@
 сброс ведёт в бар: `ready` — `false` (бар ждёт своей цели или отмашки), `bar` и `walkers` — из события `reset`; цель бара
 (`target`), как `k`, сохраняется, `drunk` начинается с 0.
 
-`bar` — стойка бара: `{mugs, pouring: {since, until, rumor?} | null, drunk, target}` (`drunk` — выпито за раунд, `target` — цель бара; `rumor` — см. событие `pour`) — сколько налитых кружек стоит (0…
-`max` — число фигурок на поле, не меньше 1 и не больше `HELLOWIN_BAR_MUGS`; `max` приходит в снимке, в событии `mugs` и в `reset.bar`, **запланировано**) и до какого серверного момента сова наливает следующую (`null` — не наливает: полно или сцена не
-бар). Поле есть в снимке всегда; вне бара — `{mugs: 0, pouring: null, drunk, target}`: счёт и цель видны и после бара.
+`bar` — стойка бара: `{mugs, max, pouring: {since, until, rumor?} | null, drunk, target}` (`drunk` — выпито за раунд, `target` — цель бара; `rumor` — см. событие `pour`) — сколько налитых кружек стоит (0…
+`max` — число фигурок на поле, не меньше 1 и не больше `HELLOWIN_BAR_MUGS`; `max` приходит в снимке, в событии `mugs` и в `reset.bar`; игроки ушли — налитые кружки остаются, и `mugs` бывает больше `max`, пока их не разберут) и до какого серверного момента сова наливает следующую (`null` — не наливает: полно или сцена не
+бар). Поле есть в снимке всегда; вне бара — `{mugs: 0, max, pouring: null, drunk, target}`: счёт и цель видны и после бара.
 
 `bush` — id куста, из которого взлетает летун (тогда `from` — его точка, а `depth` летуна — `depth` куста, см.
 [`scenario.md`](scenario.md), «Летуны»; `depth` в `bushes` снимка — **реализовано**); `wobble` (только у `kind: bat`, `worm` и `firefly`, у остальных поля нет) — кривая поверх базовой траектории: смещение поперёк пути

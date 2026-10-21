@@ -241,7 +241,7 @@ final class HellowinConfigTest
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
-        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarDrinks(), $config->getBarRumorChance()], [5, 2500, 30, 0.33]);
+        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarDrinks(), $config->getBarRumorChance()], [12, 2500, 30, 0.33]);
 
         $config = new HellowinConfig(['bar' => ['mugs' => '3', 'pour_ms' => '1000', 'drinks' => '7', 'rumor_chance' => '0']]);
         Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarDrinks(), $config->getBarRumorChance()], [3, 1000, 7, 0.0]);

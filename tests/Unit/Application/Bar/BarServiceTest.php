@@ -18,8 +18,8 @@ use Tests\Fake\RitualHarness;
 
 /**
  * The bar of scene 0: the owl pours one mug at a time, the first to reach the counter takes the last mug, a clinked mug
- * is drunk towards the bar's goal (docs/spec/scenario.md, «Сцена 0 — «Бар»»). The harness counter holds 3 mugs, pours
- * one in 2500 ms, and the goal is 4 mugs.
+ * is drunk towards the bar's goal (docs/spec/scenario.md, «Сцена 0 — «Бар»»). The harness counter has room for 3 mugs,
+ * the owl pours one in 2500 ms, and the goal is 4 mugs.
  */
 #[Test]
 #[Covers(BarService::class)]
@@ -29,11 +29,14 @@ final class BarServiceTest
 {
     private const A = 'aaaaaaaaaaaaaaaa';
     private const B = 'bbbbbbbbbbbbbbbb';
+    private const C = 'cccccccccccccccc';
+    private const D = 'dddddddddddddddd';
     private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
 
     public function owlPoursOneMugAtATimeUntilTheCounterIsFull(): void
     {
         $ritual = self::bar();
+        self::crowd($ritual, self::A, self::B, self::C);
         $start = $ritual->clock->now;
 
         $ritual->bar->pour();
@@ -51,7 +54,74 @@ final class BarServiceTest
 
         Assert::same(\array_column($ritual->broadcast->ofType('mugs'), 'mugs'), [1, 2, 3]);
         Assert::count($ritual->broadcast->ofType('pour'), 3);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+    }
+
+    public function emptyFloorStillGetsOneMug(): void
+    {
+        $ritual = self::bar();
+
+        for ($i = 0; $i < 4; ++$i) {
+            $ritual->bar->pour();
+            $ritual->clock->now += 2500;
+        }
+
+        Assert::same(self::mugs($ritual), [[1, 1]]);
+        Assert::count($ritual->broadcast->ofType('pour'), 1);
+        Assert::same($ritual->snapshot->create()['bar']['max'], 1);
+    }
+
+    public function counterGrowsWithThePlayersUpToItsRoom(): void
+    {
+        $ritual = self::bar(mugs: 1);
+        self::crowd($ritual, self::A, self::B);
+
+        for ($i = 0; $i < 3; ++$i) {
+            $ritual->bar->pour();
+            $ritual->clock->now += 2500;
+        }
+        Assert::same(self::mugs($ritual), [[2, 2]]);
+
+        self::crowd($ritual, self::C, self::D);
+        for ($i = 0; $i < 4; ++$i) {
+            $ritual->bar->pour();
+            $ritual->clock->now += 2500;
+        }
+
+        Assert::same(self::mugs($ritual), [[2, 2], [3, 3]]);
+        Assert::count($ritual->broadcast->ofType('pour'), 2);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+    }
+
+    public function mugsStayWhenPlayersLeaveAndTheOwlWaitsUntilTheyAreTakenBelowTheNewMax(): void
+    {
+        $ritual = self::bar(mugs: 3);
+        self::place($ritual, self::A, 20, 92);
+
+        $ritual->bar->pour();
+        Assert::same($ritual->snapshot->create()['bar']['mugs'], 3);
+        Assert::same($ritual->snapshot->create()['bar']['max'], 1);
+
+        $walk = $ritual->walks->toCounter(self::A);
+        $ritual->clock->now = $walk->arrivesAt;
+        $ritual->bar->tick();
+        $ritual->clock->now += 2500;
+        $ritual->bar->tick();
+
+        Assert::same(\array_column($ritual->broadcast->ofType('take'), 'mugs'), [2]);
+        Assert::blank($ritual->broadcast->ofType('pour'));
+        Assert::same($ritual->barStore->get()->mugs, 2);
+    }
+
+    public function resetFillsTheCounterForThePlayersOnTheFloor(): void
+    {
+        $ritual = self::bar();
+        self::crowd($ritual, self::A, self::B);
+
+        $ritual->reset->reset();
+
+        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 2, 'max' => 2, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->barStore->get()->mugs, 2);
     }
 
     public function owlSometimesMuttersARumourOverThePour(): void
@@ -80,12 +150,13 @@ final class BarServiceTest
         $ritual->bar->pour();
 
         Assert::blank($ritual->broadcast->ofType('pour'));
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 0, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
     }
 
     public function characterWalksToTheCounterAndTakesAMugOnArrival(): void
     {
         $ritual = self::bar(mugs: 2);
+        self::place($ritual, self::B, 30, 92);
         self::place($ritual, self::A, 20, 92);
         $ritual->broadcast->published = [];
 
@@ -103,8 +174,8 @@ final class BarServiceTest
 
         Assert::same($ritual->broadcast->ofType('take'), [['type' => 'take', 'round' => 1, 'player' => ['id' => self::A], 'ok' => true, 'mugs' => 1]]);
         Assert::same($ritual->walkerStore->all()[self::A]->item, Walker::BEER);
-        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id'), [self::A => 'beer']);
-        // The counter had room: the owl starts pouring right away
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id'), [self::B => null, self::A => 'beer']);
+        // Two players on the floor and one mug left: the owl starts pouring right away
         Assert::count($ritual->broadcast->ofType('pour'), 1);
     }
 
@@ -272,8 +343,8 @@ final class BarServiceTest
 
         $ritual->reset->reset();
 
-        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
+        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
         Assert::false($ritual->snapshot->create()['ready']);
     }
 
@@ -332,6 +403,24 @@ final class BarServiceTest
         $ritual->players->register($id, 'Jack', self::LOOK);
         $walk = $ritual->walks->move($id, $x, $y);
         $ritual->clock->now = \max($ritual->clock->now, $walk->arrivesAt);
+    }
+
+    /**
+     * @param non-empty-string ...$ids
+     */
+    private static function crowd(RitualHarness $ritual, string ...$ids): void
+    {
+        foreach ($ids as $i => $id) {
+            self::place($ritual, $id, 20 + 10 * $i, 92);
+        }
+    }
+
+    /**
+     * @return list<array{mixed, mixed}> `[mugs, max]` of every `mugs` event.
+     */
+    private static function mugs(RitualHarness $ritual): array
+    {
+        return \array_map(static fn(array $event): array => [$event['mugs'], $event['max']], $ritual->broadcast->ofType('mugs'));
     }
 
     /**

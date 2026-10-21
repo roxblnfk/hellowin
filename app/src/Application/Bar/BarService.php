@@ -35,7 +35,7 @@ final readonly class BarService
     public const EMPTY_PAUSE = 20_000;
 
     /**
-     * @param positive-int $mugs Full mugs the counter holds at most.
+     * @param positive-int $mugs Full mugs the counter has room for, however many players are on the floor.
      * @param positive-int $pourMs Milliseconds the owl pours one mug.
      * @param positive-int $drinks Mugs the room drinks before it may leave, unless the moderator moved the goal.
      * @param float $rumorChance Probability that the owl mutters a rumour over a pour.
@@ -77,27 +77,29 @@ final readonly class BarService
     {
         $now = $this->clock->now();
         $bar = $this->bar->get();
-        if (!$this->policy->bar($this->ritual->scene()) || !($bar->poured($now) || !$bar->pouring() && $bar->mugs < $this->mugs)) {
+        if (!$this->policy->bar($this->ritual->scene()) || !($bar->poured($now) || !$bar->pouring() && $bar->mugs < $this->max())) {
             return;
         }
 
-        [$placed, $pouring] = $this->bar->update(function (Bar $bar) use ($now): array {
+        [$placed, $pouring, $max] = $this->bar->update(function (Bar $bar) use ($now): array {
             if (!$this->policy->bar($this->ritual->scene())) {
-                return [$bar, [null, null]];
+                return [$bar, [null, null, 1]];
             }
 
+            // Counted again under the counter's lock: the check above may be a tick old
+            $max = $this->max();
             $placed = null;
             if ($bar->poured($now)) {
                 $bar = $bar->placed();
                 $placed = $bar->mugs;
             }
-            [$bar, $pouring] = $this->pourNext($bar, $now);
+            [$bar, $pouring] = $this->pourNext($bar, $now, $max);
 
-            return [$bar, [$placed, $pouring]];
+            return [$bar, [$placed, $pouring, $max]];
         });
 
         $round = $this->ritual->round();
-        $placed === null or $this->publisher->mugs($round, $placed);
+        $placed === null or $this->publisher->mugs($round, $placed, $max);
         $pouring === null or $this->publisher->pour($round, $pouring);
     }
 
@@ -143,7 +145,7 @@ final readonly class BarService
                 }
 
                 $pouring = null;
-                $inBar and [$bar, $pouring] = $this->pourNext($bar, $now);
+                $inBar and [$bar, $pouring] = $this->pourNext($bar, $now, $this->max(\count($walkers)));
                 $this->bar->write($bar);
 
                 return [$walkers, [$taken, $empty, $pouring]];
@@ -248,15 +250,15 @@ final readonly class BarService
     }
 
     /**
-     * A new round starts in the bar with a full counter.
+     * A new round starts in the bar with a counter full for the players on the floor.
      *
-     * @return array{mugs: int<0, max>, pouring: array|null, drunk: int<0, max>, target: positive-int} The counter as
-     *         the reset event carries it.
+     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int}
+     *         The counter as the reset event carries it.
      * @throws LockBusyException
      */
     public function open(int $round): array
     {
-        $this->bar->replace(new Bar($this->mugs));
+        $this->bar->replace(new Bar($this->max()));
 
         return $this->state($round, 0, $this->ritual->story());
     }
@@ -265,14 +267,16 @@ final readonly class BarService
      * The counter as clients see it; outside the bar it is empty. `drunk` and `target` go everywhere: the reveal and
      * the console show them too.
      *
-     * @return array{mugs: int<0, max>, pouring: array|null, drunk: int<0, max>, target: positive-int}
+     * @param int<0, max>|null $walkers Characters on the floor, when the caller has read them already.
+     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int}
      */
-    public function state(int $round, int $scene, Story $story): array
+    public function state(int $round, int $scene, Story $story, ?int $walkers = null): array
     {
         $bar = $this->policy->bar($scene) ? $this->bar->get() : new Bar();
 
         return [
             'mugs' => $bar->mugs,
+            'max' => $this->max($walkers),
             'pouring' => $bar->pouringToArray(),
             'drunk' => $this->bar->drinks($round),
             'target' => $this->target($story),
@@ -285,6 +289,19 @@ final readonly class BarService
     public function target(Story $story): int
     {
         return $story->barTarget ?? $this->drinks;
+    }
+
+    /**
+     * Mugs the owl pours up to: one per character on the floor — the count that also lets a lone player drink — at
+     * least one and no more than the counter has room for. Read without the lawn lock: a player who comes or goes
+     * moves the next pour, never a mug already on the counter.
+     *
+     * @param int<0, max>|null $walkers Characters on the floor, when the caller has read them already.
+     * @return positive-int
+     */
+    public function max(?int $walkers = null): int
+    {
+        return \max(1, \min($walkers ?? \count($this->walkers->all()), $this->mugs));
     }
 
     /**
@@ -301,13 +318,15 @@ final readonly class BarService
     }
 
     /**
-     * Begins the next mug while there is room on the counter and the owl is not pouring.
+     * Begins the next mug while the counter holds fewer than `$max` and the owl is not pouring. Mugs above `$max`, left
+     * by players who went away, stay until they are taken.
      *
+     * @param positive-int $max
      * @return array{Bar, array{since: int, until: int, rumor?: int}|null} The counter and the new pour, if any.
      */
-    private function pourNext(Bar $bar, int $now): array
+    private function pourNext(Bar $bar, int $now, int $max): array
     {
-        if ($bar->pouring() || $bar->mugs >= $this->mugs) {
+        if ($bar->pouring() || $bar->mugs >= $max) {
             return [$bar, null];
         }
 
