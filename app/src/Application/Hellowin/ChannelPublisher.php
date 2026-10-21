@@ -153,6 +153,16 @@ final readonly class ChannelPublisher
         $this->publish(['type' => 'flyer', 'round' => $round] + $flyer->toEvent());
     }
 
+    /**
+     * Wandering zombies taken off the lawn unhurt: the dawn has come or the round started over.
+     *
+     * @param non-empty-list<non-empty-string> $flyers
+     */
+    public function gone(int $round, array $flyers): void
+    {
+        $this->publish(['type' => 'gone', 'round' => $round, 'flyers' => $flyers]);
+    }
+
     public function shot(int $round, Flyer $flyer, ?Player $player = null): void
     {
         $this->publish(self::withPlayer(

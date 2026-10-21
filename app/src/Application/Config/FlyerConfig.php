@@ -35,7 +35,8 @@ final class FlyerConfig extends InjectableConfig
         'kinds_dawn' => 'duck,chicken',
         'interval_dawn' => '1000-2500',
         'zombie_interval' => '2000-5000',
-        'zombie_duration' => 14000,
+        'zombie_min' => 5,
+        'zombie_per_player' => 5,
         'zombie_points' => 2,
     ];
 
@@ -70,11 +71,19 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Milliseconds a zombie takes from the patch to the edge of the lawn.
+     * @return positive-int Wandering zombies the cursed world always keeps alive.
      */
-    public function getZombieDuration(): int
+    public function getZombieMin(): int
     {
-        return self::positiveInt($this->config['zombie_duration'] ?? null, 'zombie_duration', 'HELLOWIN_ZOMBIE_DURATION');
+        return self::positiveInt($this->config['zombie_min'] ?? null, 'zombie_min', 'HELLOWIN_ZOMBIE_MIN');
+    }
+
+    /**
+     * @return positive-int Wandering zombies per character on the floor the zombie interval tops the crowd up to.
+     */
+    public function getZombiePerPlayer(): int
+    {
+        return self::positiveInt($this->config['zombie_per_player'] ?? null, 'zombie_per_player', 'HELLOWIN_ZOMBIE_PER_PLAYER');
     }
 
     /**

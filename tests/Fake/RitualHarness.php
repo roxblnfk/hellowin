@@ -37,6 +37,7 @@ use App\Domain\Flyer\FlyerDepth;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
+use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
@@ -113,6 +114,8 @@ final class RitualHarness
      * @param positive-int $circleThreshold
      * @param list<non-empty-string> $reachable Pumpkins a character can clink with.
      * @param array<non-empty-string, array{float, float}> $positions Pumpkin positions by id; the rest stand at (10, 20).
+     * @param positive-int $zombieMin Wandering zombies the cursed world keeps alive.
+     * @param positive-int $zombiesPerPlayer Wandering zombies per character the zombie interval tops the crowd up to.
      */
     public function __construct(
         int $threshold = 2,
@@ -126,6 +129,8 @@ final class RitualHarness
         array $reachable = [],
         array $positions = [],
         bool $door = false,
+        int $zombieMin = 2,
+        int $zombiesPerPlayer = 3,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -171,7 +176,6 @@ final class RitualHarness
         $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
         $this->dawn = new DawnService($this->dawnStore, $publisher, $this->clock, 3);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -198,10 +202,13 @@ final class RitualHarness
             $this->clock,
             $this->shots,
             new NullLogger(),
-            new ZombieFactory(self::walkZone(), 14000, 2, 1, new Randomizer(new Mt19937(3))),
+            new ZombieFactory(self::walkZone(), 2, 1, new Randomizer(new Mt19937(3))),
             $this->cursed,
             $this->dawn,
+            new ZombieCrowd($zombieMin, $zombiesPerPlayer),
+            $this->walkerStore,
         );
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn, $this->flyers);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,
@@ -225,8 +232,8 @@ final class RitualHarness
             policy: $policy,
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
-        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers);
     }
 
     /**

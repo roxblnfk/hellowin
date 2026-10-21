@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Bar\BarService;
+use App\Application\Flyer\FlyerService;
 use App\Application\Story\OwlLine;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
@@ -26,6 +27,7 @@ final readonly class ResetService
         private RitualMetrics $metrics,
         private ?WalkService $walks = null,
         private ?BarService $bar = null,
+        private ?FlyerService $flyers = null,
     ) {}
 
     /**
@@ -51,6 +53,7 @@ final readonly class ResetService
             $inBar ? $this->openBar($round) : null,
             $again,
         );
+        $this->retire();
         $again and $this->publisher->owl($round, OwlLine::BAR_AGAIN);
         $this->metrics->state($this->store->snapshot());
 
@@ -79,6 +82,17 @@ final readonly class ResetService
     {
         try {
             $this->walks?->cureAll();
+        } catch (LockBusyException) {
+        }
+    }
+
+    /**
+     * Wandering zombies left from the cursed world go; a busy lock leaves them to the ticker's next tick.
+     */
+    private function retire(): void
+    {
+        try {
+            $this->flyers?->retire();
         } catch (LockBusyException) {
         }
     }

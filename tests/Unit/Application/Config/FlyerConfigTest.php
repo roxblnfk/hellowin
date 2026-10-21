@@ -159,11 +159,12 @@ final class FlyerConfigTest
 
     public function zombiesHaveTheirOwnPace(): void
     {
-        $config = new FlyerConfig(['zombie_interval' => '1000-2000', 'zombie_duration' => '9000', 'zombie_points' => 3]);
+        $config = new FlyerConfig(['zombie_interval' => '1000-2000', 'zombie_min' => '3', 'zombie_per_player' => 4, 'zombie_points' => 3]);
 
         Assert::same((new FlyerConfig())->getZombieInterval(), [2000, 5000]);
+        Assert::same([(new FlyerConfig())->getZombieMin(), (new FlyerConfig())->getZombiePerPlayer()], [5, 5]);
         Assert::same($config->getZombieInterval(), [1000, 2000]);
-        Assert::same($config->getZombieDuration(), 9000);
+        Assert::same([$config->getZombieMin(), $config->getZombiePerPlayer()], [3, 4]);
         Assert::same($config->getZombiePoints(), 3);
     }
 

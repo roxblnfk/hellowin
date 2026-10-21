@@ -134,6 +134,7 @@ final class RPCServiceTest
             'boss' => null,
             'dice' => null,
             'dawn' => null,
+            'flyers' => [],
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);

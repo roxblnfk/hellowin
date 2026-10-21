@@ -45,6 +45,24 @@ final class FlyerStoreTest
         Assert::notNull($store->shoot('f-00000001', 5_000 + 499));
     }
 
+    public function wandererOutlivesTheSweepAndEndsShotOrRetired(): void
+    {
+        $store = self::store();
+        $store->add(self::flyer('f-00000001'));
+        $store->add(Flyer::wanderer('f-0000000a', 1, new Point(50, 80), 2, 1_000));
+        $store->add(Flyer::wanderer('f-0000000b', 1, new Point(30, 70), 2, 1_000));
+
+        Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->sweep(PHP_INT_MAX - 1_000)), ['f-00000001']);
+        Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->wanderers()), ['f-0000000a', 'f-0000000b']);
+
+        Assert::notNull($store->shoot('f-0000000a', 999_999_999));
+        Assert::null($store->shoot('f-0000000a', 999_999_999));
+        Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->retire()), ['f-0000000b']);
+        Assert::blank($store->retire());
+        Assert::blank($store->wanderers());
+        Assert::null($store->shoot('f-0000000b', 1_000));
+    }
+
     public function sweepReturnsOnlyEscapedFlyersAndOnlyOnce(): void
     {
         $store = self::store();

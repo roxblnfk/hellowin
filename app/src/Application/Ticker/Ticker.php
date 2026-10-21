@@ -65,12 +65,11 @@ final class Ticker
             $this->safely('flyer launch', fn() => $this->flyers->launchScheduled($now));
         }
 
-        // Zombies keep their own schedule, so a cursed world gets them at their pace on top of the flyers
+        // Zombies keep their own beat on top of the flyers; the minimum of the crowd does not wait for it
         $this->nextZombie ??= $now + $this->random->getInt(...$this->zombieInterval);
-        if ($now >= $this->nextZombie) {
-            $this->nextZombie = $now + $this->random->getInt(...$this->zombieInterval);
-            $this->safely('zombie launch', fn() => $this->flyers->launchZombie($now));
-        }
+        $due = $now >= $this->nextZombie;
+        $due and $this->nextZombie = $now + $this->random->getInt(...$this->zombieInterval);
+        $this->safely('zombies', fn() => $this->flyers->wander($now, $due));
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));
         $this->safely('clinks', fn() => $this->walks->clinks());

@@ -33,6 +33,7 @@ use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
@@ -106,6 +107,7 @@ final class HellowinBootloader extends Bootloader
                 RapierService $rapier,
                 DiceService $dice,
                 DawnService $dawn,
+                FlyerService $flyerService,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -121,6 +123,7 @@ final class HellowinBootloader extends Bootloader
                 $rapier,
                 $dice,
                 $dawn,
+                $flyerService,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -336,10 +339,11 @@ final class HellowinBootloader extends Bootloader
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),
-                $flyers->getZombieDuration(),
                 $flyers->getZombiePoints(),
                 \min(1, \count($flyers->getDepths()) - 1),
             ),
+            ZombieCrowd::class => static fn(FlyerConfig $flyers): ZombieCrowd
+                => new ZombieCrowd($flyers->getZombieMin(), $flyers->getZombiePerPlayer()),
             FlyerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

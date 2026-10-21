@@ -66,7 +66,7 @@
 | Работа | Когда | Что |
 |---|---|---|
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс (на рассвете — `HELLOWIN_FLYER_INTERVAL_DAWN`); первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
-| Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` 5–6), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
+| Бродячие зомби | каждый тик; удар `HELLOWIN_ZOMBIE_INTERVAL` мс — своё расписание | `FlyerService::wander(now, due)`: в проклятом мире (`finale` 5–6) без паузы под RR-локом `wanderers` — живых меньше `HELLOWIN_ZOMBIE_MIN` → встают недостающие; на ударе и живых меньше `max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER × фигурки)` → ещё один; каждый — `ZombieFactory::wander` → ключ + индекс → `flyer {wander: true}` → `hellowin_flyers_launched_total{depth}`. Вне шагов 5–6 оставшиеся снимаются (`retire`, событие `gone`) |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая кружка с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
@@ -101,7 +101,7 @@
   `FlyerFactory::launch(now, scene, cursed, dawn)`. До
   шага 5 финальная сцена летает своим набором из `HELLOWIN_FLYER_KINDS`. Редкий летун — по-прежнему по сцене
   (`HELLOWIN_FLYER_RARE`, по умолчанию у финала его нет). Пустой набор — как пустой набор сцены. Пауза останавливает и
-  этот набор; зомби идут отдельно, по переключателю `zombies`.
+  этот набор; зомби идут отдельно (бродячие, см. ниже), переключатель `zombies` на них не действует.
 - **Светлячки** (`firefly`) — обычные летуны (край или куст, прямая или дуга), но глубина — только 1–2
   (`FIREFLY_DEPTHS`, ограничено числом глубин): из куста вне этих глубин светлячок не взлетает — путь берётся с края,
   глубина — равновероятно 1 или 2. Длительность — глубины, очки — `HELLOWIN_FLYER_FIREFLY_POINTS` на любой глубине.
@@ -131,15 +131,18 @@
   (`app/config/hellowin.php`), `depth` 0, без дуги и куста, время — как у ближней глубины (быстрый), `points` 0; выстрел
   по нему всегда промах, ключ не удаляется — летун улетает и учитывается как улетевший. Остальные особые (`witch`) —
   с края, на случайной глубине, очки `HELLOWIN_FLYER_RARE_POINTS`; сбитая ведьма — реплика `witch-down` с игроком.
-- **Зомби** проклятого мира — тоже летуны (`kind: zombie`), чтобы выстрел, учёт улетевших, очки и метрики были общими.
-  Путь (`ZombieFactory`): по лучу из центра эллипса грядки `walk.patch` под случайным углом — от точки на краю грядки
-  до выхода за прямоугольник лужайки `walk.area`; углы, где край грядки вне лужайки (у горизонта), пропускаются.
-  `depth` 1 (или последняя, если глубин меньше), без `via` и `bush`, время `HELLOWIN_ZOMBIE_DURATION`, очки
-  `HELLOWIN_ZOMBIE_POINTS`.
-- **Хранение**: `hellowin:flyer:{id}` — летун со временем запуска, TTL = полёт + 10 с; индекс `hellowin:flyers`
-  (id → момент окончания полёта) пишут тикер и RPC `flyer.special`, поэтому под RR-локом `flyers`; учёт улетевших
-  убирает из индекса только свои id, перечитав его под локом.
-- **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть, летуна можно сбить и полёт не кончился → удалить ключ → попадание:
+- **Зомби** проклятого мира — тоже летуны (`kind: zombie`), чтобы выстрел, очки и метрики были общими, но бродячие
+  (`Flyer::wanderer`, `wander: true`): полёта нет, встаёт в случайной точке прямоугольника лужайки `walk.area` (там и
+  грядка), дальше его ведёт фронтенд. `depth` 1 (или последняя, если глубин меньше), без `via` и `bush`, очки
+  `HELLOWIN_ZOMBIE_POINTS`. Сколько встаёт — `ZombieCrowd::wanted(alive, players, due)`; добор под RR-локом
+  `wanderers` (`FlyerStore::herd`), который сам перечитывает сюжет: после снятия на рассвете новый не встанет. Тикер
+  добирает и снимает каждый тик; вход в шаг 5 (`StoryService::entered`) ставит минимум сразу, вход в шаг 7 и сброс
+  (`ResetService`) снимают сразу — событие `gone {flyers}` (только те, чей ключ ещё был; не в метрику «улетел»).
+- **Хранение**: `hellowin:flyer:{id}` — летун со временем запуска, TTL = полёт + 10 с (бродячий — 12 ч); индекс
+  `hellowin:flyers` (id → момент окончания полёта, `null` у бродячего) пишут тикер и RPC `flyer.special`, поэтому под
+  RR-локом `flyers`; учёт улетевших убирает из индекса только свои id, перечитав его под локом, бродячих не трогает —
+  их id убирают выстрел и снятие. Живые бродячие — в снимке (`flyers`).
+- **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть, летуна можно сбить и полёт не кончился (у бродячего не проверяется) → удалить ключ → попадание:
   `flyers + 1`, `points + очки` игроку, одно событие `shot`, `hellowin_flyers_shot_total{depth}`, `+1` в `hellowin:shot`
   раунда (для разоблачения). Иначе промах.
   Выстрел принимается до 500 мс после конца полёта: клиент начинает рисовать летуна, когда событие дошло.
@@ -298,9 +301,9 @@
 - **Шаги.** `Story`: `CURSED_STEP` 5, `RAPIER_STEP` 6, `DAWN_STEP` 7 = `LAST_STEP`; `cursed()` — шаги 5–6, `dawn()` —
   7. `stepTo(5)` снимает `ready` и включает `zombies`; `awaitsReady` — шаг 1 ждёт круга, шаг 6 — цели проклятого мира
   (`ready`), шаг 7 от модератора без `force` — всегда `not ready` (его даёт последний удар). Что приносит шаг —
-  `StoryService::entered`: на 5 — пиво всем фигуркам (`WalkService::handBeer`), `cursed`, `zombies {on: true}`; на 7 —
-  `force` модератора валит босса (`RapierService::fell`, без `boss-down`), заклятие снимается со всех
-  (`WalkService::cureAll`).
+  `StoryService::entered`: на 5 — пиво всем фигуркам (`WalkService::handBeer`), `cursed`, `zombies {on: true}`,
+  `HELLOWIN_ZOMBIE_MIN` бродячих зомби; на 7 — `force` модератора валит босса (`RapierService::fell`, без
+  `boss-down`), заклятие снимается со всех (`WalkService::cureAll`), бродячие зомби уходят (`gone`).
 - **Цель проклятого мира** — ключ `hellowin:cursed` `{round, drunk, slain, drinksBonus, zombiesBonus, players}` под
   RR-локом `cursed` (`CursedStore`); запись другого раунда читается как пустая, так что сброс её не трогает, а добавки
   модератора не переживают раунд. Цель — `max(1, HELLOWIN_CURSED_PER_PLAYER × max(1, n) + добавка)`, n — фигурки в
@@ -328,7 +331,7 @@
   `boss-down` и ставит задачу `TransitionFinale {key: "{round}:finale:7", round, toStep: 7}` (`#[Idempotent]`, как
   переходы), обработчик — `StoryService::finaleOf` (шаг меняется, только если раунд тот же и шаг 6 → 7).
   `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
-- **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не запускаются (`cursed()` ложно),
+- **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не встают (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
 - **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): попадание игрока
   (`FlyerService::shoot`, не анонимное) на шаге 7 — сразу после `shot` под RR-локом `dawn` `shots + 1` и `at` в
@@ -554,13 +557,13 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
-| Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
+| Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
 | Топ рассвета: `hellowin:dawn` `{round, players}` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -628,8 +631,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
-| `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между зомби в проклятом мире: диапазон или число |
-| `HELLOWIN_ZOMBIE_DURATION` | 14000 | мс пути зомби от края грядки до края лужайки |
+| `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между бродячими зомби сверх минимума в проклятом мире: диапазон или число |
+| `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
+| `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
 | `HELLOWIN_CURSED_PER_PLAYER` | 5 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
 | `HELLOWIN_BOSS_HP_BASE` | 40 | здоровье FrankenPHP при пробуждении без игроков, до множителя `k` |

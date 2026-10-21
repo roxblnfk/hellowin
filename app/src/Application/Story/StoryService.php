@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Story;
 
+use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\RitualMetrics;
@@ -40,6 +41,7 @@ final readonly class StoryService
         private ?RitualMetrics $metrics = null,
         private ?DiceService $dice = null,
         private Clock $clock = new SystemClock(),
+        private ?FlyerService $flyers = null,
     ) {}
 
     /**
@@ -188,7 +190,7 @@ final readonly class StoryService
     }
 
     /**
-     * Zombies walk only in the cursed world, but the switch may be turned on beforehand.
+     * The console's zombie switch. The wandering zombies of the cursed world do not heed it.
      *
      * @throws RitualBusyException
      */
@@ -233,9 +235,23 @@ final readonly class StoryService
             }
             $before->zombies or $this->publisher->zombies($round, true);
         }
+        $this->herd($step);
         $this->publisher->owl($round, OwlLine::finale($step));
         $step === Story::DICE_STEP and $this->dice?->begin($round);
         $step === Story::SCATTER_STEP and $this->scatter();
+    }
+
+    /**
+     * The cursed world stands its least crowd of wandering zombies up at once, the dawn takes them off; the ticker
+     * does both anyway on its next tick, so a busy lock only costs the moment.
+     */
+    private function herd(int $step): void
+    {
+        try {
+            $step === Story::CURSED_STEP and $this->flyers?->wander($this->clock->now(), false);
+            $step === Story::DAWN_STEP and $this->flyers?->retire();
+        } catch (LockBusyException) {
+        }
     }
 
     /**

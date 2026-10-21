@@ -43,6 +43,8 @@ final readonly class Flyer
      * @param non-empty-string $kind
      * @param Wobble|null $wobble Swing across the path; null flies the base trajectory as it is.
      * @param list<Stop> $stops Where the flyer lands between `from` and `to`, in order; the sits are within its duration.
+     * @param bool $wander A zombie that stays on the lawn until it is shot: each browser walks it from `from`, and it
+     *        has no flight — `to` is `from` and `duration` is 1 for the shape's sake, neither leaves the server.
      */
     public function __construct(
         public string $id,
@@ -57,7 +59,21 @@ final readonly class Flyer
         public string $kind = self::KIND_DUCK,
         public ?Wobble $wobble = null,
         public array $stops = [],
+        public bool $wander = false,
     ) {}
+
+    /**
+     * A zombie of the cursed world that wanders from where it stands up until it is shot.
+     *
+     * @param non-empty-string $id
+     * @param int<0, max> $depth
+     * @param int<0, max> $points
+     * @param int $launchedAt Unix time in milliseconds.
+     */
+    public static function wanderer(string $id, int $depth, Point $from, int $points, int $launchedAt): self
+    {
+        return new self($id, $depth, $from, $from, null, null, 1, $points, $launchedAt, self::KIND_ZOMBIE, wander: true);
+    }
 
     /**
      * Flyer ids come from clients in RPC `shoot` and name a lock, so only the generated shape is accepted.
@@ -75,12 +91,13 @@ final readonly class Flyer
             return null;
         }
 
+        $wander = ($value['wander'] ?? false) === true;
         $from = Point::fromArray($value['from'] ?? null);
-        $to = Point::fromArray($value['to'] ?? null);
+        $to = $wander ? $from : Point::fromArray($value['to'] ?? null);
         $id = $value['flyer'] ?? null;
         $kind = $value['kind'] ?? null;
         $depth = $value['depth'] ?? null;
-        $duration = $value['duration'] ?? null;
+        $duration = $wander ? 1 : $value['duration'] ?? null;
         $points = $value['points'] ?? null;
         $launchedAt = $value['launchedAt'] ?? null;
         /** @var mixed $bush */
@@ -105,6 +122,7 @@ final readonly class Flyer
             $kind,
             Wobble::fromArray($value['wobble'] ?? null),
             self::stops($value['stops'] ?? null),
+            $wander,
         );
     }
 
@@ -126,7 +144,7 @@ final readonly class Flyer
      */
     public function flyingAt(int $now): bool
     {
-        return $now < $this->expiresAt();
+        return $this->wander || $now < $this->expiresAt();
     }
 
     /**
@@ -135,6 +153,14 @@ final readonly class Flyer
     public function toEvent(): array
     {
         $event = ['flyer' => $this->id, 'kind' => $this->kind, 'depth' => $this->depth];
+        if ($this->wander) {
+            return $event + [
+                'from' => $this->from->toArray(),
+                'points' => $this->points,
+                'launchedAt' => $this->launchedAt,
+                'wander' => true,
+            ];
+        }
         $this->bush === null or $event['bush'] = $this->bush;
         $event['from'] = $this->from->toArray();
         $this->via === null or $event['via'] = $this->via->toArray();

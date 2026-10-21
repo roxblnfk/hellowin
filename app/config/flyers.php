@@ -49,9 +49,11 @@ return [
     'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),
     'rare_points' => env('HELLOWIN_FLYER_RARE_POINTS', 10),
 
-    // Zombies of the cursed world, let out by themselves as it begins (the moderator may hold them): milliseconds
-    // between them (range or fixed), milliseconds from the patch to the edge of the lawn, points for one
+    // Zombies of the cursed world wander until shot: never fewer than `zombie_min` alive, one more every
+    // `zombie_interval` milliseconds (range or fixed) while fewer than `zombie_per_player` per character on the floor
+    // are alive; the pause holds them. Points for one
     'zombie_interval' => env('HELLOWIN_ZOMBIE_INTERVAL', '2000-5000'),
-    'zombie_duration' => env('HELLOWIN_ZOMBIE_DURATION', 14000),
+    'zombie_min' => env('HELLOWIN_ZOMBIE_MIN', 5),
+    'zombie_per_player' => env('HELLOWIN_ZOMBIE_PER_PLAYER', 5),
     'zombie_points' => env('HELLOWIN_ZOMBIE_POINTS', 2),
 ];

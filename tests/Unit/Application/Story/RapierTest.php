@@ -50,7 +50,7 @@ final class RapierTest
 
         $ritual->story->finaleStep(5, force: true);
 
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'cursed', 'zombies', 'owl']);
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'cursed', 'zombies', 'flyer', 'flyer', 'owl']);
         Assert::same($ritual->broadcast->ofType('finale')[0]['item'], 'beer');
         Assert::same($ritual->broadcast->ofType('cursed')[0], ['type' => 'cursed', 'round' => 1, 'drunk' => 0, 'slain' => 0, 'drinksTarget' => 4, 'zombiesTarget' => 4]);
         Assert::same($ritual->broadcast->ofType('zombies')[0]['on'], true);
@@ -387,7 +387,7 @@ final class RapierTest
 
         Assert::true($ritual->flyers->atDawn());
         Assert::same($ritual->flyers->launch(0)?->kind, 'duck');
-        Assert::null($ritual->flyers->launchZombie(0));
+        Assert::blank($ritual->flyers->wander(0, true));
     }
 
     public function resetForgetsTheNight(): void
@@ -501,8 +501,9 @@ final class RapierTest
     private static function slay(RitualHarness $ritual, int $zombies): void
     {
         for ($i = 0; $i < $zombies; ++$i) {
-            $zombie = $ritual->flyers->launchZombie($ritual->clock->now);
+            $zombie = $ritual->flyerStore->wanderers()[0] ?? null;
             Assert::notNull($ritual->flyers->shoot($zombie?->id ?? '', self::JACK));
+            $ritual->flyers->wander($ritual->clock->now, false);
         }
     }
 

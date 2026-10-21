@@ -14,12 +14,14 @@ use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\Story;
+use App\Domain\Walk\WalkerStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -45,6 +47,8 @@ final readonly class FlyerService
         private ?ZombieFactory $zombies = null,
         private ?CursedService $cursed = null,
         private ?DawnService $dawn = null,
+        private ?ZombieCrowd $crowd = null,
+        private ?WalkerStore $walkers = null,
     ) {}
 
     /**
@@ -83,18 +87,74 @@ final readonly class FlyerService
     }
 
     /**
-     * The ticker's zombie: only in the cursed world, with zombies let out and the sky not paused.
+     * The ticker's zombies of the cursed world: they stand up to keep the crowd {@see ZombieCrowd} wants, unless the
+     * sky is paused; out of the cursed world the ones left there are retired. Under the lock of the crowd, which also
+     * reads the story, so a zombie never stands up after the dawn has retired the crowd.
      *
      * @param int $now Unix time in milliseconds.
+     * @param bool $due The zombie interval has come round: one more may stand up beyond the minimum.
+     * @return list<Flyer> Zombies that stood up.
+     * @throws LockBusyException
      */
-    public function launchZombie(int $now): ?Flyer
+    public function wander(int $now, bool $due): array
     {
-        $ritual = $this->ritual->snapshot();
-        $story = $ritual->story;
+        $zombies = $this->zombies;
+        if ($zombies === null || $this->crowd === null) {
+            return [];
+        }
+        if (!$this->ritual->story()->cursed()) {
+            $this->retire();
 
-        return $this->zombies !== null && $story->cursed() && $story->zombies && !$story->paused
-            ? $this->release($ritual->round, $this->zombies->launch($now))
-            : null;
+            return [];
+        }
+
+        return $this->store->herd(function (array $alive) use ($zombies, $now, $due): array {
+            $ritual = $this->ritual->snapshot();
+            if (!$ritual->story->cursed() || $ritual->story->paused) {
+                return [];
+            }
+
+            $launched = [];
+            $wanted = $this->crowd?->wanted(\count($alive), \count($this->walkers?->all() ?? []), $due) ?? 0;
+            for ($i = 0; $i < $wanted; ++$i) {
+                $launched[] = $this->release($ritual->round, $zombies->wander($now));
+            }
+
+            return $launched;
+        });
+    }
+
+    /**
+     * Takes the wandering zombies off the lawn unhurt, as the dawn comes or the round starts over: one `gone` for the
+     * ones still there, none when there are none.
+     *
+     * @return list<non-empty-string> Ids of the zombies taken off.
+     * @throws LockBusyException
+     */
+    public function retire(): array
+    {
+        if ($this->store->wanderers() === []) {
+            return [];
+        }
+
+        return $this->store->herd(function (): array {
+            $ids = \array_map(static fn(Flyer $flyer): string => $flyer->id, $this->store->retire());
+            $ids === [] or $this->publisher->gone($this->ritual->round(), $ids);
+
+            return $ids;
+        });
+    }
+
+    /**
+     * The wandering zombies of the snapshot: on the cursed world's steps, none elsewhere.
+     *
+     * @return list<array> Their `flyer` events, without `type` and `round`.
+     */
+    public function wanderers(Story $story): array
+    {
+        return $story->cursed()
+            ? \array_map(static fn(Flyer $flyer): array => $flyer->toEvent(), $this->store->wanderers())
+            : [];
     }
 
     /**
