@@ -226,16 +226,16 @@ final readonly class WalkService
      */
     public function clink(string $id, string $kind, string $target): Walk
     {
-        if (!isset($this->store->all()[$id])) {
-            throw new NoCharacterException('no character');
-        }
-        if (!$this->ritual->snapshot()->story->cursed()) {
-            throw new ClinkRefusedException('not cursed');
-        }
-        if ($target === '' || $target === $id) {
+        $walker = $this->store->all()[$id] ?? throw new NoCharacterException('no character');
+        $ritual = $this->ritual->snapshot();
+        $inBar = $this->barIn($ritual->scene);
+        $inBar || $ritual->story->cursed() or throw new ClinkRefusedException('not cursed');
+        $inBar && !$walker->hasBeer() and throw new ClinkRefusedException('no beer');
+        if ($target === '' || $target === $id || $inBar && $kind === Clink::PUMPKIN) {
             throw new ClinkRefusedException('no target');
         }
 
+        $zone = $this->zoneIn($ritual->scene);
         $pumpkin = null;
         if ($kind === Clink::PUMPKIN) {
             $element = $this->elements->find($target);
@@ -247,18 +247,20 @@ final readonly class WalkService
         $now = $this->clock->now();
         $walker = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            function (array $walkers) use ($id, $kind, $target, $pumpkin, $now): array {
+            function (array $walkers) use ($id, $kind, $target, $pumpkin, $now, $zone, $inBar): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $from = self::rounded($walker->walk->positionAt($now));
 
                 if ($pumpkin !== null) {
-                    $walk = Walk::along($this->zone->route($from, $pumpkin), $now, $this->speed);
+                    $walk = Walk::along($zone->route($from, $pumpkin), $now, $this->speed);
                     $clink = new Clink($kind, $target, $walk->arrivesAt);
                 } else {
-                    $other = $walkers[$target] ?? throw new ClinkRefusedException('no target');
+                    // In the bar both clink with their mugs
+                    $other = $walkers[$target] ?? null;
+                    $other !== null && (!$inBar || $other->hasBeer()) or throw new ClinkRefusedException('no target');
                     $stand = $other->walk->path[\count($other->walk->path) - 1];
-                    $meet = self::rounded($this->zone->beside($stand, $from, $this->clinkGap));
-                    $walk = Walk::along($this->zone->route($from, $meet), $now, $this->speed);
+                    $meet = self::rounded($zone->beside($stand, $from, $this->clinkGap));
+                    $walk = Walk::along($zone->route($from, $meet), $now, $this->speed);
                     $clink = new Clink($kind, $target, \max($walk->arrivesAt, $other->walk->arrivesAt), $other->walk->startedAt);
                 }
 
@@ -292,11 +294,14 @@ final readonly class WalkService
 
         $ritual = $this->ritual->snapshot();
         $cursed = $ritual->story->cursed();
+        $inBar = $this->barIn($ritual->scene);
         $met = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            static function (array $walkers) use ($now, $cursed): array {
+            static function (array $walkers) use ($now, $cursed, $inBar): array {
                 $met = [];
-                foreach ($walkers as $id => $walker) {
+                foreach (\array_keys($walkers) as $id) {
+                    // Read again: a clink earlier in the loop may have clinked this character's mug
+                    $walker = $walkers[$id];
                     $clink = $walker->clink;
                     if ($clink === null || !$clink->due($now)) {
                         continue;
@@ -304,8 +309,13 @@ final readonly class WalkService
 
                     $target = $clink->kind === Clink::WALKER ? $walkers[$clink->target] ?? null : null;
                     $inPlace = $clink->kind === Clink::PUMPKIN || $target?->walk->startedAt === $clink->since;
-                    $happens = $cursed && $inPlace;
+                    // In the bar both still hold their mugs: nobody has drunk up on the way
+                    $happens = $inPlace && ($cursed || $inBar && $walker->hasBeer() && $target?->hasBeer() === true);
                     $walkers[$id] = $walker->clinked($happens ? $now : null);
+                    if ($happens && $inBar && $target !== null) {
+                        $walkers[$id] = $walkers[$id]->clinkedMug();
+                        $walkers[$target->id] = $walkers[$target->id]->clinkedMug();
+                    }
                     $happens and $met[] = [$id, $clink];
                 }
 
@@ -322,6 +332,41 @@ final readonly class WalkService
                 $now,
             );
         }
+    }
+
+    /**
+     * A clink in the bar that happened by itself, near enough, as the browser of one of the two saw it: it counts for
+     * the caller's mug only, and nobody is told — every viewer plays it anyway (docs/spec/scenario.md, «Чоканье»).
+     *
+     * @param non-empty-string $id
+     * @throws NoCharacterException
+     * @throws BarRefusedException `not bar`, `no beer` or `no target`: the partner is gone, is the caller, holds no
+     *         beer or stands farther than the bar's clink reach.
+     * @throws LockBusyException
+     */
+    public function clinkAuto(string $id, string $partner): void
+    {
+        $now = $this->clock->now();
+        $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            function (array $walkers) use ($id, $partner, $now): array {
+                $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
+                $bar = $this->bar;
+                $bar !== null && $this->barIn($this->ritual->scene()) or throw new BarRefusedException('not bar');
+                $walker->hasBeer() or throw new BarRefusedException('no beer');
+
+                $other = $partner === $id ? null : $walkers[$partner] ?? null;
+                $here = $walker->walk->positionAt($now);
+                $there = $other?->walk->positionAt($now);
+                $other !== null && $there !== null && $other->hasBeer()
+                    && \hypot($there->x - $here->x, $there->y - $here->y) <= $bar->clinkReach
+                    or throw new BarRefusedException('no target');
+
+                $walkers[$id] = $walker->clinkedMug();
+
+                return [$walkers, null];
+            },
+        );
     }
 
     /**

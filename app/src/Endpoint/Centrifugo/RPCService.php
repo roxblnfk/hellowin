@@ -105,6 +105,7 @@ final readonly class RPCService implements ServiceInterface
             'thresholds' => ['ok' => true] + $this->story->thresholds($request->getData()['k'] ?? null),
             'bar.take' => $this->take($player),
             'drink' => $this->drink($player),
+            'clink.auto' => $this->clinkAuto($request->getData(), $player),
             'bar.target' => ['ok' => true, 'target' => $this->barService()->moveTarget($request->getData()['delta'] ?? null)],
             'bar.ready' => $this->barReady(),
             'me' => [
@@ -344,6 +345,22 @@ final readonly class RPCService implements ServiceInterface
         }
 
         $this->barService()->drink($player);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function clinkAuto(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        /** @var mixed $walker */
+        $walker = $params['walker'] ?? null;
+        $this->walks->clinkAuto($player, \is_string($walker) ? $walker : '');
 
         return ['ok' => true];
     }

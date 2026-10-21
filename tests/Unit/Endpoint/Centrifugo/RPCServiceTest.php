@@ -742,6 +742,17 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'drink', [], self::PLAYER), ['ok' => false, 'error' => 'no beer']);
     }
 
+    public function autoClinkNeedsAPlayerWithBeer(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        Assert::same($this->call($ritual, 'clink.auto', ['walker' => 'bbbbbbbbbbbbbbbb']), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'clink.auto', ['walker' => 'bbbbbbbbbbbbbbbb'], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'clink.auto', ['walker' => 'bbbbbbbbbbbbbbbb'], self::PLAYER), ['ok' => false, 'error' => 'no beer']);
+        Assert::same($this->call($ritual, 'clink', ['walker' => 'bbbbbbbbbbbbbbbb'], self::PLAYER), ['ok' => false, 'error' => 'no beer']);
+    }
+
     public function barConsoleIsTheModeratorsOnly(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1]);
