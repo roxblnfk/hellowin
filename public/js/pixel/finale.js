@@ -970,8 +970,8 @@ function smokeBlob(g, cx, cy, rx, ry, seed, density = 1) {
     }
 }
 
-/** A puff of smoke r px across, 4 frames billowing (the scene moves and fades it). */
-function puff(r, frame) {
+/** A puff of smoke r px across, 4 frames billowing (the scene moves it); a lower `density` dithers it thinner. */
+function puff(r, frame, density = 1) {
     const w = r * 2 + 6;
     const h = Math.round(r * 1.6) + 6;
     const g = grid(w, h);
@@ -980,7 +980,7 @@ function puff(r, frame) {
     const lobes = 3;
     for (let i = 0; i < lobes; i++) {
         const a = (i / lobes) * Math.PI * 2 + frame * 0.5;
-        smokeBlob(g, cx + Math.cos(a) * r * 0.35, cy + Math.sin(a) * r * 0.25, r * (0.62 + 0.06 * Math.sin(frame + i)), r * 0.5, 31 + i + frame * 3);
+        smokeBlob(g, cx + Math.cos(a) * r * 0.35, cy + Math.sin(a) * r * 0.25, r * (0.62 + 0.06 * Math.sin(frame + i)), r * 0.5, 31 + i + frame * 3, density);
     }
     return toSprite(g, SMOKE_LEGEND, { x: Math.round(cx), y: Math.round(cy) });
 }
@@ -1100,7 +1100,8 @@ function chainBolt(from, to, seed = 1) {
 /**
  * column: 4 frames of lightColumn() at 150 px (~90 ms); flash: 3 frames of the circle igniting (~80 ms);
  * lightning: three strikes × 3 frames at 120 px (~60 ms each, a beat of darkness between strikes); smoke.puff:
- * sizes 5, 8, 12 × 4 frames (~200 ms); smoke.cloud: 4 frames (~220 ms); smoke.creep: 4 frames (~300 ms);
+ * sizes 5, 8, 12 × 4 frames (~200 ms); smoke.billow: [size][thinning][frame] — sizes 6, 10, 14, 18, four Bayer
+ * steps from dense to the last wisps, 4 frames (~240 ms); smoke.cloud: 4 frames (~220 ms); smoke.creep: 4 frames (~300 ms);
  * motes: FrankenPHP-green specks for the cursed world; chain(from, to, seed): the rapier's golden lightning (chainBolt),
  * three seeds make the three ~50 ms shapes of one strike.
  */
@@ -1110,6 +1111,7 @@ export const FX = {
     lightning: [1, 2, 3].map((seed) => lightning(120, seed)),
     smoke: {
         puff: [5, 8, 12].map((r) => [0, 1, 2, 3].map((f) => puff(r, f))),
+        billow: [6, 10, 14, 18].map((r) => [1, 0.62, 0.38, 0.2].map((density) => [0, 1, 2, 3].map((f) => puff(r, f, density)))),
         cloud: [0, 1, 2, 3].map(smokeCloud),
         creep: [0, 1, 2, 3].map(creepingSmoke),
     },

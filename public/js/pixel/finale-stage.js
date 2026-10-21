@@ -101,6 +101,90 @@ const GLINT_LENS_MS = 80;
 const GLASSES_FALL = 260;
 const WISP_MS = 2400;
 
+// The smoke of the third strike, all of it a function of the ms since the strike, the same for every viewer.
+const BURST_AT = T.strikes[2];
+// Each puff bursts out of the strike over BURST_MS, rolls up and outward, holds dense for `hold` ms and thins out in
+// four steps over `thin` ms. `x`, `y` — where it settles, art px from the circle's foot; `front` — before the figure.
+const BURST_MS = 320;
+const rand = (i, k) => mix(0x5e0c + k, i) / 2 ** 32;
+const BURST = [
+    // Before the figure: a dense veil over him, thinning first, once the reveal is over.
+    ...Array.from({ length: 10 }, (_, i) => {
+        const h = (i % 5) / 4;
+        const side = i % 2 ? 1 : -1;
+        return {
+            x: side * (3 + rand(i, 1) * 16), y: -6 - h * 66 - rand(i, 2) * 6, size: h > 0.2 && h < 0.9 ? 3 : 2, front: true,
+            hold: 650 + rand(i, 3) * 450, thin: 1600 + rand(i, 4) * 1400, rise: 3 + h * 5, drift: side * (2 + rand(i, 5) * 3),
+        };
+    }),
+    // Behind him and out to the sides: a wider cloud up over his head that lingers longer.
+    ...Array.from({ length: 10 }, (_, i) => {
+        const h = (i % 5) / 4;
+        const side = i % 2 ? -1 : 1;
+        return {
+            x: side * (16 + rand(i, 6) * 18), y: -10 - h * 72 - rand(i, 7) * 8, size: 2 + (i % 3 === 0 ? 1 : 0), front: false,
+            hold: 1100 + rand(i, 8) * 700, thin: 2400 + rand(i, 9) * 1800, rise: 4 + h * 7, drift: side * (3 + rand(i, 10) * 4),
+        };
+    }),
+    // A ring on the ground rolling out over the circle and lying there longest.
+    ...Array.from({ length: 6 }, (_, i) => {
+        const side = i % 2 ? 1 : -1;
+        return {
+            x: side * (18 + (i >> 1) * 13 + rand(i, 11) * 6), y: -2 + (i >> 1) * 2, size: 2 - (i >> 1 === 2 ? 1 : 0), front: i >> 1 !== 1,
+            hold: 2600 + rand(i, 12) * 900, thin: 2600 + rand(i, 13) * 1200, rise: 0.6, drift: side * (4 + rand(i, 14) * 3),
+        };
+    }),
+];
+// Wisps curling up off him for a while after: start ms after the strike (wider apart as he cools), where on him, life.
+const WISP_LIFE = 1700;
+const WISPS = Array.from({ length: 14 }, (_, k) => {
+    const spot = [[-12, -52], [12, -50], [-9, -34], [10, -36], [0, -66], [-5, -18], [6, -20]][Math.floor(rand(k, 15) * 7)];
+    return { at: 700 + k * 380 + k * k * 14, x: spot[0] + Math.round(rand(k, 16) * 4 - 2), y: spot[1], drift: rand(k, 17) < 0.5 ? -1 : 1 };
+});
+
+/**
+ * The smoke after the third strike at `t` into step 2: [{ size, fade, frame, x, y, layer }] with x, y in art px from
+ * the circle's foot and `layer` — 'back' behind the figure, 'front' before it on the ground, 'over' rising off him.
+ * Reduced motion keeps the puffs where they settle, without billowing, and leaves out the wisps.
+ */
+export function strikeSmokeAt(t, clock, reduced) {
+    const into = t - BURST_AT;
+    if (into < 0) return [];
+    const out = [];
+    BURST.forEach((p, i) => {
+        const a = into - (i % 7) * 15;
+        if (a < 0) return;
+        const fade = a < p.hold ? 0 : Math.floor(((a - p.hold) / p.thin) * 4);
+        if (fade > 3) return;
+        const frame = reduced ? 0 : (Math.floor(clock / 240) + i) % 4;
+        if (reduced) {
+            out.push({ size: p.size, fade, frame, x: p.x, y: p.y, layer: p.front ? 'front' : 'back' });
+            return;
+        }
+        // Out of the strike point at his head, fast, then easing into the slow roll.
+        const e = 1 - (1 - Math.min(1, a / BURST_MS)) ** 3;
+        const s = a / 1000;
+        const x = lerp(p.x * 0.15, p.x, e) + p.drift * s + Math.sin(s * 1.3 + i) * 1.5;
+        const y = lerp(-40, p.y, e) - p.rise * s;
+        out.push({ size: Math.max(0, p.size - (e < 0.5 ? 1 : 0)), fade, frame, x, y, layer: p.front ? 'front' : 'back' });
+    });
+    if (reduced) return out;
+    WISPS.forEach((w, k) => {
+        const a = into - w.at;
+        if (a < 0 || a >= WISP_LIFE) return;
+        const k01 = a / WISP_LIFE;
+        const up = 26 * (1 - (1 - k01) ** 2);
+        out.push({
+            size: k01 < 0.35 ? 0 : 1, fade: Math.min(3, Math.floor(k01 * 4)), frame: (Math.floor(clock / 240) + k) % 4,
+            x: w.x + w.drift * (k01 * 7 + Math.sin(k01 * 5 + k) * 2), y: w.y - up, layer: 'over',
+        });
+    });
+    return out;
+}
+
+/** How many puff sprites strikeSmokeAt() may ask for at once. */
+const STRIKE_PUFFS = BURST.length + Math.ceil(WISP_LIFE / 380);
+
 /**
  * How far FrankenPHP has crumbled: ms since he started (null while he stands). At zero health he falls where he is; at
  * the dawn he lies in ash, falling from its start if nobody felled him first.
@@ -152,6 +236,7 @@ export function createFinaleStage(env) {
             halo: make(env.light, { add: true, alpha: 0.45 }),
             glasses: make(env.ground),
             wisp: make(env.ground, { alpha: 0.7 }),
+            puffs: Array.from({ length: STRIKE_PUFFS }, () => make(env.ground)),
         };
     }
 
@@ -250,7 +335,7 @@ export function createFinaleStage(env) {
     // ------------------------------------------------------------------ the frame
     function hideAll() {
         if (g) {
-            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.halo, g.glasses, g.wisp, ...g.creep]) s.visible = false;
+            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.halo, g.glasses, g.wisp, ...g.creep, ...g.puffs]) s.visible = false;
         }
         lightning.visible = false;
         runnerFar.visible = false;
@@ -280,7 +365,8 @@ export function createFinaleStage(env) {
             const def = frameOf(FX.column, 90);
             place(g.column, def, c.x, c.y + 2, env.defTexture(def), base + 2);
         }
-        if ((step === 1 && t >= T.cloud) || (step === 2 && t < T.reveal)) {
+        // The cloud of step 1 stays until the burst of the third strike has swallowed it.
+        if ((step === 1 && t >= T.cloud) || (step === 2 && t < BURST_AT + 150)) {
             const def = frameOf(FX.smoke.cloud, 220);
             place(g.cloudBack, def, c.x, c.y + 4, env.defTexture(def, lit), base + 3);
             const front = FX.smoke.cloud[(FX.smoke.cloud.indexOf(def) + 2) % 4];
@@ -327,6 +413,15 @@ export function createFinaleStage(env) {
                     lastStrike = k;
                     env.strike();
                 }
+            });
+        }
+
+        if (step === 2) {
+            strikeSmokeAt(t, clock, reduced).slice(0, g.puffs.length).forEach((p, i) => {
+                const def = FX.smoke.billow[p.size][p.fade][p.frame];
+                const x = c.x + p.x;
+                const z = p.layer === 'back' ? base + 3.5 : p.layer === 'over' ? base + 5 : env.depthKey(x, c.y + 8);
+                place(g.puffs[i], def, x, c.y + p.y, env.defTexture(def, lit), z);
             });
         }
 
