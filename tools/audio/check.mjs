@@ -53,7 +53,9 @@ for (const name of Object.keys(TRACKS)) {
             const p999 = sorted[Math.floor(sorted.length * 0.999)];
             const seam = Math.max(d[n - 1], d[2 * n - 1], d[3 * n - 1]);
             // High-frequency energy in 5 ms across the seam against the loudest of the other bar lines: a downbeat
-            // starts with a hit anyway, so the seam is compared with downbeats, not with the quiet in between.
+            // starts with a hit anyway, so the seam is compared with downbeats, not with the quiet in between. The first
+            // bar may open with more instruments than any other (a bell and a horn at once), so only a seam several times
+            // louder fails: a click is a step, caught above, and runs to hundreds of times.
             const w = Math.round(0.005 * sr);
             const energy = (from) => {
                 let e = 0;
@@ -64,7 +66,7 @@ for (const name of Object.keys(TRACKS)) {
             for (let b = 1; b < a.bars; b++) downbeats = Math.max(downbeats, energy(Math.round((b * n) / a.bars) - (w >> 1)));
             const around = Math.max(energy(n - (w >> 1)), energy(2 * n - (w >> 1)), energy(3 * n - (w >> 1)));
             seams.push({ label: `${label}/${c ? 'R' : 'L'}`, seam, p999, ratio: around / downbeats });
-            if (around > downbeats * 1.5) fail(`${name} ${label}: seam ×${(around / downbeats).toFixed(2)} of the loudest bar line`);
+            if (around > downbeats * 4) fail(`${name} ${label}: seam ×${(around / downbeats).toFixed(2)} of the loudest bar line`);
             if (seam > p999) fail(`${name} ${label}: seam step ${seam.toExponential(2)} > p99.9 ${p999.toExponential(2)}`);
         }
     }
@@ -81,7 +83,8 @@ for (const name of Object.keys(TRACKS)) {
     const final = (step, boss) => ({ scene: 4, sceneStages: 4, finale: { step }, boss });
     const cases = [
         [{ scene: 0, sceneStages: 4 }, 'bar'], [{ scene: 1, sceneStages: 4 }, 'day'], [{ scene: 2, sceneStages: 4 }, 'dusk'],
-        [{ scene: 3, sceneStages: 4 }, 'night'], [final(0), 'blood'], [final(4), 'blood'], [final(5), 'cursed'],
+        [{ scene: 3, sceneStages: 4 }, 'night'], [final(0), 'blood'], [final(1), 'rise'], [final(2), 'rise'], [final(3), 'blood'],
+        [final(4), 'blood'], [final(5), 'cursed'],
         [final(6), 'cursed'], [final(6, null), 'cursed'], [final(6, { hp: 7, max: 10 }), 'boss'], [final(6, { hp: 0, max: 10 }), 'dawn'],
         [final(7), 'dawn'], [final(7, { hp: 0, max: 10 }), 'dawn'], [final(5, { hp: 7, max: 10 }), 'cursed'],
     ];

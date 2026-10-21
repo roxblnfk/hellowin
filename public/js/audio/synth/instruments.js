@@ -116,7 +116,7 @@ export function kick(r, out, t, { amp = 0.9, tone = 46 } = {}) {
         const s = i / sr;
         ph += (TAU * (tone + 120 * Math.exp(-s * 38) + 40 * Math.exp(-s * 300))) / sr;
         let v = Math.sin(ph) * Math.exp(-s * 7.5) * Math.min(1, s / 0.002) * 0.95;
-        v += r.noise() * Math.exp(-s * 900) * 0.2;
+        v += r.noise() * Math.exp(-s * 900) * Math.min(1, s / 0.0005) * 0.2;
         v = Math.tanh(v * 1.6) * amp;
         out.put(i0 + i, v, v);
     }

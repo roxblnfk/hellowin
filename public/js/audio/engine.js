@@ -16,7 +16,7 @@ const MAX_VOICES = 32;
 const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
 /** Tracks of the final scene by finale step, [first step, track] in rising order: each holds until the next. */
-export const FINALE_TRACKS = [[0, 'blood'], [5, 'cursed'], [7, 'dawn']];
+export const FINALE_TRACKS = [[0, 'blood'], [1, 'rise'], [3, 'blood'], [5, 'cursed'], [7, 'dawn']];
 
 /** The finale step the boss fight lives in: not a step of its own, but the snapshot's `boss` {hp, max} within it. */
 export const BOSS_STEP = 6;
@@ -36,7 +36,7 @@ export function trackOf({ scene = 0, sceneStages = 4, finale = null, boss = null
 }
 
 /** The track worth rendering ahead: the one the next scene (or the next part of the finale) will ask for. */
-export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: 'boss', boss: 'dawn', dawn: 'bar' };
+export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'rise', rise: 'blood', cursed: 'boss', boss: 'dawn', dawn: 'bar' };
 
 const smooth = (x, a, b) => {
     const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -382,7 +382,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
             }
             return;
         }
-        if (['blood', 'cursed', 'boss', 'dawn'].includes(name)) loadGroup('finale');
+        if (['blood', 'rise', 'cursed', 'boss', 'dawn'].includes(name)) loadGroup('finale');
         loadTrack(name).then((track) => {
             if (track && token === switchToken) startTrack(track);
             const next = NEXT_TRACK[name];

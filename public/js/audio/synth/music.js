@@ -284,6 +284,51 @@ const CURSED = {
     },
 };
 
+// ---------------------------------------------------------------- the rising: finale steps 1–2
+// The hall thinks it is raising its hero: a hymn in C minor for a four-part choir over a low horn pedal, big drums,
+// horns carrying the tune with a trumpet joining for the climb, ending each loop on G major to pull it round again.
+// The build is in the stems: the lead and the drums are the hero; when FrankenPHP stands in the smoke, intensity drops
+// and only the choir is left hanging.
+const RISE = {
+    bpm: 84,
+    beats: 4,
+    bars: 8,
+    render({ r, T, beat, bar: barLen, base, rhythm, lead }) {
+        const satb = [[48, 55, 63, 67], [48, 56, 63, 68], [51, 58, 63, 67], [50, 58, 62, 65], [48, 55, 63, 67], [48, 56, 63, 68], [53, 56, 60, 65], [47, 55, 62, 67]];
+        const roots = [36, 32, 39, 34, 36, 32, 29, 31];
+        drone(r, base, 0, 8 * barLen, 36, { amp: 0.04, cutoff: 300, fade: 2.5 });
+        for (let bar = 0; bar < 8; bar++) {
+            const climb = bar >= 4;
+            choir(r, base, T(bar, 0), barLen, satb[bar], { amp: climb ? 0.12 : 0.1, vowel: bar % 2 ? 'o' : 'a', attack: 0.4, release: 1, send: 0.85 });
+            brass(r, base, T(bar, 0), barLen * 0.95, roots[bar] + 12, { amp: 0.06, bright: 0.5, vib: 0.05, send: 0.5 });
+            // Big drums: BOOM · · ba BOOM · BOOM ·, denser in the climb.
+            for (const [b, a] of [[0, 0.7], [1.5, 0.35], [2, 0.6], [3, 0.5]]) tom(r, rhythm, T(bar, b), { amp: a, tone: 48, send: 0.6 });
+            kick(r, rhythm, T(bar, 0), { amp: 0.5, tone: 40 });
+            if (climb) for (const b of [0.5, 2.5, 3.5]) tom(r, rhythm, T(bar, b), { amp: 0.25, tone: 85, pan: 0.3, send: 0.5 });
+            if (bar === 3 || bar === 7) for (let k = 0; k < 8; k++) tom(r, rhythm, T(bar, 2 + k / 4), { amp: 0.1 + k * 0.04, tone: 110, pan: -0.3, send: 0.4 });
+        }
+        const tune = [
+            [[0, 67, 1.5], [1.5, 70, 0.5], [2, 72, 2]],
+            [[0, 72, 1], [1, 75, 1], [2, 74, 1], [3, 72, 1]],
+            [[0, 70, 3], [3, 67, 1]],
+            [[0, 74, 2], [2, 72, 1], [3, 70, 1]],
+            [[0, 72, 1.5], [1.5, 75, 0.5], [2, 79, 2]],
+            [[0, 80, 1.5], [1.5, 79, 0.5], [2, 75, 2]],
+            [[0, 77, 1], [1, 80, 1], [2, 84, 2]],
+            [[0, 83, 3], [3, 79, 1]],
+        ];
+        tune.forEach((notes, bar) => {
+            for (const [b, m, d] of notes) {
+                const t = T(bar, b);
+                brass(r, lead, t, d * beat * 0.95, m - 12, { amp: 0.1, bright: 0.9, vib: 0.12, send: 0.55 });
+                if (bar >= 4) brass(r, lead, t, d * beat * 0.95, m, { amp: 0.06, bright: 1.2, vib: 0.15, pan: 0.25, send: 0.6 });
+            }
+        });
+        toll(r, lead, T(0, 0), 48, { amp: 0.07, dur: 6, send: 0.8 });
+        toll(r, lead, T(4, 0), 55, { amp: 0.07, dur: 6, pan: 0.3, send: 0.8 });
+    },
+};
+
 // ---------------------------------------------------------------- the boss: FrankenPHP in sunglasses
 // A chiptune boss fight that thinks it is an organ toccata, in E harmonic minor: a pulse lead races down mordents and
 // scale runs over a pipe-organ pedal and a driving triangle, the noise kit pushes, and every other bar a brass stab
@@ -363,7 +408,7 @@ const DAWN = {
     },
 };
 
-export const TRACKS = { bar: BAR, day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, cursed: CURSED, boss: BOSS, dawn: DAWN };
+export const TRACKS = { bar: BAR, day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, rise: RISE, cursed: CURSED, boss: BOSS, dawn: DAWN };
 
 /** Seconds of one bar and of the loop. */
 export function timing(name) {
