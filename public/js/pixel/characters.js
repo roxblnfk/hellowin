@@ -68,6 +68,8 @@ const DARK = {
     stemLight: 'stem',
     crowLight: 'crow',
     crow: 'crowDark',
+    elephantLight: 'elephant',
+    elephant: 'elephantDark',
 };
 const dark = (key) => DARK[key] ?? key;
 
@@ -334,7 +336,8 @@ function rig(dir, pose, frame) {
 // drops); rows below TORSO_BOTTOM belong to the skirt. leg(i, yy, y): i — column 0..2, yy — row from the hip.
 // sleeve(i, n, dx): step along the arm. hair(c, r, dir, inHead): head-box coordinates, may reach one pixel outside.
 // Optional: headPaint(g, x0, y0, dir, ears) paints over the head under the face (ears — no hat on), whiskers(r)
-// returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back).
+// returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back), snout(r)
+// returns a finished layer laid over the face, zombie maps the skin's other tones for a zombie player (zombieKeys).
 
 const pick = (s, i) => PICK[s[i]] ?? null;
 const PICK = {
@@ -421,6 +424,67 @@ function catTail(g, r) {
             if (s < 2) put(g, x, y - 1, 'crow');
         }
     }
+}
+
+// The elephant's ears stand out on both sides of the head, rows from the head box's second row: F — the rim, p — the
+// pale inside, f — the crease against the head. The left ear; the right one is its mirror. From the side the ear lies
+// flat on the head and only its rim and the part behind the head show.
+const ELEPHANT_EARS = {
+    front: ['.FF.', 'FppF', 'Fppf', 'Fppf', 'Fppf', 'Fppf', 'FFpf', '.FFf', '..F.'],
+    side: ['...fff...', '..fFFFf..', '.fFFFFFf.', 'fFFFFFFf.', 'fFFFFFFf.', 'fFFFFFf..', '.fFFFf...', '..fff....'],
+    back: ['.FF.', 'FFFF', 'FFFf', 'FFFf', 'FFFf', 'FFFf', 'FFFf', '.FFf', '..F.'],
+};
+const EAR_LEGEND = { F: 'elephant', p: 'elephantLight', f: 'elephantDark' };
+
+function elephantHead(g, x0, y0, dir) {
+    if (dir === 'side') {
+        stamp(g, x0 - 2, y0 + 2, ELEPHANT_EARS.side, EAR_LEGEND);
+        return;
+    }
+    const rows = ELEPHANT_EARS[dir];
+    stamp(g, x0 - 4, y0 + 1, rows, EAR_LEGEND);
+    stamp(g, x0 + 12, y0 + 1, rows, EAR_LEGEND, true);
+}
+
+// The trunk hangs over the mouth and below the chin, the tusks beside it; at — its top-left in head-box coordinates.
+// Over the head it has no outline, so it grows out of the face instead of being cut off it, and clears the eyes.
+const ELEPHANT_TRUNK = {
+    front: { at: [4, 8], rows: ['.Lt.', '.Lt.', '.Lt.', 'wTtw', '..Tt'] },
+    side: { at: [12, 6], rows: ['TT..', 'tTT.', '.tT.', '.tT.', '.tTT', '..tT'] },
+};
+
+function elephantTrunk(r) {
+    const g = blank();
+    const trunk = ELEPHANT_TRUNK[r.dir];
+    if (!trunk) return g;
+    const { x: x0, y: y0 } = r.head;
+    stamp(g, x0 + trunk.at[0], y0 + trunk.at[1], trunk.rows, { L: 'elephantLight', T: 'elephant', t: 'elephantDark', w: 'cream' });
+    const out = outlined(g);
+    HEAD_MASK.forEach((row, rr) => [...row].forEach((ch, c) => {
+        const i = (AY + y0 + rr) * W + AX + x0 + c;
+        if (ch === '#' && out[i] === 'outline') out[i] = null;
+    }));
+    return out;
+}
+
+// A thin tail from the rump ending in a dark tuft, local coordinates per direction; the tuft swings with the pose.
+// From the front the body hides it: peeking out beside the feet, the tuft reads as a third foot.
+const ELEPHANT_TAIL = {
+    side: [[-3, -9], [-5, -8], [-6, -6]],
+    back: [[-1, -8], [-1, -6], [-1, -5]],
+};
+
+function elephantTail(g, r) {
+    if (!ELEPHANT_TAIL[r.dir]) return;
+    const swing = r.pose === 'walk' || r.pose === 'shamble' || r.pose === 'ritual' ? [-1, 0, 1, 0][r.frame] : r.pose === 'fidget' ? (r.frame ? 1 : -1) : 0;
+    const pts = ELEPHANT_TAIL[r.dir].map(([x, y], i) => [x + r.sx + (i === 2 ? swing : 0), y + (i ? r.bob : 0)]);
+    for (let s = 0; s < pts.length - 1; s++) {
+        const [[x1, y1], [x2, y2]] = [pts[s], pts[s + 1]];
+        const n = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        for (let k = 0; k <= n; k++) put(g, Math.round(x1 + ((x2 - x1) * k) / (n || 1)), Math.round(y1 + ((y2 - y1) * k) / (n || 1)), 'elephant');
+    }
+    const [tx, ty] = pts[pts.length - 1];
+    [[0, 1], [-1, 1], [0, 2], [1, 2], [-1, 2]].forEach(([dx, dy]) => put(g, tx + dx, ty + dy, 'elephantDark'));
 }
 
 const BODIES = {
@@ -580,6 +644,23 @@ const BODIES = {
         headPaint: catHead,
         whiskers: catWhiskers,
         tail: catTail,
+    },
+    // The elePHPant in the PHP blue: the ears and the trunk carry the shape, so they stay on under every hat and face.
+    elephant: {
+        label: 'PHP-слоник',
+        skin: 'elephant',
+        torso: (i, y, dir) => {
+            if (dir === 'front' && y >= -9 && y <= -6 && i >= (y === -9 || y === -6 ? 4 : 3) && i <= (y === -9 || y === -6 ? 5 : 6)) return 'elephantLight';
+            if (dir === 'side' && y >= -9 && y <= -7 && i >= 4) return 'elephantLight';
+            return 'elephant';
+        },
+        sleeve: () => 'elephant',
+        leg: () => 'elephant',
+        shoe: 'elephantLight',
+        headPaint: elephantHead,
+        snout: elephantTrunk,
+        tail: elephantTail,
+        zombie: { elephantLight: 'hazeLight' },
     },
 };
 
@@ -1414,6 +1495,7 @@ function compose(look, dir, pose, frame, item) {
     // A body's own ears (the cat) show only bare-headed: every hat sits where they stand, the «Ушки» hat brings its own.
     over(out, outlined(drawHead(body, FACES[look.face], r, look.hat === 'none')));
     if (body.whiskers) over(out, body.whiskers(r));
+    if (body.snout) over(out, body.snout(r));
     layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
     layer((g) => HATS[look.hat].paint(g, r.head.x, r.head.y, dir));
     layer((g) => cloak.paint(g, r, 'front'));
@@ -1522,7 +1604,7 @@ export const POSES = {
 
 /**
  * The body's skin and hands, their shades and the blush, in the zombie green: a zombie player's look. A body whose skin
- * has more tones than its ramp step lists the rest in `zombie`.
+ * has more tones than its ramp step (the elephant's pale ear insides) lists the rest in `zombie`.
  */
 function zombieKeys(body) {
     const map = { blush: 'zombieShade' };

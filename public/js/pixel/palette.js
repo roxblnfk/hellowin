@@ -82,6 +82,10 @@ export const PALETTE = {
     crimson: 0xb42e36,
     denim: 0x4c6cb0,
     denimDark: 0x34487c,
+    // The PHP elephant in the PHP logo's blue-violet (#8892bf), shading toward a deep indigo, the ears' inside paler.
+    elephantLight: 0xc4c8e8,
+    elephant: 0x8892bf,
+    elephantDark: 0x5a6198,
     blush: 0xf49482,
     eyeAmber: 0xffa424,
     eyeGreen: 0x7cf064,
