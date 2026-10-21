@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Bar\BarService;
+use App\Application\Story\OwlLine;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
@@ -31,10 +32,11 @@ final readonly class ResetService
      * A ritual that starts in the bar takes every character back there with empty hands and fills the counter.
      *
      * @param int|null $fromRound Round to finish; null takes the current one.
+     * @param bool $again A new cycle of the evening after the dawn: the reset says so, and the owl offers a beer.
      * @return positive-int|null The new round, null when `$fromRound` is already over.
      * @throws RitualBusyException
      */
-    public function reset(?int $fromRound = null): ?int
+    public function reset(?int $fromRound = null, bool $again = false): ?int
     {
         $round = $this->store->reset($fromRound ?? $this->store->snapshot()->round);
         if ($round === null) {
@@ -46,7 +48,9 @@ final readonly class ResetService
             $round,
             $inBar ? $this->backToBar() : null,
             $inBar ? $this->openBar($round) : null,
+            $again,
         );
+        $again and $this->publisher->owl($round, OwlLine::BAR_AGAIN);
         $this->metrics->state($this->store->snapshot());
 
         return $round;

@@ -232,7 +232,7 @@ final readonly class RPCService implements ServiceInterface
             return self::fail('invalid scene');
         }
 
-        return ['ok' => true, 'scene' => $this->story->nextScene($scene, ($params['force'] ?? false) === true)];
+        return ['ok' => true] + $this->story->nextScene($scene, ($params['force'] ?? false) === true);
     }
 
     private function finaleStep(array $params): array

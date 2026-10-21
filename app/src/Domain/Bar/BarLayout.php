@@ -19,6 +19,8 @@ final readonly class BarLayout
      * @param array{float, float} $spawnY Top and bottom of the band new characters appear in.
      * @param float $clinkReach Percents of the screen: two characters at most this far apart clink by themselves.
      * @param list<Perch> $perches Where flies land besides the tables and the counter, each a surface of its own.
+     * @param Point|null $door The threshold of the entrance door; null — new characters appear in the spawn band.
+     * @param float $doorIn Percents of the screen a new character walks in from the threshold, down the screen.
      */
     public function __construct(
         public WalkZone $zone,
@@ -26,6 +28,8 @@ final readonly class BarLayout
         public array $spawnY,
         public float $clinkReach,
         public array $perches = [],
+        public ?Point $door = null,
+        public float $doorIn = 6.0,
     ) {
         $counter[0] <= $counter[1] or throw new \InvalidArgumentException('The place at the counter needs x1 <= x2.');
         $spawnY[0] <= $spawnY[1] or throw new \InvalidArgumentException('The spawn band of the bar needs y1 <= y2.');
@@ -72,6 +76,19 @@ final readonly class BarLayout
     }
 
     /**
+     * The way a new character comes in: from the threshold, exactly where the frontend opens the door for a path that
+     * starts there, `$doorIn` down the screen onto the floor.
+     *
+     * @return array{Point, Point}|null Null without a door.
+     */
+    public function doorway(): ?array
+    {
+        $door = $this->door;
+
+        return $door === null ? null : [$door, $this->zone->clamp(new Point($door->x, $door->y + $this->doorIn))];
+    }
+
+    /**
      * Where along the counter a character stands or is heading, if its walk ends at the counter.
      */
     public function counterSpot(Point $end): ?float
@@ -84,7 +101,7 @@ final readonly class BarLayout
     /**
      * The layout as the config writes it, for the frontend's art.
      *
-     * @return array{area: array{x1: float, y1: float, x2: float, y2: float}, obstacles: list<array<non-empty-string, float>>, counter: array{x1: float, x2: float, y: float}, spawn: array{y1: float, y2: float}, clink_reach: float, perches: list<array{x1: float, x2: float, y: float, name: non-empty-string}>}
+     * @return array{area: array{x1: float, y1: float, x2: float, y2: float}, obstacles: list<array<non-empty-string, float>>, counter: array{x1: float, x2: float, y: float}, spawn: array{y1: float, y2: float}, clink_reach: float, perches: list<array{x1: float, x2: float, y: float, name: non-empty-string}>, door?: array{x: float, y: float}, door_in?: float}
      */
     public function toArray(): array
     {
@@ -97,6 +114,6 @@ final readonly class BarLayout
             'spawn' => ['y1' => $this->spawnY[0], 'y2' => $this->spawnY[1]],
             'clink_reach' => $this->clinkReach,
             'perches' => \array_map(static fn(Perch $perch): array => $perch->toArray(), $this->perches),
-        ];
+        ] + ($this->door === null ? [] : ['door' => $this->door->toArray(), 'door_in' => $this->doorIn]);
     }
 }

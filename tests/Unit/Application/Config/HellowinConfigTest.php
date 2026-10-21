@@ -253,6 +253,26 @@ final class HellowinConfigTest
         Assert::same((new HellowinConfig(['walk' => ['bar' => self::bar()]]))->getBarLayout()?->perches, []);
     }
 
+    public function barDoorComesFromTheConfig(): void
+    {
+        $layout = (new HellowinConfig(['walk' => ['bar' => self::bar(['door' => ['x' => 12, 'y' => 50], 'door_in' => 5])]]))->getBarLayout();
+
+        Assert::equals([$layout?->door, $layout->doorIn], [new Point(12, 50), 5.0]);
+        Assert::equals($layout->doorway(), [new Point(12, 50), new Point(12, 55)]);
+        Assert::same([$layout->toArray()['door'], $layout->toArray()['door_in']], [['x' => 12.0, 'y' => 50.0], 5.0]);
+
+        $none = (new HellowinConfig(['walk' => ['bar' => self::bar()]]))->getBarLayout();
+        Assert::same([$none?->door, $none->doorIn, $none->doorway()], [null, 6.0, null]);
+        Assert::false(\array_key_exists('door', $none->toArray()));
+    }
+
+    public function barDoorNeedsAPoint(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk.bar.door');
+
+        (new HellowinConfig(['walk' => ['bar' => self::bar(['door' => ['x' => 12]])]]))->getBarLayout();
+    }
+
     #[DataSet([[['x1' => 5, 'x2' => 4, 'y' => 8, 'name' => 'beam']]], 'x1 past x2')]
     #[DataSet([[['x1' => 3, 'x2' => 4, 'y' => '8', 'name' => 'beam']]], 'y not a number')]
     #[DataSet([[['x1' => 3, 'x2' => 4, 'y' => 8]]], 'no name')]

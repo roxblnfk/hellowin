@@ -65,6 +65,16 @@ final class HellowinConfigTest extends TestCase
         }
     }
 
+    public function shippedDoorLeadsOntoTheFloor(): void
+    {
+        $layout = $this->getContainer()->get(HellowinConfig::class)->getBarLayout();
+
+        [$door, $inside] = $layout?->doorway() ?? Assert::fail('The shipped bar has a door.');
+        Assert::equals($inside, new Point($door->x, $door->y + 6));
+        Assert::true($layout->zone->contains($inside));
+        Assert::same(\count($layout->zone->route($door, $inside)), 2);
+    }
+
     public function shippedBushesAreOnTheGround(): void
     {
         $depths = \count($this->getContainer()->get(FlyerConfig::class)->getDepths());

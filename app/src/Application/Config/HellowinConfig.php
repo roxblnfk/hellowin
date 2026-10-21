@@ -93,6 +93,8 @@ final class HellowinConfig extends InjectableConfig
             [self::float($spawn['y1'] ?? null, 'walk.bar.spawn.y1'), self::float($spawn['y2'] ?? null, 'walk.bar.spawn.y2')],
             self::nonNegative($bar['clink_reach'] ?? 10, 'walk.bar.clink_reach'),
             self::perches($bar['perches'] ?? []),
+            self::door($bar['door'] ?? null),
+            self::nonNegative($bar['door_in'] ?? 6, 'walk.bar.door_in'),
         );
     }
 
@@ -561,6 +563,19 @@ final class HellowinConfig extends InjectableConfig
                 previous: $e,
             );
         }
+    }
+
+    /**
+     * The threshold of the bar's entrance door `{x, y}`, or none.
+     */
+    private static function door(mixed $door): ?Point
+    {
+        if ($door === null) {
+            return null;
+        }
+        \is_array($door) or throw new \InvalidArgumentException('Config "hellowin.walk.bar.door" must be {x, y}.');
+
+        return new Point(self::float($door['x'] ?? null, 'walk.bar.door.x'), self::float($door['y'] ?? null, 'walk.bar.door.y'));
     }
 
     /**

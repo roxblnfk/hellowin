@@ -40,6 +40,53 @@ final class BarWalkTest
         Assert::true(RitualHarness::barLayout()->zone->contains($at));
     }
 
+    public function newcomerWalksInThroughTheDoor(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], door: true);
+
+        $walker = $ritual->walks->enter($ritual->players->register(self::A, 'Jack', self::LOOK));
+
+        // 6 percents at the harness speed of 10 a second
+        Assert::equals($walker?->walk->path, [new Point(12, 50), new Point(12, 56)]);
+        Assert::same([$walker->walk->startedAt, $walker->walk->arrivesAt], [1_000_000, 1_000_600]);
+        Assert::same($ritual->broadcast->ofType('walker')[0]['walker']['walk']['path'], [['x' => 12, 'y' => 50], ['x' => 12, 'y' => 56]]);
+    }
+
+    public function newcomerOfThePresenceWalksInThroughTheDoorToo(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], door: true);
+        $ritual->players->register(self::A, 'Jack', self::LOOK);
+        $ritual->presence->online = [self::A];
+
+        $ritual->walks->sync();
+
+        Assert::same($ritual->broadcast->ofType('walker')[0]['walker']['walk']['path'][0], ['x' => 12, 'y' => 50]);
+    }
+
+    public function redressedCharacterStaysWhereItStands(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], door: true);
+        self::place($ritual, self::A, 40, 92);
+        $walk = $ritual->walkerStore->all()[self::A]->walk;
+
+        $walker = $ritual->walks->enter($ritual->players->register(self::A, 'Jill', self::LOOK));
+
+        Assert::equals($walker?->walk, $walk);
+        Assert::same($walker->name, 'Jill');
+    }
+
+    public function outsideTheBarNewcomersAppearInTheSpawnBandEvenWithADoor(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], door: true);
+        $ritual->story->nextScene(0, true);
+        $ritual->runJobs();
+
+        $walker = $ritual->walks->enter($ritual->players->register(self::A, 'Jack', self::LOOK));
+
+        Assert::count($walker?->walk->path, 1);
+        Assert::numeric($walker->walk->path[0]->y)->between(86, 90);
+    }
+
     public function moveInTheBarGoesAroundATableOnItsFloor(): void
     {
         $ritual = self::bar();
@@ -122,7 +169,22 @@ final class BarWalkTest
         Assert::same($reset['item'], null);
         Assert::count($reset['walkers'], 1);
         Assert::count($reset['walkers'][0]['walk']['path'], 1);
-        Assert::true(RitualHarness::barLayout()->zone->contains(Point::fromArray($reset['walkers'][0]['walk']['path'][0])));
+        $at = Point::fromArray($reset['walkers'][0]['walk']['path'][0]);
+        Assert::true(RitualHarness::barLayout()->zone->contains($at));
+        // At once in the spawn band, as far along as it stood, never through the door
+        Assert::numeric($at?->y)->between(90, 94);
+    }
+
+    public function resetWithADoorStillPutsEveryoneInTheSpawnBand(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], door: true);
+        self::place($ritual, self::A, 30, 80);
+
+        $ritual->reset->reset();
+
+        $path = $ritual->broadcast->ofType('reset')[0]['walkers'][0]['walk']['path'];
+        Assert::count($path, 1);
+        Assert::numeric($path[0]['y'])->between(90, 94);
     }
 
     public function withoutTheBarResetCarriesNoWalkers(): void

@@ -66,7 +66,7 @@ final class BarSceneTest
 
         $ritual->bar->wave();
         Assert::true($ritual->snapshot->create()['ready']);
-        Assert::same($ritual->story->nextScene(0, false), 1);
+        Assert::same($ritual->story->nextScene(0, false), ['scene' => 1]);
         $ritual->runJobs();
 
         Assert::same($ritual->store->snapshot()->scene, 1);

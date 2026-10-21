@@ -106,6 +106,7 @@ final class RitualHarness
         int $circleThreshold = 3,
         array $reachable = [],
         array $positions = [],
+        bool $door = false,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -190,12 +191,12 @@ final class RitualHarness
             3200,
             10.0,
             new Randomizer(new Mt19937(7)),
-            bar: ($stageMax[0] ?? null) === 0 ? self::barLayout() : null,
+            bar: ($stageMax[0] ?? null) === 0 ? self::barLayout($door) : null,
             policy: $policy,
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset);
     }
 
     /**
@@ -207,9 +208,10 @@ final class RitualHarness
     }
 
     /**
-     * The bar of app/config/hellowin.php: the floor, the counter at the back on the right, three tables.
+     * The bar of app/config/hellowin.php: the floor, the counter at the back on the right, three tables; with the door
+     * at the back on the left when asked.
      */
-    public static function barLayout(): BarLayout
+    public static function barLayout(bool $door = false): BarLayout
     {
         return new BarLayout(
             new WalkZone(
@@ -225,6 +227,8 @@ final class RitualHarness
             [66.0, 92.0, 62.0],
             [90.0, 94.0],
             10.0,
+            door: $door ? new Point(12, 50) : null,
+            doorIn: 6.0,
         );
     }
 

@@ -146,6 +146,8 @@ return [
             'counter' => ['x1' => 66, 'x2' => 92, 'y' => 62],
             'spawn' => ['y1' => 90, 'y2' => 94],
             'door' => ['x' => 12, 'y' => 50],
+            // Percents of the screen a new character walks in from the threshold, down the screen
+            'door_in' => 6,
             // Where a fly lands besides the table tops and the counter: a band x1..x2 at the height y (a point when
             // x1 == x2), y the top of the surface a fly stands on. The frontend draws these things exactly there: the
             // beam, the door's lintel, the hearth's mantel, the shelves over the counter, the shields' rims and the

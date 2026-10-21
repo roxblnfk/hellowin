@@ -22,6 +22,9 @@ final readonly class Story
     /** The last finale step: the cursed world, an endless mode with zombies. */
     public const LAST_STEP = 5;
 
+    /** The dawn: the night is over, and the moderator's next scene leads the room back to the bar. */
+    public const DAWN_STEP = 7;
+
     /** Bounds of the threshold multiplier the moderator may set. */
     public const K_MIN = 0.1;
 
@@ -29,7 +32,7 @@ final readonly class Story
 
     /**
      * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
-     * @param int<0, 5>|null $finale Finale step; null outside the final scene.
+     * @param int<0, 7>|null $finale Finale step; null outside the final scene.
      * @param bool $paused Flyers and zombies are not launched.
      * @param bool $zombies Zombies walk out of the patch in the cursed world.
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
@@ -71,7 +74,7 @@ final readonly class Story
 
         return new self(
             \is_int($ready) && $ready >= 0 ? $ready : null,
-            \is_int($finale) && $finale >= 0 && $finale <= self::LAST_STEP ? $finale : null,
+            \is_int($finale) && $finale >= 0 && $finale <= self::DAWN_STEP ? $finale : null,
             ($value['paused'] ?? false) === true,
             ($value['zombies'] ?? false) === true,
             PlayerId::isValid($player) ? $player : null,
@@ -170,13 +173,18 @@ final readonly class Story
         return $this->finale === self::LAST_STEP;
     }
 
+    public function dawn(): bool
+    {
+        return $this->finale === self::DAWN_STEP;
+    }
+
     public function revealed(): bool
     {
         return $this->finale !== null && $this->finale >= self::REVEAL_STEP;
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 5>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barTarget: positive-int|null}
+     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barTarget: positive-int|null}
      */
     public function toArray(): array
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
+use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
@@ -30,33 +31,47 @@ final readonly class StoryService
         private ChannelPublisher $publisher,
         private RevealBuilder $reveal,
         private ?WalkService $walks = null,
+        private ?ResetService $reset = null,
     ) {}
 
     /**
      * Queues the move from the scene the moderator sees to the next one. The job runs at most once per scene of
      * a round, so two presses — or two moderators — move it once.
      *
+     * At dawn the next scene is the bar again: a new cycle of the evening is the reset of the round, which compares
+     * the round under its locks — so a repeated press finds the round over and changes nothing.
+     *
      * @param bool $force Move on even if not every pumpkin is done: the room got stuck.
-     * @return int<0, max> The scene the moderator will see: the next one, or the current one when it already moved.
+     * @return array{scene: int<0, max>, round?: positive-int} The scene the moderator will see: the next one, or the
+     *         current one when it already moved; with the round when the call named the final scene, which the dawn
+     *         may have left for a new cycle.
      * @throws StoryRefusedException
+     * @throws RitualBusyException
      */
-    public function nextScene(int $scene, bool $force): int
+    public function nextScene(int $scene, bool $force): array
     {
         $ritual = $this->store->snapshot();
+        $final = $this->policy->finalScene();
         if ($scene !== $ritual->scene) {
-            return $ritual->scene;
+            return $scene === $final ? ['scene' => $ritual->scene, 'round' => $ritual->round] : ['scene' => $ritual->scene];
         }
-        $ritual->scene < $this->policy->finalScene() or throw new StoryRefusedException('final scene');
+        if ($ritual->scene === $final && $ritual->story->dawn() && $this->reset !== null) {
+            $this->reset->reset($ritual->round, again: true);
+            $now = $this->store->snapshot();
+
+            return ['scene' => $now->scene, 'round' => $now->round];
+        }
+        $ritual->scene < $final or throw new StoryRefusedException('final scene');
         $force || $ritual->ready() or throw new StoryRefusedException('not ready');
 
         $this->queue->scene($ritual->round, $ritual->scene + 1);
 
-        return $ritual->scene + 1;
+        return ['scene' => $ritual->scene + 1];
     }
 
     /**
      * @param bool $force Take the first step even if the circle is not closed: the room got stuck.
-     * @return int<0, 5> The current step: the requested one if it was next, the unchanged one otherwise.
+     * @return int<0, 7> The current step: the requested one if it was next, the unchanged one otherwise.
      * @throws StoryRefusedException Outside the final scene, or the first step before the scene is ready.
      * @throws RitualBusyException
      */

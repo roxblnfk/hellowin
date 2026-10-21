@@ -79,8 +79,9 @@ final readonly class WalkService
     }
 
     /**
-     * Puts every character standing at the point of the scene's zone nearest to where it is: the room moved to another
-     * location, so nobody walks there. Walks to a clink are called off.
+     * Puts every character standing in the scene's location: the room moved there, so nobody walks there. On the lawn
+     * each stands at the point nearest to where it was; back in the bar — in its spawn band, as far along as it was,
+     * never through the door. Walks to a clink are called off.
      *
      * @return list<Walker>
      * @throws LockBusyException
@@ -89,12 +90,15 @@ final readonly class WalkService
     {
         $now = $this->clock->now();
         $zone = $this->zoneIn($scene);
+        $band = $this->bar !== null && $this->barIn($scene) ? $this->bar->spawnY : null;
 
         return $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            static function (array $walkers) use ($zone, $now): array {
+            function (array $walkers) use ($zone, $now, $band): array {
                 foreach ($walkers as $id => $walker) {
-                    $at = self::rounded($zone->clamp($walker->walk->positionAt($now)));
+                    $at = $walker->walk->positionAt($now);
+                    $band === null or $at = new Point($at->x, $this->random->getFloat($band[0], $band[1]));
+                    $at = self::rounded($zone->clamp($at));
                     $walkers[$id] = $walker->walking(Walk::standing($at, $now))->emptyHanded();
                 }
 
@@ -487,13 +491,19 @@ final readonly class WalkService
     }
 
     /**
-     * A new character stands at a random point of the spawn band along the bottom of the lawn.
+     * A new character walks in through the door of the bar, when it has one; elsewhere it stands at a random point of
+     * the spawn band along the bottom of the lawn.
      *
      * @param non-empty-string $id
      * @param non-empty-string|null $name
      */
     private function spawn(string $id, ?string $name, Look $look, int $now, int $scene): Walker
     {
+        $doorway = $this->barIn($scene) ? $this->bar?->doorway() : null;
+        if ($doorway !== null) {
+            return new Walker($id, $name, $look, Walk::along([$doorway[0], self::rounded($doorway[1])], $now, $this->speed), $now);
+        }
+
         [$zone, $spawnY] = $this->bar !== null && $this->barIn($scene)
             ? [$this->bar->zone, $this->bar->spawnY]
             : [$this->zone, $this->spawnY];

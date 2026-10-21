@@ -82,13 +82,15 @@ final readonly class ChannelPublisher
     /**
      * @param list<Walker>|null $walkers Every character, put back into the bar with empty hands.
      * @param array|null $bar The counter of the bar after the reset, as the snapshot shows it.
+     * @param bool $again A new cycle of the evening the dawn led into, not the console's reset.
      */
-    public function reset(int $round, ?array $walkers = null, ?array $bar = null): void
+    public function reset(int $round, ?array $walkers = null, ?array $bar = null, bool $again = false): void
     {
         $item = $this->items->held(0);
         $message = ['type' => 'reset', 'round' => $round, 'item' => $item];
         $walkers === null or $message['walkers'] = self::walkers($walkers, $item);
         $bar === null or $message['bar'] = $bar;
+        $again and $message['again'] = true;
 
         $this->publish($message);
     }

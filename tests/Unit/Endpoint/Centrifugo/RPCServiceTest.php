@@ -9,6 +9,7 @@ use App\Application\Hellowin\SnapshotFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\RateLimit\TokenBucket;
+use App\Domain\Story\Story;
 use App\Endpoint\Centrifugo\ConnectService;
 use App\Endpoint\Centrifugo\RPCService;
 use Psr\Log\NullLogger;
@@ -455,6 +456,17 @@ final class RPCServiceTest
 
         Assert::same($this->call($ritual, 'scene.next', ['scene' => 1, 'force' => true], moderator: true), ['ok' => false, 'error' => 'final scene']);
         Assert::same($this->call($ritual, 'scene.next', ['scene' => '1'], moderator: true), ['ok' => false, 'error' => 'invalid scene']);
+    }
+
+    public function nextSceneAtDawnAnswersTheNewRound(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: Story::DAWN_STEP));
+
+        Assert::same($this->call($ritual, 'scene.next', ['scene' => 1], moderator: true), ['ok' => true, 'scene' => 0, 'round' => 2]);
+        Assert::same($this->call($ritual, 'scene.next', ['scene' => 1], moderator: true), ['ok' => true, 'scene' => 0, 'round' => 2]);
+        Assert::count($ritual->broadcast->ofType('reset'), 1);
     }
 
     public function finaleGoesStepByStep(): void
