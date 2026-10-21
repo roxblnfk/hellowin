@@ -263,7 +263,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             counter.setAttribute('aria-disabled', String(!(bar && canWalk() && !holdsBeer())));
         }
         const drink = root.querySelector('[data-drink]');
-        if (drink) drink.hidden = !(bar && canWalk() && holdsBeer() && model.clinked);
+        // Alone in the bar a player may drink without a clink (the server checks the same walkers).
+        if (drink) drink.hidden = !(bar && canWalk() && holdsBeer() && (model.clinked || model.walkers.length <= 1));
         const meter = hud('drinks');
         if (meter) {
             const { text, fill } = drinksOf(model.bar);

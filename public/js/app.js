@@ -1,6 +1,7 @@
 import { bindBar, bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
-import { LINES, createOwl } from './owl.js';
+import { createOwl } from './owl.js';
+import { refusal } from './toasts.js';
 import { createReveal } from './reveal.js';
 
 const root = document.getElementById('app');
@@ -208,7 +209,7 @@ async function main() {
     bindBar(root, client, {
         take: () => barRpc('bar.take'),
         drink: () => barRpc('drink').then((data) => {
-            if (data?.error === 'not clinked') scene?.hint?.(client.model.me, LINES['bar-clink'].text);
+            if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),
     });
     // The scene's moments: the sound's cues, and an automatic clink in the bar that my walker strikes — reported once,

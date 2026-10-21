@@ -91,3 +91,28 @@ export function toastOf(groupHash, slot, list = TOASTS) {
     const toast = list[(mix(groupHash ^ SEED, slot) >>> 4) % list.length];
     return Array.isArray(toast) ? toast : [toast];
 }
+
+/**
+ * What a walker says over its own head when the server refuses its drink (`not clinked`): only this browser sees it,
+ * so a random pick is fine. Add lines at the end.
+ */
+export const REFUSALS = [
+    'Не пью не чокаясь!',
+    'Я же не алкаш!',
+    'Один не пью — я культурный.',
+    'Без тоста — это просто жидкость.',
+    'Сначала чокнемся, потом поговорим.',
+    'Кто со мной?',
+    'Пить без чоканья — к багу в проде.',
+    'Мама говорила: только за компанию.',
+    'Эй, кто-нибудь! Чокнемся?',
+    'Без тоста не лезет.',
+    'Примета плохая — к утечке памяти.',
+    'Я жду тост. Хоть за PHP 5.',
+    'Без чоканья не задеплоится.',
+    'Тост — это контракт. Без него не пью.',
+    'Чокнуться — это идемпотентно. Выпить — нет.',
+];
+
+/** A refusal line for `not clinked`. */
+export const refusal = (random = Math.random) => REFUSALS[Math.floor(random() * REFUSALS.length)];
