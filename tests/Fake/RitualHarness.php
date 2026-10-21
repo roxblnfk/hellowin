@@ -244,6 +244,7 @@ final class RitualHarness
             10.0,
             door: $door ? new Point(12, 50) : null,
             doorIn: 6.0,
+            roadrunner: new Point(74, 46),
         );
     }
 

@@ -94,8 +94,9 @@ final class HellowinConfig extends InjectableConfig
             [self::float($spawn['y1'] ?? null, 'walk.bar.spawn.y1'), self::float($spawn['y2'] ?? null, 'walk.bar.spawn.y2')],
             self::nonNegative($bar['clink_reach'] ?? 10, 'walk.bar.clink_reach'),
             self::perches($bar['perches'] ?? []),
-            self::door($bar['door'] ?? null),
+            self::point($bar['door'] ?? null, 'walk.bar.door'),
             self::nonNegative($bar['door_in'] ?? 6, 'walk.bar.door_in'),
+            self::point($bar['roadrunner'] ?? null, 'walk.bar.roadrunner'),
         );
     }
 
@@ -597,16 +598,16 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * The threshold of the bar's entrance door `{x, y}`, or none.
+     * A point of the bar `{x, y}` — the threshold of its door, RoadRunner's place — or none.
      */
-    private static function door(mixed $door): ?Point
+    private static function point(mixed $point, string $key): ?Point
     {
-        if ($door === null) {
+        if ($point === null) {
             return null;
         }
-        \is_array($door) or throw new \InvalidArgumentException('Config "hellowin.walk.bar.door" must be {x, y}.');
+        \is_array($point) or throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be {x, y}.', $key));
 
-        return new Point(self::float($door['x'] ?? null, 'walk.bar.door.x'), self::float($door['y'] ?? null, 'walk.bar.door.y'));
+        return new Point(self::float($point['x'] ?? null, $key . '.x'), self::float($point['y'] ?? null, $key . '.y'));
     }
 
     /**

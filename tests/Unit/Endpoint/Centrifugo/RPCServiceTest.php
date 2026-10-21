@@ -123,7 +123,7 @@ final class RPCServiceTest
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'reachable' => false, 'stage' => 0, 'clicks' => 2],
             ],
             'walkers' => [],
-            'bar' => ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4],
+            'bar' => ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4, 'roadrunner' => false],
             'ready' => false,
             'finale' => null,
             'paused' => false,
@@ -781,6 +781,15 @@ final class RPCServiceTest
 
         Assert::same($this->call($ritual, 'state', [])['state']['finale']['step'], 7);
         Assert::same($this->call($ritual, 'me', [], self::PLAYER)['player']['damage'], 1);
+    }
+
+    public function clinkWithRoadrunnerNeedsHimBehindTheCounter(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'clink', ['roadrunner' => true]), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'clink', ['roadrunner' => true], self::PLAYER), ['ok' => false, 'error' => 'no target']);
     }
 
     public function barMethodsShareOther(): void

@@ -13,9 +13,12 @@ final readonly class Clink
     public const WALKER = 'walker';
     public const PUMPKIN = 'pumpkin';
 
+    /** RoadRunner behind the bar's counter after the dawn: one of him, so the target names nobody. */
+    public const ROADRUNNER = 'roadrunner';
+
     /**
-     * @param self::WALKER|self::PUMPKIN $kind
-     * @param non-empty-string $target Id of the character or the pumpkin.
+     * @param self::WALKER|self::PUMPKIN|self::ROADRUNNER $kind
+     * @param non-empty-string $target Id of the character or the pumpkin; for RoadRunner — {@see ROADRUNNER}.
      * @param int $dueAt Unix time in milliseconds when both stand at the meeting point.
      * @param int|null $since `startedAt` of the target character's walk when the clink was asked for: a target that
      *        has set off since then has left. Null for a pumpkin.
@@ -42,7 +45,7 @@ final readonly class Clink
         /** @var mixed $since */
         $since = $value['since'] ?? null;
 
-        return ($kind === self::WALKER || $kind === self::PUMPKIN) && \is_string($target) && $target !== ''
+        return \in_array($kind, [self::WALKER, self::PUMPKIN, self::ROADRUNNER], true) && \is_string($target) && $target !== ''
             && \is_int($dueAt) && ($since === null || \is_int($since))
             ? new self($kind, $target, $dueAt, $since)
             : null;
@@ -54,17 +57,17 @@ final readonly class Clink
     }
 
     /**
-     * The target as the client contract names it: `{walker: {id}}` or `{pumpkin: {id}}`.
+     * The target as the client contract names it: `{walker: {id}}`, `{pumpkin: {id}}` or `{roadrunner: true}`.
      *
-     * @return array<self::WALKER|self::PUMPKIN, array{id: non-empty-string}>
+     * @return array<self::WALKER|self::PUMPKIN|self::ROADRUNNER, array{id: non-empty-string}|true>
      */
     public function toTarget(): array
     {
-        return [$this->kind => ['id' => $this->target]];
+        return [$this->kind => $this->kind === self::ROADRUNNER ? true : ['id' => $this->target]];
     }
 
     /**
-     * @return array{kind: self::WALKER|self::PUMPKIN, target: non-empty-string, dueAt: int, since: int|null}
+     * @return array{kind: self::WALKER|self::PUMPKIN|self::ROADRUNNER, target: non-empty-string, dueAt: int, since: int|null}
      */
     public function toArray(): array
     {

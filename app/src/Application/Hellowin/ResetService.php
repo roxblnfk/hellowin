@@ -38,7 +38,7 @@ final readonly class ResetService
      */
     public function reset(?int $fromRound = null, bool $again = false): ?int
     {
-        $round = $this->store->reset($fromRound ?? $this->store->snapshot()->round);
+        $round = $this->store->reset($fromRound ?? $this->store->snapshot()->round, $again);
         if ($round === null) {
             return null;
         }

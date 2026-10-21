@@ -32,7 +32,7 @@ use App\Domain\Walk\WalkerStore;
  *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
  *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size?: 's'|'m'|'l', reachable?: bool, stage: int<0, max>, clicks: int<0, max>, threshold?: positive-int, stageMax?: int<0, max>}>,
  *     walkers: list<array>,
- *     bar: array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int}|null,
+ *     bar: array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int, roadrunner: bool}|null,
  *     ready: bool,
  *     finale: array{step: int, reveal?: array}|null,
  *     paused: bool,

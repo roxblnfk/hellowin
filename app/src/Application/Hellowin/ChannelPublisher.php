@@ -187,7 +187,7 @@ final readonly class ChannelPublisher
 
     /**
      * @param non-empty-string $player Who came up.
-     * @param array<'walker'|'pumpkin', array{id: non-empty-string}> $target `walker` or `pumpkin`: what the player clinks with.
+     * @param array<'walker'|'pumpkin'|'roadrunner', array{id: non-empty-string}|true> $target `walker`, `pumpkin` or `roadrunner`: what the player clinks with.
      * @param int $toast Index of the toast in the frontend's catalogue, modulo its length; never negative.
      * @param int $at Unix time in milliseconds of the meeting.
      */

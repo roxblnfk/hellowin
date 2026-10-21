@@ -54,7 +54,7 @@ final class BarServiceTest
 
         Assert::same(\array_column($ritual->broadcast->ofType('mugs'), 'mugs'), [1, 2, 3]);
         Assert::count($ritual->broadcast->ofType('pour'), 3);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4, 'roadrunner' => false]);
     }
 
     public function emptyFloorStillGetsOneMug(): void
@@ -90,7 +90,7 @@ final class BarServiceTest
 
         Assert::same(self::mugs($ritual), [[2, 2], [3, 3]]);
         Assert::count($ritual->broadcast->ofType('pour'), 2);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 3, 'max' => 3, 'pouring' => null, 'drunk' => 0, 'target' => 4, 'roadrunner' => false]);
     }
 
     public function mugsStayWhenPlayersLeaveAndTheOwlWaitsUntilTheyAreTakenBelowTheNewMax(): void
@@ -120,7 +120,7 @@ final class BarServiceTest
 
         $ritual->reset->reset();
 
-        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 2, 'max' => 2, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 2, 'max' => 2, 'pouring' => null, 'drunk' => 0, 'target' => 4, 'roadrunner' => false]);
         Assert::same($ritual->barStore->get()->mugs, 2);
     }
 
@@ -150,7 +150,7 @@ final class BarServiceTest
         $ritual->bar->pour();
 
         Assert::blank($ritual->broadcast->ofType('pour'));
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 0, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 4, 'roadrunner' => false]);
     }
 
     public function characterWalksToTheCounterAndTakesAMugOnArrival(): void
@@ -343,8 +343,8 @@ final class BarServiceTest
 
         $ritual->reset->reset();
 
-        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10]);
+        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10, 'roadrunner' => false]);
+        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10, 'roadrunner' => false]);
         Assert::false($ritual->snapshot->create()['ready']);
     }
 

@@ -204,15 +204,16 @@ final readonly class RitualStore
      * Starts the next round from scene 0 with every pumpkin and centrepiece at stage 0 and the story over. Runs once
      * per round: a call for a round that is already over changes nothing.
      *
+     * @param bool $again A new cycle of the evening from the dawn, not the moderator's reset.
      * @return positive-int|null The new round, null when `$fromRound` is not the current one.
      * @throws RitualBusyException
      */
-    public function reset(int $fromRound): ?int
+    public function reset(int $fromRound, bool $again = false): ?int
     {
         $elements = $this->elements();
         $locks = [self::LOCK_SCENE, ...\array_map($this->lockOf(...), $elements)];
 
-        return $this->locked($locks, function () use ($fromRound, $elements): ?int {
+        return $this->locked($locks, function () use ($fromRound, $elements, $again): ?int {
             $round = $this->readRound();
             if ($round !== $fromRound) {
                 return null;
@@ -222,7 +223,7 @@ final readonly class RitualStore
                 $this->writePumpkin(new Pumpkin($id));
             }
             $this->storage->set(self::KEY_SCENE, 0);
-            $this->storage->set(self::KEY_STORY, $this->readStory()->restarted()->toArray());
+            $this->storage->set(self::KEY_STORY, $this->readStory()->restarted($again)->toArray());
             $this->storage->set(self::KEY_ROUND, ++$round);
 
             return $round;

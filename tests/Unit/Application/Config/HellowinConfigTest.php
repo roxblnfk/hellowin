@@ -261,7 +261,12 @@ final class HellowinConfigTest
         Assert::equals($layout->doorway(), [new Point(12, 50), new Point(12, 55)]);
         Assert::same([$layout->toArray()['door'], $layout->toArray()['door_in']], [['x' => 12.0, 'y' => 50.0], 5.0]);
 
+        $roadrunner = (new HellowinConfig(['walk' => ['bar' => self::bar(['roadrunner' => ['x' => 74, 'y' => 46]])]]))->getBarLayout();
+        Assert::equals($roadrunner?->roadrunner, new Point(74, 46));
+        Assert::same($roadrunner->toArray()['roadrunner'], ['x' => 74.0, 'y' => 46.0]);
+
         $none = (new HellowinConfig(['walk' => ['bar' => self::bar()]]))->getBarLayout();
+        Assert::null($none?->roadrunner);
         Assert::same([$none?->door, $none->doorIn, $none->doorway()], [null, 6.0, null]);
         Assert::false(\array_key_exists('door', $none->toArray()));
     }

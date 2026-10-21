@@ -351,7 +351,7 @@ final readonly class WalkService
      * pumpkin holds its mug out only on the goal step, while it hands beer out.
      *
      * @param non-empty-string $id
-     * @param Clink::WALKER|Clink::PUMPKIN $kind
+     * @param Clink::WALKER|Clink::PUMPKIN|Clink::ROADRUNNER $kind
      * @throws NoCharacterException The player has no character on the lawn.
      * @throws ZombifiedException
      * @throws ClinkRefusedException
@@ -361,6 +361,9 @@ final readonly class WalkService
     {
         $walker = $this->store->all()[$id] ?? throw new NoCharacterException('no character');
         $walker->zombie() and throw new ZombifiedException();
+        if ($kind === Clink::ROADRUNNER) {
+            return $this->clinkRoadrunner($id);
+        }
         $ritual = $this->ritual->snapshot();
         $inBar = $this->barIn($ritual->scene);
         $inBar || $ritual->story->cursed() or throw new ClinkRefusedException('not cursed');
@@ -429,11 +432,13 @@ final readonly class WalkService
         }
 
         $ritual = $this->ritual->snapshot();
-        $open = $ritual->story->cursed() || $this->barIn($ritual->scene);
+        $inBar = $this->barIn($ritual->scene);
+        $open = $ritual->story->cursed() || $inBar;
         $pumpkins = $ritual->story->finale === Story::CURSED_STEP;
+        $roadrunner = $inBar && $ritual->story->roadrunner;
         $met = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            static function (array $walkers) use ($now, $open, $pumpkins): array {
+            static function (array $walkers) use ($now, $open, $pumpkins, $roadrunner): array {
                 $met = [];
                 foreach (\array_keys($walkers) as $id) {
                     // Read again: a clink earlier in the loop may have clinked this character's mug
@@ -444,10 +449,12 @@ final readonly class WalkService
                     }
 
                     $target = $clink->kind === Clink::WALKER ? $walkers[$clink->target] ?? null : null;
-                    $inPlace = $clink->kind === Clink::PUMPKIN || $target?->walk->startedAt === $clink->since;
-                    $mugs = $walker->hasBeer() && !$walker->zombie() && ($clink->kind === Clink::PUMPKIN
-                        ? $pumpkins
-                        : $target?->hasBeer() === true && !$target->zombie());
+                    $inPlace = $clink->kind !== Clink::WALKER || $target?->walk->startedAt === $clink->since;
+                    $mugs = $walker->hasBeer() && !$walker->zombie() && match ($clink->kind) {
+                        Clink::PUMPKIN => $pumpkins,
+                        Clink::ROADRUNNER => $roadrunner,
+                        default => $target?->hasBeer() === true && !$target->zombie(),
+                    };
                     $happens = $inPlace && $open && $mugs;
                     $walkers[$id] = $walker->clinked($happens ? $now : null);
                     if ($happens) {
@@ -601,6 +608,51 @@ final readonly class WalkService
     private static function rounded(Point $point): Point
     {
         return new Point(\round($point->x, 2), \round($point->y, 2));
+    }
+
+    /**
+     * Sends the character to clink with RoadRunner behind the counter (docs/spec/scenario.md, «RoadRunner в баре»): to
+     * the free point of the place at the counter nearest to him, the way {@see toCounter()} finds one for a mug. The
+     * clink happens on arrival, in {@see clinks()}.
+     *
+     * @param non-empty-string $id
+     * @throws NoCharacterException
+     * @throws ClinkRefusedException `not bar`, `no target` — RoadRunner is not there, or `no beer`; `busy` while a
+     *         clink plays.
+     * @throws LockBusyException
+     */
+    private function clinkRoadrunner(string $id): Walk
+    {
+        $now = $this->clock->now();
+        $walker = $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            function (array $walkers) use ($id, $now): array {
+                $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
+                $bar = $this->bar;
+                $bar !== null && $this->barIn($this->ritual->scene()) or throw new ClinkRefusedException('not bar');
+                $at = $bar->roadrunner;
+                $at !== null && $this->ritual->story()->roadrunner or throw new ClinkRefusedException('no target');
+                $walker->hasBeer() or throw new ClinkRefusedException('no beer');
+                $walker->clinkPlaying($now, $this->clinkDuration) and throw new ClinkRefusedException('busy');
+
+                $taken = [];
+                foreach ($walkers as $other) {
+                    $spot = $other->id === $id ? null : $bar->counterSpot($other->walk->path[\count($other->walk->path) - 1]);
+                    $spot === null or $taken[] = $spot;
+                }
+                $from = self::rounded($walker->walk->positionAt($now));
+                $to = self::rounded($bar->atCounter($at, $taken, $this->clinkGap));
+                $walk = Walk::along($bar->zone->route($from, $to), $now, $this->speed);
+                $walker = $walker->clinking($walk, new Clink(Clink::ROADRUNNER, Clink::ROADRUNNER, $walk->arrivesAt))->seen($now);
+                $walkers[$id] = $walker;
+
+                return [$walkers, $walker];
+            },
+        );
+
+        $this->publisher->move($this->ritual->round(), $walker);
+
+        return $walker->walk;
     }
 
     /**

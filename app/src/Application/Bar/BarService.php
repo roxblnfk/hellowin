@@ -265,7 +265,7 @@ final readonly class BarService
     /**
      * A new round starts in the bar with a counter full for the players on the floor.
      *
-     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int}
+     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int, roadrunner: bool}
      *         The counter as the reset event carries it.
      * @throws LockBusyException
      */
@@ -281,7 +281,7 @@ final readonly class BarService
      * the console show them too.
      *
      * @param int<0, max>|null $walkers Characters on the floor, when the caller has read them already.
-     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int}
+     * @return array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int, roadrunner: bool}
      */
     public function state(int $round, int $scene, Story $story, ?int $walkers = null): array
     {
@@ -293,6 +293,7 @@ final readonly class BarService
             'pouring' => $bar->pouringToArray(),
             'drunk' => $this->bar->drinks($round),
             'target' => $this->target($story),
+            'roadrunner' => $story->roadrunner,
         ];
     }
 

@@ -329,6 +329,13 @@
   `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не запускаются (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
+- **RoadRunner в баре** (бриф «RoadRunner в баре»): флаг `roadrunner` в сюжете `hellowin:story` — `RitualStore::reset(round,
+  again)` под локами сброса ставит его новым циклом с рассвета и снимает сбросом модератора; переходы сцен его не
+  трогают. Он приходит как `bar.roadrunner` в снимке и `reset.bar`; место — `walk.bar.roadrunner` (`BarLayout`, в разметке).
+  `clink {roadrunner: true}` (`WalkService::clinkRoadrunner`): под локом `walkers` — бар (`not bar`), он за стойкой
+  (`no target`), пиво (`no beer`), путь к свободной точке места у стойки, ближайшей к нему (`BarLayout::atCounter`, как у
+  `bar.take`), ожидающее чоканье `Clink::ROADRUNNER`. По прибытии тикер (`clinks`) проверяет, что зал в баре, он всё ещё
+  там и пиво в руке, — событие `clink {player, roadrunner: true, toast, at}` и `clinked` у кружки подошедшего.
 - **Сброс** сбрасывает всё это без отдельного кода: записи цели и босса привязаны к раунду, перестановка в бар
   (`relocate`) опустошает руки и снимает заклятие; без бара заклятие снимает `cureAll`.
 
@@ -346,7 +353,7 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k, barTarget}` (`Domain/Story/Story`;
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k, barTarget, roadrunner}` (`Domain/Story/Story`;
   `k` — множитель порогов, вне 0,1–10 или нет поля — читается как 1;
   `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —

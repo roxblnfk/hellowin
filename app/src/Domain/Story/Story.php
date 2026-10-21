@@ -47,6 +47,8 @@ final readonly class Story
      * @param float $k Multiplier of every click threshold, from {@see K_MIN} to {@see K_MAX}.
      * @param positive-int|null $barTarget Mugs the room drinks in the bar before it may leave, set by the moderator;
      *        null keeps the configured one. Like `$k`, it is about the room and outlives a reset.
+     * @param bool $roadrunner RoadRunner stands behind the bar's counter: the dawn has led the room back to the bar, and
+     *        only the moderator's reset sends him away.
      */
     public function __construct(
         public ?int $ready = null,
@@ -57,6 +59,7 @@ final readonly class Story
         public ?int $bonfire = null,
         public float $k = 1.0,
         public ?int $barTarget = null,
+        public bool $roadrunner = false,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -87,6 +90,7 @@ final readonly class Story
             \is_int($bonfire) && $bonfire >= 0 ? $bonfire : null,
             self::isK($k) ? (float) $k : 1.0,
             \is_int($barTarget) && $barTarget > 0 ? $barTarget : null,
+            ($value['roadrunner'] ?? false) === true,
         );
     }
 
@@ -104,7 +108,7 @@ final readonly class Story
      */
     public function readyIn(int $scene, ?string $player): self
     {
-        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget);
+        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
     }
 
     /**
@@ -112,7 +116,7 @@ final readonly class Story
      */
     public function bonfireOpenIn(int $scene): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene, $this->k, $this->barTarget);
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene, $this->k, $this->barTarget, $this->roadrunner);
     }
 
     /**
@@ -120,7 +124,7 @@ final readonly class Story
      */
     public function nextScene(bool $final): self
     {
-        return new self(null, $final ? 0 : null, $this->paused, $this->zombies, $this->lastPumpkin, k: $this->k, barTarget: $this->barTarget);
+        return new self(null, $final ? 0 : null, $this->paused, $this->zombies, $this->lastPumpkin, k: $this->k, barTarget: $this->barTarget, roadrunner: $this->roadrunner);
     }
 
     /**
@@ -136,8 +140,8 @@ final readonly class Story
 
         // The cursed world is ready by its goal alone, not by the circle closed long ago; its zombies come out by themselves
         return $step === self::CURSED_STEP
-            ? new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget)
-            : new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget);
+            ? new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner)
+            : new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
     }
 
     /**
@@ -156,17 +160,17 @@ final readonly class Story
 
     public function withPaused(bool $paused): self
     {
-        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget);
+        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
     }
 
     public function withZombies(bool $zombies): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget);
+        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
     }
 
     public function withK(float $k): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $k, $this->barTarget);
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $k, $this->barTarget, $this->roadrunner);
     }
 
     /**
@@ -174,16 +178,16 @@ final readonly class Story
      */
     public function withBarTarget(?int $target): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $target);
+        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $target, $this->roadrunner);
     }
 
     /**
      * A new round starts the story over; the pause and the threshold multiplier stay, they are about the room rather
-     * than the story.
+     * than the story. RoadRunner comes to the bar with a new cycle from the dawn and leaves with the moderator's reset.
      */
-    public function restarted(): self
+    public function restarted(bool $again = false): self
     {
-        return new self(paused: $this->paused, k: $this->k, barTarget: $this->barTarget);
+        return new self(paused: $this->paused, k: $this->k, barTarget: $this->barTarget, roadrunner: $again);
     }
 
     /**
@@ -211,7 +215,7 @@ final readonly class Story
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barTarget: positive-int|null}
+     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barTarget: positive-int|null, roadrunner: bool}
      */
     public function toArray(): array
     {
@@ -224,6 +228,7 @@ final readonly class Story
             'bonfire' => $this->bonfire,
             'k' => $this->k,
             'barTarget' => $this->barTarget,
+            'roadrunner' => $this->roadrunner,
         ];
     }
 }

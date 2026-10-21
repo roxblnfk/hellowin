@@ -449,9 +449,11 @@ final readonly class RPCService implements ServiceInterface
         $walker = $params['walker'] ?? null;
         /** @var mixed $pumpkin */
         $pumpkin = $params['pumpkin'] ?? null;
-        [$kind, $target] = \is_string($walker)
-            ? [Clink::WALKER, $walker]
-            : [Clink::PUMPKIN, \is_string($pumpkin) ? $pumpkin : ''];
+        [$kind, $target] = match (true) {
+            ($params['roadrunner'] ?? null) === true => [Clink::ROADRUNNER, Clink::ROADRUNNER],
+            \is_string($walker) => [Clink::WALKER, $walker],
+            default => [Clink::PUMPKIN, \is_string($pumpkin) ? $pumpkin : ''],
+        };
 
         try {
             return ['ok' => true, 'walk' => $this->walks->clink($player, $kind, $target)->toArray()];
