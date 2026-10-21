@@ -148,6 +148,8 @@ return [
             'door' => ['x' => 12, 'y' => 50],
             // Percents of the screen a new character walks in from the threshold, down the screen
             'door_in' => 6,
+            // RoadRunner behind the counter after the dawn, next to the owl: y the counter's back edge, as the owl's
+            'roadrunner' => ['x' => 74, 'y' => 46],
             // Where a fly lands besides the table tops and the counter: a band x1..x2 at the height y (a point when
             // x1 == x2), y the top of the surface a fly stands on. The frontend draws these things exactly there: the
             // beam, the door's lintel, the hearth's mantel, the shelves over the counter, the shields' rims and the
