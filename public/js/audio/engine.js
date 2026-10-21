@@ -15,16 +15,21 @@ const CEILING = 10 ** (-1 / 20);
 const MAX_VOICES = 32;
 const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
-/**
- * Tracks of the final scene by finale step, [first step, track] in rising order: each holds until the next.
- * A later part of the finale (the boss fight, the dawn) gets its track by a row here.
- */
-export const FINALE_TRACKS = [[0, 'blood'], [5, 'cursed']];
+/** Tracks of the final scene by finale step, [first step, track] in rising order: each holds until the next. */
+export const FINALE_TRACKS = [[0, 'blood'], [5, 'cursed'], [7, 'dawn']];
 
-/** Which track a scene state plays: the bar is scene 0, the day 1 …; in the final scene by the finale step. */
-export function trackOf({ scene = 0, sceneStages = 4, finale = null } = {}) {
+/** The finale step the boss fight lives in: not a step of its own, but the snapshot's `boss` {hp, max} within it. */
+export const BOSS_STEP = 6;
+
+/**
+ * Which track a scene state plays: the bar is scene 0, the day 1 …; in the final scene by the finale step, and on
+ * BOSS_STEP by the boss. Once his hp is gone the dawn's track starts at once, before the moderator brings the sun up on
+ * the next step: the victory is heard as he crumbles, not after a pause the host may stretch.
+ */
+export function trackOf({ scene = 0, sceneStages = 4, finale = null, boss = null } = {}) {
     if (scene >= sceneStages) {
         const step = finale?.step ?? 0;
+        if (step === BOSS_STEP && boss) return boss.hp > 0 ? 'boss' : 'dawn';
         return FINALE_TRACKS.reduce((track, [from, name]) => (step >= from ? name : track), 'blood');
     }
     return ['bar', 'day', 'dusk', 'night'][scene] ?? 'night';

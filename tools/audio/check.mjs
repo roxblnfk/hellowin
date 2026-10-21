@@ -2,12 +2,14 @@
 // 1. determinism — every buffer rendered twice gives the same SHA-256; 2. loops — the seam of each stem and of the
 // mix, tiled four times, is no sharper than the music around it; 3. levels — peaks of the effects and the music;
 // 4. a hundred effects fired within a second through the engine's voice limits and ceiling stay ≤ −1 dBFS;
-// 5. render times. Exit code 1 when a check fails.
+// 5. render times; 6. routing — scene states, the finale's steps and the boss pick the right track. Exit code 1 when
+// a check fails.
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { TRACKS, renderTrack } from '../../public/js/audio/synth/music.js';
 import { SFX, renderSfx, sfxJobs } from '../../public/js/audio/synth/sfx.js';
 import { measure, mulberry32 } from '../../public/js/audio/synth/core.js';
+import { NEXT_TRACK, trackOf } from '../../public/js/audio/engine.js';
 
 const sr = Number(process.argv[2] ?? 48000);
 const db = (x) => (20 * Math.log10(x)).toFixed(1);
@@ -71,6 +73,28 @@ for (const name of Object.keys(TRACKS)) {
     console.log(`music ${name.padEnd(6)} ${(n / sr).toFixed(2)} s  render ${ms.toFixed(0)} ms  peak ${db(peak)} dBFS  rms ${db(rms)} dBFS  `
         + `seam worst ${worst.label}: step ${worst.seam.toExponential(2)} vs p99.9 ${worst.p999.toExponential(2)}, HF across seam ×${worst.ratio.toFixed(2)} of the loudest bar line  `
         + `memory ${((n * 4 * 2 * 3) / 1e6).toFixed(1)} MB  sha256 ${ha.slice(0, 12)}`);
+}
+
+// ---------------------------------------------------------------- routing
+// Scene state → track: the bar is scene 0; the final scene goes by finale step, and step 6 by the boss's hp.
+{
+    const final = (step, boss) => ({ scene: 4, sceneStages: 4, finale: { step }, boss });
+    const cases = [
+        [{ scene: 0, sceneStages: 4 }, 'bar'], [{ scene: 1, sceneStages: 4 }, 'day'], [{ scene: 2, sceneStages: 4 }, 'dusk'],
+        [{ scene: 3, sceneStages: 4 }, 'night'], [final(0), 'blood'], [final(4), 'blood'], [final(5), 'cursed'],
+        [final(6), 'cursed'], [final(6, null), 'cursed'], [final(6, { hp: 7, max: 10 }), 'boss'], [final(6, { hp: 0, max: 10 }), 'dawn'],
+        [final(7), 'dawn'], [final(7, { hp: 0, max: 10 }), 'dawn'], [final(5, { hp: 7, max: 10 }), 'cursed'],
+    ];
+    let wrong = 0;
+    for (const [state, want] of cases) {
+        const got = trackOf(state);
+        if (got !== want) {
+            wrong++;
+            fail(`trackOf(${JSON.stringify(state)}) = ${got}, want ${want}`);
+        }
+    }
+    for (const name of [...Object.values(NEXT_TRACK), ...cases.map(([, t]) => t)]) if (name && !TRACKS[name]) fail(`no track ${name}`);
+    console.log(`routing: ${cases.length - wrong} of ${cases.length} scene states → the right track`);
 }
 
 // ---------------------------------------------------------------- effects
