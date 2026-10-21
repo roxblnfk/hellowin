@@ -233,15 +233,16 @@ function geometry(layout, artW, artH, opts = {}) {
         owl = { x, y: back + BAR_HIDE };
         counter.keg = { x1: x + OWL_BAR.tap.x + 3, x2: x + OWL_BAR.tap.x + 14, y2: back, y1: back - 11 };
     }
-    // Wall bays between posts; the hearth takes the free bay nearest a third of the way across, the counter's bay
-    // gets the shelves and the sign.
-    const n = Math.max(2, Math.round(artW / 150));
+    // Wall bays between posts, an odd count so a bay, not a post, stands in the middle: the hearth takes the free bay
+    // nearest the middle, the counter's bay gets the shelves and the sign.
+    const n = Math.max(3, 2 * Math.round((artW / 150 - 1) / 2) + 1);
     const posts = Array.from({ length: n + 1 }, (_, k) => Math.round((k * artW) / n));
     const bays = posts.slice(0, -1).map((x, k) => ({ x1: x, x2: posts[k + 1], cx: (x + posts[k + 1]) / 2 }));
     const roof = Math.max(8, Math.round(floorTop * 0.16));
-    const hasCounter = (b) => counter && counter.x1 < b.x2 - 12 && counter.x2 > b.x1 + 12;
+    // A bay is the counter's when the counter covers a third of it: one the counter only clips stays free for the hearth.
+    const hasCounter = (b) => counter && Math.min(counter.x2, b.x2) - Math.max(counter.x1, b.x1) > (b.x2 - b.x1) / 3;
     const free = bays.filter((b) => !hasCounter(b));
-    const hearthBay = (free.length ? free : bays).reduce((best, b) => (Math.abs(b.cx - artW * 0.36) < Math.abs(best.cx - artW * 0.36) ? b : best));
+    const hearthBay = (free.length ? free : bays).reduce((best, b) => (Math.abs(b.cx - artW / 2) < Math.abs(best.cx - artW / 2) ? b : best));
     const hearthW = Math.round(Math.min(hearthBay.x2 - hearthBay.x1 - 22, clamp(artW * 0.15, 40, 60)));
     const hearthH = Math.round(clamp((floorTop - roof) * 0.48, 34, 54));
     const hearth = { cx: Math.round(hearthBay.cx), w: hearthW, h: hearthH, top: floorTop - hearthH, bay: hearthBay };
