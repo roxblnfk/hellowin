@@ -141,14 +141,16 @@ final readonly class RitualStore
      * Marks the scene ready for the moderator, once per scene of a round.
      *
      * @param non-empty-string|null $player Who finished the last element of the scene.
+     * @param int|null $step The finale step the scene must still be at; null — any.
      * @return bool False when the scene is stale or already marked.
      * @throws RitualBusyException
      */
-    public function markReady(int $round, int $scene, ?string $player): bool
+    public function markReady(int $round, int $scene, ?string $player, ?int $step = null): bool
     {
-        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene, $player): bool {
+        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene, $player, $step): bool {
             $story = $this->readStory();
-            if ($scene < 0 || $this->readRound() !== $round || $this->readScene() !== $scene || $story->ready === $scene) {
+            if ($scene < 0 || $this->readRound() !== $round || $this->readScene() !== $scene || $story->ready === $scene
+                || $step !== null && $story->finale !== $step) {
                 return false;
             }
 
@@ -183,14 +185,15 @@ final readonly class RitualStore
      * Changes the story under the scene lock.
      *
      * @param \Closure(Story): Story $change
+     * @param int|null $round The round the change belongs to: in another one the story stays as it is.
      * @return array{Story, Story} The story before and after the change.
      * @throws RitualBusyException
      */
-    public function updateStory(\Closure $change): array
+    public function updateStory(\Closure $change, ?int $round = null): array
     {
-        return $this->locked([self::LOCK_SCENE], function () use ($change): array {
+        return $this->locked([self::LOCK_SCENE], function () use ($change, $round): array {
             $before = $this->readStory();
-            $after = $change($before);
+            $after = $round === null || $round === $this->readRound() ? $change($before) : $before;
             $after == $before or $this->storage->set(self::KEY_STORY, $after->toArray());
 
             return [$before, $after];

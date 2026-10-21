@@ -17,11 +17,14 @@ use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\CursedService;
+use App\Application\Story\RapierService;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Application\Walk\ClinkRefusedException;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
+use App\Application\Walk\ZombifiedException;
 use App\Domain\Clock\Clock;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\PlayerId;
@@ -46,10 +49,10 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  */
 final readonly class RPCService implements ServiceInterface
 {
-    /** Methods with a limit of their own; the rest share `other`. */
-    private const RATE_GROUPS = ['click', 'shoot', 'move'];
+    /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
+    private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -65,6 +68,8 @@ final readonly class RPCService implements ServiceInterface
         private RateLimiter $limiter,
         private PlayMetrics $metrics,
         private ?BarService $bar = null,
+        private ?RapierService $rapier = null,
+        private ?CursedService $cursed = null,
     ) {}
 
     #[\Override]
@@ -108,6 +113,12 @@ final readonly class RPCService implements ServiceInterface
             'clink.auto' => $this->clinkAuto($request->getData(), $player),
             'bar.target' => ['ok' => true, 'target' => $this->barService()->moveTarget($request->getData()['delta'] ?? null)],
             'bar.ready' => $this->barReady(),
+            'beer' => $this->beer($request->getData(), $player),
+            'word' => $player === null ? self::fail('anonymous') : ['ok' => true, 'correct' => $this->rapierService()->word($player, $request->getData()['text'] ?? null)],
+            'cure' => $this->cure($request->getData(), $player),
+            'strike' => $player === null ? self::fail('anonymous') : ['ok' => true, 'hp' => $this->rapierService()->strike($player)],
+            'cursed.target' => ['ok' => true, 'target' => $this->cursedService()->moveTarget($request->getData()['goal'] ?? null, $request->getData()['delta'] ?? null)],
+            'boss.hp' => ['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -133,7 +144,7 @@ final readonly class RPCService implements ServiceInterface
      */
     private function withinRate(string $method, string $caller): bool
     {
-        $group = \in_array($method, self::RATE_GROUPS, true) ? $method : 'other';
+        $group = self::RATE_GROUPS[$method] ?? 'other';
         if ($caller === '') {
             return true;
         }
@@ -161,7 +172,7 @@ final readonly class RPCService implements ServiceInterface
     {
         try {
             return $call();
-        } catch (StoryRefusedException|BarRefusedException|ClinkRefusedException $e) {
+        } catch (StoryRefusedException|BarRefusedException|ClinkRefusedException|ZombifiedException $e) {
             return self::fail($e->error);
         } catch (NoCharacterException) {
             return self::fail('no character');
@@ -370,6 +381,49 @@ final readonly class RPCService implements ServiceInterface
         $this->barService()->wave();
 
         return ['ok' => true];
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function beer(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        /** @var mixed $pumpkin */
+        $pumpkin = $params['pumpkin'] ?? null;
+
+        return ['ok' => true, 'walk' => $this->walks->toPumpkin($player, \is_string($pumpkin) ? $pumpkin : '')->toArray()];
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function cure(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        /** @var mixed $walker */
+        $walker = $params['walker'] ?? null;
+
+        return ['ok' => true, 'cured' => $this->rapierService()->cure($player, \is_string($walker) ? $walker : '')];
+    }
+
+    /**
+     * Without the rapier service the night never reaches the rapier.
+     */
+    private function rapierService(): RapierService
+    {
+        return $this->rapier ?? throw new StoryRefusedException('not now');
+    }
+
+    private function cursedService(): CursedService
+    {
+        return $this->cursed ?? throw new StoryRefusedException('not cursed');
     }
 
     /**

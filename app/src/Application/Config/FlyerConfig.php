@@ -32,7 +32,9 @@ final class FlyerConfig extends InjectableConfig
         'rare' => ';roadrunner;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
-        'zombie_interval' => '4000-9000',
+        'kinds_dawn' => 'duck,chicken',
+        'interval_dawn' => '1000-2500',
+        'zombie_interval' => '2000-5000',
         'zombie_duration' => 14000,
         'zombie_points' => 2,
     ];
@@ -45,6 +47,16 @@ final class FlyerConfig extends InjectableConfig
     public function getInterval(): array
     {
         return self::range($this->config['interval'] ?? null, 'interval', 'HELLOWIN_FLYER_INTERVAL');
+    }
+
+    /**
+     * Milliseconds between launches at dawn, like {@see getInterval()}: many birds, often.
+     *
+     * @return array{positive-int, positive-int}
+     */
+    public function getDawnInterval(): array
+    {
+        return self::range($this->config['interval_dawn'] ?? null, 'interval_dawn', 'HELLOWIN_FLYER_INTERVAL_DAWN');
     }
 
     /**
@@ -140,6 +152,21 @@ final class FlyerConfig extends InjectableConfig
         $value = $this->config['kinds_cursed'] ?? null;
         $error = self::invalid('kinds_cursed', 'HELLOWIN_FLYER_KINDS_CURSED', 'comma-separated lowercase words', $value);
         \is_string($value) or throw $error;
+
+        return self::set($value, $error);
+    }
+
+    /**
+     * Flyer kinds of the dawn in place of its scene's set, one set like {@see getCursedKinds()}: `"duck,chicken"`.
+     *
+     * @return list<non-empty-string>
+     */
+    public function getDawnKinds(): array
+    {
+        /** @var mixed $value */
+        $value = $this->config['kinds_dawn'] ?? null;
+        $error = self::invalid('kinds_dawn', 'HELLOWIN_FLYER_KINDS_DAWN', 'comma-separated lowercase words', $value);
+        is_string($value) or throw $error;
 
         return self::set($value, $error);
     }

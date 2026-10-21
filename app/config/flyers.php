@@ -26,10 +26,15 @@ return [
     // each kind looks is up to the frontend
     'kinds' => env('HELLOWIN_FLYER_KINDS', 'fly;duck,chicken;;bat;worm'),
 
-    // The cursed world (the last finale step) takes this one set instead of its scene's; fireflies fly at the middle
+    // The cursed world (finale steps 5 and 6) takes this one set instead of its scene's; fireflies fly at the middle
     // and near depths, wobble sluggishly and bring these points at any depth
     'kinds_cursed' => env('HELLOWIN_FLYER_KINDS_CURSED', 'worm,bat,firefly'),
     'firefly_points' => env('HELLOWIN_FLYER_FIREFLY_POINTS', 1),
+
+    // The dawn (the last finale step) takes this one set instead of its scene's, launched at its own, shorter pace:
+    // the night is over, and birds are many
+    'kinds_dawn' => env('HELLOWIN_FLYER_KINDS_DAWN', 'duck,chicken'),
+    'interval_dawn' => env('HELLOWIN_FLYER_INTERVAL_DAWN', '1000-2500'),
 
     // Flies of the bar (walk.bar in hellowin.php): how many times one lands on the tables and the counter, milliseconds
     // it sits there (both ranges or fixed), milliseconds from one point to the next, points for one
@@ -44,9 +49,9 @@ return [
     'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),
     'rare_points' => env('HELLOWIN_FLYER_RARE_POINTS', 10),
 
-    // Zombies of the cursed world, when the moderator lets them out: milliseconds between them (range or fixed),
-    // milliseconds from the patch to the edge of the lawn, points for one
-    'zombie_interval' => env('HELLOWIN_ZOMBIE_INTERVAL', '4000-9000'),
+    // Zombies of the cursed world, let out by themselves as it begins (the moderator may hold them): milliseconds
+    // between them (range or fixed), milliseconds from the patch to the edge of the lawn, points for one
+    'zombie_interval' => env('HELLOWIN_ZOMBIE_INTERVAL', '2000-5000'),
     'zombie_duration' => env('HELLOWIN_ZOMBIE_DURATION', 14000),
     'zombie_points' => env('HELLOWIN_ZOMBIE_POINTS', 2),
 ];

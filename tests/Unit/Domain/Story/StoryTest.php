@@ -28,14 +28,32 @@ final class StoryTest
         Assert::null((new Story())->stepTo(1)->finale);
     }
 
-    public function lastStepIsTheCursedWorld(): void
+    public function cursedWorldIsTheGoalAndTheRapierAndTheDawnIsLast(): void
     {
-        $story = new Story(finale: Story::LAST_STEP - 1);
+        $story = new Story(ready: 1, finale: Story::REVEAL_STEP);
 
         Assert::false($story->cursed());
         Assert::true($story->revealed());
-        Assert::true($story->stepTo(Story::LAST_STEP)->cursed());
-        Assert::same($story->stepTo(Story::LAST_STEP)->stepTo(Story::LAST_STEP + 1)->finale, Story::LAST_STEP);
+        $cursed = $story->stepTo(Story::CURSED_STEP);
+        Assert::true($cursed->cursed());
+        // The goal of the cursed world makes it ready, not the circle; its zombies come out by themselves
+        Assert::same([$cursed->ready, $cursed->zombies], [null, true]);
+        $rapier = $cursed->stepTo(Story::RAPIER_STEP);
+        Assert::true($rapier->cursed() && $rapier->rapier());
+        $dawn = $rapier->stepTo(Story::DAWN_STEP);
+        Assert::true($dawn->dawn());
+        Assert::false($dawn->cursed());
+        Assert::same($dawn->stepTo(Story::DAWN_STEP + 1)->finale, Story::LAST_STEP);
+    }
+
+    public function rapierWaitsForTheGoalAndTheDawnForTheBoss(): void
+    {
+        $cursed = new Story(finale: Story::CURSED_STEP);
+
+        Assert::true($cursed->awaitsReady(Story::RAPIER_STEP));
+        Assert::false($cursed->readyIn(1, null)->awaitsReady(Story::RAPIER_STEP));
+        Assert::true((new Story(ready: 1, finale: Story::RAPIER_STEP))->awaitsReady(Story::DAWN_STEP));
+        Assert::false(Story::fromArray(['finale' => 8])->finale !== null);
     }
 
     public function storyRoundTripsThroughItsRecord(): void
@@ -69,7 +87,7 @@ final class StoryTest
         $reveal = Reveal::of($ritual, new LockstepPolicy(5, [4, 8]), 3, null);
 
         // 24 accepted: 15 went into 3 transitions, 5 + 1 wait for the next ones
-        Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'drinks' => 0, 'lastPumpkin' => null]);
+        Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'lastPumpkin' => null]);
     }
 
     public function burnedClicksFollowTheThresholdOfEachTransition(): void

@@ -6,6 +6,7 @@ namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ResetService;
+use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
@@ -32,6 +33,9 @@ final readonly class StoryService
         private RevealBuilder $reveal,
         private ?WalkService $walks = null,
         private ?ResetService $reset = null,
+        private ?CursedService $cursed = null,
+        private ?RapierService $rapier = null,
+        private ?RitualMetrics $metrics = null,
     ) {}
 
     /**
@@ -70,9 +74,12 @@ final readonly class StoryService
     }
 
     /**
-     * @param bool $force Take the first step even if the circle is not closed: the room got stuck.
+     * The moderator's «Шаг финала».
+     *
+     * @param bool $force Take a step that waits for the room without it — the circle not closed, the goal of the cursed
+     *        world not reached, the boss alive: the room got stuck, or the evening runs late.
      * @return int<0, 7> The current step: the requested one if it was next, the unchanged one otherwise.
-     * @throws StoryRefusedException Outside the final scene, or the first step before the scene is ready.
+     * @throws StoryRefusedException Outside the final scene, or a step that waits for the room.
      * @throws RitualBusyException
      */
     public function finaleStep(int $step, bool $force = false): int
@@ -83,14 +90,24 @@ final readonly class StoryService
         $after->finale === null and throw new StoryRefusedException('not final');
         !$force && $before->awaitsReady($step) and throw new StoryRefusedException('not ready');
 
-        if ($after->finale !== $before->finale) {
-            $ritual = $this->store->snapshot();
-            $this->publisher->finale($ritual->round, $ritual->scene, $after->finale, $this->reveal->finale($ritual)['reveal'] ?? null);
-            $this->publisher->owl($ritual->round, OwlLine::finale($after->finale));
-            $after->finale === Story::SCATTER_STEP and $this->scatter();
-        }
+        $after->finale === $before->finale or $this->entered($before, $after, false);
 
         return $after->finale;
+    }
+
+    /**
+     * A finale step the room took by itself, from the transition queue: the dawn after the boss's last strike. A job of
+     * a round that is over, or one late for its step, changes nothing.
+     *
+     * @throws RitualBusyException
+     */
+    public function finaleOf(int $round, int $step): void
+    {
+        [$before, $after] = $this->store->updateStory(static fn(Story $story): Story => $story->stepTo($step), $round);
+        if ($after->finale !== null && $after->finale !== $before->finale) {
+            $this->metrics?->finaleMoved();
+            $this->entered($before, $after, true);
+        }
     }
 
     /**
@@ -168,6 +185,38 @@ final readonly class StoryService
         $round = $this->store->round();
         $this->publisher->zombies($round, $on);
         $on and $this->publisher->owl($round, OwlLine::ZOMBIES);
+    }
+
+    /**
+     * What a new finale step brings besides the step itself: the cursed world hands a beer to everyone and tells its
+     * goals, zombies come out; the dawn fells FrankenPHP if the moderator took it, and lifts the curse from the zombies.
+     *
+     * @param bool $byRoom The room took the step by itself: the boss is down already.
+     * @throws RitualBusyException
+     */
+    private function entered(Story $before, Story $after, bool $byRoom): void
+    {
+        $ritual = $this->store->snapshot();
+        $round = $ritual->round;
+        $step = $after->finale ?? 0;
+
+        try {
+            $step === Story::CURSED_STEP and $this->walks?->handBeer();
+            $step === Story::DAWN_STEP && !$byRoom and $this->rapier?->fell($round);
+            $step === Story::DAWN_STEP and $this->walks?->cureAll();
+        } catch (LockBusyException) {
+        }
+
+        $this->publisher->finale($round, $ritual->scene, $step, $this->reveal->finale($ritual)['reveal'] ?? null);
+        if ($step === Story::CURSED_STEP) {
+            try {
+                $this->cursed?->begin($round);
+            } catch (LockBusyException) {
+            }
+            $before->zombies or $this->publisher->zombies($round, true);
+        }
+        $this->publisher->owl($round, OwlLine::finale($step));
+        $step === Story::SCATTER_STEP and $this->scatter();
     }
 
     /**

@@ -30,7 +30,7 @@ final class LeaderboardServiceTest
         $top = $ritual->leaderboard->build();
 
         Assert::same(\array_column($top, 'id'), [self::A, self::B]);
-        Assert::same($top[0], ['id' => self::A, 'name' => null, 'look' => null, 'clicks' => 1, 'finished' => 0, 'flyers' => 1, 'points' => 3, 'drinks' => 0]);
+        Assert::same($top[0], ['id' => self::A, 'name' => null, 'look' => null, 'clicks' => 1, 'finished' => 0, 'flyers' => 1, 'points' => 3, 'drinks' => 0, 'damage' => 0]);
         Assert::same($ritual->broadcast->ofType('leaderboard'), [['type' => 'leaderboard', 'round' => 1, 'top' => $top, 'online' => 0]]);
         Assert::same($ritual->leaderboard->last(), $top);
     }

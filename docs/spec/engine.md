@@ -9,7 +9,8 @@
 (`worm`) финальной сцены — наземные цели по лужайке, аптайм RoadRunner (`startedAt`) и разбегание фигурок на шаге
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
-— сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`.
+— сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
+слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»).
 
 ## Классы
 
@@ -36,6 +37,7 @@
 | Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
+| Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale` |
 
 ## Периодический процесс (тикер)
 
@@ -62,12 +64,15 @@
 
 | Работа | Когда | Что |
 |---|---|---|
-| Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс; первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
-| Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` = 5), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
+| Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс (на рассвете — `HELLOWIN_FLYER_INTERVAL_DAWN`); первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
+| Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` 5–6), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая кружка с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
+| Пиво из тыкв | каждый тик | `WalkService::beers`: фигурки с наступившим `takeAt` у тыквы (`takeFrom`) под локом `walkers` получают пиво, если мир всё ещё на шаге 5 → событие `take` с `pumpkin`; см. «Рапира» |
+| Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
+| Цели проклятого мира | раз в секунду, после фигурок | `CursedService::follow`: число фигурок изменилось с прошлого `cursed` → новое `cursed` и проверка готовности |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
@@ -89,8 +94,10 @@
   Летучие мыши (`bat`) получают `wobble` (`Domain/Flyer/Wobble`): `amp` — случайно 3–8 % экрана, `waves` — 2–5 полных
   колебаний за полёт, до десятых; диапазоны — константы `FlyerFactory` (`WOBBLE_AMP`, `WOBBLE_WAVES`), не env: это вид
   траектории, а не число игры. У остальных видов поля нет, кроме червяков и светлячков.
-- **Проклятый мир** (`story.cursed()`, шаг финала 5) берёт вместо набора сцены свой — `HELLOWIN_FLYER_KINDS_CURSED`
-  (один набор через запятую, без `;`); `FlyerService` передаёт флаг в `FlyerFactory::launch(now, scene, cursed)`. До
+- **Проклятый мир** (`story.cursed()`, шаги финала 5–6) берёт вместо набора сцены свой — `HELLOWIN_FLYER_KINDS_CURSED`
+  (один набор через запятую, без `;`), **рассвет** (`story.dawn()`, шаг 7) — свой `HELLOWIN_FLYER_KINDS_DAWN`, и тикер
+  берёт паузу `HELLOWIN_FLYER_INTERVAL_DAWN` (`FlyerService::atDawn`); `FlyerService` передаёт флаги в
+  `FlyerFactory::launch(now, scene, cursed, dawn)`. До
   шага 5 финальная сцена летает своим набором из `HELLOWIN_FLYER_KINDS`. Редкий летун — по-прежнему по сцене
   (`HELLOWIN_FLYER_RARE`, по умолчанию у финала его нет). Пустой набор — как пустой набор сцены. Пауза останавливает и
   этот набор; зомби идут отдельно, по переключателю `zombies`.
@@ -148,7 +155,9 @@
 Правила — [`players.md`](players.md), «Персонаж», «На поле»; события и RPC — [`protocol.md`](protocol.md).
 
 - **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt, clink?, clinkedAt?, item?, clinked?,
-  takeAt?}` (`item`, `clinked`, `takeAt` — бар, см. «Бар»), меняется под RR-локом `walkers`.
+  takeAt?, takeFrom?, zombieAt?}` (`item`, `clinked`, `takeAt` — бар и проклятый мир, см. «Бар»; `takeFrom` — тыква,
+  за пивом из которой идёт фигурка; `zombieAt` — зомби-игрок и время его следующего хода, см. «Рапира»), меняется под
+  RR-локом `walkers`.
   Один ключ — снимок читает фигурки одним запросом; сброс раунда его не трогает, позиции переживают сброс. `name` и
   `look` копируются из записи игрока при выходе на поле и повторном `register`.
 - **Выход на поле**: `register` с `look` (или повторный `register` игрока, у которого `look` уже есть) — фигурка
@@ -194,8 +203,10 @@
   не получил бы.
 - **Предмет в руке** — `items` в `app/config/hellowin.php`, по номеру сцены (`null` — пустые руки, за концом списка —
   тоже `null`); в финале — `finale_items` там же, по шагу: запись действует со своего шага до следующей записи, шаги
-  до первой записи оставляют предмет сцены (сейчас `[5 => 'beer']`). Считает `Domain/Walk/Items::held(scene, finale)`.
-  Вне бара `item` фигурки не хранится: в снимке и событии `walker` это предмет текущей сцены и шага финала; в баре —
+  до первой записи оставляют предмет сцены (сейчас `[5 => 'beer', 7 => 'rapier']`). Считает
+  `Domain/Walk/Items::held(scene, finale)`. В баре и в проклятом мире (шаги 5–6) предмет у каждой фигурки свой — из её
+  записи (пиво, рапира или пустые руки, см. «Рапира»); на шаге 5 `finale` несёт `beer`, на шаге 6 — без `item`.
+  Вне бара и проклятого мира `item` фигурки не учитывается: в снимке и событии `walker` это предмет текущей сцены и шага финала; в баре —
   свой у каждой, из записи фигурки (`beer` или пустые руки, см. «Бар»). При смене сцены
   или шага `walker` не рассылаются: событие `scene` или `finale` несёт новый `item`, и клиент меняет предмет у всех
   фигурок сразу.
@@ -278,6 +289,48 @@
   переставляются на лужайку с пустыми руками (`relocate`, см. «Фигурки на поле»), `walkers` — в событии `scene`.
   `ResetService` (сброс ведёт в бар): фигурки — на пол бара с пустыми руками, стойка полная (`mugs = max` на момент сброса,
   `pouring: null`), событие `reset` несёт `walkers` и `bar`.
+
+## Рапира
+
+Правила — [`scenario.md`](scenario.md), «Рапира»; сообщения — [`protocol.md`](protocol.md), «Рапира».
+
+- **Шаги.** `Story`: `CURSED_STEP` 5, `RAPIER_STEP` 6, `DAWN_STEP` 7 = `LAST_STEP`; `cursed()` — шаги 5–6, `dawn()` —
+  7. `stepTo(5)` снимает `ready` и включает `zombies`; `awaitsReady` — шаг 1 ждёт круга, шаг 6 — цели проклятого мира
+  (`ready`), шаг 7 от модератора без `force` — всегда `not ready` (его даёт последний удар). Что приносит шаг —
+  `StoryService::entered`: на 5 — пиво всем фигуркам (`WalkService::handBeer`), `cursed`, `zombies {on: true}`; на 7 —
+  `force` модератора валит босса (`RapierService::fell`, без `boss-down`), заклятие снимается со всех
+  (`WalkService::cureAll`).
+- **Цель проклятого мира** — ключ `hellowin:cursed` `{round, drunk, slain, drinksBonus, zombiesBonus, players}` под
+  RR-локом `cursed` (`CursedStore`); запись другого раунда читается как пустая, так что сброс её не трогает, а добавки
+  модератора не переживают раунд. Цель — `max(1, HELLOWIN_CURSED_PER_PLAYER × max(1, n) + добавка)`, n — фигурки в
+  `hellowin:walkers`. `drink` (`BarService::drink` — тот же метод, что в баре) и сбитый зомби (`FlyerService::shoot`) на
+  шагах 5–6 — `+1` под локом и событие `cursed`; `players` в записи — для какого n клиентам последний раз сказали цели:
+  тикер раз в секунду сравнивает (`CursedService::follow`). Обе цели выполнены на шаге 5 — `RitualStore::markReady(round,
+  финальная, step: 5)` под локом `scene`: один раз за раунд (готовность снята на входе в шаг 5), событие `ready` и
+  реплика `cursed-ready`.
+- **Пиво из тыквы** (`beer`, `WalkService::toPumpkin`): под локом `walkers` — проверки по порядку, путь к стороне кружки
+  тыквы (как у `clink {pumpkin}`), ожидание `takeAt` + `takeFrom` в записи фигурки. По прибытии тикер
+  (`WalkService::beers`) под тем же локом выдаёт пиво, если мир ещё на шаге 5; тыквы бездонные — лока на тыкву нет.
+- **Слово** (`word`, `RapierService::word` → `Domain/Story/MagicWord`): под локом `walkers` — верно: `item: rapier`;
+  неверно: `zombieAt` — время первого хода. Проверка — только на сервере: нижний регистр, кириллица → латиница, `a-z`;
+  префикс `rapir`, или `levenshtein` ≤ 1 до `rapira`, или тот же `metaphone`; короче 4 букв — неверно.
+- **Зомби-игрок.** Его RPC `move`, `clink`, `clink.auto`, `beer`, `drink`, `strike`, `word`, `cure` — `zombified`
+  (`ZombifiedException`). Тикер (`RapierService::shamble`) раз в 2–4 с (`Walker::SHAMBLE_PAUSE`) ведёт его к случайной
+  точке лужайки в 6–12 % от него, обычным `move`. Ушедший с поля зомби записывается в `hellowin:zombies` `{round, ids}`
+  (под локом `walkers`, в той же синхронизации с presence) и, вернувшись на шаге 6, снова зомби.
+- **Расколдовать** (`cure`, `RapierService::cure`): под локом `walkers` — цель ещё зомби → `zombieAt` снят, событие
+  `cure`; уже нет — `cured: false`. Первый под локом — как первый сбивший летуна.
+- **Босс** — ключ `hellowin:boss` `{round, hp, max, damage}` под RR-локом `boss` (`BossStore`). Первое верное слово —
+  `{hp: max, max}`, `max = ceil((HELLOWIN_BOSS_HP_BASE + HELLOWIN_BOSS_HP_PER_PLAYER × n) × k)` (под локом: проснётся один
+  раз), событие `boss`. `strike`: под локом `boss` жив → `hp − 1`, `damage + 1`; `damage + 1` игроку; событие `strike`.
+  Весь зал бьёт в одну запись под одним локом — как костёр; удар, снявший последнюю единицу, ровно один: он говорит
+  `boss-down` и ставит задачу `TransitionFinale {key: "{round}:finale:7", round, toStep: 7}` (`#[Idempotent]`, как
+  переходы), обработчик — `StoryService::finaleOf` (шаг меняется, только если раунд тот же и шаг 6 → 7).
+  `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
+- **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не запускаются (`cursed()` ложно),
+  летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
+- **Сброс** сбрасывает всё это без отдельного кода: записи цели и босса привязаны к раунду, перестановка в бар
+  (`relocate`) опустошает руки и снимает заклятие; без бара заклятие снимает `cureAll`.
 
 ## Модератор
 
@@ -384,7 +437,9 @@
   `lastPumpkin` сюжета — игрок круга. Какую реплику сказать, решает тип элемента (`OwlLine::finished`).
 - **Шаг финала 1.** `StoryService::finaleStep(step, force)` под локом `scene`: без `force` шаг 0 → 1 ждёт готовности
   финальной сцены (`Story::awaitsReady` — `ready` в сюжете отмечен), иначе ответ `not ready` и ничего не меняется.
-  Остальные шаги — как раньше, по одному.
+  Остальные шаги — как раньше, по одному; шаг 6 так же ждёт цели проклятого мира, шаг 7 от модератора — только с
+  `force`. Шаг 7 от последнего удара по боссу — задача `TransitionFinale` с ключом `{round}:finale:7` (см. «Рапира»):
+  `pushed{kind="finale"}`, `hellowin_transitions_total{kind="finale"}`.
 - **Сцена.** RPC модератора `scene.next {scene, force?}` (`StoryService::nextScene`) по снимку проверяет: `scene`
   текущая, не финальная, готова (или `force`) → задача `TransitionScene {key, round, toScene}`
   (`pushed{kind="scene"}`), ключ `{round}:scene:{toScene}`, тоже `#[Idempotent]`: повторные нажатия ставят дубли,
@@ -426,7 +481,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 - **RPC** — в PHP, потому что HTTP-лимитер RoadRunner их не видит, а лимиты команд Centrifugo есть только в PRO.
   `RPCService` до любого метода, кроме вызовов модератора, берёт токен из ведра (token bucket): ведро держит до
   `burst` токенов и пополняется на `rate` в секунду. Ключ — игрок (`user` подключения), без игрока — id подключения;
-  группа — `click`, `shoot`, `move` или `other` (все прочие методы). Пустое ведро — ответ `rate limited` и
+  группа — `click` (и `strike`: удар — тот же клик), `shoot`, `move` или `other` (все прочие методы). Пустое ведро — ответ `rate limited` и
   `hellowin_rpc_rate_limited_total{group}`. Вёдра лежат в KV `process` (память RoadRunner: лимиту не нужна
   долговечность, рестарт воркеров их не теряет) под ключом `hellowin:rate:{group}:{caller}` с TTL на время полного
   пополнения плюс секунда (KV округляет срок до секунд, а пропавшее раньше ведро выдало бы лишний `burst`). У KV нет
@@ -450,9 +505,10 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
-| Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
+| Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
+| Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -467,7 +523,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Метрика | Тип | Смысл |
 |---|---|---|
 | `hellowin_clicks_total{type,element}` | counter | принятые клики |
-| `hellowin_transition_jobs_pushed_total{kind}` | counter | задачи перехода в очереди, дубли включительно; `kind` = `pumpkin` / `bonfire` / `circle` / `scene` |
+| `hellowin_transition_jobs_pushed_total{kind}` | counter | задачи перехода в очереди, дубли включительно; `kind` = `pumpkin` / `bonfire` / `circle` / `scene` / `finale` (рассвет от последнего удара) |
 | `hellowin_transitions_total{kind}` | counter | реально выполненные переходы |
 | `hellowin_scene_stage` | gauge | текущая сцена |
 | `hellowin_round` | gauge | текущий раунд |
@@ -509,7 +565,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_BUSH_CHANCE` | 0.4 | вероятность взлёта из куста |
 | `HELLOWIN_FLYER_ARC_CHANCE` | 0.5 | вероятность полёта дугой |
 | `HELLOWIN_FLYER_KINDS` | `fly;duck,chicken;;bat;worm` | виды летунов по сценам: наборы через `;`, внутри набора через запятую (`[a-z]+`), выбираются равновероятно из набора текущей сцены; пустой набор — в сцене только редкий летун (если задан); сцены за концом списка берут последний набор |
-| `HELLOWIN_FLYER_KINDS_CURSED` | `worm,bat,firefly` | виды летунов проклятого мира (шаг финала 5) вместо набора сцены: один набор через запятую (`[a-z]+`); пусто — только редкий летун сцены |
+| `HELLOWIN_FLYER_KINDS_CURSED` | `worm,bat,firefly` | виды летунов проклятого мира (шаги финала 5–6) вместо набора сцены: один набор через запятую (`[a-z]+`); пусто — только редкий летун сцены |
+| `HELLOWIN_FLYER_KINDS_DAWN` | `duck,chicken` | виды летунов рассвета (шаг финала 7) вместо набора сцены, как `HELLOWIN_FLYER_KINDS_CURSED` |
+| `HELLOWIN_FLYER_INTERVAL_DAWN` | `1000-2500` | мс между запусками летунов на рассвете: диапазон или число |
 | `HELLOWIN_FLYER_FIREFLY_POINTS` | 1 | очки за светлячка (`firefly`) на любой глубине |
 | `HELLOWIN_FLYER_FLY_STOPS` | `2-3` | сколько раз муха (`fly`, летун бара) садится: диапазон или число |
 | `HELLOWIN_FLYER_FLY_SIT` | `900-1600` | мс на каждой посадке мухи: диапазон или число |
@@ -518,9 +576,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
-| `HELLOWIN_ZOMBIE_INTERVAL` | `4000-9000` | мс между зомби в проклятом мире: диапазон или число |
+| `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между зомби в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_DURATION` | 14000 | мс пути зомби от края грядки до края лужайки |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
+| `HELLOWIN_CURSED_PER_PLAYER` | 2 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
+| `HELLOWIN_BOSS_HP_BASE` | 40 | здоровье FrankenPHP при пробуждении без игроков, до множителя `k` |
+| `HELLOWIN_BOSS_HP_PER_PLAYER` | 5 | добавка к здоровью FrankenPHP на каждого игрока на поле |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |

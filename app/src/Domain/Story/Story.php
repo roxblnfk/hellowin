@@ -19,11 +19,17 @@ final readonly class Story
     /** The finale step that shows the reveal: the real numbers of the evening. */
     public const REVEAL_STEP = 4;
 
-    /** The last finale step: the cursed world, an endless mode with zombies. */
-    public const LAST_STEP = 5;
+    /** The cursed world: the room drinks and slays zombies towards its goal, and it is ready for the rapier. */
+    public const CURSED_STEP = 5;
+
+    /** The owl is back with the rapier: players say the word, and the first rapier wakes the boss. */
+    public const RAPIER_STEP = 6;
 
     /** The dawn: the night is over, and the moderator's next scene leads the room back to the bar. */
     public const DAWN_STEP = 7;
+
+    /** The last finale step: the dawn, an endless mode until the room goes back to the bar. */
+    public const LAST_STEP = self::DAWN_STEP;
 
     /** Bounds of the threshold multiplier the moderator may set. */
     public const K_MIN = 0.1;
@@ -123,17 +129,29 @@ final readonly class Story
      */
     public function stepTo(int $step): self
     {
-        return $this->finale !== null && $step === $this->finale + 1 && $step <= self::LAST_STEP
-            ? new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget)
-            : $this;
+        if ($this->finale === null || $step !== $this->finale + 1 || $step > self::LAST_STEP) {
+            return $this;
+        }
+        /** @var int<1, 7> $step */
+
+        // The cursed world is ready by its goal alone, not by the circle closed long ago; its zombies come out by themselves
+        return $step === self::CURSED_STEP
+            ? new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget)
+            : new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget);
     }
 
     /**
-     * The first finale step waits for the final scene to be ready: FrankenPHP rises out of a closed circle.
+     * A step that waits for the room: the first one for the closed circle FrankenPHP rises out of, the rapier for the
+     * goal of the cursed world, the dawn for the fallen boss — which the moderator never has at hand: the boss's last
+     * hit takes the dawn by itself.
      */
     public function awaitsReady(int $step): bool
     {
-        return $this->finale === 0 && $step === 1 && $this->ready === null;
+        return match (true) {
+            $this->finale === 0 && $step === 1, $this->finale === self::CURSED_STEP && $step === self::RAPIER_STEP => $this->ready === null,
+            $this->finale === self::RAPIER_STEP && $step === self::DAWN_STEP => true,
+            default => false,
+        };
     }
 
     public function withPaused(bool $paused): self
@@ -168,9 +186,18 @@ final readonly class Story
         return new self(paused: $this->paused, k: $this->k, barTarget: $this->barTarget);
     }
 
+    /**
+     * The cursed world: its own flyers and zombies, beer from the pumpkins, clinks and drinks — the goal step and the
+     * rapier step after it.
+     */
     public function cursed(): bool
     {
-        return $this->finale === self::LAST_STEP;
+        return $this->finale === self::CURSED_STEP || $this->finale === self::RAPIER_STEP;
+    }
+
+    public function rapier(): bool
+    {
+        return $this->finale === self::RAPIER_STEP;
     }
 
     public function dawn(): bool

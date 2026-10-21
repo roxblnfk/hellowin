@@ -81,7 +81,7 @@ final class DawnTest
 
     public function beforeTheDawnTheFinalSceneHasNoNextOne(): void
     {
-        $ritual = self::atDawn(Story::LAST_STEP);
+        $ritual = self::atDawn(Story::RAPIER_STEP);
 
         Expect::exception(StoryRefusedException::class)->withMessage('final scene');
 

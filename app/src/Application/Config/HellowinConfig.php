@@ -38,6 +38,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
+        'rapier' => ['cursed_per_player' => 2, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -280,6 +281,36 @@ final class HellowinConfig extends InjectableConfig
         return \is_float($value) && $value >= 0.0 && $value <= 1.0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.bar.rumor_chance" (env HELLOWIN_BAR_RUMOR_CHANCE) must be a probability from 0 to 1.');
+    }
+
+    /**
+     * @return positive-int Mugs and zombies per player on the floor the cursed world wants for each of its goals.
+     */
+    public function getCursedPerPlayer(): int
+    {
+        return self::positiveInt($this->rapier()['cursed_per_player'] ?? null, 'rapier.cursed_per_player', 'HELLOWIN_CURSED_PER_PLAYER');
+    }
+
+    /**
+     * @return positive-int FrankenPHP's health as it wakes, before the players on the floor and the multiplier.
+     */
+    public function getBossHpBase(): int
+    {
+        return self::positiveInt($this->rapier()['boss_hp_base'] ?? null, 'rapier.boss_hp_base', 'HELLOWIN_BOSS_HP_BASE');
+    }
+
+    /**
+     * @return int<0, max> FrankenPHP's health per player on the floor as it wakes.
+     */
+    public function getBossHpPerPlayer(): int
+    {
+        /** @var mixed $value */
+        $value = $this->rapier()['boss_hp_per_player'] ?? null;
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.rapier.boss_hp_per_player" (env HELLOWIN_BOSS_HP_PER_PLAYER) must be a non-negative integer.');
     }
 
     /**
@@ -687,6 +718,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($bar) or throw new \InvalidArgumentException('Config "hellowin.bar" must be an array.');
 
         return $bar;
+    }
+
+    private function rapier(): array
+    {
+        $rapier = $this->config['rapier'] ?? [];
+        \is_array($rapier) or throw new \InvalidArgumentException('Config "hellowin.rapier" must be an array.');
+
+        return $rapier;
     }
 
     private function walk(): array

@@ -285,6 +285,28 @@ final class HellowinConfigTest
         (new HellowinConfig(['walk' => ['bar' => self::bar(['perches' => $perches])]]))->getBarLayout();
     }
 
+    public function rapierNumbersComeFromTheConfig(): void
+    {
+        $config = new HellowinConfig();
+        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [2, 40, 5]);
+
+        $config = new HellowinConfig(['rapier' => ['cursed_per_player' => '3', 'boss_hp_base' => '100', 'boss_hp_per_player' => '0']]);
+        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [3, 100, 0]);
+    }
+
+    #[DataSet(['cursed_per_player', '0', 'HELLOWIN_CURSED_PER_PLAYER'])]
+    #[DataSet(['boss_hp_base', 'many', 'HELLOWIN_BOSS_HP_BASE'])]
+    #[DataSet(['boss_hp_per_player', '-1', 'HELLOWIN_BOSS_HP_PER_PLAYER'])]
+    public function rejectsInvalidRapierNumbers(string $key, string $value, string $env): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
+
+        $config = new HellowinConfig(['rapier' => [$key => $value] + ['cursed_per_player' => 2, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5]]);
+        $config->getCursedPerPlayer();
+        $config->getBossHpBase();
+        $config->getBossHpPerPlayer();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();

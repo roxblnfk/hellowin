@@ -130,6 +130,8 @@ final class RPCServiceTest
             'k' => 1.0,
             'online' => 0,
             'zombies' => false,
+            'cursed' => null,
+            'boss' => null,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);
@@ -171,6 +173,7 @@ final class RPCServiceTest
             'flyers' => 0,
             'points' => 0,
             'drinks' => 0,
+            'damage' => 0,
         ]]);
     }
 
@@ -413,6 +416,8 @@ final class RPCServiceTest
     #[DataSet(['pause'])]
     #[DataSet(['zombies'])]
     #[DataSet(['thresholds'])]
+    #[DataSet(['cursed.target'])]
+    #[DataSet(['boss.hp'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
         $ritual = new RitualHarness();
@@ -501,7 +506,7 @@ final class RPCServiceTest
             $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
 
-        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
+        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
         Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal]);
         Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal]);
     }
@@ -720,6 +725,64 @@ final class RPCServiceTest
         Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['other']], $ritual->metrics->calls, true));
     }
 
+    public function strikeTakesAClickTokenAndTheRapierMethodsShareOther(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1), 'other' => new TokenBucket(1.0, 2)]);
+
+        $this->call($ritual, 'strike', [], self::PLAYER, limiter: $limiter);
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+        $this->call($ritual, 'beer', ['pumpkin' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'word', ['text' => 'rapira'], self::PLAYER, limiter: $limiter);
+        Assert::same($this->call($ritual, 'cure', ['walker' => 'bbbbbbbbbbbbbbbb'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+    }
+
+    public function rapierMethodsAnswerTheirErrors(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1], reachable: ['pumpkin-2']);
+        $ritual->transitions->scene(1, 1);
+
+        foreach (['beer' => ['pumpkin' => 'pumpkin-2'], 'word' => ['text' => 'rapira'], 'cure' => ['walker' => self::PLAYER], 'strike' => []] as $method => $data) {
+            Assert::same($this->call($ritual, $method, $data), ['ok' => false, 'error' => 'anonymous'], $method);
+            Assert::same($this->call($ritual, $method, $data, self::PLAYER), ['ok' => false, 'error' => 'no character'], $method);
+        }
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']], self::PLAYER);
+        Assert::same($this->call($ritual, 'beer', ['pumpkin' => 'pumpkin-2'], self::PLAYER), ['ok' => false, 'error' => 'not cursed']);
+        Assert::same($this->call($ritual, 'word', ['text' => 'rapira'], self::PLAYER), ['ok' => false, 'error' => 'not now']);
+        Assert::same($this->call($ritual, 'cursed.target', ['goal' => 'drinks', 'delta' => 5], moderator: true), ['ok' => false, 'error' => 'not cursed']);
+        Assert::same($this->call($ritual, 'cursed.target', ['goal' => 'mugs', 'delta' => 5], moderator: true), ['ok' => false, 'error' => 'invalid goal']);
+        Assert::same($this->call($ritual, 'boss.hp', ['delta' => 10], moderator: true), ['ok' => false, 'error' => 'not now']);
+
+        for ($step = 1; $step <= 5; ++$step) {
+            $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
+        }
+        Assert::same($this->call($ritual, 'cursed.target', ['goal' => 'drinks', 'delta' => 5], moderator: true), ['ok' => true, 'target' => 7]);
+        Assert::same($this->call($ritual, 'finale.step', ['step' => 6], moderator: true), ['ok' => false, 'error' => 'not ready']);
+        Assert::same($this->call($ritual, 'finale.step', ['step' => 6, 'force' => true], moderator: true), ['ok' => true, 'step' => 6]);
+        Assert::same($this->call($ritual, 'word', ['text' => 'шпага'], self::PLAYER), ['ok' => true, 'correct' => false]);
+        Assert::same($this->call($ritual, 'move', ['x' => 30, 'y' => 90], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
+        Assert::same($this->call($ritual, 'word', ['text' => 'rapira'], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
+    }
+
+    public function rapierRoundTrip(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']], self::PLAYER);
+        for ($step = 1; $step <= 6; ++$step) {
+            $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
+        }
+
+        Assert::same($this->call($ritual, 'word', ['text' => 'Рапира'], self::PLAYER), ['ok' => true, 'correct' => true]);
+        Assert::same($this->call($ritual, 'boss.hp', ['delta' => -44], moderator: true), ['ok' => true, 'hp' => 1, 'max' => 1]);
+        Assert::same($this->call($ritual, 'strike', [], self::PLAYER), ['ok' => true, 'hp' => 0]);
+        Assert::same($this->call($ritual, 'strike', [], self::PLAYER), ['ok' => false, 'error' => 'not now']);
+        $ritual->runJobs();
+
+        Assert::same($this->call($ritual, 'state', [])['state']['finale']['step'], 7);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER)['player']['damage'], 1);
+    }
+
     public function barMethodsShareOther(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1]);
@@ -839,6 +902,8 @@ final class RPCServiceTest
             $limiter ?? $this->limiter($ritual, []),
             new PlayMetrics($ritual->metrics, new NullLogger()),
             $ritual->bar,
+            $ritual->rapier,
+            $ritual->cursed,
         );
         $service->handle(new RPC(
             worker: $this->worker,

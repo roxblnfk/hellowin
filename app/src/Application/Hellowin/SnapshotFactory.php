@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Bar\BarService;
+use App\Application\Story\CursedService;
+use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\StartTime;
@@ -13,6 +15,7 @@ use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Story;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
@@ -36,6 +39,8 @@ use App\Domain\Walk\WalkerStore;
  *     k: float,
  *     online: int<0, max>,
  *     zombies: bool,
+ *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
+ *     boss: array{hp: int<0, max>, max: positive-int}|null,
  *     startedAt: int,
  *     now: int
  * }
@@ -56,6 +61,8 @@ final readonly class SnapshotFactory
         private ?RevealBuilder $reveal = null,
         private ?StartTime $startTime = null,
         private ?BarService $bar = null,
+        private ?CursedService $cursed = null,
+        private ?RapierService $rapier = null,
     ) {}
 
     /**
@@ -68,7 +75,8 @@ final readonly class SnapshotFactory
         $walkers = $this->walkers?->all() ?? [];
 
         $item = $this->items->held($ritual->scene, $ritual->story->finale);
-        $inBar = $this->policy->bar($ritual->scene);
+        // In the bar and in the cursed world every character holds its own
+        $own = $this->policy->bar($ritual->scene) || $ritual->story->cursed();
         $elements = [];
         foreach ($this->elements->all() as $element) {
             $pumpkin = $ritual->pumpkin($element->id);
@@ -92,7 +100,7 @@ final readonly class SnapshotFactory
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
             'walkers' => \array_values(\array_map(
-                static fn(Walker $walker): array => $walker->toArray($inBar ? $walker->item : $item),
+                static fn(Walker $walker): array => $walker->toArray($own ? $walker->item : $item),
                 $walkers,
             )),
             'bar' => $this->bar?->state($ritual->round, $ritual->scene, $ritual->story, \count($walkers)),
@@ -102,6 +110,8 @@ final readonly class SnapshotFactory
             'k' => $k,
             'online' => \count($walkers),
             'zombies' => $ritual->story->zombies,
+            'cursed' => $this->cursed?->state($ritual->round, $ritual->story, \count($walkers)),
+            'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now
             'startedAt' => $this->startTime?->at() ?? $this->clock->now(),

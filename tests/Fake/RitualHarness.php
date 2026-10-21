@@ -8,6 +8,7 @@ use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
+use App\Application\Hellowin\Job\TransitionFinale;
 use App\Application\Hellowin\Job\TransitionPumpkin;
 use App\Application\Hellowin\Job\TransitionScene;
 use App\Application\Hellowin\PlayMetrics;
@@ -18,6 +19,8 @@ use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\CursedService;
+use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
 use App\Application\Walk\WalkService;
@@ -37,6 +40,8 @@ use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\BossStore;
+use App\Domain\Story\CursedStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
@@ -83,6 +88,10 @@ final class RitualHarness
     public readonly StartTime $startTime;
     public readonly BarStore $barStore;
     public readonly BarService $bar;
+    public readonly CursedStore $cursedStore;
+    public readonly CursedService $cursed;
+    public readonly BossStore $bossStore;
+    public readonly RapierService $rapier;
 
     /**
      * @param positive-int $threshold
@@ -133,7 +142,7 @@ final class RitualHarness
         $this->players = new PlayerService($this->playerStore, new NullLogger());
         $policy = new LockstepPolicy($threshold, $stageMax, $bonfireThreshold, $bonfire ?? [], $circleThreshold, $circle ?? 1);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
-        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer']));
+        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']));
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players);
@@ -142,9 +151,13 @@ final class RitualHarness
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
         $this->barStore = new BarStore($this->storage, new Locks($this->lock));
-        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)));
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar);
+        $this->cursedStore = new CursedStore($this->storage, new Locks($this->lock));
+        $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $this->walkerStore, $publisher, 2);
+        $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
+        $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, 40, 5, new Randomizer(new Mt19937(5)));
+        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -161,6 +174,7 @@ final class RitualHarness
                 cursed: [Flyer::KIND_FIREFLY],
                 fireflyPoints: 1,
                 bar: self::barLayout(),
+                dawn: [Flyer::KIND_DUCK, 'chicken'],
             ),
             $this->flyerStore,
             $this->store,
@@ -171,6 +185,7 @@ final class RitualHarness
             $this->shots,
             new NullLogger(),
             new ZombieFactory(self::walkZone(), 14000, 2, 1, new Randomizer(new Mt19937(3))),
+            $this->cursed,
         );
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
@@ -185,7 +200,7 @@ final class RitualHarness
             10.0,
             5000,
             [86.0, 90.0],
-            new Items([null, 'torch', 'pitchfork'], [5 => 'beer']),
+            new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']),
             $elements,
             4.0,
             3200,
@@ -196,7 +211,7 @@ final class RitualHarness
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics);
     }
 
     /**
@@ -250,6 +265,7 @@ final class RitualHarness
             match ($job['name']) {
                 TransitionPumpkin::class => $this->transitions->pumpkin($payload['round'], $payload['pumpkin'], $payload['toStage'], $payload['player'] ?? null),
                 TransitionScene::class => $this->transitions->scene($payload['round'], $payload['toScene']),
+                TransitionFinale::class => $this->story->finaleOf($payload['round'], $payload['toStep']),
             };
         }
     }

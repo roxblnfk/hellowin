@@ -81,6 +81,13 @@ final class FlyerConfigTest
         (new FlyerConfig(['kinds' => $value]))->getKinds();
     }
 
+    public function dawnHasItsOwnSetAndPace(): void
+    {
+        Assert::same([(new FlyerConfig())->getDawnKinds(), (new FlyerConfig())->getDawnInterval()], [['duck', 'chicken'], [1000, 2500]]);
+        $config = new FlyerConfig(['kinds_dawn' => 'duck', 'interval_dawn' => '700']);
+        Assert::same([$config->getDawnKinds(), $config->getDawnInterval()], [['duck'], [700, 700]]);
+    }
+
     public function cursedWorldHasOneSetOfItsOwn(): void
     {
         Assert::same((new FlyerConfig())->getCursedKinds(), ['worm', 'bat', 'firefly']);
@@ -154,7 +161,7 @@ final class FlyerConfigTest
     {
         $config = new FlyerConfig(['zombie_interval' => '1000-2000', 'zombie_duration' => '9000', 'zombie_points' => 3]);
 
-        Assert::same((new FlyerConfig())->getZombieInterval(), [4000, 9000]);
+        Assert::same((new FlyerConfig())->getZombieInterval(), [2000, 5000]);
         Assert::same($config->getZombieInterval(), [1000, 2000]);
         Assert::same($config->getZombieDuration(), 9000);
         Assert::same($config->getZombiePoints(), 3);

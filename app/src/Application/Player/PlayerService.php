@@ -80,6 +80,14 @@ final readonly class PlayerService
 
     /**
      * @param non-empty-string|null $id
+     */
+    public function struck(?string $id): ?Player
+    {
+        return $this->change($id, static fn(Player $player): Player => $player->struck());
+    }
+
+    /**
+     * @param non-empty-string|null $id
      * @param \Closure(Player): Player $change
      */
     private function change(?string $id, \Closure $change): ?Player

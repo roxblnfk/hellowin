@@ -8,6 +8,8 @@ use App\Domain\Bar\BarStore;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualSnapshot;
+use App\Domain\Story\BossStore;
+use App\Domain\Story\CursedStore;
 use App\Domain\Story\Reveal;
 use App\Domain\Story\ShotTally;
 
@@ -21,6 +23,8 @@ final readonly class RevealBuilder
         private PlayerStore $players,
         private RitualPolicy $policy,
         private ?BarStore $bar = null,
+        private ?CursedStore $cursed = null,
+        private ?BossStore $boss = null,
     ) {}
 
     /**
@@ -42,13 +46,16 @@ final readonly class RevealBuilder
     {
         $id = $ritual->story->lastPumpkin;
         $lastPumpkin = $id === null ? null : ($this->players->find($id)?->ref() ?? ['id' => $id, 'name' => null]);
+        $cursed = $this->cursed?->get($ritual->round);
 
         return Reveal::of(
             $ritual,
             $this->policy,
             $this->shots->count($ritual->round),
             $lastPumpkin,
-            $this->bar?->drinks($ritual->round) ?? 0,
+            ($this->bar?->drinks($ritual->round) ?? 0) + ($cursed?->drunk ?? 0),
+            $cursed?->slain ?? 0,
+            $this->boss?->get($ritual->round)?->damage ?? 0,
         );
     }
 }

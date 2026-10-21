@@ -316,7 +316,8 @@ final class ClinkTest
     }
 
     /**
-     * Puts the player's character on the lawn and walks it to the point, arrived.
+     * Puts the player's character on the lawn and walks it to the point, arrived, with a mug in hand: a newcomer of the
+     * cursed world comes empty-handed.
      *
      * @param non-empty-string $id
      */
@@ -325,6 +326,7 @@ final class ClinkTest
         $ritual->players->register($id, 'Jack', self::LOOK);
         $walk = $ritual->walks->move($id, $x, $y);
         $ritual->clock->now = \max($ritual->clock->now, $walk->arrivesAt);
+        $ritual->walkerStore->update(static fn(array $walkers): array => [[$id => $walkers[$id]->withBeer()] + $walkers, null]);
     }
 
     /**

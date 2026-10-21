@@ -34,6 +34,7 @@ final readonly class RitualMetrics
     public const KIND_BONFIRE = Element::TYPE_BONFIRE;
     public const KIND_CIRCLE = Element::TYPE_CIRCLE;
     public const KIND_SCENE = 'scene';
+    public const KIND_FINALE = 'finale';
 
     /** Gauges of the centrepieces: each its own, to keep the pumpkin stage panel on one scale. */
     private const CENTREPIECE_STAGE = [
@@ -87,6 +88,11 @@ final readonly class RitualMetrics
     {
         $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [$type]));
         $this->stage($type, $element);
+    }
+
+    public function finaleMoved(): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::TRANSITIONS, 1, [self::KIND_FINALE]));
     }
 
     public function sceneMoved(int $scene): void

@@ -196,8 +196,9 @@ final class WalkServiceTest
         $ritual->walks->enter(self::register($ritual, self::A, 'Jack'));
         $ritual->walks->enter(self::register($ritual, self::B, 'Jill'));
 
-        Assert::same(\array_column(\array_column($ritual->broadcast->ofType('walker'), 'walker'), 'item'), ['beer', 'beer']);
-        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item'), ['beer', 'beer']);
+        // Who was there as it began holds a beer; a newcomer comes empty-handed and takes one from a pumpkin
+        Assert::same(\array_column(\array_column($ritual->broadcast->ofType('walker'), 'walker'), 'item'), ['beer', null]);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item'), ['beer', null]);
 
         // The reset takes the beer away with the finale
         $ritual->reset->reset();

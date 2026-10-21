@@ -6,8 +6,10 @@ namespace App\Application\Bar;
 
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Player\PlayerService;
+use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
 use App\Application\Walk\NoCharacterException;
+use App\Application\Walk\ZombifiedException;
 use App\Domain\Bar\Bar;
 use App\Domain\Bar\BarStore;
 use App\Domain\Clock\Clock;
@@ -53,6 +55,7 @@ final readonly class BarService
         private int $drinks,
         private float $rumorChance = 0.0,
         private Randomizer $random = new Randomizer(),
+        private ?CursedService $cursed = null,
     ) {}
 
     /**
@@ -163,31 +166,41 @@ final readonly class BarService
     /**
      * Drinks the clinked mug in hand: the hands are empty again, the player and the room count one more mug, and the
      * bar is ready once the room has drunk its goal. A player alone on the floor has no one to clink with and drinks
-     * the mug as it is.
+     * the mug as it is. The cursed world drinks the same way and counts the mug towards its own goal.
      *
      * @param non-empty-string $id
      * @throws NoCharacterException
-     * @throws BarRefusedException `not bar`, `no beer` or `not clinked`.
+     * @throws ZombifiedException
+     * @throws BarRefusedException `not bar` — neither the bar nor the cursed world, `no beer` or `not clinked`.
      * @throws LockBusyException
      * @throws RitualBusyException
      */
     public function drink(string $id): void
     {
-        $this->walkers->update(
+        $inBar = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($id): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
-                $this->policy->bar($this->ritual->scene()) or throw new BarRefusedException('not bar');
+                $walker->zombie() and throw new ZombifiedException();
+                $inBar = $this->policy->bar($this->ritual->scene());
+                $inBar || $this->ritual->story()->cursed() or throw new BarRefusedException('not bar');
                 $walker->hasBeer() or throw new BarRefusedException('no beer');
                 $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
                 $walkers[$id] = $walker->emptyHanded();
 
-                return [$walkers, null];
+                return [$walkers, $inBar];
             },
         );
 
         $round = $this->ritual->round();
         $this->players->drank($id);
+        if (!$inBar) {
+            $this->publisher->drink($round, $id);
+            $this->cursed?->drank($round);
+
+            return;
+        }
+
         $drunk = $this->bar->drank($round);
         $target = $this->target($this->ritual->story());
         $this->publisher->drink($round, $id);

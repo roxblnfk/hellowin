@@ -46,6 +46,15 @@ return [
         'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),
     ],
 
+    // The end of the night (docs/spec/scenario.md, «Рапира»): the cursed world wants `cursed_per_player` mugs drunk
+    // and as many zombies slain per player on the floor; FrankenPHP wakes with `boss_hp_base` health plus
+    // `boss_hp_per_player` per player, times the threshold multiplier
+    'rapier' => [
+        'cursed_per_player' => env('HELLOWIN_CURSED_PER_PLAYER', 2),
+        'boss_hp_base' => env('HELLOWIN_BOSS_HP_BASE', 40),
+        'boss_hp_per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 5),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [
@@ -103,8 +112,9 @@ return [
 
     // In the finale: the item every character holds from a step on, until a later step gives another; null is empty
     // hands, a step left out keeps what the previous one gave. The circle is drawn with a red flame, the cursed world
-    // hands out beer
-    'finale_items' => [0 => 'red-flame', 1 => null, 2 => null, 3 => null, 4 => null, 5 => 'beer'],
+    // hands out beer — from then on every character holds its own, a beer, nothing or the rapier — and at dawn
+    // everyone holds a rapier
+    'finale_items' => [0 => 'red-flame', 1 => null, 2 => null, 3 => null, 4 => null, 5 => 'beer', 7 => 'rapier'],
 
     // Where players' characters walk: the lawn rectangle minus the patch ellipse, in percents of the viewport like
     // the elements (players.md, «На поле»)

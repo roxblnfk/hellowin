@@ -32,7 +32,7 @@ use Random\Randomizer;
  * fixes only the landings and the timing — a leg between points and a sit at each; the loops between are the
  * frontend's. They bring their own points.
  *
- * Kinds come by scene; the cursed world has a set of its own instead of its scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
+ * Kinds come by scene; the cursed world and the dawn have sets of their own instead of their scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
  */
 final readonly class FlyerFactory
@@ -102,6 +102,7 @@ final readonly class FlyerFactory
      * @param array{positive-int, positive-int} $flySit Milliseconds a fly sits at a landing, min and max.
      * @param positive-int $flyLeg Milliseconds of a fly's flight from one point to the next.
      * @param positive-int $flyPoints Points for a fly.
+     * @param list<non-empty-string> $dawn Kinds of the dawn in place of its scene's set.
      */
     public function __construct(
         array $depths,
@@ -122,8 +123,9 @@ final readonly class FlyerFactory
         private array $flySit = [900, 1600],
         private int $flyLeg = 900,
         private int $flyPoints = 1,
+        private array $dawn = [],
     ) {
-        $all = \array_merge($cursed, ...$kinds);
+        $all = \array_merge($cursed, $dawn, ...$kinds);
         $lawn !== null || !\in_array(Flyer::KIND_WORM, $all, true) or throw new \InvalidArgumentException(
             'Worms crawl over the lawn: pass the walk zone to the flyer factory.',
         );
@@ -147,16 +149,21 @@ final readonly class FlyerFactory
     /**
      * @param int $now Unix time in milliseconds.
      * @param bool $cursed The cursed world: its own set of kinds, the rare flyer still of the scene.
+     * @param bool $dawn The dawn: its own set of kinds, like the cursed world.
      * @return Flyer|null Null when the set has no flyers and this launch is not the rare one.
      */
-    public function launch(int $now, int $scene = 0, bool $cursed = false): ?Flyer
+    public function launch(int $now, int $scene = 0, bool $cursed = false, bool $dawn = false): ?Flyer
     {
         $rare = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
         if ($rare !== null && $this->chance($this->rareChance)) {
             return $this->special($rare, $now);
         }
 
-        $kinds = $cursed ? $this->cursed : $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)];
+        $kinds = match (true) {
+            $dawn => $this->dawn,
+            $cursed => $this->cursed,
+            default => $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)],
+        };
         if ($kinds === []) {
             return null;
         }

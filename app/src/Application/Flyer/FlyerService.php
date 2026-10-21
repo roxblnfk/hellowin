@@ -7,6 +7,7 @@ namespace App\Application\Flyer;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
+use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
@@ -39,7 +40,16 @@ final readonly class FlyerService
         private ShotTally $tally,
         private LoggerInterface $logger = new NullLogger(),
         private ?ZombieFactory $zombies = null,
+        private ?CursedService $cursed = null,
     ) {}
+
+    /**
+     * Whether the sky is the dawn's: the ticker launches its birds at a pace of their own.
+     */
+    public function atDawn(): bool
+    {
+        return $this->ritual->story()->dawn();
+    }
 
     /**
      * Launches a flyer of the current scene, or of the cursed world's own set once it has come.
@@ -50,7 +60,7 @@ final readonly class FlyerService
     public function launch(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
-        $flyer = $this->factory->launch($now, $ritual->scene, $ritual->story->cursed());
+        $flyer = $this->factory->launch($now, $ritual->scene, $ritual->story->cursed(), $ritual->story->dawn());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
@@ -63,7 +73,7 @@ final readonly class FlyerService
     public function launchScheduled(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
-        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene, $ritual->story->cursed());
+        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene, $ritual->story->cursed(), $ritual->story->dawn());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
@@ -115,6 +125,7 @@ final readonly class FlyerService
         $this->publisher->shot($round, $flyer, $shooter);
         $this->metrics->flyerShot($flyer);
         $this->count($round);
+        $flyer->kind === Flyer::KIND_ZOMBIE and $this->slain($round);
         $flyer->kind === Flyer::KIND_WITCH and $this->publisher->owl(
             $round,
             OwlLine::WITCH_DOWN,
@@ -146,6 +157,18 @@ final readonly class FlyerService
         $this->metrics->flyerLaunched($flyer);
 
         return $flyer;
+    }
+
+    /**
+     * A slain zombie counts towards the goal of the cursed world; a failure there must not turn a hit into an error.
+     */
+    private function slain(int $round): void
+    {
+        try {
+            $this->cursed?->slew($round);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Zombie is not counted for the cursed world: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+        }
     }
 
     /**

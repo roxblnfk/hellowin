@@ -30,11 +30,12 @@ final class TickerTest
     {
         $ritual = new RitualHarness(stageMax: [1], reachable: ['pumpkin-1']);
         $ritual->transitions->scene(1, 1);
+        // On the lawn before the cursed world, so with its beer
+        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack', ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']);
+        $ritual->walks->move('aaaaaaaaaaaaaaaa', 20, 90);
         foreach ([1, 2, 3, 4, 5] as $step) {
             $ritual->story->finaleStep($step, force: true);
         }
-        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack', ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']);
-        $ritual->walks->move('aaaaaaaaaaaaaaaa', 20, 90);
         $walk = $ritual->walks->clink('aaaaaaaaaaaaaaaa', 'pumpkin', 'pumpkin-1');
         $ticker = self::ticker($ritual);
 
@@ -194,7 +195,8 @@ final class TickerTest
         $flyers = $ritual->broadcast->ofType('flyer');
         Assert::count($flyers, 2);
         Assert::same([$flyers[1]['kind'] ?? null, $flyers[1]['points'] ?? null], ['firefly', 1]);
-        Assert::false($ritual->store->snapshot()->story->zombies);
+        // The cursed world lets its zombies out by itself; the pause holds them like the flyers
+        Assert::true($ritual->store->snapshot()->story->zombies);
     }
 
     public function escapedFlyerIsCountedOnceAfterItsFlight(): void

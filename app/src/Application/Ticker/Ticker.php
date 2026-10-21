@@ -7,6 +7,8 @@ namespace App\Application\Ticker;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Player\LeaderboardService;
+use App\Application\Story\CursedService;
+use App\Application\Story\RapierService;
 use App\Application\Walk\WalkService;
 use Psr\Log\LoggerInterface;
 use Random\Randomizer;
@@ -30,6 +32,7 @@ final class Ticker
      * @param positive-int $leaderboardInterval Milliseconds.
      * @param array{positive-int, positive-int} $flyerInterval Milliseconds between launches, min and max.
      * @param array{positive-int, positive-int} $zombieInterval Milliseconds between zombies, min and max.
+     * @param array{positive-int, positive-int} $dawnInterval Milliseconds between launches at dawn, min and max.
      */
     public function __construct(
         private readonly LeaderboardService $leaderboard,
@@ -41,6 +44,9 @@ final class Ticker
         private readonly array $zombieInterval = [4000, 9000],
         private readonly Randomizer $random = new Randomizer(),
         private readonly ?BarService $bar = null,
+        private readonly array $dawnInterval = [1000, 2500],
+        private readonly ?RapierService $rapier = null,
+        private readonly ?CursedService $cursed = null,
     ) {}
 
     /**
@@ -69,10 +75,13 @@ final class Ticker
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));
         $this->safely('clinks', fn() => $this->walks->clinks());
         $this->safely('bar', fn() => $this->bar?->tick());
+        $this->safely('beers', fn() => $this->walks->beers());
+        $this->safely('zombie players', fn() => $this->rapier?->shamble());
 
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;
             $this->safely('walkers', fn() => $this->walks->sync());
+            $this->safely('cursed goals', fn() => $this->cursed?->follow());
         }
 
         if ($this->nextLeaderboard === null || $now >= $this->nextLeaderboard) {
@@ -81,9 +90,18 @@ final class Ticker
         }
     }
 
+    /**
+     * The dawn has its own, shorter pace; a failing read of the story keeps the usual one.
+     */
     private function flyerPause(): int
     {
-        return $this->random->getInt(...$this->flyerInterval);
+        try {
+            $dawn = $this->flyers->atDawn();
+        } catch (\Throwable) {
+            $dawn = false;
+        }
+
+        return $this->random->getInt(...($dawn ? $this->dawnInterval : $this->flyerInterval));
     }
 
     /**

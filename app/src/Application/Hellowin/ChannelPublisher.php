@@ -7,6 +7,7 @@ namespace App\Application\Hellowin;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
+use App\Domain\Story\Story;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\Walker;
 use Spiral\Broadcasting\BroadcastInterface;
@@ -226,16 +227,74 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * Carries the item every character holds from this step on.
+     * Carries the item every character holds from this step on — but on the rapier step, where each holds its own and
+     * the clients leave the items as they are.
      *
-     * @param array|null $reveal From step {@see \App\Domain\Story\Story::REVEAL_STEP} on.
+     * @param array|null $reveal From step {@see Story::REVEAL_STEP} on.
      */
     public function finale(int $round, int $scene, int $step, ?array $reveal = null): void
     {
-        $message = ['type' => 'finale', 'round' => $round, 'step' => $step, 'item' => $this->items->held($scene, $step)];
+        $message = ['type' => 'finale', 'round' => $round, 'step' => $step];
+        $step === Story::RAPIER_STEP or $message['item'] = $this->items->held($scene, $step);
         $reveal === null or $message['reveal'] = $reveal;
 
         $this->publish($message);
+    }
+
+    /**
+     * The counters and goals of the cursed world.
+     *
+     * @param array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int} $cursed
+     */
+    public function cursed(int $round, array $cursed): void
+    {
+        $this->publish(['type' => 'cursed', 'round' => $round] + $cursed);
+    }
+
+    /**
+     * A beer out of a pumpkin: the pumpkins of the cursed world never run dry.
+     *
+     * @param non-empty-string $player
+     * @param non-empty-string $pumpkin
+     */
+    public function beer(int $round, string $player, string $pumpkin): void
+    {
+        $this->publish(['type' => 'take', 'round' => $round, 'player' => ['id' => $player], 'pumpkin' => ['id' => $pumpkin], 'ok' => true]);
+    }
+
+    /**
+     * The player said the word: right — the rapier in hand, wrong — a zombie. The word itself stays on the server.
+     */
+    public function word(int $round, Player $player, bool $ok): void
+    {
+        $this->publish(['type' => 'word', 'round' => $round, 'player' => $player->ref(), 'ok' => $ok]);
+    }
+
+    /**
+     * @param Player $player The zombie, cured.
+     * @param Player $by Who cured it.
+     */
+    public function cure(int $round, Player $player, Player $by): void
+    {
+        $this->publish(['type' => 'cure', 'round' => $round, 'player' => $player->ref(), 'by' => $by->ref()]);
+    }
+
+    /**
+     * FrankenPHP woke up, or the moderator tuned its health.
+     *
+     * @param array{hp: int<0, max>, max: positive-int} $boss
+     */
+    public function boss(int $round, array $boss): void
+    {
+        $this->publish(['type' => 'boss', 'round' => $round] + $boss);
+    }
+
+    /**
+     * @param int<0, max> $hp FrankenPHP's health after the strike.
+     */
+    public function strike(int $round, Player $player, int $hp): void
+    {
+        $this->publish(['type' => 'strike', 'round' => $round, 'player' => $player->ref(), 'hp' => $hp]);
     }
 
     /**

@@ -156,6 +156,15 @@ final class FlyerFactoryTest
         Assert::same($kinds, ['bat', 'firefly']);
     }
 
+    public function dawnTakesItsOwnSetOverTheCursedOne(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['bat']], cursed: ['firefly'], dawn: ['duck', 'chicken']);
+
+        $kinds = \array_unique(\array_map(static fn(int $_): ?string => $factory->launch(0, 1, true, true)?->kind, \range(1, 50)));
+        \sort($kinds);
+        Assert::same($kinds, ['chicken', 'duck']);
+    }
+
     public function cursedWorldWithoutKindsLaunchesOnlyTheRareFlyerOfTheScene(): void
     {
         $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck']], [null, 'witch'], 1.0);

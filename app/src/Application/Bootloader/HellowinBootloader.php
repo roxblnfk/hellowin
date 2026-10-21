@@ -13,8 +13,11 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\CursedService;
+use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
 use App\Application\Walk\CentrifugoPresence;
@@ -35,6 +38,8 @@ use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\BossStore;
+use App\Domain\Story\CursedStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
@@ -91,6 +96,8 @@ final class HellowinBootloader extends Bootloader
                 RevealBuilder $reveal,
                 BarService $bar,
                 StartTime $startTime,
+                CursedService $cursed,
+                RapierService $rapier,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -102,6 +109,8 @@ final class HellowinBootloader extends Bootloader
                 $reveal,
                 $startTime,
                 $bar,
+                $cursed,
+                $rapier,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -122,8 +131,54 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
-            RevealBuilder::class => static fn(ShotTally $shots, PlayerStore $players, RitualPolicy $policy, BarStore $bar): RevealBuilder
-                => new RevealBuilder($shots, $players, $policy, $bar),
+            RevealBuilder::class => static fn(
+                ShotTally $shots,
+                PlayerStore $players,
+                RitualPolicy $policy,
+                BarStore $bar,
+                CursedStore $cursed,
+                BossStore $boss,
+            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss),
+            CursedStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): CursedStore => new CursedStore($cache->storage($config->getStorage()), new Locks($lock)),
+            BossStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): BossStore => new BossStore($cache->storage($config->getStorage()), new Locks($lock)),
+            CursedService::class => static fn(
+                HellowinConfig $config,
+                CursedStore $store,
+                RitualStore $ritual,
+                RitualPolicy $policy,
+                WalkerStore $walkers,
+                ChannelPublisher $publisher,
+            ): CursedService => new CursedService($store, $ritual, $policy, $walkers, $publisher, $config->getCursedPerPlayer()),
+            RapierService::class => static fn(
+                HellowinConfig $config,
+                WalkerStore $walkers,
+                RitualStore $ritual,
+                BossStore $boss,
+                PlayerService $players,
+                ChannelPublisher $publisher,
+                TransitionQueue $queue,
+                Clock $clock,
+            ): RapierService => new RapierService(
+                $walkers,
+                $ritual,
+                $boss,
+                $players,
+                $publisher,
+                $queue,
+                $clock,
+                $config->getWalkZone(),
+                $config->getWalkSpeed(),
+                $config->getBossHpBase(),
+                $config->getBossHpPerPlayer(),
+            ),
             BarStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -138,6 +193,7 @@ final class HellowinBootloader extends Bootloader
                 ChannelPublisher $publisher,
                 PlayerService $players,
                 Clock $clock,
+                CursedService $cursed,
             ): BarService => new BarService(
                 $bar,
                 $walkers,
@@ -150,6 +206,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getBarPourMs(),
                 $config->getBarDrinks(),
                 $config->getBarRumorChance(),
+                cursed: $cursed,
             ),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
@@ -230,6 +287,7 @@ final class HellowinBootloader extends Bootloader
                 flySit: $flyers->getFlySit(),
                 flyLeg: $flyers->getFlyLeg(),
                 flyPoints: $flyers->getFlyPoints(),
+                dawn: $flyers->getDawnKinds(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),
@@ -250,6 +308,8 @@ final class HellowinBootloader extends Bootloader
                 BarService $bar,
                 WalkService $walks,
                 LoggerInterface $logger,
+                RapierService $rapier,
+                CursedService $cursed,
             ): Ticker => new Ticker(
                 $leaderboard,
                 $players->getLeaderboardInterval(),
@@ -259,6 +319,9 @@ final class HellowinBootloader extends Bootloader
                 $logger,
                 $flyerConfig->getZombieInterval(),
                 bar: $bar,
+                dawnInterval: $flyerConfig->getDawnInterval(),
+                rapier: $rapier,
+                cursed: $cursed,
             ),
         ];
     }

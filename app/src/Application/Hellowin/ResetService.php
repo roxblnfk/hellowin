@@ -44,6 +44,7 @@ final readonly class ResetService
         }
 
         $inBar = $this->walks?->barIn(0) === true;
+        $inBar or $this->lift();
         $this->publisher->reset(
             $round,
             $inBar ? $this->backToBar() : null,
@@ -67,6 +68,18 @@ final readonly class ResetService
             return $this->walks?->relocate(0);
         } catch (LockBusyException) {
             return null;
+        }
+    }
+
+    /**
+     * Without the bar the characters stay where they are, but the curse is lifted from the zombies; a busy lawn keeps
+     * them as they were, and the next dawn or reset lifts it.
+     */
+    private function lift(): void
+    {
+        try {
+            $this->walks?->cureAll();
+        } catch (LockBusyException) {
         }
     }
 
