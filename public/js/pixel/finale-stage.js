@@ -1,7 +1,7 @@
 import { Sprite } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { phraseAt } from '../franken.js';
+import { bossPhraseAt, phraseAt } from '../franken.js';
 import { createBubbles } from './bubble.js';
-import { FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, frankenHalo } from './finale.js';
+import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, breathOf, frankenHalo } from './finale.js';
 import { EMISSIVE, LIT_PALETTE } from './night.js';
 import { PALETTE } from './palette.js';
 import { T } from './finale-timeline.js';
@@ -91,8 +91,25 @@ export function rumbleAt(step, t) {
 /** Whether the scene is lit by the night again: the moon turns normal with the reveal of step 2. */
 export const nightOf = (step, t) => step >= 3 || (step === 2 && t >= T.night);
 
-/** Whether the floating pumpkins' lights are out: they drop with the reveal and light up green at step 5. */
-export const lightsOut = (step, t) => (step === 2 && t >= T.reveal) || step === 3 || step === 4;
+/** Whether the floating pumpkins' lights are out: they drop with the reveal, light up green at step 5, die at the dawn. */
+export const lightsOut = (step, t) => (step === 2 && t >= T.reveal) || step === 3 || step === 4 || step >= 7;
+
+// The boss's glasses catch the light once every GLINT_MS, a lens at a time.
+const GLINT_MS = 3000;
+const GLINT_LENS_MS = 80;
+// The fallen glasses drop onto the heap with this gravity (art px/s²); the ash smokes in a wisp every WISP_MS.
+const GLASSES_FALL = 260;
+const WISP_MS = 2400;
+
+/**
+ * How far FrankenPHP has crumbled: ms since he started (null while he stands). At zero health he falls where he is; at
+ * the dawn he lies in ash, falling from its start if nobody felled him first.
+ */
+export function downOf(step, t, boss, clock) {
+    if (step === 6 && boss && boss.hp <= 0) return clock - boss.downAt;
+    if (step >= 7) return boss && boss.downAt > -1e8 ? clock - boss.downAt : t;
+    return null;
+}
 
 /** Whether the walkers stand in the ritual pose: from the closed circle until the lightning. */
 export const ritualOf = (step, ready, t) => (step === 0 && ready) || step === 1 || (step === 2 && t < T.reveal);
@@ -100,7 +117,8 @@ export const ritualOf = (step, ready, t) => (step === 0 && ready) || step === 1 
 /**
  * @param {object} env  scene internals: layers (ground, light, far, fx, labels), layout(), lighting(), centre() — the
  *   circle's foot in art px, clock(), serverNow(), reduced(), defTexture(def, lit), flyerArt(def, hazy), depthKey(x, y),
- *   strike() — a lightning strike begins (the scene flashes its veil), cue(cue) — a moment the sound plays
+ *   strike() — a lightning strike begins (the scene flashes its veil), cue(cue) — a moment the sound plays, boss() —
+ *   the boss of step 6 as the scene keeps it: { hp, max, downAt, hitAt, woke } (scene clock) or null
  */
 export function createFinaleStage(env) {
     // Sprites on the ground are made again with groundLayer on every rebuild; the rest live as long as the scene.
@@ -132,6 +150,8 @@ export function createFinaleStage(env) {
             creep: [0, 1, 2, 3].map(() => make(env.ground, { alpha: 0.8 })),
             runner: make(env.ground),
             halo: make(env.light, { add: true, alpha: 0.45 }),
+            glasses: make(env.ground),
+            wisp: make(env.ground, { alpha: 0.7 }),
         };
     }
 
@@ -207,9 +227,9 @@ export function createFinaleStage(env) {
             return { ...on(1, into >= 0 && into < T.meepMs ? 'meep' : 'stop', true), meep: into >= 0 && into < T.meepMs };
         }
         if (step === 4) return on(1, 'stop', true);
-        if (step === 5) {
-            if (t < T.leave) return on(1, 'stop', true);
-            if (t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false);
+        if (step >= 5) {
+            if (step === 5 && t < T.leave) return on(1, 'stop', true);
+            if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false);
             // Then it keeps running along the horizon, now and then, like in scene 0: one run per slot, on the server
             // clock so every viewer sees the same.
             const slot = Math.floor(now / LOOP_MS);
@@ -230,7 +250,7 @@ export function createFinaleStage(env) {
     // ------------------------------------------------------------------ the frame
     function hideAll() {
         if (g) {
-            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.halo, ...g.creep]) s.visible = false;
+            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.halo, g.glasses, g.wisp, ...g.creep]) s.visible = false;
         }
         lightning.visible = false;
         runnerFar.visible = false;
@@ -267,10 +287,28 @@ export function createFinaleStage(env) {
             place(g.cloudFront, front, c.x, c.y + 10, env.defTexture(front, lit), env.depthKey(c.x, c.y + 10));
         }
 
-        // FrankenPHP talks only in the cursed world, and not over the owl's farewell.
-        const phrase = step === 5 && t >= T.quiet ? phraseAt(now) : null;
-        const figure = figureOf(step, t, clock, phrase);
-        if (figure) place(g.figure, figure, c.x, c.y, frankenTexture(figure), base + 4);
+        const boss = env.boss?.() ?? null;
+        const down = downOf(step, t, boss, clock);
+        // FrankenPHP talks only in the cursed world, and not over the owl's farewell or its return; while the boss stands
+        // he has his own lines, more often; felled, he is silent.
+        const alive = boss && boss.hp > 0;
+        const phrase = down !== null ? null
+            : step === 5 && t >= T.quiet ? phraseAt(now)
+                : step === 6 && alive ? bossPhraseAt(now)
+                    : step === 6 && t >= T.quiet6 ? phraseAt(now) : null;
+        let figure = down === null ? figureOf(step, t, clock, phrase) : null;
+        // A strike makes him flinch.
+        const hit = figure && boss && clock - boss.hitAt >= 0 && clock - boss.hitAt < T.hit && !reduced;
+        if (hit) figure = BOSS.hit;
+        if (figure) {
+            place(g.figure, figure, c.x + (hit ? 1 : 0), c.y, frankenTexture(figure), base + 4);
+            if (step === 6 && alive) {
+                const s = clock % GLINT_MS;
+                const glasses = BOSS.glasses[breathOf(figure)][reduced ? 0 : s < GLINT_LENS_MS ? 1 : s < 2 * GLINT_LENS_MS ? 2 : 0];
+                place(g.glasses, glasses, c.x + (hit ? 1 : 0), c.y, frankenTexture(glasses), base + 4.5);
+            }
+        }
+        if (down !== null) fallen(down, c, base, boss, clock, reduced);
         if (phrase) bubble('franken', phrase.text, { x: c.x + 4, y: c.y - 84 });
         // Spoken once, as it comes up: a phrase already halfway through on a reload stays silent.
         if (phrase && phrase.at !== lastPhrase) {
@@ -303,7 +341,7 @@ export function createFinaleStage(env) {
             });
         }
 
-        if (step === 5) {
+        if ((step === 5 || step === 6) && down === null) {
             const def = haloDef();
             place(g.halo, def, c.x, c.y, env.defTexture(def));
         }
@@ -326,9 +364,36 @@ export function createFinaleStage(env) {
         sweepBubbles();
     }
 
+    /**
+     * FrankenPHP felled, `down` ms ago: he darkens, cracks and crumbles into a heap (BOSS.collapse), then the ash
+     * pile stays with its embers flickering and a wisp of smoke; the boss's glasses drop onto it.
+     */
+    function fallen(down, c, base, boss, clock, reduced) {
+        const k = reduced ? BOSS.collapse.length : Math.floor(down / T.collapseFrame);
+        const def = k < BOSS.collapse.length ? BOSS.collapse[k] : BOSS.ash[reduced ? 0 : Math.floor(clock / 300) % BOSS.ash.length];
+        place(g.figure, def, c.x, c.y, frankenTexture(def), base + 4);
+        if (k >= BOSS.collapse.length && !reduced) {
+            const into = clock % WISP_MS;
+            const wisp = FX.smoke.puff[0][Math.min(3, Math.floor((into / WISP_MS) * 4))];
+            place(g.wisp, wisp, c.x + 6 + Math.round(into / 600), c.y - 12 - Math.round(into / 140), env.defTexture(wisp, env.lighting()), base + 5);
+        }
+        if (!boss?.woke) return;
+        // The glasses fall from his eyes onto the top of the heap.
+        const head = c.y - 62;
+        const rest = c.y - 10;
+        const y = reduced ? rest : Math.min(rest, head + 0.5 * GLASSES_FALL * (down / 1000) ** 2);
+        const glasses = y < rest ? BOSS.glasses[0][0] : BOSS.glassesFallen;
+        place(g.glasses, glasses, y < rest ? c.x : c.x - 2, y < rest ? c.y + (y - head) : rest, frankenTexture(glasses), base + 4.5);
+    }
+
     let halo = null;
     // Wider than the pit, which covers its middle.
     const haloDef = () => (halo ??= frankenHalo(46, 12));
 
-    return { build, animate };
+    /** Hides FrankenPHP for one frame: a fade into the dawn freezes the night without him, he falls in the new light. */
+    function hideFigure() {
+        if (g) for (const sprite of [g.figure, g.glasses, g.halo, g.wisp]) sprite.visible = false;
+    }
+
+    return { build, animate, hideFigure };
 }

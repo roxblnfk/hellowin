@@ -127,6 +127,10 @@ const FRANKEN_LEGEND = {
     X: 'ashDark',
     r: 'rune',
     R: 'bloodMoonLight',
+    // The boss's black glasses, and the ash he crumbles into.
+    n: 'outline',
+    a: 'ash',
+    A: 'ashLight',
 };
 
 /** Paints every pixel whose centre (in local coordinates) passes the test; color may return '.' to skip. */
@@ -461,6 +465,141 @@ export const SILHOUETTE = {
         FRANKEN_ANCHOR,
     )),
 };
+
+// ---------------------------------------------------------------------------------------------------------------
+// The boss (finale step 6): black glasses over the sleepy eyes, the flinch of a strike, and the collapse into ash.
+
+/** Black wayfarers over the eyes for a frame breathing `b` (0 | -1); glint 0 — none, 1 — on the left lens, 2 — right. */
+function glassesGrid(b, glint) {
+    const g = grid(FW, FH);
+    for (const m of [-1, 1]) {
+        for (let y = -63; y <= -58; y++) {
+            // Wider at the top, the outer corner square, the inner one cut by the nose.
+            const inner = y === -58 ? 3 : 2;
+            const outer = y === -58 ? 10 : 11;
+            for (let ax = inner; ax <= outer; ax++) {
+                const rim = y === -63 || y === -58 || ax === inner || ax === outer;
+                putL(g, m * ax - (m < 0 ? 1 : 0), y + b, rim ? 'n' : 'k');
+            }
+        }
+        // A cold reflection across the upper inner corner of each lens.
+        putL(g, m * 4 - (m < 0 ? 1 : 0), -62 + b, 'c');
+        putL(g, m * 5 - (m < 0 ? 1 : 0), -62 + b, 'c');
+        putL(g, m * 4 - (m < 0 ? 1 : 0), -61 + b, 'c');
+        // Temples back to the ears.
+        putL(g, m * 12 - (m < 0 ? 1 : 0), -62 + b, 'n');
+        putL(g, m * 13 - (m < 0 ? 1 : 0), -62 + b, 'n');
+    }
+    for (let x = -2; x <= 1; x++) putL(g, x, -62 + b, 'n');
+    if (glint) {
+        // A diagonal streak of light running across one lens.
+        const m = glint === 1 ? -1 : 1;
+        for (const [dx, dy] of [[0, 0], [1, -1], [2, -2], [-1, 1]]) putL(g, m * 7 - (m < 0 ? 1 : 0) + dx, -60 + b + dy, 'Z');
+    }
+    return toSprite(g, FRANKEN_LEGEND, FRANKEN_ANCHOR);
+}
+
+// Light keys stay light, the rest goes to the ash ramp by value; the sparks die.
+const ASHEN = { L: 'A', G: 'A', T: 'A', t: 'A', W: 'A', U: 'A', E: 'a', g: 'a', S: 'a', B: 'a', c: 'a', z: '.', Z: '.' };
+
+/**
+ * FrankenPHP crumbling, `k` of COLLAPSE_FRAMES: dark first, then lit from within by lime cracks, then falling apart
+ * from the top down into a growing heap at his feet, grains trickling off the broken edge.
+ */
+function collapseGrid(k) {
+    const src = frankenGrid({ spark: -1 });
+    const out = grid(FW, FH);
+    const rnd = mulberry32(99 + k);
+    const top = src.findIndex((row) => row.some((ch) => ch !== '.'));
+    const fall = Math.max(0, k - 1) / (COLLAPSE_FRAMES - 2);
+    const cut = Math.round(top + (FH - top) * fall);
+    for (let y = 0; y < FH; y++) {
+        for (let x = 0; x < FW; x++) {
+            const ch = src[y][x];
+            if (ch === '.') continue;
+            let v = ASHEN[ch] ?? 'X';
+            if (v === '.') continue;
+            if (k >= 1 && k < COLLAPSE_FRAMES - 1 && CRACKS.has(x * 1000 + y)) v = (x + y) % 3 ? 'z' : 'Z';
+            if (y < cut) {
+                // A band of grains just under the broken edge still hangs in the air, falling.
+                if (y > cut - 8 && rnd() < 0.18) {
+                    const ny = y + Math.round((cut - y) * 1.6 + rnd() * 4);
+                    if (ny < FH) out[ny][x] = rnd() < 0.5 ? 'a' : 'X';
+                }
+                continue;
+            }
+            out[y][x] = v;
+        }
+    }
+    // The heap grows at his feet as he falls into it.
+    if (fall > 0) heap(out, 8 + fall * 18, 2 + fall * 9, rnd, k);
+    return out;
+}
+
+/** A heap of ash on the grid's foot, rx × h: lit from the upper left, ragged on top, a few lime embers in it. */
+function heap(g, rx, h, rnd, seed) {
+    for (let y = FH - 1; y >= FH - 1 - h - 1; y--) {
+        for (let x = 0; x < FW; x++) {
+            const dx = (x + 0.5 - FX0) / rx;
+            const up = (FH - 0.5 - y) / h;
+            const top = (1 - dx * dx) * (0.85 + 0.3 * noise(x * 0.4, seed, 17));
+            if (Math.abs(dx) > 1 || up > top) continue;
+            const edge = up > top - 1.2 / h;
+            const lit = dx + (up - 0.5) * -0.8;
+            let ch = lit < -0.35 ? 'A' : lit < 0.35 ? 'a' : 'X';
+            if (edge && dx > 0.2) ch = 'X';
+            if (noise(x * 0.9, y * 0.9, seed + 3) > 0.83 && up < top - 0.15) ch = rnd() < 0.5 ? 'z' : 'Z';
+            g[y][x] = ch;
+        }
+    }
+}
+
+const COLLAPSE_FRAMES = 6;
+
+// The lime cracks running down his darkened body: a few ragged lines, the same in every frame they show in.
+const CRACKS = (() => {
+    const rnd = mulberry32(5);
+    const set = new Set();
+    for (let i = 0; i < 9; i++) {
+        let x = Math.round(FX0 - 16 + rnd() * 32);
+        let y = Math.round(18 + rnd() * 55);
+        for (let n = 0; n < 10 + rnd() * 12; n++) {
+            set.add(x * 1000 + y);
+            y += 1;
+            x += Math.round(rnd() * 2 - 1);
+        }
+    }
+    return set;
+})();
+
+/** The ash pile left on the circle, 3 frames of its lime embers flickering; the heap of the last collapse frame. */
+function ashPile(f) {
+    const g = grid(FW, FH);
+    heap(g, 26, 11, mulberry32(7), 40 + f);
+    return toSprite(g, FRANKEN_LEGEND, FRANKEN_ANCHOR);
+}
+
+/**
+ * The boss's extras, same canvas and anchor as FRANKEN. glasses[b][glint]: the black glasses for a frame breathing b
+ * (0 — idle[0], spark, talk[0..1], hit; 1 — idle[1], talk[2]), glint 0–2 (a streak of light across a lens every ~3 s,
+ * ~80 ms per lens); hit — the flinch of a strike (~120 ms); collapse — 6 frames (~270 ms each) from whole to a heap;
+ * ash — the pile on the circle, 3 ember frames (~300 ms); glassesFallen — the glasses lying on the pile, anchor at
+ * their bottom middle.
+ */
+export const BOSS = {
+    glasses: [0, -1].map((b) => [0, 1, 2].map((glint) => glassesGrid(b, glint))),
+    hit: frankenSprite({ spark: 2, mouth: true }),
+    collapse: Array.from({ length: COLLAPSE_FRAMES }, (_, k) => toSprite(collapseGrid(k), FRANKEN_LEGEND, FRANKEN_ANCHOR)),
+    ash: [0, 1, 2].map(ashPile),
+    glassesFallen: toSprite(
+        ['.nnnn..nnnn.', 'nkTkknnkTkkn', 'nkkkn..nkkkn', '.nnn....nnn.'].map((r) => [...r]),
+        FRANKEN_LEGEND,
+        { x: 6, y: 4 },
+    ),
+};
+
+/** Which glasses fit a FRANKEN frame: 1 when it breathes in (the head a pixel up), else 0. */
+export const breathOf = (def) => (def === FRANKEN.idle[1] || def === FRANKEN.talk[2] ? 1 : 0);
 
 // ---------------------------------------------------------------------------------------------------------------
 // RoadRunner. The roadrunner.dev logo is a one-colour swoosh of a bird: a small round head with a long needle beak
@@ -857,10 +996,61 @@ export function frankenHalo(rx, ry) {
 }
 
 /**
+ * One shape of the rapier's golden chain lightning from `from` to `to` (art px): a jagged polyline kinked every ~6 px
+ * across its way, 2–3 branches forking off it toward the target, and a dithered edge beside the core. Returns pixel
+ * lists { core, edge } in art px; draw the core white-gold over a gold edge. `seed` picks the shape.
+ */
+function chainBolt(from, to, seed = 1) {
+    const rnd = mulberry32(seed);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const [nx, ny] = [-dy / len, dx / len];
+    const n = Math.max(3, Math.round(len / 6));
+    const jag = Math.min(5, len * 0.09);
+    const main = Array.from({ length: n + 1 }, (_, i) => {
+        const t = i / n;
+        const off = i === 0 || i === n ? 0 : (rnd() * 2 - 1) * jag;
+        return [Math.round(from.x + dx * t + nx * off), Math.round(from.y + dy * t + ny * off)];
+    });
+    const core = new Map();
+    const line = ([x0, y0], [x1, y1]) => {
+        const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+        for (let i = 0; i <= steps; i++) {
+            const x = Math.round(x0 + ((x1 - x0) * i) / steps);
+            const y = Math.round(y0 + ((y1 - y0) * i) / steps);
+            core.set(x * 65536 + y, [x, y]);
+        }
+    };
+    main.slice(1).forEach((p, i) => line(main[i], p));
+    const branches = 2 + Math.floor(rnd() * 2);
+    for (let b = 0; b < branches && n > 2; b++) {
+        let at = main[1 + Math.floor(rnd() * (n - 2))];
+        const side = rnd() < 0.5 ? -1 : 1;
+        const a = Math.atan2(dy, dx) + side * (0.5 + rnd() * 0.6);
+        const segs = 2 + Math.floor(rnd() * 2);
+        for (let s = 0; s < segs; s++) {
+            const step = 3 + rnd() * 4;
+            const next = [Math.round(at[0] + Math.cos(a + (rnd() - 0.5)) * step), Math.round(at[1] + Math.sin(a + (rnd() - 0.5)) * step)];
+            line(at, next);
+            at = next;
+        }
+    }
+    const edge = [];
+    for (const [x, y] of core.values()) {
+        for (const [ex, ey] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+            if (!core.has(ex * 65536 + ey) && (ex + ey) % 2 === 0) edge.push([ex, ey]);
+        }
+    }
+    return { core: [...core.values()], edge };
+}
+
+/**
  * column: 4 frames of lightColumn() at 150 px (~90 ms); flash: 3 frames of the circle igniting (~80 ms);
  * lightning: three strikes × 3 frames at 120 px (~60 ms each, a beat of darkness between strikes); smoke.puff:
  * sizes 5, 8, 12 × 4 frames (~200 ms); smoke.cloud: 4 frames (~220 ms); smoke.creep: 4 frames (~300 ms);
- * motes: FrankenPHP-green specks for the cursed world.
+ * motes: FrankenPHP-green specks for the cursed world; chain(from, to, seed): the rapier's golden lightning (chainBolt),
+ * three seeds make the three ~50 ms shapes of one strike.
  */
 export const FX = {
     column: [0, 1, 2, 3].map((f) => lightColumn(150, f)),
@@ -871,6 +1061,7 @@ export const FX = {
         cloud: [0, 1, 2, 3].map(smokeCloud),
         creep: [0, 1, 2, 3].map(creepingSmoke),
     },
+    chain: chainBolt,
     motes: [
         toSprite(['.z.', 'zZz', '.z.'].map((r) => [...r]), { z: 'frankenGlow', Z: 'frankenGlowCore' }, { x: 1, y: 1 }),
         toSprite(['Z', 'z'].map((r) => [...r]), { z: 'frankenGlowDark', Z: 'frankenGlowHot' }, { x: 0, y: 0 }),

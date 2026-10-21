@@ -9,7 +9,10 @@ const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
 const NOTE_MS = 3000;
 const DONE_MS = 900;
-const LAST_STEP = 5;
+// The finale's steps (docs/spec/scenario.md, «Рапира»): the cursed world's goal at 5, the boss at 6, the dawn at 7.
+const CURSED_STEP = 5;
+const BOSS_STEP = 6;
+const LAST_STEP = 7;
 // The threshold multiplier (scenario.md, «Множитель порогов»): its range and the step of the ÷ / × buttons.
 const K_MIN = 0.1;
 const K_MAX = 10;
@@ -24,6 +27,8 @@ const ERRORS = {
     busy: 'Занято',
     'invalid k': '0,1–10',
     'not bar': 'Не бар',
+    'not cursed': 'Не шаг 5',
+    'not now': 'Не сейчас',
 };
 
 const roundK = (k) => Math.round(k * 100) / 100;
@@ -108,6 +113,27 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const pubInfo = el('span', { class: 'console__info', 'data-console-bar': '' });
     pub.append(pubInfo);
     pub.hidden = true;
+
+    // The cursed world's goal (scenario.md, «Шаг 5»): the moderator's addition to each target, ±5.
+    const cursedGroup = group('Проклятый мир');
+    for (const [goal, delta, text] of [['drinks', 5, '+5 кружек'], ['drinks', -5, '−5 кружек'], ['zombies', 5, '+5 зомби'], ['zombies', -5, '−5 зомби']]) {
+        const b = button(cursedGroup, { 'data-action': `cursed-${goal}-${delta > 0 ? 'up' : 'down'}` }, text);
+        b.addEventListener('click', () => send(b, 'cursed.target', { goal, delta }, { done: true }));
+    }
+    const cursedInfo = el('span', { class: 'console__info', 'data-console-cursed': '' });
+    cursedGroup.append(cursedInfo);
+    cursedGroup.hidden = true;
+
+    // FrankenPHP's health (scenario.md, «Шаг 6 — босс FrankenPHP»), ±10; nothing to change before he wakes up.
+    const bossGroup = group('Босс');
+    const hpButtons = [[10, 'HP +10'], [-10, 'HP −10']].map(([delta, text]) => {
+        const b = button(bossGroup, { 'data-action': `boss-hp-${delta > 0 ? 'up' : 'down'}` }, text);
+        b.addEventListener('click', () => send(b, 'boss.hp', { delta }, { done: true }));
+        return b;
+    });
+    const bossInfo = el('span', { class: 'console__info', 'data-console-boss': '' });
+    bossGroup.append(bossInfo);
+    bossGroup.hidden = true;
 
     const owl = group('Сова');
     for (const [id, line] of Object.entries(LINES)) {
@@ -201,6 +227,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
 
     next.addEventListener('click', () => {
         if (!model) return;
+        // At the dawn it is «В бар»: a new round of the evening, always ready.
+        if (model.scene >= model.sceneStages) {
+            if ((model.finale?.step ?? 0) >= LAST_STEP) send(next, 'scene.next', { scene: model.scene });
+            return;
+        }
         // Forcing an unready scene is for a room that got stuck: it asks first.
         if (!model.ready && !armed(next, 'Не готово. Точно?')) return;
         send(next, 'scene.next', model.ready ? { scene: model.scene } : { scene: model.scene, force: true });
@@ -208,10 +239,14 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     step.addEventListener('click', () => {
         const current = model?.finale?.step ?? 0;
         if (!model || current >= LAST_STEP) return;
-        // Step 1 waits for the closed circle; going without it asks first, like an unready scene.
-        const force = current === 0 && !model.ready;
-        if (force && !armed(step, 'Круг не замкнут. Точно?')) return;
-        send(step, 'finale.step', force ? { step: 1, force: true } : { step: current + 1 });
+        // Step 1 waits for the closed circle, step 6 for the cursed world's goals: going without them asks first, like
+        // an unready scene. Step 7 comes by itself when the boss falls, so pressing it always forces.
+        const question = current === 0 && !model.ready ? 'Круг не замкнут. Точно?'
+            : current === CURSED_STEP && !model.ready ? 'Цели не выполнены. Точно?'
+            : current === BOSS_STEP ? 'Босс жив. Точно?'
+            : null;
+        if (question && !armed(step, question)) return;
+        send(step, 'finale.step', question ? { step: current + 1, force: true } : { step: current + 1 });
     });
     reset.addEventListener('click', () => {
         if (model && armed(reset, 'Точно?')) send(reset, 'reset', { round: model.round });
@@ -276,18 +311,25 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             const final = model.scene >= model.sceneStages;
             const current = model.finale?.step ?? 0;
 
-            next.hidden = final;
+            const dawn = final && current >= LAST_STEP;
+            next.hidden = final && !dawn;
             const bar = isBar(model.scene);
-            next.toggleAttribute('data-ready', model.ready);
+            next.toggleAttribute('data-ready', model.ready || dawn);
             owl.querySelectorAll('[data-owl-bar]').forEach((b) => { b.hidden = !bar; });
             pub.hidden = !bar;
             pubInfo.textContent = `цель ${model.bar?.target ?? 0} · выпито ${model.bar?.drunk ?? 0}`;
             nudge.disabled = model.ready;
-            setLabel(next, model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
-            step.hidden = !final;
-            step.disabled = current >= LAST_STEP;
-            step.toggleAttribute('data-ready', final && current === 0 && model.ready);
-            setLabel(step, current >= LAST_STEP ? 'Финал пройден' : `Шаг финала ${current + 1}`);
+            setLabel(next, dawn ? 'В бар' : model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
+            step.hidden = !final || dawn;
+            step.toggleAttribute('data-ready', final && (current === 0 || current === CURSED_STEP) && model.ready);
+            setLabel(step, `Шаг финала ${current + 1}`);
+            cursedGroup.hidden = !(final && current === CURSED_STEP);
+            const cursed = model.cursed;
+            cursedInfo.textContent = cursed ? `кружки ${cursed.drunk}/${cursed.drinksTarget} · зомби ${cursed.slain}/${cursed.zombiesTarget}` : 'целей ещё нет';
+            const boss = model.boss;
+            bossGroup.hidden = !(final && current === BOSS_STEP);
+            hpButtons.forEach((b) => { b.disabled = !(boss?.hp > 0); });
+            bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : 'босс спит';
             zombies.setAttribute('aria-pressed', String(model.zombies));
             setLabel(zombies, model.zombies ? 'Зомби: вкл' : 'Зомби: выкл');
             pause.setAttribute('aria-pressed', String(model.paused));
@@ -302,8 +344,10 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
                 .filter(Boolean).join(' · ');
             online.textContent = `онлайн: ${model.online ?? 0}`;
 
-            const parts = [final ? (current >= LAST_STEP ? 'проклятый мир' : `финал · шаг ${current}`) : isBar(model.scene) ? 'бар' : `сцена ${model.scene}`];
-            if (model.ready && !isBar(model.scene)) parts.push('готова');
+            const finaleName = current >= LAST_STEP ? 'рассвет' : current === BOSS_STEP ? 'рапира' : current === CURSED_STEP ? 'проклятый мир' : `финал · шаг ${current}`;
+            const parts = [final ? finaleName : isBar(model.scene) ? 'бар' : `сцена ${model.scene}`];
+            // In the final scene readiness waits for the moderator only at step 0 (the circle) and step 5 (the goals).
+            if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === CURSED_STEP)) parts.push('готова');
             if (model.paused) parts.push('пауза');
             if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');

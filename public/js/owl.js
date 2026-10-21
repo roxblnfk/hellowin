@@ -4,7 +4,9 @@
 /**
  * id → { text, scenes?: {[scene]: text} — the line in that scene instead, hoot?: a dramatic line, the owl puffs up
  * first; button?: label on the moderator's console; bar?: the button shows only in the bar (scene 0); auto?: the server
- * says it by itself; then?: a second line said right after this one }. A text without a scene key is the day's: a line
+ * says it by itself; then?: the next part said right after this one, or a list of parts said one after another;
+ * rapier?: the part (0 — the first) on which the owl draws its rapier }. A
+ * text without a scene key is the day's: a line
  * said in the bar has its own key 0. `{player}` is the player's name from `params.player.name`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
@@ -35,6 +37,11 @@ export const LINES = {
     'finale-3': { auto: true, hoot: true, text: 'Походу… ошибочка вышла.', then: 'RoadRunner никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
     'finale-4': { auto: true, hoot: true, text: 'Вот что прошло через RoadRunner за вечер. Каждый ваш клик — через него, а лишние он отбросил, чтобы ни одна тыква не проскочила стадию.', then: 'Видите аптайм? Он не падал ни на секунду. Это мы тут чуть не умерли.' },
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
+    'cursed-ready': { auto: true, text: 'Готово… ждём.' },
+    'finale-6': { auto: true, hoot: true, text: 'Веселитесь?', then: ['Я знаю, как положить этому конец.', 'Молви слово — и получишь оружие.'], rapier: 1 },
+    'boss-down': { auto: true, hoot: true, text: '{player} нанёс последний удар!' },
+    'finale-7': { auto: true, hoot: true, text: 'Рассвет! Проклятие снято. Рапиры оставьте себе — утки сами себя не собьют.' },
+    'bar-again': { auto: true, hoot: true, text: 'Ну что, по пиву?' },
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
 };
 
@@ -154,14 +161,15 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         bubble.style.setProperty('--tail-x', `${Math.round(Math.min(Math.max(12, perch.x - left), w - 16))}px`);
     }
 
-    // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up.
-    function show({ text, hoot, then = null, ms = showMs(text), hold = then ? ms + holdOf(then) : holdOf(text) }) {
+    // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up. `then` — the parts still to
+    // come; `line` and `part` tell the scene which catalog line is on, `rapier` — the part the owl draws its rapier on.
+    function show({ text, hoot, then = [], line = null, part = 0, ms = showMs(text), hold = then.length ? ms + holdOf(then[0]) : holdOf(text) }) {
         const mine = ++token;
         textEl.textContent = text;
         holdUntil = now() + hold;
         shown = { until: now() + ms };
         // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
-        const delay = Number(scene?.owl?.({ ms, hoot })) || 0;
+        const delay = Number(scene?.owl?.({ ms, hoot, line, part, rapier: line !== null && LINES[line]?.rapier === part })) || 0;
         const open = () => {
             bubble.hidden = false;
             place();
@@ -175,8 +183,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         later(() => {
             if (mine !== token) return;
             bubble.hidden = true;
-            // A two-part line goes on at once, unless another line has taken the bubble meanwhile.
-            if (then) show({ text: then, hoot: false });
+            // A line in parts goes on at once, unless another line has taken the bubble meanwhile.
+            if (then.length) show({ text: then[0], hoot: false, then: then.slice(1), line, part: part + 1 });
         }, delay + ms);
     }
 
@@ -197,7 +205,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             const text = lineText(event, scene);
             if (!text) return;
             const catalog = event.text ? null : LINES[event.line];
-            const line = { text, hoot: Boolean(catalog?.hoot), then: catalog?.then ?? null };
+            const then = catalog?.then ?? [];
+            const line = { text, hoot: Boolean(catalog?.hoot), then: Array.isArray(then) ? then : [then], line: catalog ? event.line : null };
             const left = holdUntil - now();
             // The moderator's own text is the host speaking live: it never waits behind a hold.
             if (event.text || left <= 0 || left > MAX_HOLD_MS) {

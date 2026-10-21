@@ -50,23 +50,52 @@ function mix(a, b) {
 }
 
 const SEED = 0xf4a7c3;
-const indexOf = (slot) => (mix(SEED, slot) >>> 8) % PHRASES.length;
+const BOSS_SEED = 0xb055ed;
 
 /** How long a phrase stays up: long enough to read, within its slot. */
-export const phraseMs = (text) => Math.min(SLOT_MS - START_MS - END_GAP, 2400 + text.length * 65);
+export const phraseMs = (text, slotMs = SLOT_MS) => Math.min(slotMs - START_MS - END_GAP, 2400 + text.length * 65);
 
-/**
- * The phrase FrankenPHP is saying at server time `now`: { text, at, until } in server ms, or null when he is silent.
- * A slot speaks when its hash says so; the phrase is the hash's pick, moved one on when it would repeat the slot
- * before, so the same line never comes twice in a row.
- */
-export function phraseAt(now) {
-    const slot = Math.floor(now / SLOT_MS);
-    if (mix(SEED ^ 0x55, slot) % 100 >= 50) return null;
+// A slot speaks when its hash says so (`share` of 100); the phrase is the hash's pick, moved one on when it would repeat
+// the slot before, so the same line never comes twice in a row.
+function pickAt(now, list, slotMs, share, seed) {
+    const slot = Math.floor(now / slotMs);
+    if (mix(seed ^ 0x55, slot) % 100 >= share) return null;
+    const indexOf = (n) => (mix(seed, n) >>> 8) % list.length;
     let index = indexOf(slot);
-    if (index === indexOf(slot - 1)) index = (index + 1) % PHRASES.length;
-    const text = PHRASES[index];
-    const at = slot * SLOT_MS + START_MS;
-    const until = at + phraseMs(text);
+    if (index === indexOf(slot - 1)) index = (index + 1) % list.length;
+    const text = list[index];
+    const at = slot * slotMs + START_MS;
+    const until = at + phraseMs(text, slotMs);
     return now >= at && now < until ? { text, at, until } : null;
 }
+
+/** The phrase FrankenPHP is saying at server time `now`: { text, at, until } in server ms, or null when he is silent. */
+export const phraseAt = (now) => pickAt(now, PHRASES, SLOT_MS, 50, SEED);
+
+/**
+ * The boss's phrases (docs/spec/scenario.md, «Шаг 6 — босс FrankenPHP»): while the boss stands they replace PHRASES and
+ * come more often. Add lines at the end, like PHRASES.
+ */
+export const BOSS_PHRASES = [
+    'Я единственный!',
+    'Я официальный!',
+    'Без меня PHP умрёт!',
+    'Вы не в силах меня остановить!',
+    'Рапира? Серьёзно? Против бинарника на Go?',
+    'Меня поддерживает Foundation!',
+    'Я перезапускаюсь быстрее, чем вы кликаете!',
+    'Это была не уязвимость, это фича!',
+    'Очки? Чтобы не видеть ваш RoadRunner.',
+    'Worker mode — это не зомби, это архитектура!',
+    'Caddy, прикрой меня!',
+    'Я в каждом докер-образе!',
+    'Один удар — один лок. Я считал!',
+    'Ваши рапиры не проходят мой health check!',
+    'Я не падаю. У меня graceful shutdown!',
+];
+
+/** Time slots of the boss's phrases; he speaks in about two thirds of them. */
+export const BOSS_SLOT_MS = 7000;
+
+/** The boss's phrase at server time `now`, like phraseAt: { text, at, until } or null. */
+export const bossPhraseAt = (now) => pickAt(now, BOSS_PHRASES, BOSS_SLOT_MS, 67, BOSS_SEED);

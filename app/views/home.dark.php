@@ -23,7 +23,9 @@
           data-ready="{{ ($ready ?? false) ? 1 : 0 }}"
           data-finale="{{ json_encode($finale ?? null) }}"
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
-          data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}">
+          data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}"
+          data-cursed="{{ json_encode($cursed ?? null) }}"
+          data-boss="{{ json_encode($boss ?? null) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
@@ -63,6 +65,18 @@
         <button type="button" class="bar-counter" data-bar-counter aria-disabled="true" hidden
                 aria-label="Взять пиво" title="Взять пиво"><span class="bar-counter__emoji" aria-hidden="true">🍺</span></button>
 
+        <!-- The rapier (docs/spec/frontend.md, «Рапира»): over FrankenPHP his health and the button a rapier strikes; at the
+             top the magic word, or the line of a zombie worker. -->
+        <button type="button" class="franken" data-franken aria-disabled="true" hidden aria-label="FrankenPHP: ударить рапирой" title="Ударить рапирой"><span class="franken__emoji" aria-hidden="true">🧟</span></button>
+        <div class="boss-hp" data-boss-hp role="progressbar" aria-label="Здоровье FrankenPHP" aria-valuemin="0" hidden><span class="boss-hp__bar" aria-hidden="true"><span class="boss-hp__fill"></span></span><span class="boss-hp__text" data-boss-hp-text></span></div>
+        <form class="word" data-word hidden>
+            <label class="word__label" for="word-input">Молви слово</label>
+            <input class="word__input" id="word-input" data-word-input name="word" maxlength="40" autocomplete="off" spellcheck="false">
+            <button type="submit" class="word__button" data-word-submit>Молвить</button>
+            <p class="word__note" data-word-note role="alert"></p>
+        </form>
+        <p class="word-zombie" data-word-zombie role="status" hidden>Ты зомби-воркер. Жди, пока расколдуют</p>
+
         <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
 
         <footer class="hud">
@@ -70,6 +84,8 @@
             <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>
             <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
             <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
+            <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
+            <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
             <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>

@@ -83,11 +83,24 @@
   both sides, `clink.auto` is reported by your browser and, for the bots, by the lab. Bots fetch beer, clink and drink.
   ?bar=1 stands beer-holding bots in pairs by the tables (?bar=1&walkers=8&epoch=18000&freeze=5100 — the strike, 6400 —
   toasts to PHP); ?bardemo=1 plays a scripted evening (two mugs, a slow pour, the farthest bot shrugs, two clink and
-  drink). With ?me=1: the counter takes a mug, Space or «Выпить» drinks.
+  drink). With ?me=1: the counter takes a mug, Space or «Выпить» drinks; my character, ?me=1 or from the join screen,
+  walks in through the door. ?walkin=N — N bots walk in through the door 1.5 s apart (?walkin=1&freeze=300 — the
+  door wide open, 1200 — closing).
   Click shots (docs/spec/frontend.md, «Выстрел по клику»): a click event carries its clicker like the server's — your
   click your character when it is on the field, a random or automatic click a random bot, or nobody with the share
   ?anon=0..1 (default 0.25); a standing clicker shoots the element with what it holds. ?still=1 keeps the bots where
   they stand (no wandering, frozen bots do not set off), so ?auto=1&still=1&walkers=8 shows a crowd shooting.
+  Rapier (docs/spec/frontend.md, «Рапира»; finale steps 5–7): ?finale=5 — the cursed world's goal: the engine counts
+  mugs drunk and zombies slain against targets of 3 per walker (?goal=N — both targets N; the console's ±5 adds to them),
+  ?cursed=drunk,slain — starting counters; `beer {pumpkin}` hands out a mug at a reachable pumpkin, drinking needs a clink
+  unless you are alone; both goals met — `ready` and `cursed-ready`, step 6 only from the console. Bots fetch beer from the
+  pumpkins, clink and drink. ?zdeaths=1 — six zombies one after another, one per kind of death, the first walker shoots
+  each (?zdeaths=1&freeze=1900 — the first death). ?finale=6 — the owl's rapier and the word form; the lab does not know
+  the word: ?word=ok — every answer right, ?word=fail — every answer wrong, by default every second one wrong; bots say the
+  word, the wrong ones shamble as zombies (the engine walks them every 2–4 s), other bots cure them. ?boss=hp,max — the
+  boss awake at once; ?strike=1 — bots with a rapier strike FrankenPHP every 600 ms; the last blow says `boss-down` and
+  goes to step 7. ?zombified=1 (with ?me=1) — my walker a zombie. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
+  chickens more often; «В бар» on the console (?mod=1) is a new round of the evening (`reset` with `again`, `bar-again`).
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
@@ -96,6 +109,17 @@
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
     </a>
     <button type="button" class="bar-counter" data-bar-counter aria-disabled="true" hidden aria-label="Взять пиво" title="Взять пиво"><span class="bar-counter__emoji" aria-hidden="true">🍺</span></button>
+    <!-- The rapier (docs/spec/frontend.md, «Рапира»): over FrankenPHP his health and the button a rapier strikes; at the
+         top the magic word, or the line of a zombie worker. -->
+    <button type="button" class="franken" data-franken aria-disabled="true" hidden aria-label="FrankenPHP: ударить рапирой" title="Ударить рапирой"><span class="franken__emoji" aria-hidden="true">🧟</span></button>
+    <div class="boss-hp" data-boss-hp role="progressbar" aria-label="Здоровье FrankenPHP" aria-valuemin="0" hidden><span class="boss-hp__bar" aria-hidden="true"><span class="boss-hp__fill"></span></span><span class="boss-hp__text" data-boss-hp-text></span></div>
+    <form class="word" data-word hidden>
+        <label class="word__label" for="word-input">Молви слово</label>
+        <input class="word__input" id="word-input" data-word-input name="word" maxlength="40" autocomplete="off" spellcheck="false">
+        <button type="submit" class="word__button" data-word-submit>Молвить</button>
+        <p class="word__note" data-word-note role="alert"></p>
+    </form>
+    <p class="word-zombie" data-word-zombie role="status" hidden>Ты зомби-воркер. Жди, пока расколдуют</p>
     <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
     <aside class="debug lab-tools" data-lab-panel aria-label="Лаборатория">
         <button type="button" class="debug__button" data-lab-duck>утка</button>
@@ -112,6 +136,8 @@
         <span class="hud__item">Раунд <b data-hud-round>1</b></span>
         <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
         <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
+        <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
+        <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
         <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
         <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
@@ -147,7 +173,8 @@
     </form>
 </dialog>
 <script type="module">
-    import { bindBar, bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
+    import { bindBar, bindClinking, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
+    import { deathOf } from '/js/sound.js';
     import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
     import { initDebugPanel } from '/js/debug.js';
     import { initJoin, storedLook } from '/js/join.js';
@@ -378,6 +405,11 @@
     const BOT_NAMES = ['Jack', 'Тыквоед', 'Ведьма Ира', 'Graf_Drak', 'Мумия', 'Bones', 'Кот-Баюн', 'Zed.13'];
     const botCount = Math.max(0, Math.min(BOT_NAMES.length, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
     const standing = (p, at) => ({ path: [p], startedAt: at, arrivesAt: at });
+    // A newcomer's walk in the bar, as WalkService sends it: from the door's threshold `door_in` down onto the floor.
+    function doorWalk(at) {
+        const path = [BAR.door, clampToBar({ x: BAR.door.x, y: BAR.door.y + (BAR.door_in ?? 6) })];
+        return { path, startedAt: at, arrivesAt: at + Math.round((lengthOf(path) / WALK_SPEED) * 1000) };
+    }
     // In the finale the bots start around the patch, as a room gathered for the ritual would.
     const finaleStart = params.has('finale') || params.get('ritual') === '1';
     // The lab starts in the bar unless the query names another scene (or a stage past the bar's).
@@ -426,7 +458,8 @@
         });
     }
     if (params.get('me') === '1') {
-        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk: standing(zoneClamp({ x: 50, y: 93 }), serverTime()) });
+        const walk = barStart && BAR.door ? doorWalk(serverTime()) : standing(zoneClamp({ x: 50, y: 93 }), serverTime());
+        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk });
     }
     root.dataset.walkers = JSON.stringify(startWalkers);
 
@@ -449,12 +482,22 @@
     // yet shows an empty hand.
     // ?item=<id> makes every scene hand out that item (a candle at night, say).
     const ITEM_BY_SCENE = params.has('item') ? [null, ...Array(4).fill(params.get('item'))] : [null, 'pistol', 'candle', 'book', 'red-flame'];
-    // And of `finale_items`: the final scene's item at step 0, empty hands on steps 1–4, beer from step 5 on.
-    const itemOfFinale = (step) => (params.has('item') ? params.get('item') : step === 0 ? ITEM_BY_SCENE[4] : step >= 5 ? 'beer' : null);
-    const LAST_STEP = 5;
+    // And of `finale_items`: the final scene's item at step 0, empty hands on steps 1–4, beer at step 5, nothing at step 6
+    // (undefined: everyone keeps their own), the rapier at the dawn.
+    const itemOfFinale = (step) => (params.has('item') ? params.get('item') : step === 0 ? ITEM_BY_SCENE[4] : step === 5 ? 'beer' : step === 6 ? undefined : step >= 7 ? 'rapier' : null);
+    const CURSED_STEP = 5;
+    const BOSS_STEP = 6;
+    const LAST_STEP = 7;
+    // HELLOWIN_CURSED_PER_PLAYER (the lab's stand-in) and the moderator's additions, which live until a reset.
+    const CURSED_PER_PLAYER = 3;
+    const goalParam = params.has('goal') ? Math.max(1, Number.parseInt(params.get('goal'), 10) || 1) : null;
+    const cursedBonus = { drinks: 0, zombies: 0 };
+    // HELLOWIN_BOSS_HP_BASE and HELLOWIN_BOSS_HP_PER_PLAYER (stand-ins): his health at waking, times k.
+    const BOSS_HP_BASE = 20;
+    const BOSS_HP_PER_PLAYER = 5;
     const moderator = params.get('mod') === '1';
     // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
-    const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, lastPumpkin: null };
+    const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, lastPumpkin: null };
     const pending = new Set();
     // A random 20–60 ms of latency, but in order: the channel never reorders publications.
     let deliveredBy = 0;
@@ -536,14 +579,18 @@
         return { ok: true };
     }
 
-    function engineReset() {
+    function engineReset({ again = false } = {}) {
         engine.round++;
         engine.scene = 0;
         engine.stageMax = SCENE_STAGE_MAX[0];
         engine.ready = false;
         engine.finale = null;
         engine.zombies = false;
-        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, lastPumpkin: null });
+        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, lastPumpkin: null });
+        engine.cursed = null;
+        engine.boss = null;
+        Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
+        cursedReadySaid = false;
         engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
         engineBonfire().stageMax = BONFIRE_STAGE_MAX[0];
         if (engineCircle()) engineCircle().stageMax = 0;
@@ -559,9 +606,11 @@
             w.clinked = false;
             w.taking = null;
             delete w.clink;
+            delete w.zombie;
             w.walk = standing(clampToBar(walkPoint(w.walk, now)), now);
         });
-        deliver({ type: 'reset', item: null, walkers: structuredClone(engine.walkers.map(publicWalker)), bar: structuredClone(engine.bar) });
+        deliver({ type: 'reset', item: null, walkers: structuredClone(engine.walkers.map(publicWalker)), bar: structuredClone(engine.bar), ...(again ? { again: true } : {}) });
+        if (again) deliver({ type: 'owl', line: 'bar-again' });
     }
 
     // A walker as the protocol shows it: the server's own flags (a pending take, the clinked mug) stay inside.
@@ -571,8 +620,13 @@
 
     function engineSceneNext({ scene, force }) {
         if (!Number.isInteger(scene) || scene < 0) throw new Error('invalid scene');
-        if (scene !== engine.scene) return { ok: true, scene: engine.scene };
-        if (engine.scene >= engine.sceneStages) throw new Error('final scene');
+        if (scene !== engine.scene) return { ok: true, scene: engine.scene, round: engine.round };
+        if (engine.scene >= engine.sceneStages) {
+            // At the dawn «В бар» is a new round of the evening: the same as a reset, told apart by `again`.
+            if ((engine.finale?.step ?? 0) < LAST_STEP) throw new Error('final scene');
+            engineReset({ again: true });
+            return { ok: true, scene: 0, round: engine.round };
+        }
         if (!engine.ready && force !== true) throw new Error('not ready');
         if (!engine.ready) stats.lastPumpkin = null;
         const to = engine.scene + 1;
@@ -612,11 +666,30 @@
         if (!Number.isInteger(step)) throw new Error('invalid step');
         if (engine.scene < engine.sceneStages || !engine.finale) throw new Error('not final');
         if (step === engine.finale.step + 1 && step <= LAST_STEP) {
-            // Step 1 waits for the closed circle unless forced.
-            if (step === 1 && !engine.ready && force !== true) throw new Error('not ready');
+            // Step 1 waits for the closed circle, step 6 for the cursed world's goals, step 7 for the boss to fall —
+            // unless forced.
+            if ((step === 1 || step === BOSS_STEP) && !engine.ready && force !== true) throw new Error('not ready');
+            if (step === LAST_STEP && !(engine.boss?.hp === 0) && force !== true) throw new Error('not ready');
             engine.finale = finaleOf(step);
-            engine.walkers.forEach((w) => { w.item = itemOfFinale(step); });
-            deliver({ type: 'finale', ...structuredClone(engine.finale), item: itemOfFinale(step) });
+            if (step === CURSED_STEP) {
+                engine.ready = false;
+                engine.cursed = { drunk: 0, slain: 0, ...cursedTargets() };
+            }
+            // The dawn: every zombie lifted, FrankenPHP down whether he fell or was forced.
+            if (step === LAST_STEP) {
+                engine.walkers.forEach((w) => delete w.zombie);
+                if (engine.boss) engine.boss.hp = 0;
+            }
+            const item = itemOfFinale(step);
+            if (item !== undefined) engine.walkers.forEach((w) => { w.item = item; w.clinked = false; });
+            deliver({ type: 'finale', ...structuredClone(engine.finale), ...(item !== undefined ? { item } : {}) });
+            if (step === CURSED_STEP) {
+                deliver({ type: 'cursed', ...engine.cursed });
+                if (!engine.zombies) {
+                    engine.zombies = true;
+                    deliver({ type: 'zombies', on: true });
+                }
+            }
             // Step 2 scatters the walkers: each one outward from the patch to the edge of the lawn.
             if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
@@ -688,6 +761,8 @@
             case 'thresholds': return engineThresholds(data);
             case 'bar.target': return engineBarTarget(data);
             case 'bar.ready': return engineBarReady();
+            case 'cursed.target': return engineCursedTarget(data);
+            case 'boss.hp': return engineBossHp(data);
             case 'reset':
                 if (data.round === engine.round) engineReset();
                 return { ok: true, round: engine.round };
@@ -703,6 +778,8 @@
     const KINDS = [['fly'], ['duck', 'chicken'], [], ['bat'], ['worm']];
     // HELLOWIN_FLYER_KINDS_CURSED: the cursed world (finale step 5) flies its own set.
     const CURSED_KINDS = ['worm', 'bat', 'firefly'];
+    // HELLOWIN_FLYER_KINDS_DAWN: the dawn's ducks and chickens, launched more often (HELLOWIN_FLYER_INTERVAL_DAWN).
+    const DAWN_KINDS = ['duck', 'chicken'];
     const FIREFLY_POINTS = 1;
     const RARE = [null, 'roadrunner', null, null, null];
     const RARE_POINTS = 5;
@@ -728,7 +805,7 @@
     }
 
     // From the patch rim out along a ray to the edge of the lawn, in config coordinates like the walkers.
-    function engineZombie(angle = Math.random() * Math.PI * 2) {
+    function engineZombie(angle = Math.random() * Math.PI * 2, id = nextId()) {
         const from = round1(rim(angle, 1.02));
         let k = 1.02;
         const { x1, y1, x2, y2 } = WALK.area;
@@ -737,7 +814,7 @@
             if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) break;
             k += 0.05;
         }
-        return launchFlyer(nextId(), 'zombie', 1, ZOMBIE.duration, ZOMBIE.points, { from, to: round1(rim(angle, k)) });
+        return launchFlyer(id, 'zombie', 1, ZOMBIE.duration, ZOMBIE.points, { from, to: round1(rim(angle, k)) });
     }
 
     // A worm crawls from one lawn point to another 12–25 % away, both off the patch and the line between them clear of
@@ -760,8 +837,8 @@
     }
 
     // A fly like FlyerFactory::fly (protocol.md, `fly`): 2–3 stops (HELLOWIN_FLYER_FLY_STOPS), never the same surface
-    // twice running — a table top (y = cy − ry/2, x within cx ± rx/2) or the counter top (its x range, the upper half
-    // of the counter rectangle); a sit of 900–1600 ms (HELLOWIN_FLYER_FLY_SIT) at each, 900 ms a leg
+    // twice running — a table top (y = cy − ry/2, x within cx ± rx/2), the counter top (its x range, the upper half
+    // of the counter rectangle) or a perch of `walk.bar.perches`; a sit of 900–1600 ms (HELLOWIN_FLYER_FLY_SIT) at each, 900 ms a leg
     // (HELLOWIN_FLYER_FLY_LEG); in and out over a side wall (x1 − 3 or x2 + 3) or from a point over the floor, half and half.
     const FLY = { stops: [2, 3], sit: [900, 1600], leg: 900, points: 1, inset: 3 };
     function engineFly(random = Math.random) {
@@ -773,6 +850,8 @@
         surfaces.push(box
             ? { x: [Math.max(BAR.counter.x1, box.x1), Math.min(BAR.counter.x2, box.x2)], y: [box.y1, (box.y1 + box.y2) / 2] }
             : { x: [BAR.counter.x1, BAR.counter.x2], y: [BAR.counter.y - 10, BAR.counter.y - 4] });
+        // Every perch of the layout is a surface of its own: along its line, or its point.
+        for (const p of BAR.perches ?? []) surfaces.push({ x: [p.x1, p.x2], y: [p.y, p.y] });
         const stops = [];
         let last = -1;
         for (let i = int(...FLY.stops); i > 0; i--) {
@@ -797,7 +876,8 @@
     function engineFlyer({ kind = null, depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
         const rare = RARE[engine.scene];
         const cursed = engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= 5;
-        kind ??= rare && Math.random() < 0.125 ? rare : pick(cursed ? CURSED_KINDS : KINDS[engine.scene] ?? KINDS[0]);
+        const dawn = engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP;
+        kind ??= rare && Math.random() < 0.125 ? rare : pick(dawn ? DAWN_KINDS : cursed ? CURSED_KINDS : KINDS[engine.scene] ?? KINDS[0]);
         if (!kind) return null;
         if (kind === 'roadrunner') return engineRoadrunner(ltr);
         if (kind === 'worm') return engineWorm();
@@ -837,6 +917,12 @@
         const by = playerOf(player);
         deliver({ type: 'shot', flyer: id, points: f.points, ...(by ? { player: by } : {}) });
         if (f.kind === 'witch' && by) deliver({ type: 'owl', line: 'witch-down', params: { player: by } });
+        // A zombie worker slain from step 5 on counts for the cursed world's goal.
+        if (f.kind === 'zombie' && engine.cursed) {
+            stats.slain++;
+            engine.cursed.slain++;
+            cursedUpdate();
+        }
         return { ok: true, hit: true, points: f.points };
     }
 
@@ -876,6 +962,7 @@
     function engineClink(id, { walker, pumpkin } = {}, toast = null) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
         const bar = engine.scene === 0;
         if (!bar && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP)) return { ok: false, error: 'not cursed' };
         // In the bar both glasses have to be there: mine first, then the target's (protocol.md, RPC `clink`).
@@ -894,7 +981,7 @@
             target = { walker: { id: walker } };
         } else {
             const p = engine.elements.find((e) => e.id === pumpkin);
-            if (!p || p.type !== 'pumpkin' || !p.reachable) return { ok: false, error: 'no target' };
+            if (!p || p.type !== 'pumpkin' || !p.reachable || engine.finale?.step !== CURSED_STEP) return { ok: false, error: 'no target' };
             spot = clampToZone(p);
             target = { pumpkin: { id: pumpkin } };
         }
@@ -908,7 +995,9 @@
             if (t && (t.walk !== targetWalk || !engine.walkers.includes(t))) return;
             // In the bar nobody may have drunk up on the way; the clink counts for both mugs.
             if (bar && (engine.scene !== 0 || w.item !== 'beer' || t?.item !== 'beer')) return;
-            if (bar) w.clinked = t.clinked = true;
+            // The clink counts for both mugs; with a pumpkin, for the one who came up.
+            w.clinked = true;
+            if (t) t.clinked = true;
             const at = serverTime();
             clinkedAt.set(id, at);
             deliver({ type: 'clink', player: { id }, ...target, toast: toast ?? Math.floor(Math.random() * 2 ** 31), at });
@@ -1008,14 +1097,22 @@
     function engineDrink(id) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
-        if (engine.scene !== 0) return { ok: false, error: 'not bar' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (!drinkWorld()) return { ok: false, error: 'not bar' };
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
-        if (!w.clinked) return { ok: false, error: 'not clinked' };
+        if (!w.clinked && engine.walkers.length > 1) return { ok: false, error: 'not clinked' };
         w.item = null;
         w.clinked = false;
         stats.drinks++;
-        engine.bar.drunk++;
         deliver({ type: 'drink', player: { id } });
+        if (engine.scene !== 0) {
+            if (engine.cursed) {
+                engine.cursed.drunk++;
+                cursedUpdate();
+            }
+            return { ok: true };
+        }
+        engine.bar.drunk++;
         drinksEvent();
         if (engine.bar.drunk >= engine.bar.target) barReady();
         return { ok: true };
@@ -1025,7 +1122,8 @@
     function engineClinkAuto(id, { walker } = {}) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
-        if (engine.scene !== 0) return { ok: false, error: 'not bar' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (!drinkWorld()) return { ok: false, error: 'not bar' };
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
         const t = engine.walkers.find((x) => x.id === walker);
         const now = serverTime();
@@ -1035,6 +1133,159 @@
         if (Math.hypot(a.x - b.x, a.y - b.y) > BAR.clink_reach) return { ok: false, error: 'no target' };
         w.clinked = true;
         return { ok: true };
+    }
+
+    // Drinking and automatic clinks: in the bar and in the cursed world while it still has beer (steps 5–6).
+    const drinkWorld = () => engine.scene === 0 || (engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step));
+
+    // The cursed world's goal (protocol.md, «Рапира»): targets of CURSED_PER_PLAYER × walkers (or ?goal) plus the
+    // moderator's additions; both met — `ready` and `cursed-ready` once per round.
+    let cursedReadySaid = false;
+    const cursedTargets = () => {
+        const base = goalParam ?? CURSED_PER_PLAYER * Math.max(1, engine.walkers.length);
+        return { drinksTarget: Math.max(1, base + cursedBonus.drinks), zombiesTarget: Math.max(1, base + cursedBonus.zombies) };
+    };
+    function cursedUpdate() {
+        if (!engine.cursed) return;
+        Object.assign(engine.cursed, cursedTargets());
+        deliver({ type: 'cursed', ...engine.cursed });
+        const c = engine.cursed;
+        if (engine.finale?.step !== CURSED_STEP || cursedReadySaid || c.drunk < c.drinksTarget || c.slain < c.zombiesTarget) return;
+        cursedReadySaid = true;
+        engine.ready = true;
+        deliver({ type: 'ready', scene: engine.scene });
+        deliver({ type: 'owl', line: 'cursed-ready' });
+    }
+    function engineCursedTarget({ goal, delta }) {
+        if (engine.finale?.step !== CURSED_STEP || engine.scene < engine.sceneStages) throw new Error('not cursed');
+        if (goal !== 'drinks' && goal !== 'zombies') throw new Error('invalid goal');
+        if (!Number.isInteger(delta)) throw new Error('invalid delta');
+        const key = goal === 'drinks' ? 'drinksTarget' : 'zombiesTarget';
+        const before = engine.cursed[key];
+        // Not below 1: the addition stops where the target would.
+        const base = cursedTargets()[key] - cursedBonus[goal];
+        cursedBonus[goal] = Math.max(cursedBonus[goal] + delta, 1 - base);
+        if (cursedTargets()[key] !== before) cursedUpdate();
+        return { ok: true, target: engine.cursed[key] };
+    }
+    function engineBossHp({ delta }) {
+        if (!engine.boss || engine.boss.hp <= 0) throw new Error('not now');
+        if (!Number.isInteger(delta)) throw new Error('invalid delta');
+        const hp = Math.max(1, engine.boss.hp + delta);
+        engine.boss = { hp, max: Math.max(hp, engine.boss.max + delta) };
+        deliver({ type: 'boss', ...engine.boss });
+        return { ok: true, ...engine.boss };
+    }
+
+    // `beer {pumpkin}` at step 5: a walk to the pumpkin like a clink with it, a mug on arrival — bottomless.
+    function engineBeer(id, { pumpkin } = {}) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (engine.scene < engine.sceneStages || engine.finale?.step !== CURSED_STEP) return { ok: false, error: 'not cursed' };
+        if (w.item === 'beer') return { ok: false, error: 'has beer' };
+        const p = engine.elements.find((e) => e.id === pumpkin);
+        if (!p || p.type !== 'pumpkin' || !p.reachable) return { ok: false, error: 'no target' };
+        const { walk } = engineMove(id, clampToZone(p));
+        const token = ++takeSeq;
+        w.taking = token;
+        later(() => {
+            if (w.taking !== token || engine.finale?.step !== CURSED_STEP) return;
+            w.taking = null;
+            w.item = 'beer';
+            w.clinked = false;
+            deliver({ type: 'take', player: { id }, pumpkin: { id: pumpkin }, ok: true });
+        }, walk.arrivesAt + CLINK_TICK - serverTime());
+        return { ok: true, walk };
+    }
+
+    // `word {text}` at step 6. The lab does not know the word (only the server does): ?word=ok / ?word=fail, by default
+    // every second answer is wrong. The first right one wakes the boss.
+    let wordSeq = 0;
+    function engineWord(id, { text } = {}) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (engine.scene < engine.sceneStages || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (w.item === 'rapier') return { ok: false, error: 'has rapier' };
+        const said = typeof text === 'string' ? text.trim() : '';
+        if (said.length < 1 || said.length > 40) return { ok: false, error: 'invalid text' };
+        const mode = params.get('word');
+        const correct = mode === 'ok' ? true : mode === 'fail' ? false : wordSeq++ % 2 === 0;
+        if (correct) w.item = 'rapier';
+        else w.zombie = true;
+        deliver({ type: 'word', player: playerOf(w), ok: correct });
+        if (correct && !engine.boss) {
+            const max = Math.max(1, Math.round((BOSS_HP_BASE + BOSS_HP_PER_PLAYER * Math.max(1, engine.walkers.length)) * (engine.k ?? 1)));
+            engine.boss = { hp: max, max };
+            deliver({ type: 'boss', ...engine.boss });
+        }
+        return { ok: true, correct };
+    }
+
+    // `cure {walker}`: the first one under the walker's lock; a latecomer gets `cured: false`.
+    function engineCure(id, { walker } = {}) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (engine.scene < engine.sceneStages || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
+        const t = engine.walkers.find((x) => x.id === walker);
+        if (!t || walker === id) return { ok: false, error: 'no target' };
+        if (!t.zombie) return { ok: true, cured: false };
+        delete t.zombie;
+        deliver({ type: 'cure', player: playerOf(t), by: playerOf(w) });
+        return { ok: true, cured: true };
+    }
+
+    // `strike {}`: −1 under the boss's lock; the last blow names its striker and brings the dawn.
+    function engineStrike(id) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (w.zombie) return { ok: false, error: 'zombified' };
+        if (!engine.boss || engine.boss.hp <= 0 || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
+        if (w.item !== 'rapier') return { ok: false, error: 'no rapier' };
+        engine.boss.hp--;
+        stats.damage++;
+        deliver({ type: 'strike', player: playerOf(w), hp: engine.boss.hp });
+        if (engine.boss.hp === 0) {
+            deliver({ type: 'owl', line: 'boss-down', params: { player: playerOf(w) } });
+            engineFinaleStep({ step: LAST_STEP });
+        }
+        return { ok: true, hp: engine.boss.hp };
+    }
+
+    // A zombie player is walked by the server: an ordinary move over the lawn every 2–4 s.
+    function zombieWalks() {
+        for (const w of engine.walkers) {
+            if (!w.zombie || serverTime() < (w.shambleAt ?? 0)) continue;
+            w.shambleAt = serverTime() + 2000 + Math.random() * 2000;
+            engineMove(w.id, randomTarget());
+        }
+        later(zombieWalks, 500);
+    }
+
+    // The bots in the cursed world: beer from a pumpkin, a clink, a drink (step 5); the word, curing the zombies (step 6).
+    function cursedBot(w) {
+        const step = engine.finale?.step;
+        const reachable = enginePumpkins().filter((e) => e.reachable);
+        if (w.zombie) return null;
+        if (step === CURSED_STEP) {
+            if (w.item !== 'beer') return w.taking ? null : engineBeer(w.id, { pumpkin: pick(reachable).id });
+            if (w.clinked) return engineDrink(w.id);
+            return Math.random() < 0.5 ? engineClink(w.id, { pumpkin: pick(reachable).id }) : engineMove(w.id, randomTarget());
+        }
+        if (step === BOSS_STEP) {
+            const zombie = engine.walkers.find((x) => x.zombie && x.id !== w.id);
+            if (zombie && Math.random() < 0.6) return engineCure(w.id, { walker: zombie.id });
+            if (w.item !== 'rapier') return engineWord(w.id, { text: 'рапира' });
+        }
+        return engineMove(w.id, randomTarget());
+    }
+
+    // ?strike=1: every bot with a rapier strikes FrankenPHP every 600 ms.
+    function strikeBots() {
+        if (params.get('strike') === '1') wanderers().forEach((w) => w.item === 'rapier' && engineStrike(w.id));
+        later(strikeBots, 600);
     }
 
     // The bots' evening in the bar: empty hands go to the counter, a mug in hand looks for company (a clink by click
@@ -1062,11 +1313,25 @@
         at(12000, () => engineTake(bots[2].id));
     }
 
+    // ?walkin=N: N bots come into the bar through its door one after another, 1.5 s apart.
+    const walkIns = barStart && BAR.door ? Math.max(0, Math.min(8, Number.parseInt(params.get('walkin') ?? '0', 10) || 0)) : 0;
+    function walkInSteps() {
+        for (let i = 0; i < walkIns; i++) {
+            later(() => engineWalker({
+                id: `lab-in-${String(i).padStart(10, '0')}`,
+                name: BOT_NAMES[(i + 3) % BOT_NAMES.length],
+                look: randomLook(seeded(2000 + i)),
+                item: null,
+                walk: doorWalk(serverTime()),
+            }), i * 1500);
+        }
+    }
+
     // Name rules of players.md: trimmed, 1–24 letters, digits, single spaces, _ . -, at least one letter or digit.
     async function engineRegister(rawName, look) {
         const name = rawName.trim();
         if (!/^(?=.*[\p{L}\p{N}])(?!.*  )[\p{L}\p{N} _.-]{1,24}$/u.test(name)) throw new Error('invalid name');
-        engineWalker({ id: ME, name, look, item: null, walk: standing(spawnPoint(), serverTime()) });
+        engineWalker({ id: ME, name, look, item: null, walk: inBarZone && BAR.door ? doorWalk(serverTime()) : standing(spawnPoint(), serverTime()) });
         client.setMe(ME);
         return { id: ME, name, look };
     }
@@ -1080,6 +1345,7 @@
             const ritual = engine.scene >= engine.sceneStages && (engine.finale?.step === 1 || (engine.finale?.step === 0 && engine.ready));
             const w = engine.walkers.find((x) => x.id === id);
             if (engine.scene === 0) barBot(w);
+            else if ((engine.finale?.step ?? -1) >= CURSED_STEP && engine.scene >= engine.sceneStages) cursedBot(w);
             else if (!ritual) engineMove(id, randomTarget());
             wander(id);
         }, 3000 + Math.random() * 6000);
@@ -1164,10 +1430,31 @@
                 engine.ready = true;
             }
             engine.finale = finaleOf(Math.max(0, Math.min(LAST_STEP, Number.parseInt(params.get('finale') ?? '0', 10) || 0)));
-            engine.walkers.forEach((w) => { w.item = itemOfFinale(engine.finale.step); });
+            // Step 6 hands nothing out: the lab starts it with the beer of step 5.
+            const step = engine.finale.step;
+            engine.walkers.forEach((w) => { w.item = itemOfFinale(step) ?? (step === BOSS_STEP ? 'beer' : null); });
+            if (step >= CURSED_STEP) {
+                const [drunk, slain] = (params.get('cursed') ?? '0,0').split(',').map((n) => Math.max(0, Number.parseInt(n, 10) || 0));
+                engine.cursed = { drunk, slain, ...cursedTargets() };
+                stats.slain = slain;
+                // From step 5 on only the goal makes the scene ready.
+                if (step === CURSED_STEP) engine.ready = drunk >= engine.cursed.drinksTarget && slain >= engine.cursed.zombiesTarget;
+                cursedReadySaid = step > CURSED_STEP || engine.ready;
+            }
+            if (params.has('boss')) {
+                const [hp, max] = params.get('boss').split(',').map((n) => Math.max(0, Number.parseInt(n, 10) || 0));
+                engine.boss = { hp: Math.max(1, hp), max: Math.max(1, hp, max) };
+            }
+            if (step >= LAST_STEP) engine.boss = { hp: 0, max: engine.boss?.max ?? 90 };
+            if (step === BOSS_STEP && params.get('zombified') === '1') {
+                const me = engine.walkers.find((w) => w.id === ME);
+                if (me) me.zombie = true;
+            }
         }
         engine.paused = params.get('paused') === '1';
-        engine.zombies = params.get('zombies') === '1';
+        // The cursed world's zombies come on by themselves (steps 5–6) unless the query says otherwise.
+        const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
+        engine.zombies = params.has('zombies') ? params.get('zombies') === '1' : cursedNow;
     }
 
     // At the start of the run: the owl's line and the special flyers of the query; returns the zombie and the first
@@ -1189,6 +1476,20 @@
             : [];
         // ?flies=N: N flies right away, seeded so a frozen screenshot shows the same loops and stops.
         const flies = Array.from({ length: Math.max(0, Number.parseInt(params.get('flies') ?? '0', 10) || 0) }, (_, i) => engineFly(seeded(777 + i)));
+        // ?zdeaths=1: one zombie per kind of death, 2.5 s apart, each shot 1.4 s after it sets off by the first walker;
+        // the ids are picked so the scene's DEATHS[crc32(id) % length] gives each kind once.
+        if (params.get('zdeaths') === '1') {
+            const kinds = [];
+            for (let n = 1; kinds.length < 6 && n < 5000; n++) {
+                const id = `f-dead${n.toString(16).padStart(4, '0')}`;
+                const kind = deathOf(id);
+                if (kind && !kinds.some((k) => k.kind === kind)) kinds.push({ id, kind });
+            }
+            kinds.forEach(({ id }, i) => {
+                later(() => engineZombie(Math.PI * (0.18 + 0.13 * i), id), i * 2500);
+                later(() => engineShoot(id, engine.walkers[0] ?? null), i * 2500 + 1400);
+            });
+        }
         return { zombie, worm: worms[0] ?? null, firefly: fireflies[1] ?? null, fly: flies[0] ?? null };
     }
 
@@ -1258,14 +1559,17 @@
     root.addEventListener('click', (event) => {
         const el = event.target.closest('[data-element]');
         if (!el) return;
-        if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
+        if (client.beersPumpkin(el.dataset.element)) warned(engineBeer(ME, { pumpkin: el.dataset.element }), 'beer');
+        else if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
         else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element, myClicker());
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId(), randomClicker()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
     // Your shots are yours when your character is on the field: a witch then gets the owl's `witch-down`.
     bindShooting(root, scene, (id) => engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null));
-    bindClinking(root, scene, client, labClink);
+    bindClinking(root, scene, client, labClink, (target) => warned(engineCure(ME, target), 'cure'));
+    bindWord(root, client, async (text) => engineWord(ME, { text }));
+    bindStriking(root, client, () => warned(engineStrike(ME), 'strike'));
     // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
     const warned = (reply, method) => {
         if (!reply.ok) console.warn(`${method} rejected`, reply.error);
@@ -1282,7 +1586,7 @@
     // bots theirs, each with its nearest partner holding beer.
     scene?.onCue((cue) => {
         sound?.cue(cue);
-        if (cue?.type !== 'clink' || engine.scene !== 0 || !Array.isArray(cue.sides)) return;
+        if (cue?.type !== 'clink' || !drinkWorld() || !Array.isArray(cue.sides)) return;
         const partner = client.autoClinkPartner(cue);
         if (partner && warned(engineClinkAuto(ME, { walker: partner }), 'clink.auto').ok) client.clinkedAuto();
         for (const side of cue.sides) {
@@ -1295,10 +1599,10 @@
     const launchLater = () => setTimeout(() => {
         if (!engine.paused) engineFlyer();
         launchLater();
-    }, 3000 + Math.random() * 5000);
+    }, (engine.finale?.step ?? -1) >= LAST_STEP ? 800 + Math.random() * 1600 : 3000 + Math.random() * 5000);
     // Zombies only in the cursed world, with zombies on and no pause (HELLOWIN_ZOMBIE_INTERVAL 4000-9000).
     const zombieLater = () => setTimeout(() => {
-        if (engine.zombies && !engine.paused && engine.finale?.step === LAST_STEP) engineZombie();
+        if (engine.zombies && !engine.paused && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step)) engineZombie();
         zombieLater();
     }, 4000 + Math.random() * 5000);
     if (!simulated) {
@@ -1307,7 +1611,10 @@
         zombieLater();
         later(startEvents, 500);
         tickBar();
+        zombieWalks();
+        strikeBots();
         if (barDemo) barDemoSteps();
+        walkInSteps();
         // ?bar=1: the paired bots drink once their beer is clinked, then fetch the next one.
         if (barPairs) setInterval(() => wanderers().forEach((w) => engine.scene === 0 && (w.clinked ? engineDrink(w.id) : w.item !== 'beer' && !w.taking && engineTake(w.id))), 4000);
         if (clickClinkStart) {
@@ -1350,6 +1657,8 @@
         inBarZone = engine.scene === 0;
         emptySaidAt = -Infinity;
         takeSeq = 0;
+        wordSeq = 0;
+        Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
         flyerSeq = 0;
         deliveredBy = 0;
         client.load(engineSnapshot());
@@ -1392,7 +1701,10 @@
             // Frozen bots all set off at the start, so a screenshot catches them on the way.
             if (simTime === 0) {
                 tickBar();
+                zombieWalks();
+                strikeBots();
                 if (barDemo) barDemoSteps();
+                walkInSteps();
             }
             if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !still) {
                 const random = seeded(99);

@@ -219,6 +219,77 @@ export const OWL_FLIGHT = {
     fly: [flightFrame('up'), flightFrame('mid'), flightFrame('down'), flightFrame('mid')],
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// The rapier (finale step 6 on): the owl comes back with a glowing blade and holds it up in its right wing (viewer's
+// right) for the rest of the finale. Frames are the perched ones on a canvas taller by ARMED_TOP and wider by 5, so
+// the raised blade fits; the anchor stays on the talons.
+
+const ARMED_TOP = 17;
+const ARMED_W = W + 5;
+const ARMED_LEGEND = { ...LEGEND, o: 'gold', G: 'pumpkinGoldDark', Q: 'goldHot', q: 'goldGlow', X: 'goldCore' };
+
+// The wing raised straight up from the shoulder, in perched-frame coordinates; the breast shows where it was folded.
+const RAISED_WING = [
+    [18, 0, 'O'],
+    [17, 1, 'O'], [18, 1, 'L'], [19, 1, 'O'],
+    [16, 2, 'O'], [17, 2, 'L'], [18, 2, 'D'], [19, 2, 'O'],
+    [16, 3, 'O'], [17, 3, 'L'], [18, 3, 'D'], [19, 3, 'O'],
+    [15, 4, 'O'], [16, 4, 'L'], [17, 4, 'D'], [18, 4, 'O'],
+    [15, 5, 'O'], [16, 5, 'L'], [17, 5, 'M'], [18, 5, 'O'],
+    [15, 6, 'L'], [16, 6, 'M'], [17, 6, 'O'],
+    [15, 7, 'M'], [16, 7, 'O'],
+    [14, 10, 'L'], [14, 11, 'L'], [14, 12, 'L'],
+];
+// The cup hilt in the raised wing's tip, and the blade straight up from it: 14 px and the tip.
+const RAISED_HILT = [[17, -1, 'o'], [18, -1, 'G'], [19, -1, 'o'], [17, -2, 'o'], [19, -2, 'o']];
+const RAISED_BLADE = [...Array.from({ length: 14 }, (_, i) => [18, -2 - i, 'Q']), [18, -16, 'q']];
+// Drawing it: first out to the side on the talking wing, the blade still low; then up, the blade swinging over.
+const DRAW_BLADES = [
+    { wing: WING, hilt: [[16, 3, 'o'], [17, 3, 'G'], [18, 3, 'o']], blade: [[18, 2, 'Q'], [19, 2, 'Q'], [20, 1, 'Q'], [21, 1, 'Q'], [22, 0, 'Q'], [23, 0, 'q']] },
+    { wing: RAISED_WING, hilt: RAISED_HILT.slice(0, 3), blade: [[19, -2, 'Q'], [19, -3, 'Q'], [20, -4, 'Q'], [20, -5, 'Q'], [21, -6, 'Q'], [21, -7, 'Q'], [22, -8, 'Q'], [22, -9, 'Q'], [23, -10, 'q']] },
+];
+
+function armedFrame(base, { wing, hilt, blade }, glint = -1) {
+    const grid = Array.from({ length: H + ARMED_TOP }, () => Array(ARMED_W).fill('.'));
+    base.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch !== '.') grid[y + ARMED_TOP][x] = ch;
+    }));
+    const put = ([x, y, ch]) => {
+        const row = grid[y + ARMED_TOP];
+        if (row && x >= 0 && x < ARMED_W) row[x] = ch;
+    };
+    wing.forEach(put);
+    hilt.forEach(put);
+    blade.forEach((p, i) => put(i === glint ? [p[0], p[1], 'X'] : p));
+    return {
+        w: ARMED_W,
+        h: H + ARMED_TOP,
+        rows: grid.map((r) => r.join('')),
+        legend: ARMED_LEGEND,
+        anchor: { x: base.anchor.x, y: base.anchor.y + ARMED_TOP },
+    };
+}
+
+const armedCache = new Map();
+
+/**
+ * The perched frame `base` (any of OWL) holding the rapier up; `glint` 0–2 picks the shimmer: none, a white glint
+ * near the tip, one halfway down the blade. Cached per frame and glint.
+ */
+export function armed(base, glint = 0) {
+    if (!armedCache.has(base)) armedCache.set(base, [-1, 3, 8].map((at) => armedFrame(base, { wing: RAISED_WING, hilt: RAISED_HILT, blade: RAISED_BLADE }, at)));
+    return armedCache.get(base)[glint % 3];
+}
+
+/**
+ * The owl's rapier: draw — 2 frames of drawing it (~150 ms each), then hold it up with armed(); blade — the middle of
+ * the raised blade relative to the anchor, for its halo, and its length. The blade is gold light (night.js, EMISSIVE).
+ */
+export const OWL_RAPIER = {
+    draw: DRAW_BLADES.map((d) => armedFrame(OWL.idle[0], d)),
+    blade: { x: 18 - (PAD_X + 6), y: -9 - (H - 1), length: 15 },
+};
+
 /** The same frame with glowing eyes, for the night scenes. */
 export function glowing(sprite) {
     return { ...sprite, legend: { ...sprite.legend, ...NIGHT_LEGEND } };

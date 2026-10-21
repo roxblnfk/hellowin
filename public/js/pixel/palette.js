@@ -202,4 +202,20 @@ export const PALETTE = {
     // The pulp in a pumpkin's cut-outs before it is scooped: pale flesh, and its shade under the skin's edge.
     pulp: 0xe6a447,
     pulpShade: 0x96441c,
+    // The rapier's light (finale steps 6–7): the blade, its golden lightning and the glow of whoever holds it. A light
+    // source like the cursed glow, and a step off `gold` and the pumpkin ramp, so relighting by colour never takes
+    // a golden button or a pumpkin's shine for it.
+    goldCore: 0xfffae0,
+    goldHot: 0xffe57a,
+    goldGlow: 0xf2b42c,
+    goldDeep: 0xb0701a,
+    // The dawn of finale step 7: a violet-blue sky warming through rose and peach to a pale gold horizon, and the
+    // rising sun.
+    dawnTop: 0x4c4f8e,
+    dawnHigh: 0x9a6aa6,
+    dawnMid: 0xe68c98,
+    dawnLow: 0xffb98a,
+    dawnGlow: 0xffe2a4,
+    dawnSun: 0xfff3c2,
+    dawnSunRim: 0xffcf72,
 };

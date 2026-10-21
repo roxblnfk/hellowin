@@ -29,7 +29,8 @@
 <div id="live-night"></div>
 <div id="out"></div>
 <script type="module">
-    import { FLYERS, BUSH, DIGITS, digitsSprite, feathersOf, bake } from '../js/pixel/flyers.js';
+    import { FLYERS, BUSH, DEATHS, DIGITS, digitsSprite, feathersOf, bake } from '../js/pixel/flyers.js';
+    import { deathArt } from '../js/pixel/deaths.js';
     import { PALETTE } from '../js/pixel/palette.js';
     import { relightCanvas } from '../js/pixel/night.js';
 
@@ -99,6 +100,31 @@
                 ...set.fall.map((s, i) => view(s, zoom, `d${depth} fall${i}`, lit)),
             ])));
         }
+    }
+    // The zombie workers' deaths of the cursed world (deaths.js), frame by frame; the fire's light over the char.
+    if (!only || only.includes('deaths')) {
+        const d = deathArt();
+        const z = FLYERS.zombie[1];
+        section(`смерти зомби (${DEATHS.join(', ')}): куски и голова без тела, ${zoom}× (night)`, 'night', [
+            ...['hit', 'kneel', 'flat'].map((k) => view(z.headless[k], zoom, `headless ${k}`)),
+            ...d.pieces.map((turns, i) => view(turns[0], zoom, `piece${i}`)),
+            ...d.head.map((s, i) => view(s, zoom, `head ${i * 90}°`)),
+        ]);
+        section(`meat: вспышка ×2, лужа ×2, ошмётки; dust: ×6, сдувает ×3, ${zoom}× (grass)`, 'grass', [
+            ...d.burst.map((s, i) => view(s, zoom, `burst${i}`)),
+            ...d.puddle.map((s, i) => view(s, zoom, `puddle${i}`)),
+            ...d.gibs.map((s, i) => view(s, zoom * 2, `gib${i}`)),
+            ...d.dust.map((s, i) => view(s, zoom, `dust${i}`)),
+            ...d.blown.map((s, i) => view(s, zoom, `blown${i}`)),
+        ]);
+        section(`fire: обугливание ×4, огонь ×4, угасает ×4, пепел ×3; sink: ×8, яма, ${zoom}× (night)`, 'night', [
+            ...d.char.map((s, i) => view(s, zoom, `char${i}`, 'night')),
+            ...d.fire.map((s, i) => view(s, zoom, `fire${i}`)),
+            ...d.fireLow.map((s, i) => view(s, zoom, `low${i}`)),
+            ...d.ash.map((s, i) => view(s, zoom, `ash${i}`, 'night')),
+            ...d.sink.map((s, i) => view(s, zoom, `sink${i}`, 'night')),
+            view(d.hole, zoom, 'hole', 'night'),
+        ]);
     }
     section('перья 6×, куст idle ×2 и rustle ×3 3×, цифры 4×', 'grass', [
         ...FLYERS.feathers.map((s, i) => view(s, 6, `${s.kind}${i}`)),

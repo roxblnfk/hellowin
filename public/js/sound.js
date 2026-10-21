@@ -5,7 +5,10 @@ import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
 import { flyAt, flyPlan } from './pixel/fly-path.js';
 import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
-import { SCENE, isBar } from './layout.js';
+import { SCENE, fromDoor, isBar } from './layout.js';
+import { seedOf } from './pixel/sprites.js';
+// A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
+import * as FLYER_ART from './pixel/flyers.js';
 
 const FLYER_SOUNDS = {
     duck: 'duck.quack',
@@ -20,7 +23,17 @@ const FLYER_SOUNDS = {
     ghost: 'ghost.wail',
     fly: 'fly.buzz',
 };
-const SHOT_SOUNDS = { pistol: 'shot.pistol', candle: 'shot.candle', book: 'shot.book', beer: 'shot.beer', 'red-flame': 'shot.redflame' };
+const SHOT_SOUNDS = { pistol: 'shot.pistol', candle: 'shot.candle', book: 'shot.book', beer: 'shot.beer', 'red-flame': 'shot.redflame', rapier: 'shot.rapira' };
+// A zombie worker's death by kind (docs/spec/frontend.md, «Рапира»): the kind follows the flyer's id the way the scene
+// picks it, DEATHS[crc32(flyer) % length]; the order below stands in until pixel/flyers.js exports DEATHS.
+const DEATH_KINDS = ['pieces', 'meat', 'dust', 'head', 'fire', 'sink'];
+// The engine's names: green fire is `burn`.
+const DEATH_SOUNDS = { pieces: 'zombie.die.pieces', meat: 'zombie.die.meat', dust: 'zombie.die.dust', head: 'zombie.die.head', fire: 'zombie.die.burn', sink: 'zombie.die.sink' };
+// FrankenPHP stands on the circle in the middle of the patch.
+const FRANKEN_X = 50;
+// Strikes come by the dozen a second: the whole scene hears one at most this often.
+const STRIKE_GAP_MS = 120;
+const ZOMBIFY_S = 0.3;
 const DEPTH_VOLUME = [0.5, 0.75, 1];
 const OTHERS_VOLUME = 0.6;
 const HOOT_S = 0.95;
@@ -36,6 +49,8 @@ const MAX_STEPS = 12;
 const LATE_S = 0.25;
 // A pour heard later than this after it began (a reload mid-pour, a held-back event) stays silent.
 const POUR_FRESH_MS = 400;
+// A walk in through the bar's door heard later than this after it began (a reload, a held-back event) stays silent.
+const DOOR_FRESH_MS = 400;
 // The bar's level: no pumpkins to make progress with.
 const BAR_INTENSITY = 0.2;
 
@@ -54,6 +69,13 @@ function flyerX(f, now) {
     const to = f.to?.x ?? from;
     if (!f.via) return from + (to - from) * k;
     return (1 - k) ** 2 * from + 2 * k * (1 - k) * f.via.x + k * k * to;
+}
+
+/** The death of zombie flyer `id`: the scene's DEATHS when pixel/flyers.js has them (ids or {id}), else DEATH_KINDS. */
+export function deathOf(id) {
+    const list = Array.isArray(FLYER_ART.DEATHS) && FLYER_ART.DEATHS.length ? FLYER_ART.DEATHS : DEATH_KINDS;
+    const death = list[seedOf(id) % list.length];
+    return typeof death === 'string' ? death : death?.id ?? death?.kind ?? null;
 }
 
 /**
@@ -82,7 +104,8 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     const play = (name, options) => (quiet() ? null : audio.play(name, options));
 
     const finalScene = (model) => model.scene >= model.sceneStages;
-    const music = (model) => audio.setMusic(trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale }));
+    const music = (model) => audio.setMusic(trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale, boss: model.boss }));
+    let struckAt = -1e9;
     const walkerX = (model, id) => lastPoint(model.walkers.find((w) => w.id === id)?.walk)?.x;
     const volumeOf = (model, ...ids) => (model.me !== null && ids.includes(model.me) ? 1 : OTHERS_VOLUME);
 
@@ -154,7 +177,9 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         if (!f || at > f.expiresAt + 1000) return;
         const pan = panOf(flyerX(f, at));
         play('flyer.hit', { pan });
-        play('flyer.fall', { pan, delay: 0.05 });
+        // A zombie worker does not fall: it dies its own way.
+        if (f.kind === 'zombie') play(DEATH_SOUNDS[deathOf(event.flyer)] ?? 'flyer.fall', { pan, delay: 0.05 });
+        else play('flyer.fall', { pan, delay: 0.05 });
         const id = event.player?.id;
         const walker = id && model.walkers.find((w) => w.id === id);
         const fire = walker && SHOT_SOUNDS[walker.item];
@@ -206,10 +231,17 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             play('finale.meep', { delay: T.meep / 1000 });
         }
         if (step === 4) play('finale.reveal');
+        // Forced onto the dawn with FrankenPHP still standing: he crumbles now.
+        if (step === 7 && before.bossHp > 0) play('franken.die', { pan: panOf(FRANKEN_X) });
+        // The rooster and the brass as the sun starts to climb out from behind the hills.
+        if (step === 7) play('dawn.rise', { delay: 1 });
     }
 
     function walker(model, event, before) {
         const id = event.walker?.id;
+        // A newcomer walking in through the bar's door: the door creaks, if the walk has only just begun.
+        const door = model.barLayout?.door;
+        if (fromDoor(event.walker?.walk, door) && serverNow() - event.walker.walk.startedAt < DOOR_FRESH_MS) play('bar.door', { pan: panOf(door.x) });
         if (!id || before.walkers.has(id)) return;
         appeared.set(id, now());
         if (id === model.me) joinedNow(id);
@@ -240,7 +272,41 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         },
         take(model, event) {
             const id = event.player?.id;
+            // A pumpkin of step 5 hands out a mug: the sound is at the pumpkin.
+            if (event.pumpkin?.id) {
+                const pumpkin = model.elements.find((e) => e.id === event.pumpkin.id);
+                play('pumpkin.beer', { pan: panOf(pumpkin?.x ?? walkerX(model, id)), volume: volumeOf(model, id) });
+                return;
+            }
             play(event.ok ? 'bar.take' : 'bar.empty', { pan: panOf(walkerX(model, id)), volume: volumeOf(model, id) });
+        },
+        // The rapier (docs/spec/frontend.md, «Звук», «Рапира»).
+        word(model, event) {
+            const id = event.player?.id;
+            const pan = panOf(walkerX(model, id));
+            if (event.ok) {
+                play('word.ok', { pan, volume: volumeOf(model, id) });
+                return;
+            }
+            if (id && id === model.me) play('word.fail', { pan });
+            play('player.zombify', { pan, volume: volumeOf(model, id), delay: ZOMBIFY_S });
+        },
+        cure(model, event) {
+            const id = event.player?.id;
+            play('player.cure', { pan: panOf(walkerX(model, id)), volume: volumeOf(model, id, event.by?.id) });
+        },
+        strike(model, event) {
+            const id = event.player?.id;
+            if (now() - struckAt >= STRIKE_GAP_MS) {
+                struckAt = now();
+                play('shot.rapira', { pan: panOf(walkerX(model, id)), volume: volumeOf(model, id) });
+                play('franken.hit', { pan: panOf(FRANKEN_X), volume: volumeOf(model, id) });
+            }
+            if (event.hp === 0) play('franken.die', { pan: panOf(FRANKEN_X) });
+            music(model);
+        },
+        boss(model) {
+            music(model);
         },
         drink(model, event) {
             const id = event.player?.id;
@@ -278,12 +344,16 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             music(model);
             progress(model);
         },
-        reset(model) {
+        reset(model, event) {
             base = { scene: 0, stage: 0 };
             steps.forEach(cancel);
             steps = [];
-            audio.stopAll();
-            play('ui.reset');
+            // A new round of the evening (`again`) is a story's turn, not the console's cut: the dawn's music crossfades
+            // into the bar's.
+            if (event.again !== true) {
+                audio.stopAll();
+                play('ui.reset');
+            }
             music(model);
             audio.setIntensity(0.2);
         },
@@ -334,6 +404,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (c?.type === 'owl-away') play('finale.owlAway');
             if (c?.type === 'franken' && !quiet()) audio.speak('franken', c.text, { pan: panOf(c.x) });
             if (c?.type === 'clink') play('clink.glass', { pan: panOf(c.x), volume: 0.5 });
+            if (c?.type === 'owl-rapier') play('owl.rapier', { pan: panOf(c.x) });
         },
     };
 }

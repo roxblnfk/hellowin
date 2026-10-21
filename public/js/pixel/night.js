@@ -46,6 +46,8 @@ const MOONLIT = [150, 172, 226];
 const FIRE_WARM = [255, 150, 70];
 const BLOOD_BASE = [26, 6, 14];
 const BLOOD_LIT = [255, 120, 100];
+const DAWN_SHADE = [92, 70, 132];
+const DAWN_WARM = [255, 196, 170];
 
 // Each lighting is a function of one colour, so a baked layer can be recoloured pixel by pixel and a palette stays a
 // palette: the ~170 inputs give ~170 outputs.
@@ -81,9 +83,18 @@ const GRADES = {
         v = v.map((ch, i) => BLOOD_BASE[i] + ch * [0.58, 0.24, 0.3][i]);
         return mix(v, BLOOD_LIT, Math.max(0, y - 0.5) * 0.5);
     },
+    // Dawn (finale step 7): the first light, softer than the sunset — values just under the day, shadows pulled
+    // toward a cool mauve, highlights toward rose gold, greens a touch fresher than at dusk.
+    dawn: (c) => {
+        let v = regrade(c, { sat: 0.92, greenSat: 0.8, greenHue: 95 });
+        const y = luma(v);
+        v = v.map((ch, i) => ch * [0.98, 0.9, 0.9][i]);
+        v = mix(v, DAWN_SHADE, 0.32 * (1 - y) ** 1.6);
+        return mix(v, DAWN_WARM, 0.22 * y * y);
+    },
 };
 
-/** 'day' | 'sunset' | 'night' | 'firelight' | 'blood'. */
+/** 'day' | 'sunset' | 'night' | 'firelight' | 'blood' | 'dawn'. */
 export const LIGHTINGS = Object.keys(GRADES);
 
 const litCache = Object.fromEntries(LIGHTINGS.map((name) => [name, new Map()]));
@@ -109,6 +120,8 @@ export const EMISSIVE = new Set([
     // The finale's light (finale.js, FINALE_EMISSIVE): FrankenPHP's sparks and the cursed glow, lightning, the column.
     'frankenGlowCore', 'frankenGlowHot', 'frankenGlow', 'frankenGlowDark', 'frankenGlowDeep',
     'lightningCore', 'lightning', 'lightningEdge', 'columnCore',
+    // The rapier's gold and the rising sun of the dawn.
+    'goldCore', 'goldHot', 'goldGlow', 'goldDeep', 'dawnSun', 'dawnSunRim',
 ]);
 const EMISSIVE_COLORS = new Set([...EMISSIVE].map((key) => PALETTE[key]));
 
@@ -271,6 +284,7 @@ export const SKY = {
     sunset: ['sunsetTop', 'sunsetHigh', 'sunsetMid', 'sunsetLow', 'sunsetGlow'],
     night: ['nightTop', 'nightHigh', 'nightMid', 'nightLow'],
     blood: ['bloodTop', 'bloodHigh', 'bloodMid', 'bloodLow'],
+    dawn: ['dawnTop', 'dawnHigh', 'dawnMid', 'dawnLow', 'dawnGlow'],
 };
 SKY.firelight = SKY.night;
 
@@ -324,6 +338,9 @@ const SKY_LEGEND = {
     H: 'nightMid',
     o: 'sunsetSun',
     y: 'sunsetGlow',
+    D: 'dawnSun',
+    d: 'dawnSunRim',
+    g: 'dawnGlow',
 };
 const BLOOD_LEGEND = { ...SKY_LEGEND, W: 'bloodMoonLight', M: 'bloodMoon', S: 'bloodMoonShade', h: 'bloodLow', H: 'bloodMid' };
 
@@ -385,6 +402,22 @@ function sunsetSunSprite(r = 13) {
     return fromGrid(g, SKY_LEGEND);
 }
 
+// The dawn sun: a pale disk with a gold rim and a dithered ring of glow fading into the sky.
+function dawnSunSprite(r = 11, glow = 5) {
+    const R = r + glow;
+    const n = 2 * R + 1;
+    const g = grid(n, n);
+    for (let y = 0; y < n; y++) {
+        for (let x = 0; x < n; x++) {
+            const d = Math.hypot(x - R, y - R);
+            if (d <= r - 2.2) g[y][x] = 'D';
+            else if (d <= r + 0.3) g[y][x] = 'd';
+            else if (d <= R && dither(x, y) < (1 - (d - r) / glow) ** 1.4 * 0.8) g[y][x] = 'g';
+        }
+    }
+    return fromGrid(g, SKY_LEGEND);
+}
+
 const HALO_TONES = {
     warm: { a: 'pumpkin', b: 'pumpkinDeep' },
     candle: { a: 'pumpkinLight', b: 'pumpkinDark' },
@@ -392,6 +425,7 @@ const HALO_TONES = {
     violet: { a: 'violetGlow', b: 'violet' },
     franken: { a: 'frankenGlowHot', b: 'frankenGlowDark' },
     red: { a: 'rune', b: 'runeDark' },
+    gold: { a: 'goldHot', b: 'goldGlow' },
 };
 const haloCache = new Map();
 
@@ -399,7 +433,8 @@ const haloCache = new Map();
  * A dithered ground light rx × ry (flattened like the ground): two tones in Bayer steps, dense in the middle and
  * sparse at the edge. Meant for an additive blend at alpha ~0.5–0.7 over the night ground. Tones: 'warm' (the
  * bonfire), 'candle' (a walker's candle, lighter), 'green' (scene 2 magic), 'violet' (blood moon), 'franken' (the
- * cursed world's lime: a firefly's lantern), 'red' (the magic circle's red: a walker's red flame).
+ * cursed world's lime: a firefly's lantern), 'red' (the magic circle's red: a walker's red flame), 'gold' (the rapier:
+ * its blade and whoever holds it).
  */
 export function halo(rx, ry, tone = 'warm') {
     const key = `${rx}:${ry}:${tone}`;
@@ -457,6 +492,8 @@ export const NIGHT = {
     bloodMoonHalo: fromGrid(MOON_HALO, BLOOD_LEGEND),
     // The low striped sun of scene 1 (27×27), set it half behind the hills.
     sunsetSun: sunsetSunSprite(),
+    // The rising sun of finale step 7 (33×33 with its glow), centred; it climbs out from behind the hills.
+    dawnSun: dawnSunSprite(),
     // Stars: a bright and a dim dot, a cross and a sparkle; twinkle swaps cross ↔ sparkle every ~400 ms.
     stars: [
         sprite(['W'], SKY_LEGEND),

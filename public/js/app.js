@@ -1,4 +1,4 @@
-import { bindBar, bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
+import { bindBar, bindClinking, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 import { createOwl } from './owl.js';
 import { refusal } from './toasts.js';
@@ -178,17 +178,21 @@ async function main() {
             if (data?.ok === false) console.warn('click rejected', data.error);
         })
         .catch((error) => console.warn('click rpc failed', error));
+    // An RPC whose result comes back as channel events; a refusal (`zombified`, `not now`, `no rapier`…) is only warned.
+    const rpc = (method, params = {}) => centrifuge.rpc(method, params).then(({ data }) => {
+        if (data?.ok === false) console.warn(`${method} rejected`, data.error);
+        return data;
+    }).catch((error) => console.warn(`${method} rpc failed`, error));
     // In the cursed world a reachable pumpkin takes a clink instead: the walk comes as `move`, the glasses as `clink`.
-    const clink = (target) => centrifuge.rpc('clink', target)
-        .then(({ data }) => {
-            if (data?.ok === false) console.warn('clink rejected', data.error);
-        })
-        .catch((error) => console.warn('clink rpc failed', error));
+    const clink = (target) => rpc('clink', target);
+    // At finale step 5 with empty hands it hands out a mug instead: `move`, then `take` with `pumpkin`.
     root.addEventListener('click', (event) => {
         const element = event.target.closest('[data-element]');
         if (!element) return;
-        if (client.clinksPumpkin(element.dataset.element)) clink({ pumpkin: element.dataset.element });
-        else click(element.dataset.element);
+        const id = element.dataset.element;
+        if (client.beersPumpkin(id)) rpc('beer', { pumpkin: id });
+        else if (client.clinksPumpkin(id)) clink({ pumpkin: id });
+        else click(id);
     });
 
     // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back.
@@ -197,28 +201,27 @@ async function main() {
             if (data?.ok === false) console.warn('shot rejected', data.error);
         })
         .catch((error) => console.warn('shoot rpc failed', error)));
-    // After the shots: a press on a flyer stays a shot even over a walker.
-    bindClinking(root, scene, client, clink);
+    // After the shots: a press on a flyer stays a shot even over a walker; a zombie player at step 6 is cured.
+    bindClinking(root, scene, client, clink, (target) => rpc('cure', target));
+    // The rapier (docs/spec/frontend.md, «Рапира»): the word form and the blow at FrankenPHP.
+    bindWord(root, client, (text) => centrifuge.rpc('word', { text }).then(({ data }) => data));
+    bindStriking(root, client, () => rpc('strike'));
 
-    // The bar (protocol.md, «Бар»): a mug from the counter, a drink by Space or «Выпить». `not clinked` is a hint over
-    // my own walker only; the server broadcasts nothing for it.
-    const barRpc = (method, params = {}) => centrifuge.rpc(method, params).then(({ data }) => {
-        if (data?.ok === false) console.warn(`${method} rejected`, data.error);
-        return data;
-    }).catch((error) => console.warn(`${method} rpc failed`, error));
+    // The bar (protocol.md, «Бар») and the cursed world: a mug from the counter, a drink by Space or «Выпить».
+    // `not clinked` is a hint over my own walker only; the server broadcasts nothing for it.
     bindBar(root, client, {
-        take: () => barRpc('bar.take'),
-        drink: () => barRpc('drink').then((data) => {
+        take: () => rpc('bar.take'),
+        drink: () => rpc('drink').then((data) => {
             if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),
     });
-    // The scene's moments: the sound's cues, and an automatic clink in the bar that my walker strikes — reported once,
+    // The scene's moments: the sound's cues, and an automatic clink (the bar, the cursed world) that my walker strikes — reported once,
     // by this browser only, while the tab is visible (a hidden one does not get the clink counted, by design).
     scene?.onCue?.((cue) => {
         sound?.cue(cue);
         if (cue?.type !== 'clink' || document.visibilityState !== 'visible') return;
         const partner = client.autoClinkPartner(cue);
-        if (partner) barRpc('clink.auto', { walker: partner }).then((data) => data?.ok && client.clinkedAuto());
+        if (partner) rpc('clink.auto', { walker: partner }).then((data) => data?.ok && client.clinkedAuto());
     });
 
     // The character appears when the channel's `walker` event comes back, like everything else.

@@ -7,8 +7,11 @@ const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подго�
 const DEFAULT_STAGE_MAX = 4;
 // The counter outside the bar (protocol.md, `bar` in the snapshot); `drunk` and `target` — the hall's goal.
 const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target: 0 });
-// The last finale step: past it the final scene is the cursed world.
+// The finale steps of docs/spec/scenario.md, «Рапира»: the cursed world with its goal (5), the owl's rapier and the boss
+// (6, still the cursed world), the dawn (7).
 const CURSED_STEP = 5;
+const RAPIER_STEP = 6;
+const DAWN_STEP = 7;
 // From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
 const RUNNER_STEP = 3;
 // The HUD's connection line; through the evening the other side seems to answer.
@@ -58,6 +61,30 @@ export function drinksOf(bar) {
     return { text: `Выпито ${drunk} из ${target}`, fill: target > 0 ? Math.min(1, drunk / target) : 0 };
 }
 
+const count = (n, fallback = 0) => (Number.isInteger(n) && n >= 0 ? n : fallback);
+
+/** `cursed` of a snapshot or an event (the goal of finale step 5), or null. */
+export function cursedOf(cursed) {
+    if (!cursed || typeof cursed !== 'object') return null;
+    return { drunk: count(cursed.drunk), slain: count(cursed.slain), drinksTarget: count(cursed.drinksTarget), zombiesTarget: count(cursed.zombiesTarget) };
+}
+
+/** `boss` of a snapshot or an event — FrankenPHP's {hp, max} once awake — or null. */
+export function bossOf(boss) {
+    if (!boss || !Number.isInteger(boss.hp)) return null;
+    const hp = Math.max(0, boss.hp);
+    return { hp, max: Math.max(hp, count(boss.max)) };
+}
+
+/** The two meters of step 5: «Выпито 7 из 20» and «Зомби 3 из 20», each with how full it is, 0–1. */
+export function goalsOf(cursed) {
+    const meter = (label, n, target) => ({ n, target, text: `${label} ${n} из ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
+    return {
+        drinks: meter('Выпито', cursed?.drunk ?? 0, cursed?.drinksTarget ?? 0),
+        zombies: meter('Зомби', cursed?.slain ?? 0, cursed?.zombiesTarget ?? 0),
+    };
+}
+
 function parseJson(json, fallback) {
     try {
         return JSON.parse(json || 'null') ?? fallback;
@@ -96,6 +123,8 @@ export function readSnapshot(root) {
         finale: parseFinale(root.dataset.finale),
         paused: flag(root.dataset.paused),
         zombies: flag(root.dataset.zombies),
+        cursed: cursedOf(parseJson(root.dataset.cursed, null)),
+        boss: bossOf(parseJson(root.dataset.boss, null)),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => {
             const element = {
                 id: el.dataset.element,
@@ -153,6 +182,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const hud = (name) => root.querySelector(`[data-hud-${name}]`);
     const button = (id) => root.querySelector(`[data-element="${CSS.escape(id)}"]`);
     const findElement = (id) => model.elements.find((e) => e.id === id);
+    /** The finale step, or null outside the final scene. */
+    const step = () => (model.scene >= model.sceneStages ? model.finale?.step ?? null : null);
+    // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
+    let wordClosed = false;
 
     function paintElement(element) {
         const el = button(element.id);
@@ -209,17 +242,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         set('scene-name', sceneName());
         set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
         set('total', pumpkinsOf().length);
-        // The bar has no pumpkins: its meter of mugs drunk stands in for «готово N из M».
+        // The bar has no pumpkins: its meter of mugs drunk stands in for «готово N из M»; step 5 has its two goals.
         const progress = hud('progress');
-        if (progress) progress.hidden = isBar(model.scene);
+        if (progress) progress.hidden = isBar(model.scene) || step() === CURSED_STEP;
         const ready = hud('ready');
-        // In the final scene `ready` stays on through the finale; it waits for the moderator only at step 0.
-        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= 1);
+        // In the final scene `ready` stays on through the finale; it waits for the moderator at step 0 (the closed
+        // circle) and at step 5 (the cursed world's goals met).
+        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && step() !== 0 && step() !== CURSED_STEP);
     }
 
     function sceneName() {
         if (model.scene < model.sceneStages) return SCENE_NAMES[model.scene] ?? '';
-        return (model.finale?.step ?? 0) >= CURSED_STEP ? 'Проклятый мир' : 'Финал';
+        if (step() >= DAWN_STEP) return 'Рассвет';
+        return step() >= CURSED_STEP ? 'Проклятый мир' : 'Финал';
     }
 
     // Story state shared by the HUD, the console and CSS: body attributes plus the reveal panel.
@@ -264,20 +299,72 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             counter.setAttribute('aria-disabled', String(!(bar && canWalk() && !holdsBeer())));
         }
         const drink = root.querySelector('[data-drink]');
-        // Alone in the bar a player may drink without a clink (the server checks the same walkers).
-        if (drink) drink.hidden = !(bar && canWalk() && holdsBeer() && (model.clinked || model.walkers.length <= 1));
-        const meter = hud('drinks');
-        if (meter) {
-            const { text, fill } = drinksOf(model.bar);
-            meter.hidden = !bar;
-            meter.toggleAttribute('data-full', fill >= 1);
-            meter.setAttribute('aria-valuenow', String(model.bar.drunk));
-            meter.setAttribute('aria-valuemax', String(model.bar.target));
-            meter.setAttribute('aria-valuetext', text);
-            meter.style.setProperty('--fill', String(fill));
-            const label = root.querySelector('[data-hud-drinks-text]');
-            if (label) label.textContent = text;
+        // Alone on the field a player may drink without a clink (the server checks the same walkers).
+        if (drink) drink.hidden = !(drinks() && (model.clinked || model.walkers.length <= 1));
+        const { text, fill } = drinksOf(model.bar);
+        paintMeter(hud('drinks'), root.querySelector('[data-hud-drinks-text]'), { shown: bar, text, fill, n: model.bar.drunk, target: model.bar.target });
+    }
+
+    // A pixel meter of the HUD (role="progressbar"): the bar's mugs, the cursed world's goals.
+    function paintMeter(meter, label, { shown, text, fill, n, target }) {
+        if (!meter) return;
+        meter.hidden = !shown;
+        meter.toggleAttribute('data-full', fill >= 1);
+        meter.setAttribute('aria-valuenow', String(n));
+        meter.setAttribute('aria-valuemax', String(target));
+        meter.setAttribute('aria-valuetext', text);
+        meter.style.setProperty('--fill', String(fill));
+        if (label) label.textContent = text;
+    }
+
+    // The rapier's part of the page (docs/spec/frontend.md, «Рапира»): the goals of step 5, FrankenPHP's health and the
+    // button over him, the word form or the zombie's line, and the state attributes CSS keys off.
+    function paintRapier() {
+        const body = document.body;
+        const alive = model.boss !== null && model.boss.hp > 0;
+        root.dataset.cursed = JSON.stringify(model.cursed);
+        root.dataset.boss = JSON.stringify(model.boss);
+        body.toggleAttribute('data-zombified', zombified());
+        body.toggleAttribute('data-boss', alive);
+        const goals = goalsOf(model.cursed);
+        for (const goal of ['drinks', 'zombies']) {
+            const meter = root.querySelector(`[data-hud-goal="${goal}"]`);
+            paintMeter(meter, meter?.querySelector('[data-hud-goal-text]'), { shown: step() === CURSED_STEP && model.cursed !== null, ...goals[goal] });
         }
+        const hp = root.querySelector('[data-boss-hp]');
+        if (hp) {
+            hp.hidden = !alive || step() !== RAPIER_STEP;
+            if (alive) {
+                const text = `HP ${model.boss.hp} / ${model.boss.max}`;
+                hp.setAttribute('aria-valuenow', String(model.boss.hp));
+                hp.setAttribute('aria-valuemax', String(model.boss.max));
+                hp.setAttribute('aria-valuetext', text);
+                hp.style.setProperty('--hp', String(model.boss.max > 0 ? model.boss.hp / model.boss.max : 0));
+                const label = hp.querySelector('[data-boss-hp-text]');
+                if (label) label.textContent = text;
+            }
+        }
+        const franken = root.querySelector('[data-franken]');
+        if (franken) {
+            franken.hidden = !alive || step() !== RAPIER_STEP;
+            franken.setAttribute('aria-disabled', String(!strikes()));
+        }
+        const word = root.querySelector('[data-word]');
+        if (word) word.hidden = wordClosed || !asksWord();
+        const zombie = root.querySelector('[data-word-zombie]');
+        if (zombie) zombie.hidden = !zombified();
+    }
+
+    // The HP bar flinches at a strike: the attribute is taken off and put back so a burst restarts the flash.
+    let hitTimer = 0;
+    function flashHp() {
+        const hp = root.querySelector('[data-boss-hp]');
+        if (!hp) return;
+        hp.removeAttribute('data-hit');
+        void hp.offsetWidth;
+        hp.setAttribute('data-hit', '');
+        clearTimeout(hitTimer);
+        hitTimer = setTimeout(() => hp.removeAttribute('data-hit'), 160);
     }
 
     function paintAll() {
@@ -293,6 +380,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintElements();
         paintHud();
         paintBar();
+        paintRapier();
     }
 
     function load(snapshot) {
@@ -313,6 +401,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             finale: snapshot.finale ?? null,
             paused: Boolean(snapshot.paused),
             zombies: Boolean(snapshot.zombies),
+            cursed: cursedOf(snapshot.cursed),
+            boss: bossOf(snapshot.boss),
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
@@ -338,7 +428,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     }
 
     function snapshotOf() {
-        return { ...model, bar: { ...model.bar }, elements: model.elements.map((e) => ({ ...e })), walkers: model.walkers.map((w) => ({ ...w })) };
+        return { ...model, bar: { ...model.bar }, cursed: model.cursed && { ...model.cursed }, boss: model.boss && { ...model.boss }, elements: model.elements.map((e) => ({ ...e })), walkers: model.walkers.map((w) => ({ ...w })) };
     }
 
     /** Re-reads the whole state over RPC; events arriving meanwhile are dropped, the snapshot covers them. */
@@ -386,6 +476,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.walkers = [...model.walkers.filter((x) => x.id !== w.id), w];
             scene?.walker(w);
             paintBar();
+            paintRapier();
         },
 
         move(event) {
@@ -402,8 +493,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         clink(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (w) delete w.clink;
-            // In the bar a clink counts for both glasses: mine, whether I came up or was the target.
-            if (isBar(model.scene) && model.me !== null && (event.player?.id === model.me || event.walker?.id === model.me)) {
+            // A clink counts for both glasses (with a pumpkin, the one who came up): mine, whether I came up or was the target.
+            if ((isBar(model.scene) || cursed()) && model.me !== null && (event.player?.id === model.me || event.walker?.id === model.me)) {
                 model.clinked = true;
                 paintBar();
             }
@@ -415,6 +506,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.walkers = model.walkers.filter((x) => x.id !== id);
             scene?.leave(id);
             paintBar();
+            paintRapier();
         },
 
         // Every viewer plays the same foam from `since` to `until` on the server clock.
@@ -439,9 +531,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
         },
 
-        // A `bar.take` reached the counter: the first to arrive got a mug, a latecomer shrugs.
+        // A `bar.take` reached the counter: the first to arrive got a mug, a latecomer shrugs. With `pumpkin` a `beer`
+        // reached a pumpkin of step 5, which never runs dry; the scene hands the mug over before the walker holds it.
         take(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (event.pumpkin?.id) {
+                scene?.takeFromPumpkin?.(event.pumpkin.id, event.player?.id ?? null);
+                if (w) {
+                    w.item = 'beer';
+                    scene?.walker({ ...w });
+                }
+                if (event.player?.id === model.me) model.clinked = false;
+                paintBar();
+                paintRapier();
+                return;
+            }
             if (event.ok) {
                 if (Number.isInteger(event.mugs)) model.bar = { ...model.bar, mugs: event.mugs };
                 if (w) {
@@ -512,11 +616,74 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         finale(event) {
             model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
+            // Into step 5 the closed circle's readiness is gone: from here only the cursed world's goals give it.
+            if (event.step === CURSED_STEP) model.ready = false;
+            // The dawn lifts every zombie and fells FrankenPHP, whether his health ran out or the moderator forced it.
+            const lifted = event.step >= DAWN_STEP ? model.walkers.filter((w) => w.zombie) : [];
+            lifted.forEach((w) => delete w.zombie);
+            if (event.step >= DAWN_STEP && model.boss) {
+                model.boss = { ...model.boss, hp: 0 };
+                scene?.boss?.({ ...model.boss });
+            }
+            if ('item' in event) model.clinked = false;
+            else lifted.forEach((w) => scene?.walker({ ...w }));
+            if (event.step >= DAWN_STEP) wordClosed = false;
             // The circle takes clicks at step 0 only; the pumpkins drop at step 2 and float again at step 5.
             paintElements();
             paintStory();
             paintFinale();
             handOut(event);
+            paintBar();
+            paintRapier();
+        },
+
+        // The goal of step 5: mugs drunk and zombies slain against their targets (readiness itself comes as `ready`).
+        cursed(event) {
+            model.cursed = cursedOf(event);
+            paintRapier();
+        },
+
+        // FrankenPHP woke up with the first rapier (glasses, health), or the moderator changed his health.
+        boss(event) {
+            model.boss = bossOf(event);
+            scene?.boss?.(model.boss && { ...model.boss });
+            paintRapier();
+        },
+
+        // A rapier's blow: the golden chain lightning from the striker, the health the server counted after it.
+        strike(event) {
+            if (Number.isInteger(event.hp)) model.boss = bossOf({ hp: event.hp, max: Math.max(event.hp, model.boss?.max ?? 0) });
+            scene?.strike?.(event);
+            scene?.boss?.(model.boss && { ...model.boss });
+            paintRapier();
+            flashHp();
+        },
+
+        // The magic word, checked by the server only: the rapier in hand, or a zombie worker the server walks around.
+        word(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (w) {
+                if (event.ok) w.item = 'rapier';
+                else w.zombie = true;
+                scene?.word?.(event);
+                scene?.walker({ ...w });
+            }
+            if (event.player?.id === model.me) wordClosed = false;
+            paintBar();
+            paintRapier();
+        },
+
+        // A zombie player cured by someone else: the item stays, and the word is offered again.
+        cure(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (w) {
+                delete w.zombie;
+                scene?.cure?.(event);
+                scene?.walker({ ...w });
+            }
+            if (event.player?.id === model.me) wordClosed = false;
+            paintBar();
+            paintRapier();
         },
 
         // The bubble is a moment, not state: a resync does not bring an old line back.
@@ -564,6 +731,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.finale = null;
             model.zombies = false;
             model.clinked = false;
+            model.cursed = null;
+            model.boss = null;
+            wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.
             model.bar = barOf(event.bar ? { target: model.bar.target, ...event.bar } : null);
             model.ready = model.bar.target > 0 && model.bar.drunk >= model.bar.target;
@@ -576,9 +746,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             });
             const placed = Array.isArray(event.walkers);
             if (placed) model.walkers = event.walkers.map((w) => ({ ...w }));
-            else handOut(event);
+            else {
+                model.walkers.forEach((w) => delete w.zombie);
+                handOut(event);
+            }
             paintAll();
-            scene?.render(snapshotOf());
+            // `again`: the dawn's «В бар», a new round of the evening — the scene fades the dawn into the bar instead of
+            // cutting to it like the console's reset.
+            scene?.render(snapshotOf(), { again: event.again === true });
             if (placed) scene?.setWalkers?.(model.walkers.map((w) => ({ ...w })));
         },
     };
@@ -602,12 +777,31 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         });
     }
 
-    /** Whether this browser has a character on the field and may send `move`. */
-    const canWalk = () => model.me !== null && model.walkers.some((w) => w.id === model.me);
+    /** Whether my walker is a zombie worker (a wrong word): the server walks it, every action of mine is off. */
+    function zombified() {
+        return myWalker()?.zombie === true;
+    }
+    /** Whether this browser has a character on the field and may send `move`: not while it is a zombie. */
+    function canWalk() {
+        return myWalker() !== null && !zombified();
+    }
     /** Whether the story is in the cursed world (finale step 5+), where a click may clink glasses. */
-    const cursed = () => model.scene >= model.sceneStages && (model.finale?.step ?? -1) >= CURSED_STEP;
+    const cursed = () => (step() ?? -1) >= CURSED_STEP;
     const inBar = () => isBar(model.scene);
     const beerOf = (id) => model.walkers.find((w) => w.id === id)?.item === 'beer';
+    const zombieOf = (id) => model.walkers.find((w) => w.id === id)?.zombie === true;
+    /** Whether Space or «Выпить» sends RPC `drink`: in the bar or the cursed world with beer in hand — the server says. */
+    function drinks() {
+        return (inBar() || cursed()) && canWalk() && holdsBeer();
+    }
+    /** Whether a click on FrankenPHP is RPC `strike`: step 6, he is awake and standing, a rapier in my hand. */
+    function strikes() {
+        return step() === RAPIER_STEP && (model.boss?.hp ?? 0) > 0 && canWalk() && myWalker().item === 'rapier';
+    }
+    /** Whether the word form is open to me: step 6, my walker on the field, no rapier yet, not a zombie. */
+    function asksWord() {
+        return step() === RAPIER_STEP && canWalk() && myWalker().item !== 'rapier';
+    }
 
     return {
         model,
@@ -642,8 +836,31 @@ export function createClient(root, scene, { requestState, requestTime = () => re
          * cursed world — or in the bar, where both of us hold beer.
          */
         clinksWalker(id) {
-            if (!id || id === model.me || !canWalk() || !model.walkers.some((w) => w.id === id)) return false;
+            if (!id || id === model.me || !canWalk() || !model.walkers.some((w) => w.id === id) || zombieOf(id)) return false;
             return cursed() || (inBar() && beerOf(model.me) && beerOf(id));
+        },
+
+        /** Whether a click on walker `id` is RPC `cure {walker}`: step 6, someone else's zombie, and I am on the field and no zombie. */
+        curesWalker(id) {
+            return step() === RAPIER_STEP && Boolean(id) && id !== model.me && canWalk() && zombieOf(id);
+        },
+
+        /** Whether a click on element `id` is RPC `beer {pumpkin}`: step 5, a reachable pumpkin, my hands empty. */
+        beersPumpkin(id) {
+            const element = findElement(id);
+            return Boolean(element && isPumpkin(element) && element.reachable) && step() === CURSED_STEP && canWalk() && !myWalker().item;
+        },
+
+        strikes,
+
+        asksWord,
+
+        zombified,
+
+        /** My word was answered: the form closes until the event about it arrives. */
+        closeWord() {
+            wordClosed = true;
+            paintRapier();
         },
 
         /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and empty hands. */
@@ -651,18 +868,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             return inBar() && canWalk() && !holdsBeer();
         },
 
-        /** Whether Space or «Выпить» sends RPC `drink`: in the bar with beer in hand, clinked or not — the server says. */
-        drinks() {
-            return inBar() && canWalk() && holdsBeer();
-        },
+        drinks,
 
         /**
          * The partner to report in RPC `clink.auto` for an automatic clink striking now (scene cue `clink` with `sides`
-         * in config coordinates), or null: only in the bar and only when my walker is in the group with beer — the
-         * nearest other side that holds beer.
+         * in config coordinates), or null: only in the bar or the cursed world, and only when my walker is in the group
+         * with beer — the nearest other side that holds beer.
          */
         autoClinkPartner(cue) {
-            if (!inBar() || !holdsBeer() || !Array.isArray(cue?.sides)) return null;
+            if (!drinks() || !Array.isArray(cue?.sides)) return null;
             const mine = cue.sides.find((side) => side.id === model.me);
             if (!mine) return null;
             let best = null;
@@ -681,10 +895,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
         },
 
-        /** Whether a click on element `id` is a clink (RPC `clink {pumpkin}`) instead of `click`: a reachable pumpkin, likewise. */
+        /**
+         * Whether a click on element `id` is a clink (RPC `clink {pumpkin}`) instead of `click`: a reachable pumpkin at
+         * step 5 with beer in my hand (from step 6 the pumpkins hold no mugs).
+         */
         clinksPumpkin(id) {
             const element = findElement(id);
-            return Boolean(element && isPumpkin(element) && element.reachable) && cursed() && canWalk();
+            return Boolean(element && isPumpkin(element) && element.reachable) && step() === CURSED_STEP && canWalk() && holdsBeer();
         },
 
         /**
@@ -723,7 +940,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 return;
             }
             // What the event changed is the sound's cue: a finale step that follows the one before, a new walker.
-            const before = sound && { scene: model.scene, stageMax: model.stageMax, step: model.finale?.step ?? null, walkers: new Set(model.walkers.map((w) => w.id)) };
+            const before = sound && { scene: model.scene, stageMax: model.stageMax, step: model.finale?.step ?? null, walkers: new Set(model.walkers.map((w) => w.id)), bossHp: model.boss?.hp ?? null };
             handler(event);
             sound?.event(event, model, before);
             onChange(model);
@@ -765,7 +982,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-word], [data-word-zombie]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
@@ -800,16 +1017,19 @@ export function bindShooting(root, scene, shoot) {
  * (`clinksWalker`), instead of a step to that spot or a click on a pumpkin button over it. Runs on the root in the
  * capture phase after bindShooting, so a flyer shot (already prevented) stays first; a keyboard click (`detail` 0,
  * no pointer position) is left to its button. Over such a walker the root gets `data-clink-hover` (a pointer cursor).
+ * At finale step 6 a click on a zombie player cures it instead (`curesWalker`).
  *
- * @param {{clinksWalker: (id: string) => boolean}} client  the client model's routing
+ * @param {{clinksWalker: (id: string) => boolean, curesWalker?: (id: string) => boolean}} client  the client model's routing
  * @param {(target: {walker: string}) => void} clink  sends RPC `clink`; nothing is drawn until the `move` and `clink` events
+ * @param {(target: {walker: string}) => void} [cure]  sends RPC `cure`; the cure is drawn on the `cure` event
  */
-export function bindClinking(root, scene, client, clink) {
+export function bindClinking(root, scene, client, clink, cure = null) {
     if (!scene) return;
+    const cures = (id) => Boolean(cure && client.curesWalker?.(id));
     const target = (event) => {
         if (event.target.closest?.(UI)) return null;
         const id = scene.walkerHit(event.clientX, event.clientY);
-        return id && client.clinksWalker(id) ? id : null;
+        return id && (cures(id) || client.clinksWalker(id)) ? id : null;
     };
     root.addEventListener('click', (event) => {
         if (event.defaultPrevented || event.detail === 0) return;
@@ -817,7 +1037,8 @@ export function bindClinking(root, scene, client, clink) {
         if (!id) return;
         event.preventDefault();
         event.stopPropagation();
-        clink({ walker: id });
+        if (cures(id)) cure({ walker: id });
+        else clink({ walker: id });
     }, { capture: true });
     root.addEventListener('pointermove', (event) => {
         if (event.pointerType === 'touch') return;
@@ -832,14 +1053,14 @@ const SPACE_TAKERS = 'input, textarea, select, button, [contenteditable]:not([co
 /**
  * Whether a keydown is the bar's Space for a drink: plain Space (no modifiers, no auto-repeat), not on a control that
  * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say. The
- * counter button is no such control: a mouse click on it keeps the focus there, and with beer in hand it has nothing
- * to do with Space anyway.
+ * counter button and a pumpkin button are no such controls: a mouse click on them (a mug, a beer or a clink) keeps the
+ * focus there, and while I may drink Space is the drink; Enter still presses them.
  */
 export function isDrinkKey(event, doc = globalThis.document) {
     if (event.code !== 'Space' && event.key !== ' ') return false;
     if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
     const taker = event.target?.closest?.(SPACE_TAKERS);
-    if ((taker && !taker.matches('[data-bar-counter]')) || event.target?.isContentEditable) return false;
+    if ((taker && !taker.matches('[data-bar-counter], .pumpkin')) || event.target?.isContentEditable) return false;
     return !doc?.querySelector?.('dialog[open]');
 }
 
@@ -868,6 +1089,74 @@ export function bindBar(root, client, { take, drink }, doc = globalThis.document
     });
 }
 
+// The word form's answers to a refusal (protocol.md, RPC `word`); anything else is «Не вышло».
+const WORD_ERRORS = {
+    'not now': 'Сейчас не время',
+    'has rapier': 'Рапира уже у тебя',
+    zombified: 'Зомби слов не молвят',
+    'invalid text': 'От 1 до 40 знаков',
+    'no character': 'Сначала выйди на поле',
+    'rate limited': 'Не так быстро',
+};
+const WORD_NOTE_MS = 3000;
+
+/**
+ * The magic word of finale step 6 (docs/spec/frontend.md, «Рапира»): the form at the top sends RPC `word {text}`.
+ * Only the server knows the word and its forms: the page turns down nothing but an empty line. An answer closes the
+ * form (`client.closeWord`); the rapier or the zombie comes as the `word` event, a refusal is a note under the field.
+ *
+ * @param {{closeWord: () => void}} client
+ * @param {(text: string) => Promise<{ok: boolean, correct?: boolean, error?: string}|undefined>} say  RPC `word`
+ */
+export function bindWord(root, client, say) {
+    const form = root.querySelector('[data-word]');
+    if (!form) return;
+    const input = form.querySelector('[data-word-input]');
+    const submit = form.querySelector('[data-word-submit]');
+    const note = form.querySelector('[data-word-note]');
+    let noteTimer = 0;
+    const tell = (text) => {
+        note.textContent = text;
+        clearTimeout(noteTimer);
+        noteTimer = setTimeout(() => (note.textContent = ''), WORD_NOTE_MS);
+    };
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) {
+            tell('Молви хоть что-нибудь');
+            return;
+        }
+        submit.disabled = true;
+        try {
+            const reply = await say(text);
+            if (reply?.ok) {
+                input.value = '';
+                note.textContent = '';
+                client.closeWord();
+            } else {
+                tell(WORD_ERRORS[reply?.error] ?? 'Не вышло');
+            }
+        } catch (error) {
+            console.warn('word rpc failed', error);
+            tell('Не вышло');
+        } finally {
+            submit.disabled = false;
+        }
+    });
+}
+
+/**
+ * The button over FrankenPHP at finale step 6: a blow of my rapier (RPC `strike`) when `client.strikes()`, else
+ * nothing. The lightning and the health come back as the `strike` event.
+ */
+export function bindStriking(root, client, strike) {
+    root.querySelector('[data-franken]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (client.strikes()) strike();
+    });
+}
+
 /**
  * Walking: a click on the ground — not on a pumpkin, not on a control, and not on a flyer (bindShooting swallows
  * those in the capture phase) — asks the server to walk there. Nothing moves locally; the `move` event does it.
@@ -878,7 +1167,7 @@ export function bindBar(root, client, { take, drink }, doc = globalThis.document
 export function bindWalking(root, scene, canWalk, move) {
     if (!scene) return;
     root.addEventListener('click', (event) => {
-        if (event.defaultPrevented || event.target.closest(`[data-element], ${UI}`) || !canWalk()) return;
+        if (event.defaultPrevented || event.target.closest(`[data-element], [data-franken], ${UI}`) || !canWalk()) return;
         const point = scene.groundAt(event.clientX, event.clientY);
         if (point) move(point);
     });

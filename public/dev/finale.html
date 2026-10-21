@@ -21,7 +21,7 @@
   Light sources (FINALE_EMISSIVE, plus night.js EMISSIVE) are baked unlit here, as the scene will once it adds them.
 -->
 <body>
-<h2>Финал (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,mock1x,franken,silhouette,runner,fx,ritual,owl,pumpkins,palette)</h2>
+<h2>Финал (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,mock1x,franken,silhouette,runner,fx,ritual,owl,rapier,pumpkins,palette)</h2>
 <div id="out"></div>
 <script type="module">
     import { PALETTE } from '../js/pixel/palette.js';
@@ -29,8 +29,8 @@
     import { ASH } from '../js/pixel/bonfire.js';
     import { EMISSIVE, LIT_PALETTE, NIGHT, halo, paintSky, relightCanvas } from '../js/pixel/night.js';
     import { characterFrame, randomLook } from '../js/pixel/characters.js';
-    import { OWL, OWL_FLIGHT, glowing } from '../js/pixel/owl.js';
-    import { FRANKEN, SILHOUETTE, RUNNER, FX, FINALE_EMISSIVE, frankenHalo } from '../js/pixel/finale.js';
+    import { OWL, OWL_FLIGHT, OWL_RAPIER, armed, glowing } from '../js/pixel/owl.js';
+    import { BOSS, FRANKEN, SILHOUETTE, RUNNER, FX, FINALE_EMISSIVE, breathOf, frankenHalo } from '../js/pixel/finale.js';
 
     const params = new URLSearchParams(location.search);
     const frozen = params.has('t') ? Number(params.get('t')) : null;
@@ -471,6 +471,80 @@
         ...sheet(OF.map(([l, s]) => [l, glowing(s)]), 'night', zoom),
         live('night', (t) => glowing(OWL_FLIGHT.fly[frameAt(t, 4, 90)]), OWL_FLIGHT.fly[0], zoom),
     ], '#5c8a84');
+
+    // ------------------------------------------------------------------ the rapier (finale steps 6–7)
+    BG.dawn = css(LIT_PALETTE.dawn.soil);
+    const boss = (frame, glint = 0) => cell(FRANKEN.w, FRANKEN.h, zoom, (ctx) => {
+        ctx.fillStyle = BG.night;
+        ctx.fillRect(0, 0, FRANKEN.w, FRANKEN.h);
+        stamp(ctx, bakeFinale(frame, 'night'), frame, FRANKEN.anchor.x, FRANKEN.anchor.y);
+        const glasses = BOSS.glasses[breathOf(frame)][glint];
+        stamp(ctx, bakeFinale(glasses, 'night'), glasses, FRANKEN.anchor.x, FRANKEN.anchor.y);
+    });
+    section('rapier', `Босс: чёрные очки на кадрах FRANKEN (вдох — очки выше), блик по линзам ×2, вздрагивание hit — ночь, ${zoom}×`, () => [
+        boss(FRANKEN.idle[0]), boss(FRANKEN.idle[1]), boss(FRANKEN.talk[1]), boss(FRANKEN.talk[2]),
+        boss(FRANKEN.idle[0], 1), boss(FRANKEN.idle[0], 2), boss(BOSS.hit),
+    ]);
+    for (const lighting of ['night', 'dawn']) {
+        section('rapier', `Груда пепла: рассыпается ×6 (по 270 мс), пепел ×3 (угольки), очки на груде — ${lighting}`, () => [
+            ...sheet(BOSS.collapse.map((s, i) => [`collapse${i}`, s]), lighting, Math.max(1, zoom - 1)),
+            ...sheet(BOSS.ash.map((s, i) => [`ash${i}`, s]), lighting, Math.max(1, zoom - 1)),
+            cell(FRANKEN.w, FRANKEN.h, Math.max(1, zoom - 1), (ctx) => {
+                ctx.fillStyle = BG[lighting];
+                ctx.fillRect(0, 0, FRANKEN.w, FRANKEN.h);
+                stamp(ctx, bakeFinale(BOSS.ash[0], lighting), BOSS.ash[0], FRANKEN.anchor.x, FRANKEN.anchor.y);
+                stamp(ctx, bakeFinale(BOSS.glassesFallen, lighting), BOSS.glassesFallen, FRANKEN.anchor.x - 2, FRANKEN.anchor.y - 10);
+            }, 'ash + очки'),
+        ]);
+    }
+    // The golden chain lightning: its three shapes of one strike, and the strike looping (50 ms each, then thinning).
+    const chainCell = (pick, label) => cell(120, 80, zoom, (ctx, t) => {
+        ctx.fillStyle = BG.night;
+        ctx.fillRect(0, 0, 120, 80);
+        const { shape, thin } = pick(t);
+        if (!shape) return;
+        const { core, edge } = FX.chain({ x: 8, y: 72 }, { x: 110, y: 14 }, shape);
+        if (!thin) {
+            ctx.fillStyle = css(PALETTE.goldGlow);
+            for (const [x, y] of edge) ctx.fillRect(x, y, 1, 1);
+        }
+        ctx.fillStyle = css(thin ? PALETTE.goldHot : PALETTE.goldCore);
+        core.forEach(([x, y], i) => (!thin || i % (thin + 1) === 0) && ctx.fillRect(x, y, 1, 1));
+    }, label);
+    section('rapier', 'Золотая цепная молния (FX.chain): три формы одного удара и удар целиком в цикле 600 мс', () => [
+        ...[1, 2, 3].map((seed) => chainCell(() => ({ shape: seed }), `shape${seed}`)),
+        chainCell((t) => {
+            const s = t % 600;
+            return s < 150 ? { shape: 1 + Math.floor(s / 50) } : s < 300 ? { shape: 3, thin: 1 + Math.floor((s - 150) / 50) } : {};
+        }, 'live'),
+    ]);
+    section('rapier', `Сова с рапирой: достаёт ×2, держит (блик ×3), говорит, ухает — ночь (глаза светятся) и рассвет, ${zoom}×`, () => ['night', 'dawn'].flatMap((lighting) => {
+        const g = lighting === 'night' ? glowing : (s) => s;
+        return sheet([
+            ['draw0', OWL_RAPIER.draw[0]], ['draw1', OWL_RAPIER.draw[1]],
+            ...[0, 1, 2].map((k) => [`glint${k}`, armed(OWL.idle[0], k)]),
+            ['talk', armed(OWL.talk[1])], ['hoot', armed(OWL.hoot)],
+        ].map(([l, s]) => [l, g(s)]), lighting, zoom);
+    }), '#2a2630');
+    // Players: the rapier in hand (its blade's light over the frame, the gold rim behind it) and the zombie look.
+    const playerCell = (look, view, rim, label) => cell(34, 42, zoom, (ctx) => {
+        ctx.fillStyle = BG.night;
+        ctx.fillRect(0, 0, 34, 42);
+        const f = characterFrame(look, view);
+        if (rim) {
+            const src = f.canvas.getContext('2d').getImageData(0, 0, 32, 40).data;
+            const solid = (x, y) => x >= 0 && y >= 0 && x < 32 && y < 40 && src[(y * 32 + x) * 4 + 3] > 0;
+            ctx.fillStyle = css(PALETTE.goldGlow);
+            for (let y = -1; y <= 40; y++) for (let x = -1; x <= 32; x++) if (!solid(x, y) && (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1))) ctx.fillRect(x + 1, y + 1, 1, 1);
+        }
+        ctx.drawImage(relightCanvas(f.canvas, 'night'), 1, 1);
+        if (f.glow) ctx.drawImage(f.glow, 1, 1);
+    }, label);
+    section('rapier', 'Рапира в руке (idle / walk / shoot / toast × front / side / back) со свечением — ночь', () => looks.slice(0, 2).flatMap((look, i) => ['front', 'side', 'back'].flatMap((dir) => ['idle', 'walk', 'shoot', 'toast'].map((pose) => playerCell(look, { dir, pose, frame: 1, item: 'rapier' }, true, `${i} ${dir[0]} ${pose}`)))));
+    section('rapier', 'Зомби-игрок: shamble ×4 и lurch ×2 × front / side / back — ночь', () => looks.slice(2, 4).flatMap((look, i) => ['front', 'side', 'back'].flatMap((dir) => [
+        ...[0, 1, 2, 3].map((frame) => playerCell(look, { dir, pose: 'shamble', frame, zombie: true }, false, `${i} ${dir[0]} sh${frame}`)),
+        ...[0, 1].map((frame) => playerCell(look, { dir, pose: 'lurch', frame, zombie: true }, false, `${i} ${dir[0]} lu${frame}`)),
+    ])));
 
     // ------------------------------------------------------------------ cursed-world pumpkins
     const SHOW = { l: 'pumpkin-7', m: 'pumpkin-1', s: 'pumpkin-2' };

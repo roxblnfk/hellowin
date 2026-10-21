@@ -126,7 +126,9 @@ function stroke(g, [x1, y1], [x2, y2], color) {
 // Effects (muzzle flash, smoke, the ritual's palm lights, the candle flame, the red flame) glow without an outline.
 const FX_KEYS = new Set([
     'fxFlash', 'fxCore', 'fxSmoke', 'fxPalm', 'fxPalmCore', 'fxFlame', 'fxFlameHot', 'fxFlameCore', 'fxRune', 'fxRuneDark', 'fxRuneHot', 'fxRuneCore',
+    'fxBlade', 'fxBladeEdge', 'fxBladeShine',
 ]);
+const BLADE_KEYS = new Set(['fxBlade', 'fxBladeEdge']);
 const isFx = (key) => FX_KEYS.has(key);
 
 function outlined(g) {
@@ -173,8 +175,10 @@ function rig(dir, pose, frame) {
             lift = frame ? [1, 0] : [0, 1];
         }
         sway = frame;
-    } else if (pose === 'walk') {
+    } else if (pose === 'walk' || pose === 'shamble') {
         sway = frame & 1;
+        // The zombie's waddle rolls the hips from side to side over every step.
+        if (pose === 'shamble' && !side) sx = [-1, 0, 1, 0][frame];
         if (side) {
             // [far, near]: contact, passing, contact, passing; the body is lowest on contact.
             bob = frame % 2 === 0 ? 1 : 0;
@@ -193,6 +197,10 @@ function rig(dir, pose, frame) {
         // Swaying from side to side over planted feet: left, centre, right, centre.
         sx = [-1, 0, 1, 0][frame];
         sway = frame & 1;
+    } else if (pose === 'lurch') {
+        // A standing zombie sways over planted feet, sagging on one side.
+        sx = side ? 0 : frame ? 1 : -1;
+        bob = frame;
     }
 
     const top = TORSO_TOP + bob;
@@ -288,6 +296,23 @@ function rig(dir, pose, frame) {
             r.hold = dir === 'back' ? Object.fromEntries(Object.entries(front).map(([k, v]) => [k, mirrorBlock(v)])) : front;
         }
     }
+    if (pose === 'shamble' || pose === 'lurch') {
+        // Both arms held out in front at shoulder height, bobbing out of step: from the side straight ahead, from the
+        // front reaching in across the chest toward the camera, from the back hidden behind the body.
+        const k = frame & 1;
+        const front = [
+            { sh: [-7 + sx, sh], elbow: [-7 + sx, -10 + bob], hand: [-5 + sx, -11 + bob + k], far: false },
+            { sh: [5 + sx, sh], elbow: [5 + sx, -10 + bob], hand: [3 + sx, -11 + bob + 1 - k], far: false },
+        ];
+        r.arms = side
+            ? [
+                { sh: [sx, sh], hand: [6 + sx, -11 + bob + k], far: true },
+                { sh: [-1 + sx, sh], hand: [5 + sx, -10 + bob - k], far: false },
+            ]
+            : dir === 'back'
+                ? front.map((a) => ({ ...a, far: true }))
+                : front;
+    }
     if (pose === 'shrug') {
         // Empty palms turned up at the sides, the head sinking between raised shoulders on the second frame.
         r.head = { x: r.head.x, y: r.head.y + frame };
@@ -380,7 +405,7 @@ const CAT_TAIL = {
 };
 
 function catTail(g, r) {
-    const swing = r.pose === 'walk' || r.pose === 'ritual' ? [-1, 0, 1, 0][r.frame] : r.pose === 'fidget' ? (r.frame ? 1 : -1) : 0;
+    const swing = r.pose === 'walk' || r.pose === 'shamble' || r.pose === 'ritual' ? [-1, 0, 1, 0][r.frame] : r.pose === 'fidget' ? (r.frame ? 1 : -1) : 0;
     const pts = CAT_TAIL[r.dir].map(([x, y], i, all) => {
         const t = i / (all.length - 1);
         return [x + r.sx + Math.round(swing * 2 * t * t), y + (i ? r.bob : 0)];
@@ -899,6 +924,8 @@ const ITEM_LEGEND = {
     b: 'bark', B: 'barkLight', h: 'hay', H: 'hayDark', L: 'hayLight', s: 'stemLight',
     // The magic book: green lines on cream pages in a violet binding with a dark spine.
     e: 'eyeGreen', E: 'eerieHot', v: 'violetDark', V: 'violet', m: 'eerieMid',
+    // The rapier: a golden cup hilt, its blade light (fx keys: no outline, drawn unlit in the frame's glow).
+    o: 'gold', O: 'pumpkinGoldDark', Q: 'fxBlade', q: 'fxBladeEdge',
 };
 
 // From the side the broom leans forward, so the stick clears the face.
@@ -988,6 +1015,23 @@ const ITEM_DEFS = {
         label: 'Красный огонёк',
         front: { rows: ['.', '.', '.'], grip: [0, 2], flame: [0, 0], fx: [0, -1], flames: 'red' },
         side: { rows: ['......', '......'], grip: [0, 1], flame: [5, 0], fx: [5, -1], flames: 'red' },
+    },
+    // The rapier of finale steps 6–7: a long thin blade of light over a golden cup hilt. Upright from the front; from
+    // the side it points forward and up, so the blade clears the face. `blade` — its light shimmers (frame `flames`).
+    rapier: {
+        label: 'Рапира',
+        front: {
+            rows: ['..q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', 'o.Q.o', 'oOOOo', '.OoO.', '..k..', '..k..', '..o..'],
+            grip: [2, 14],
+            fx: [2, 0],
+            blade: true,
+        },
+        side: {
+            rows: ['.........q', '........Q.', '.......Q..', '......Q...', '.....Q....', '....Q.....', '..oQ......', '..OOo.....', '.k.o......', 'k.........'],
+            grip: [0, 8],
+            fx: [9, 0],
+            blade: true,
+        },
     },
 };
 
@@ -1212,7 +1256,7 @@ function drawTorso(body, r) {
         body.skirt.flare.forEach((grow, k) => {
             const y = TORSO_BOTTOM + 1 + k;
             // Walking, the hem swings: sideways from the front, trailing back from the side.
-            const swing = r.pose === 'walk' && y === body.skirt.hem ? r.sway : 0;
+            const swing = (r.pose === 'walk' || r.pose === 'shamble') && y === body.skirt.hem ? r.sway : 0;
             const l = x0 - grow - (r.dir === 'side' ? swing : 0);
             const rr = x1 + grow + (r.dir === 'side' ? 0 : swing);
             for (let x = l; x <= rr; x++) {
@@ -1278,7 +1322,9 @@ function compose(look, dir, pose, frame, item) {
     const gun = shoot && item === 'pistol';
     // Drinking always tips the beer to the mouth; the shrug shows empty hands whatever the item.
     const drink = pose === 'drink';
-    const held = !ritual && !gun && pose !== 'shrug' && (drink || ITEM_DEFS[item]);
+    // A zombie's hands are held out empty in front.
+    const zombie = pose === 'shamble' || pose === 'lurch';
+    const held = !ritual && !gun && pose !== 'shrug' && !zombie && (drink || ITEM_DEFS[item]);
     // Clinking and the toast raise the item hand even when it is empty.
     const raised = pose === 'clink' || pose === 'toast';
     const holding = !shoot && (held || raised);
@@ -1331,6 +1377,20 @@ function compose(look, dir, pose, frame, item) {
                     return fl;
                 });
                 result.flame = [bx, by - 1];
+            }
+            if (spr.blade) {
+                // The blade alone, top to bottom, in three shimmer frames: still, and a glint near the tip or halfway.
+                const cells = [];
+                g.forEach((k, i) => BLADE_KEYS.has(k) && cells.push(i));
+                const base = blank();
+                cells.forEach((i) => (base[i] = g[i]));
+                result.flames = [-1, 0.2, 0.6].map((at) => {
+                    const fl = base.slice();
+                    if (at >= 0 && cells.length) fl[cells[Math.round(at * (cells.length - 1))]] = 'fxBladeShine';
+                    return fl;
+                });
+                const mid = cells[cells.length >> 1] ?? 0;
+                result.flame = [(mid % W) - AX, Math.floor(mid / W) - AY];
             }
             if (gun && muzzle && frame === 0) {
                 const [mx, my] = muzzle;
@@ -1391,6 +1451,10 @@ const FX_COLORS = {
     fxRuneDark: PALETTE.runeDark,
     fxRuneHot: PALETTE.bloodMoonLight,
     fxRuneCore: PALETTE.columnCore,
+    // The rapier's blade in its gold, emissive (night.js, EMISSIVE): a hot core, a deeper tip, a white glint running up.
+    fxBlade: PALETTE.goldHot,
+    fxBladeEdge: PALETTE.goldGlow,
+    fxBladeShine: PALETTE.goldCore,
 };
 
 const EYES = [
@@ -1451,7 +1515,23 @@ export const POSES = {
     toast: { frames: 2, ms: 450 },
     drink: { frames: 3, ms: 400 },
     shrug: { frames: 2, ms: 400 },
+    // A zombie player (finale step 6): the waddling walk with the arms held out, and the sway standing.
+    shamble: { frames: 4, ms: 150 },
+    lurch: { frames: 2, ms: 700 },
 };
+
+/**
+ * The body's skin and hands, their shades and the blush, in the zombie green: a zombie player's look. A body whose skin
+ * has more tones than its ramp step lists the rest in `zombie`.
+ */
+function zombieKeys(body) {
+    const map = { blush: 'zombieShade' };
+    for (const key of new Set([body.skin, body.hand ?? body.skin])) {
+        map[key] = 'zombie';
+        map[dark(key)] = 'zombieShade';
+    }
+    return { ...map, ...body.zombie };
+}
 
 /** Canvas size shared by every frame and the anchor inside it (bottom centre, between the feet). */
 export const FRAME = { w: W, h: H, anchor: { x: AX, y: AY } };
@@ -1502,23 +1582,28 @@ function paintGrid(grid, colorOf) {
  * the beer and foam pixels of `canvas` alone, for the scene to keep their hue at night over the relit frame. Clinking
  * (`clink`) and the toast (`toast`) raise the item hand; their `muzzle` is the glass's top. Drinking (`drink`, 3 frames, play
  * once) always tips the beer to the mouth whatever the item, its `beer` the part not hidden by the head; the shrug
- * (`shrug`, 2 frames) shows empty palms whatever the item.
+ * (`shrug`, 2 frames) shows empty palms whatever the item. A held rapier has its blade in the glow: `flames` — its
+ * shimmer frames, `flame` — the middle of the blade, `muzzle` (aimed or raised) — its tip. `zombie` recolours the
+ * skin and hands green and blanks the eyes; the zombie's own poses — `shamble` (4 walk frames) and `lurch` (2 standing) — hold the hands
+ * out empty whatever the item.
  */
-export function characterFrame(look, { dir, pose, frame = 0, item = null } = {}) {
+export function characterFrame(look, { dir, pose, frame = 0, item = null, zombie = false } = {}) {
     const full = normalizeLook(look);
     const d = DIRS.includes(dir) ? dir : 'front';
     const p = POSES[pose] ? pose : 'idle';
     const n = POSES[p].frames;
     const f = ((Math.floor(frame) % n) + n) % n;
     const it = ITEM_DEFS[item] ? item : null;
-    const key = `${SLOTS.map((s) => full[s]).join(',')}|${d}|${p}|${f}|${it ?? ''}`;
+    const key = `${SLOTS.map((s) => full[s]).join(',')}|${d}|${p}|${f}|${it ?? ''}|${zombie ? 'z' : ''}`;
     const cached = frameCache.get(key);
     if (cached) return cached;
 
     const composed = compose(full, d, p, f, it);
-    const eye = PALETTE[EYES.find((e) => e.id === full.eyes).key];
+    // A zombie's eyes are dead white, whatever their colour was.
+    const eye = zombie ? PALETTE.ghost : PALETTE[EYES.find((e) => e.id === full.eyes).key];
     const palm = { fxPalm: eye, fxPalmCore: mixWhite(eye, 0.6) };
-    const colorOf = (k) => (k === 'eye' ? eye : palm[k] ?? FX_COLORS[k] ?? PALETTE[k]);
+    const skin = zombie ? zombieKeys(BODIES[full.body]) : {};
+    const colorOf = (k) => (k === 'eye' ? eye : palm[k] ?? FX_COLORS[k] ?? PALETTE[skin[k] ?? k]);
     const result = { canvas: paintGrid(composed.out, colorOf), anchor: { x: AX, y: AY } };
     const toCanvas = ([x, y]) => [AX + x, AY + y];
     if (composed.glow) result.glow = paintGrid(composed.glow, colorOf);

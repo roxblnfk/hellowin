@@ -1,4 +1,5 @@
 import { PALETTE } from './palette.js';
+import { seedOf } from './sprites.js';
 
 /**
  * Flyers for the duck shoot, plus the bush they rise from and the score digits.
@@ -531,7 +532,8 @@ const ROADRUNNER = {
 
 // A shambling worker zombie, about as tall as a player's character: yellow hard hat, denim overalls over a torn
 // grey shirt, arms out front. Drawn at native size (24-px grid, k = 1); the anchor is between the feet.
-function zombiePose({ near = [14, 30], far = [9, 30], bob = 0, sway = 0, arms = 0, head = 0, hat = 0, cross = false } = {}) {
+// `only` keeps some of the parts (farLeg, farArm, nearLeg, torso, face, hat, nearArm): the pieces a zombie falls into.
+function zombiePose({ near = [14, 30], far = [9, 30], bob = 0, sway = 0, arms = 0, head = 0, hat = 0, cross = false, only = null } = {}) {
     const hip = [11.5, 21 + bob];
     const leg = ([fx, fy], dark) => [
         paint(capsule(hip[0] + (dark ? -0.8 : 0.8), hip[1], fx, fy - 1, 1.7), dark ? 'D' : 'd'),
@@ -568,15 +570,15 @@ function zombiePose({ near = [14, 30], far = [9, 30], bob = 0, sway = 0, arms = 
         refH: 32,
         body: [11.5, 31],
         eye: cross ? [14.5, 7.2] : null,
-        parts: [
-            ...leg(far, true),
-            ...moved(farArm, lean, bob),
-            ...leg(near, false),
-            ...moved(torso, 0, bob),
-            ...moved(face, lean + head, bob + Math.abs(head) * 0.3),
-            ...moved(hardHat, lean + head - hat * 2.4, bob - hat),
-            ...moved(nearArm, lean, bob),
-        ],
+        parts: Object.entries({
+            farLeg: leg(far, true),
+            farArm: moved(farArm, lean, bob),
+            nearLeg: leg(near, false),
+            torso: moved(torso, 0, bob),
+            face: moved(face, lean + head, bob + Math.abs(head) * 0.3),
+            hat: moved(hardHat, lean + head - hat * 2.4, bob - hat),
+            nearArm: moved(nearArm, lean, bob),
+        }).flatMap(([name, list]) => (!only || only.includes(name) ? list : [])),
     };
     return pose;
 }
@@ -616,11 +618,34 @@ function zombieSet() {
         const t = trim(s);
         return { ...t, anchor: { x: t.w >> 1, y: t.h } };
     };
+    // The deaths of finale step 5 (DEATHS): the hit pose without its head, the kneel and the flat body likewise, and
+    // the pieces it falls apart into, each outlined on its own and trimmed to its pixels.
+    const HIT_POSE = { near: [14, 30], far: [9, 30], bob: 0, sway: -3, arms: -6, head: -1.4, hat: 1.4, cross: true };
+    const BODY = ['farLeg', 'farArm', 'nearLeg', 'torso', 'nearArm'];
+    const piece = (only) => {
+        const t = trim(rasterise(zombiePose({ ...HIT_POSE, only }), 24));
+        return { ...t, anchor: { x: t.w >> 1, y: t.h >> 1 } };
+    };
+    const headless = {
+        hit: { ...rasterise(zombiePose({ ...HIT_POSE, only: BODY }), 24), anchor: { x: 12, y: 31 } },
+        kneel: { ...rasterise(zombiePose({ near: [16, 30], far: [14.6, 30], bob: 6, sway: -1, arms: 3, only: BODY }), 24), anchor: { x: 12, y: 31 } },
+        flat: ground(rotate90(rotate180(rasterise(zombiePose({ near: [13, 30], far: [10, 30], arms: -2, only: BODY }), 24)))),
+    };
+    const pieces = {
+        head: piece(['face', 'hat']),
+        skull: piece(['face']),
+        hat: piece(['hat']),
+        torso: piece(['torso']),
+        arms: [piece(['nearArm']), piece(['farArm'])],
+        legs: [piece(['nearLeg']), piece(['farLeg'])],
+    };
     // Every depth shares the depth-1 size: a ground walker does not shrink with depth the way a flyer does.
     const near = {
         fly: walk.map((s) => ({ ...s, anchor: { x: 12, y: 31 } })),
         hit: { ...hit, anchor: { x: 12, y: 31 } },
         fall: [{ ...kneel, anchor: { x: 12, y: 31 } }, ground(flat)],
+        headless,
+        pieces,
     };
     return [farSet('zombie'), near, near];
 }
@@ -922,7 +947,8 @@ const FEATHER_LEGEND = {
  * Indexed by depth (0 — far, 2 — near): { fly: 4 wingbeat frames, hit, fall: 2 tumbling frames }.
  * `roadrunner` and `zombie` move on the ground: `fly` is their run / walk cycle. The road-runner's far sprite is
  * 7×4, a little more than a speck. The zombie keeps one size at depths 1 and 2, its anchor is between the feet, and its
- * fall frames collapse in place (kneel, then flat) instead of tumbling. `worm` crawls on the lawn too: one 16×9 set at
+ * fall frames collapse in place (kneel, then flat) instead of tumbling; for its deaths (DEATHS) it adds `headless`
+ * (hit, kneel, flat without the head) and `pieces` (head, skull, hat, torso, arms, legs — anchored at their middle). `worm` crawls on the lawn too: one 16×9 set at
  * every depth, anchor on the ground under its middle, `box` — the opaque bounds; besides the crawl it has `emerge` (3
  * frames, out of a mound) and `burrow` (2, into one), its `hit` writhes and `fall` sinks it into the ground in place.
  * `firefly` adds `glow` (its lantern: dim, mid, bright, on the same grid, to draw unlit over the body) and `lantern` —
@@ -975,6 +1001,15 @@ export const FLYERS = {
         { ...sprite(['l.', '.G'], FIREFLY_LEGEND), kind: 'firefly' },
     ],
 };
+
+/**
+ * How a zombie worker dies in the cursed world (docs/spec/frontend.md, «Рапира»): DEATHS[crc32(flyer) % DEATHS.length],
+ * the same for everyone, the server sends nothing. Add new kinds at the end, so the ones there keep their indexes.
+ */
+export const DEATHS = ['pieces', 'meat', 'dust', 'head', 'fire', 'sink'];
+
+/** The death of the zombie with flyer id `id`. */
+export const deathOf = (id) => DEATHS[seedOf(id) % DEATHS.length];
 
 export function feathersOf(kind) {
     const own = FLYERS.feathers.filter((f) => f.kind === kind);

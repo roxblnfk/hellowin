@@ -8,18 +8,20 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { BAR_LAYOUT, ROOT, SCENE, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
+import { BAR_LAYOUT, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
 import { BAR_TOASTS, TOASTS } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
-import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
+import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
+import { FX } from './finale.js';
+import { DEATH_MS, GONE_MS, createDeaths } from './deaths.js';
 import { flyAt, flyPlan } from './fly-path.js';
-import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
+import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
-import { OWL, OWL_BAR, OWL_FLIGHT, glowing, pourFrame } from './owl.js';
-import { BAR_FLICKER_MS, BAR_MUG, bakeBar, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar } from './bar.js';
+import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
+import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar } from './bar.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -277,11 +279,12 @@ export async function createScene(rootEl, snapshot) {
     const inFinale = () => state.scene >= state.sceneStages && finale.step !== null;
 
     // Lighting per scene (docs/spec/scenario.md, «Сцены 1–4»): the bar by its fire (the art sheet's light), day, sunset,
-    // night; the
-    // final scene is the blood moon until the lightning of finale step 2, then the night again.
+    // night; the final scene is the blood moon until the lightning of finale step 2, then the night again, and the
+    // dawn from step 7.
     const DAYLIGHT = { [SCENE.bar]: 'firelight', [SCENE.day]: 'day', [SCENE.sunset]: 'sunset', [SCENE.night]: 'night' };
     const lightingOf = (scene) => {
         if (scene < state.sceneStages) return DAYLIGHT[scene] ?? 'night';
+        if (finale.step !== null && finale.step >= 7) return 'dawn';
         return finale.step !== null && nightOf(finale.step, sinceStep()) ? 'night' : 'blood';
     };
     let lighting = 'day';
@@ -393,6 +396,14 @@ export async function createScene(rootEl, snapshot) {
             const daySun = new Sprite(artTexture('sun', () => texture(bake(sunDef))));
             daySun.position.set(skyX - (sunDef.w >> 1), Math.max(2, Math.round((top - sunDef.h) * 0.3)));
             skyLayer.addChild(daySun);
+        } else if (lighting === 'dawn') {
+            // The dawn sun climbs out from behind the hills (the base layer covers it until it clears them).
+            const def = NIGHT.dawnSun;
+            const sprite = new Sprite(defTexture(def));
+            sprite.anchor.set(0.5);
+            sun = { sprite, x: skyX, rest: top + (def.h >> 1), high: Math.max(def.h >> 1, Math.round(top * 0.35)), rising: true };
+            sprite.position.set(sun.x, sun.rest);
+            skyLayer.addChild(sprite);
         } else if (lighting === 'sunset') {
             // The striped sun rests half behind the hills (the base layer covers it); after the day it sinks there.
             const def = NIGHT.sunsetSun;
@@ -429,7 +440,8 @@ export async function createScene(rootEl, snapshot) {
         cloudLayer.removeChildren().forEach((s) => s.destroy());
         const random = rng(7);
         // The night sky keeps a couple of moonlit clouds; the day and the sunset more.
-        const count = Math.max(lighting === 'day' || lighting === 'sunset' ? 2 : 1, Math.round(artW / (lighting === 'day' || lighting === 'sunset' ? 90 : 200)));
+        const bright = lighting === 'day' || lighting === 'sunset' || lighting === 'dawn';
+        const count = Math.max(bright ? 2 : 1, Math.round(artW / (bright ? 90 : 200)));
         clouds = Array.from({ length: count }, (_, i) => {
             const def = DECOR.cloud[i % DECOR.cloud.length];
             const sprite = new Sprite(defTexture(def, lighting));
@@ -697,7 +709,11 @@ export async function createScene(rootEl, snapshot) {
         // Sorted with the tree, just in front of it: the talons grip the branch, nearer things still cover both.
         owlSprite = new Sprite();
         owlSprite.zIndex = tree.zIndex + 1;
-        groundLayer.addChild(owlSprite);
+        // The rapier's light around its blade, over the owl.
+        owlHalo = new Sprite();
+        owlHalo.blendMode = 'add';
+        owlHalo.zIndex = tree.zIndex + 2;
+        groundLayer.addChild(owlSprite, owlHalo);
         animateOwl();
     }
 
@@ -717,6 +733,30 @@ export async function createScene(rootEl, snapshot) {
     // Off the top of the screen, up and to the left of the branch.
     const owlAway = () => ({ x: owlAt.x - layout.artW * 0.35, y: -OWL_FLIGHT.fly[0].h - 4 });
     const owlGone = () => owlFlight.mode === 'away' || owlFlight.mode === 'leaving';
+    /*
+     * Step 6 (docs/spec/frontend.md, «Рапира»): the owl flies back in from where it left and draws the rapier on the
+     * second part of its `finale-6` line — or when a line asks for it — then holds it up for the rest of the finale.
+     * `owlRapier.at` is when it drew it (scene clock; -1e9 — held up long ago, a reload); null — not yet.
+     */
+    let owlRapier = null;
+    let owlLines = 0;
+    let owlHalo = null;
+    const OWL_DRAW_MS = 150;
+    const OWL_BLADE_HALO = halo(2, 9, 'gold');
+    // The blade shimmers on short slots of the server clock: mostly still, now and then a glint runs up it.
+    const OWL_GLINT = [0, 0, 1, 0, 0, 2];
+    function armedOwl(def) {
+        if (!owlRapier || !inFinale() || finale.step < 6) return def;
+        const t = clock - owlRapier.at;
+        if (t < 0) return def;
+        if (t < 2 * OWL_DRAW_MS && !reduced) return OWL_RAPIER.draw[t < OWL_DRAW_MS ? 0 : 1];
+        return armed(def, reduced ? 0 : OWL_GLINT[mix(0xb1ade, Math.floor(serverNow() / 140)) % OWL_GLINT.length]);
+    }
+    function drawRapier() {
+        if (owlRapier) return;
+        owlRapier = { at: clock };
+        cue({ type: 'owl-rapier' });
+    }
 
     // Idle on the server clock, so the whole room sees the same blink and the same swivel: 5 s slots, a blink in
     // each, a swivel to one side in some of them and, rarely, all the way round.
@@ -775,8 +815,18 @@ export async function createScene(rootEl, snapshot) {
                 return { def: wing, at: { x: owlAt.x + (away.x - owlAt.x) * k * k, y: owlAt.y + (away.y - owlAt.y) * k } };
             }
         }
+        if (owlFlight.mode === 'arriving') {
+            // The way it left, backwards: down out of the sky onto the branch, then the landing crouch.
+            if (t < OWL_FLY_MS) {
+                const u = 1 - t / OWL_FLY_MS;
+                const away = owlAway();
+                return { def: wing, at: { x: owlAt.x + (away.x - owlAt.x) * u * u, y: owlAt.y + (away.y - owlAt.y) * u } };
+            }
+            if (t < OWL_FLY_MS + OWL_TAKEOFF_MS) return { def: OWL_FLIGHT.takeOff, at: owlAt };
+            owlFlight = { mode: 'perched', at: clock, leave: false };
+        }
         if (owlFlight.mode === 'away') return null;
-        return { def: owlFrame(), at: owlAt };
+        return { def: armedOwl(owlFrame()), at: owlAt };
     }
 
     function animateOwl() {
@@ -793,8 +843,8 @@ export async function createScene(rootEl, snapshot) {
             owlSprite.position.set(Math.round(pose.at.x), Math.round(pose.at.y));
             return;
         }
-        // From the night scene on, the eyes glow.
-        if (state.scene >= SCENE.night) {
+        // From the night scene on, the eyes glow, until the dawn.
+        if (state.scene >= SCENE.night && lighting !== 'dawn') {
             if (!owlNight.has(def)) owlNight.set(def, glowing(def));
             def = owlNight.get(def);
         }
@@ -802,6 +852,14 @@ export async function createScene(rootEl, snapshot) {
         owlSprite.texture = art.texture;
         owlSprite.anchor.set(art.ax, art.ay);
         owlSprite.position.set(Math.round(pose.at.x), Math.round(pose.at.y));
+        // The raised blade glows, breathing a little.
+        const raised = owlHalo && owlRapier && pose.at === owlAt && inFinale() && finale.step >= 6 && clock - owlRapier.at >= 2 * OWL_DRAW_MS;
+        if (!owlHalo) return;
+        owlHalo.visible = Boolean(raised);
+        if (!raised) return;
+        owlHalo.texture = defTexture(OWL_BLADE_HALO);
+        owlHalo.alpha = reduced ? 0.3 : [0.24, 0.3, 0.36, 0.3][Math.floor(clock / 400) % 4];
+        owlHalo.position.set(owlAt.x + OWL_RAPIER.blade.x - OWL_BLADE_HALO.anchor.x, owlAt.y + OWL_RAPIER.blade.y - OWL_BLADE_HALO.anchor.y);
     }
 
     /**
@@ -1126,8 +1184,9 @@ export async function createScene(rootEl, snapshot) {
             sprite.visible = Boolean(a.layers[name]) && (name !== 'glow' || (p.stage >= LIT_STAGE && lighting !== 'day')) && !(dark && LIGHT_LAYERS.has(name));
             sprite.position.set(-a.def.anchor.x, -a.def.anchor.y);
         }
-        // In the cursed world the pumpkins hold beer: arms and glass lit like the body, the beer keeping its amber.
-        p.arms.visible = toneOf() === 'franken';
+        // At step 5 the pumpkins hold beer: arms and glass lit like the body, the beer keeping its amber. From step 6 they
+        // only glow.
+        p.arms.visible = toneOf() === 'franken' && finale.step === 5;
         if (p.arms.visible) {
             const lit = lightAt(at.x, at.y);
             p.armsArt = artTexture(`pumpkin-arms:${clamp(p.stage, 0, PUMPKIN_STAGES)}:${p.size}:${p.seed}:${p.mug}:${lit}`, () => {
@@ -1267,6 +1326,12 @@ export async function createScene(rootEl, snapshot) {
             const k = clamp(t / FINALE_T.rise5, 0, 1);
             return { at: rest, lift: Math.round(FLOAT_LIFT * (1 - (1 - k) * (1 - k))) + (k >= 1 ? bob : 0) };
         }
+        if (finale.step === 6) return { at: rest, lift: FLOAT_LIFT + bob };
+        if (finale.step >= 7) {
+            // The dawn puts the spell out: they sink back onto the ground.
+            const k = clamp(t / FINALE_T.settle, 0, 1);
+            return { at: rest, lift: Math.round(FLOAT_LIFT * (1 - k * k)) };
+        }
         return { at: rest, lift: 0 };
     }
 
@@ -1342,6 +1407,9 @@ export async function createScene(rootEl, snapshot) {
     // Hit zones are the core of the body, not the whole sprite: in a tight patch near pumpkins overlap far ones,
     // and only the cores have to stay apart (app/config/hellowin.php is laid out for that). Padded stages keep the
     // body where it was, so the zones of stage 0 hold for every stage.
+    // FrankenPHP's body without the ears and the spread arms, art px up from his foot.
+    const FRANKEN_HIT = { w: 30, h: 78 };
+
     function publishHitZones() {
         const px = layout.cssPx;
         for (const size of SIZES) {
@@ -1376,6 +1444,15 @@ export async function createScene(rootEl, snapshot) {
             rootEl.style.setProperty('--counter-h', `${(box.y - box.top) * px}px`);
         }
         rootEl.style.setProperty('--float-lift', `${FLOAT_LIFT * px}px`);
+        // FrankenPHP of the final scene: the point over his head for the health bar (CSS px of the scene root) and his
+        // clickable body around his foot on the circle, for the strike button.
+        const top = bossTop();
+        rootEl.style.setProperty('--boss-x', `${Math.round(top.x * px)}px`);
+        rootEl.style.setProperty('--boss-y', `${Math.round(top.y * px)}px`);
+        rootEl.style.setProperty('--hit-w-franken', `${FRANKEN_HIT.w * px}px`);
+        rootEl.style.setProperty('--hit-h-franken', `${FRANKEN_HIT.h * px}px`);
+        rootEl.style.setProperty('--hit-x-franken', `${-(FRANKEN_HIT.w >> 1) * px}px`);
+        rootEl.style.setProperty('--hit-y-franken', `${-FRANKEN_HIT.h * px}px`);
         rootEl.style.setProperty('--px', `${px}px`);
     }
 
@@ -1395,6 +1472,8 @@ export async function createScene(rootEl, snapshot) {
     // The flames' halos on the floor, like the art sheet (public/dev/bar.html).
     const FLAME_HALO_ALPHA = 0.35;
     const barLayoutOf = () => state.barLayout ?? BAR_LAYOUT;
+    const DOOR_STEP_MS = 90;
+    const DOOR_HOLD_MS = 600;
     // The counter's state as the client model passes it in, and when the last mug was set down (scene clock). Taken
     // from the page's snapshot at once: the client re-reads the state only after a reconnect or a gap.
     const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9 };
@@ -1448,6 +1527,15 @@ export async function createScene(rootEl, snapshot) {
             glow.position.set(Math.round(l.x), Math.round(l.y + 4));
             lightLayer.addChild(glow);
         }
+        // The door's leaf over the wall and under everything standing: a walker coming in is drawn in front of it.
+        const doorArt = barDoor(L, artW, artH, opts);
+        let door = null;
+        if (doorArt) {
+            const s = new Sprite(texture(doorArt.frames[0]));
+            s.position.set(doorArt.x, doorArt.y);
+            plantLayer.addChild(s);
+            door = { sprite: s, frames: doorArt.frames.map((c) => texture(c)) };
+        }
         let counterZ = null;
         for (const p of barProps(L, artW, artH, opts)) {
             const s = new Sprite(texture(p.canvas));
@@ -1485,7 +1573,7 @@ export async function createScene(rootEl, snapshot) {
             groundLayer.addChild(s);
             return { sprite: s, y: slot.y };
         });
-        hall = { box, flicker, mugs };
+        hall = { box, flicker, mugs, door };
         animateOwl();
         animateBar();
     }
@@ -1527,6 +1615,31 @@ export async function createScene(rootEl, snapshot) {
             const k = reduced ? 0 : Math.floor(clock / BAR_FLICKER_MS + f.phase) % f.frames.length;
             f.sprite.texture = f.frames[k];
         }
+        if (hall.door) hall.door.sprite.texture = hall.door.frames[doorFrame(serverNow())];
+    }
+
+    /**
+     * How far the bar's door stands open at server time `now` (docs/spec/frontend.md, «Дверь»): open while a walker's
+     * walk starts on the threshold, from `startedAt` to `arrivesAt` + DOOR_HOLD_MS, swinging DOOR_STEP_MS a frame
+     * each way. Only walks and the server clock decide it, so a page reloaded mid-entrance shows the same.
+     */
+    function doorFrame(now) {
+        const at = barLayoutOf().door;
+        let frame = 0;
+        for (const w of walkers.values()) {
+            if (!fromDoor(w.walk, at)) continue;
+            const opening = now - w.walk.startedAt;
+            const closing = now - (w.walk.arrivesAt + DOOR_HOLD_MS);
+            if (opening < 0 || closing >= DOOR_OPEN * DOOR_STEP_MS) continue;
+            // Reduced motion: wide open or shut, no swing between.
+            if (reduced) {
+                if (closing < 0) return DOOR_OPEN;
+                continue;
+            }
+            const open = Math.min(DOOR_OPEN, 1 + Math.floor(opening / DOOR_STEP_MS));
+            frame = Math.max(frame, closing < 0 ? open : Math.min(open, DOOR_OPEN - 1 - Math.floor(closing / DOOR_STEP_MS)));
+        }
+        return frame;
     }
 
     function rebuild() {
@@ -1792,6 +1905,25 @@ export async function createScene(rootEl, snapshot) {
                 const def = since < FLY_HIT_MS ? set.hit : since < FLY_HIT_MS + drop ? set.fall[Math.floor(since / 70) % 2] : set.splat;
                 art = flyerArt(def);
                 f.sprite.visible = since < FLY_GONE_MS - 300 || Math.floor(since / 100) % 2 === 0;
+            } else if (f.death) {
+                const since = clock - f.shotAt;
+                if (since >= GONE_MS) {
+                    dropFlyer(f);
+                    flyers.delete(id);
+                    continue;
+                }
+                f.pos = f.shotPos;
+                const look = deaths.frame(f);
+                f.sprite.visible = Boolean(look) && (since < DEATH_MS || Math.floor(since / 100) % 2 === 0);
+                if (!look) continue;
+                art = flyerArt(look.def, false, look.lit);
+                f.sprite.texture = art.texture;
+                f.sprite.anchor.set(art.ax, art.ay);
+                f.sprite.scale.x = f.flip ? -1 : 1;
+                f.sprite.position.set(Math.round(f.pos.x) + (look.dx ?? 0), Math.round(f.pos.y));
+                f.sprite.zIndex = depthKey(f.pos.x, f.pos.y);
+                f.art = art;
+                continue;
             } else if (f.ground) {
                 const since = clock - f.shotAt;
                 const collapse = COLLAPSE[f.kind] ?? COLLAPSE.zombie;
@@ -1842,6 +1974,7 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function dropFlyer(f) {
+        deaths.drop(f);
         f.sprite.destroy();
         f.glow?.destroy();
         f.halo?.destroy();
@@ -1921,6 +2054,20 @@ export async function createScene(rootEl, snapshot) {
         animateFlyers();
     }
 
+    const deaths = createDeaths({
+        spawn: (...args) => spawn(...args),
+        texture: (def, lit) => flyerArt(def, false, lit).texture,
+        glow: (def) => defTexture(def),
+        sprite: (layer) => {
+            const sprite = new Sprite();
+            (layer === 'light' ? lightLayer : groundLayer).addChild(sprite);
+            return sprite;
+        },
+        depthKey: (x, y) => depthKey(x, y),
+        reduced: () => reduced,
+        clock: () => clock,
+    });
+
     // A single pixel of a palette colour, for feathers of far birds and drops of a fly.
     const speckTexture = (key) => artTexture(`speck:${key}`, () => {
         const c = canvas(1, 1);
@@ -1944,6 +2091,9 @@ export async function createScene(rootEl, snapshot) {
             const speck = speckTexture(SPECK[f.kind] ?? 'duckGrayDark');
             spawn([speck], f.pos.x, f.pos.y, -6, -8, 20, 1);
             spawn([speck], f.pos.x, f.pos.y, 7, -5, 20, 1.1);
+        } else if (f.kind === 'zombie') {
+            // A zombie worker dies its own way, picked by its id (flyers.js, DEATHS).
+            deaths.start(f, deathOf(event.flyer), seedOf(event.flyer), lightAt(f.pos.x, f.pos.y));
         } else if (!reduced && !f.plan) {
             // Bits of a ground target take the light it stood in, like the target itself.
             const feathers = feathersOf(f.kind).map((def) => flyerArt(def, false, f.ground ? lightAt(mid.x, mid.y) : 'day').texture);
@@ -2100,6 +2250,33 @@ export async function createScene(rootEl, snapshot) {
     // The springy hop of the jumped-out pumpkins (scenes 1–2): period, airborne share, height.
     const SPRING = { ms: 1100, air: 0.3, h: 3 };
 
+    /*
+     * A pumpkin of step 5 hands a fresh mug to a walker (`take` with `pumpkin`): its own mug set down, the hand into
+     * the top cut, a new mug pulled out with a splash of foam, held out (sprites.js, pumpkinArms frames 3–6). The walker
+     * holds the beer once it is handed over.
+     */
+    const GIVE_MS = 900;
+    const GIVE_FOAM_MS = 450;
+    function giveFrame(p) {
+        const t = clock - (p.give?.at ?? -1e9);
+        if (reduced || t < 0 || t >= GIVE_MS) return null;
+        if (t >= GIVE_FOAM_MS && !p.give.foamed) {
+            p.give.foamed = true;
+            const at = emitPoint(p, 'top');
+            const lit = lightAt(at.x, at.y);
+            const foam = FOAM.map((key) => artTexture(`foam-px:${key}:${lit}`, () => {
+                const c = canvas(1, 1);
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = css(keepHueColor(PALETTE[key], lit));
+                ctx.fillRect(0, 0, 1, 1);
+                return texture(c);
+            }));
+            spawn([defTexture(SHOT_FX.pop)], at.x - 2, at.y - 6, 0, 0, 0, 0.16);
+            for (let i = 0; i < 6; i++) ember(at.x + between(-2, 2), at.y - 4, between(-22, 22), -between(20, 45), 90, between(0.3, 0.5), 0, FOAM).frames = foam;
+        }
+        return 3 + Math.min(3, Math.floor(t / (GIVE_MS / 4)));
+    }
+
     function animatePumpkin(p) {
         const mode = pumpkinMode(p);
         let sx = 1;
@@ -2178,7 +2355,7 @@ export async function createScene(rootEl, snapshot) {
         }
         if (p.arms.visible) {
             const clinkFrame = pumpkinClinkFrame(p, serverNow());
-            showArms(p, clinkFrame ?? (reduced ? 0 : raiseFrame(p.seed, serverNow())));
+            showArms(p, giveFrame(p) ?? clinkFrame ?? (reduced ? 0 : raiseFrame(p.seed, serverNow())));
         }
         p.halo.position.set(Math.round(at.x), Math.round(at.y));
         p.shadow.visible = p.lift > 0;
@@ -2265,6 +2442,69 @@ export async function createScene(rootEl, snapshot) {
     const RED_HALO = halo(5, 4, 'red');
     const RED_EMBERS = ['columnCore', 'bloodMoonLight', 'rune', 'runeDark'];
     const RED_SPARK_SPEED = 640;
+
+    // The rapier (finale steps 6–7): the gold ground light and the blade's halo, the rim's breath (alpha steps over
+    // RAPIER_BREATH_MS) and the blade's shimmer slots.
+    const RAPIER_LIGHT = halo(10, 4, 'gold');
+    const BLADE_HALO = halo(3, 6, 'gold');
+    const RAPIER_BREATH_MS = 1600;
+    const RAPIER_BREATH = [0, 0.35, 0.7, 1, 1, 0.7, 0.35, 0];
+    const BLADE_MS = 120;
+    // A zombie player (docs/spec/frontend.md, «Рапира»): turning takes TURN_MS — a green flash and smoke, the look
+    // changing halfway; a cure sends a white spark from the curer for CURE_FLY_MS, then the green fades for CURE_FADE_MS.
+    const TURN_MS = 800;
+    const CURE_FLY_MS = 300;
+    const CURE_FADE_MS = 500;
+    const TURN_FLASH = halo(7, 6, 'green');
+    const CURE_FLASH = halo(6, 5, 'candle');
+
+    // A thin rim one pixel outside a frame's silhouette, in the rapier's gold: drawn behind the frame, it shows as an
+    // outline of light.
+    const rims = new WeakMap();
+    function rimTexture(c) {
+        if (rims.has(c)) return rims.get(c);
+        const { width: w, height: h } = c;
+        const src = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+        const out = canvas(w, h);
+        const ctx = out.getContext('2d');
+        ctx.fillStyle = css(PALETTE.goldGlow);
+        const solid = (x, y) => x >= 0 && y >= 0 && x < w && y < h && src[(y * w + x) * 4 + 3] > 0;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (!solid(x, y) && (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1))) ctx.fillRect(x, y, 1, 1);
+            }
+        }
+        const t = texture(out);
+        rims.set(c, t);
+        return t;
+    }
+
+    // What the hand shows: a beer from a pumpkin only once the pumpkin has held it out.
+    const heldItem = (w) => (w.item === 'beer' && clock < (w.beerAt ?? -1e9) ? null : w.item ?? null);
+    // Whether the walker is drawn as a zombie now: turned (past the middle of the turn's flash), or cured but still
+    // waiting for the spark.
+    const zombieLook = (w) => (w.zombie && clock - (w.turnAt ?? -1e9) >= TURN_MS / 2)
+        || (clock >= (w.cureAt ?? -1e9) && clock - (w.cureAt ?? -1e9) < CURE_FLY_MS);
+
+    /**
+     * The turn and the cure over a walker drawn at (x, y): the turn's green light under its flash; after a cure, the
+     * zombie look over the frame, its alpha stepping down.
+     */
+    function changeFx(w, view, x, y, at) {
+        const turn = clock - (w.turnAt ?? -1e9);
+        if (turn >= 0 && turn < TURN_MS && !reduced) placeHalo(w, TURN_FLASH, { x, y: y - 14 }, turn < TURN_MS / 2 ? 0.7 : 0.35);
+        const fade = clock - (w.cureAt ?? -1e9) - CURE_FLY_MS;
+        if (fade >= 0 && fade < 120 && !reduced) placeHalo(w, CURE_FLASH, { x, y: y - 14 }, 0.8);
+        w.ghost.visible = fade >= 0 && fade < CURE_FADE_MS && !reduced && !view.zombie;
+        if (!w.ghost.visible) return;
+        const ghost = characterFrame(w.look, { ...view, zombie: true });
+        w.ghost.texture = frameTexture(ghost.canvas, lightAt(at.x, at.y));
+        w.ghost.anchor.copyFrom(w.sprite.anchor);
+        w.ghost.scale.x = w.sprite.scale.x;
+        w.ghost.position.copyFrom(w.sprite.position);
+        w.ghost.zIndex = w.sprite.zIndex + 0.55;
+        w.ghost.alpha = 1 - Math.floor((fade / CURE_FADE_MS) * 5) / 5;
+    }
 
     // Topmost opaque row of a character frame: frames keep headroom for tall hats, the label goes over the real head.
     const frameTops = new WeakMap();
@@ -2366,7 +2606,7 @@ export async function createScene(rootEl, snapshot) {
                 fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace',
                 fontSize: 12,
                 fontWeight: '700',
-                fill: w.id === meId ? PALETTE.sun : PALETTE.cream,
+                fill: w.id === meId ? PALETTE.sun : w.zombie ? PALETTE.haze : PALETTE.cream,
                 stroke: { color: PALETTE.outline, width: 3, join: 'round' },
             },
         });
@@ -2388,7 +2628,12 @@ export async function createScene(rootEl, snapshot) {
         w.halo = new Sprite();
         w.halo.blendMode = 'add';
         w.flash = new Sprite();
-        groundLayer.addChild(w.lights, w.halo, w.flash);
+        // A rapier's holder glows: a thin gold rim behind the frame. A zombie being cured: its green look fading out
+        // over the frame.
+        w.rim = new Sprite();
+        w.rim.blendMode = 'add';
+        w.ghost = new Sprite();
+        groundLayer.addChild(w.rim, w.lights, w.halo, w.flash, w.ghost);
         w.label?.destroy();
         w.label = walkerLabel(w);
     }
@@ -2397,7 +2642,7 @@ export async function createScene(rootEl, snapshot) {
         w.sprite?.destroy();
         w.glow?.destroy();
         w.glow = null;
-        for (const key of ['lights', 'halo', 'flash']) {
+        for (const key of ['lights', 'halo', 'flash', 'rim', 'ghost']) {
             w[key]?.destroy();
             w[key] = null;
         }
@@ -2415,14 +2660,15 @@ export async function createScene(rootEl, snapshot) {
     function setWalker(data) {
         const old = walkers.get(data.id);
         // `clink` (heading to a clink by click) comes with the walker or not at all.
-        const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, seed: seedOf(data.id) };
+        // `zombie` likewise: a cured walker comes without it.
+        const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, zombie: data.zombie === true, seed: seedOf(data.id) };
         if (!old || data.walk !== old.walk) retrack(w, w.walk);
         if (!old) {
             walkers.set(w.id, w);
             addWalkerSprites(w);
         } else {
             walkers.set(w.id, w);
-            if (old.name !== w.name) {
+            if (old.name !== w.name || Boolean(old.zombie) !== w.zombie) {
                 w.label?.destroy();
                 w.label = walkerLabel(w);
             }
@@ -2484,10 +2730,18 @@ export async function createScene(rootEl, snapshot) {
             w.clinking = Boolean(clink);
             let view;
             let lean = 0;
-            if (s.moving) {
+            const held = heldItem(w);
+            if (zombieLook(w)) {
+                // A zombie worker: arms out, waddling where the server walks it, swaying where it stands.
+                w.shoot = null;
+                const [dir, flip] = s.moving ? facing(s.from, s.to) : [idleOf(w, s, now).dir, idleOf(w, s, now).flip];
+                const pose = s.moving ? 'shamble' : 'lurch';
+                const frame = Math.floor((s.moving ? clock - w.track.startedAt : now + w.seed) / poseOf(pose).ms) % poseOf(pose).frames;
+                view = { dir, flip, pose, frame, item: null, zombie: true };
+            } else if (s.moving) {
                 const [dir, flip] = facing(s.from, s.to);
                 const walk = poseOf('walk');
-                view = { dir, flip, pose: 'walk', frame: Math.floor((clock - w.track.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
+                view = { dir, flip, pose: 'walk', frame: Math.floor((clock - w.track.startedAt) / walk.ms) % walk.frames, item: held };
             } else if (w.drinkUntil > clock) {
                 // The gulp: the mug tipped to the mouth, then the hands are empty (the model already says so).
                 const pose = POSES.drink ? 'drink' : 'toast';
@@ -2509,7 +2763,7 @@ export async function createScene(rootEl, snapshot) {
                 ({ view, lean } = clinkView(w, clink, at, now));
             } else {
                 w.shoot = null;
-                view = { ...idleOf(w, s, now), item: w.item ?? null };
+                view = { ...idleOf(w, s, now), item: held };
             }
             if (reduced && !s.moving && view.pose !== 'shoot') view.frame = 0;
             const f = characterFrame(w.look, view);
@@ -2524,7 +2778,8 @@ export async function createScene(rootEl, snapshot) {
             w.flash.visible = false;
             w.halo.visible = false;
             const red = view.item === 'red-flame';
-            const light = !dark ? null : view.item === 'candle' ? NIGHT.candleLight : red ? RED_LIGHT : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
+            const rapier = view.item === 'rapier';
+            const light = rapier ? RAPIER_LIGHT : !dark ? null : view.item === 'candle' ? NIGHT.candleLight : red ? RED_LIGHT : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
             w.glow.visible = Boolean(light);
             if (light) {
                 w.glow.texture = defTexture(light);
@@ -2532,7 +2787,23 @@ export async function createScene(rootEl, snapshot) {
                 w.glow.position.set(x, y);
             }
             let glow = f.glow;
-            if (f.flames) {
+            // The rapier's holder glows (docs/spec/frontend.md, «Рапира»): a gold light on the ground and a thin gold rim
+            // round the frame, breathing once every RAPIER_BREATH_MS; the blade shimmers by a hash of short slots.
+            const breath = reduced ? 1 : RAPIER_BREATH[Math.floor((((clock + w.seed) % RAPIER_BREATH_MS) / RAPIER_BREATH_MS) * RAPIER_BREATH.length)];
+            w.rim.visible = rapier;
+            if (rapier) {
+                w.glow.alpha = 0.3 + 0.2 * breath;
+                w.rim.texture = rimTexture(f.canvas);
+                w.rim.anchor.copyFrom(w.sprite.anchor);
+                w.rim.scale.x = w.sprite.scale.x;
+                w.rim.position.copyFrom(w.sprite.position);
+                w.rim.zIndex = w.sprite.zIndex - 0.1;
+                w.rim.alpha = 0.35 + 0.4 * breath;
+            }
+            if (f.flames && rapier) {
+                glow = f.flames[reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / BLADE_MS)) % FLICKER.length]];
+                placeHalo(w, BLADE_HALO, framePoint(f.flame, x, y, view.flip), 0.3 + 0.15 * breath);
+            } else if (f.flames) {
                 // The candle: a flicker frame by a hash of short slots, the same on every client; the ground light
                 // and the halo breathe with it and stand under and around the flame, wherever the hand carries it.
                 const k = reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / (red ? RED_FLAME_MS : FLAME_MS))) % FLICKER.length];
@@ -2546,6 +2817,7 @@ export async function createScene(rootEl, snapshot) {
                 if (!red) candleTrail(w, flame, s.moving, view);
             }
             if (view.pose === 'shoot') shotFx(w, view, x, y);
+            changeFx(w, view, x, y, at);
             w.lights.visible = Boolean(glow);
             if (glow) {
                 w.lights.texture = frameTexture(glow);
@@ -2652,7 +2924,7 @@ export async function createScene(rootEl, snapshot) {
             if (now - group.at < CLINK.end) group.sides.forEach((side, index) => side.w && of.set(side.w.id, { group, index, meet: group.meet }));
         };
         if (planned) {
-            for (const g of clinkPlan.at(now, [...walkers.values()].filter((w) => !headingToClink(w, now)), toastsNow())) {
+            for (const g of clinkPlan.at(now, [...walkers.values()].filter((w) => !w.zombie && !headingToClink(w, now)), toastsNow())) {
                 if (now >= g.until || g.ids.some((id) => clickedBetween(id, g.at, g.until))) continue;
                 const sides = g.ids.map((id) => walkers.get(id)).filter((w) => w?.sprite && w.track).map((w) => {
                     const at = walkerArt(walkAt(w.track, clock).at);
@@ -2903,6 +3175,12 @@ export async function createScene(rootEl, snapshot) {
                 w.shoot.fired = 1;
                 redSpark(from, to, len);
             }
+        } else if (item === 'rapier') {
+            if (t < 90) showFlash(w, RAPIER_SPARK, from);
+            if (!w.shoot.fired) {
+                w.shoot.fired = 1;
+                chain(from, to);
+            }
         } else if (item === 'beer') {
             const bubbles = reduced ? BUBBLES.slice(0, 1) : w.shoot.click ? CLICK_BUBBLES : BUBBLES;
             while (w.shoot.fired < bubbles.length && t >= bubbles[w.shoot.fired]) {
@@ -3025,6 +3303,46 @@ export async function createScene(rootEl, snapshot) {
         return { core: [...core.values()], glow };
     }
 
+    /*
+     * The rapier's golden chain lightning (docs/spec/frontend.md, «Рапира»; finale.js, FX.chain): from the blade's tip to
+     * the target, three jagged shapes of 50 ms with their branches — a white-gold core over a gold edge — then it thins
+     * out and is gone by CHAIN_MS; gold sparks fly off where it strikes. A Graphics living as a particle, like the
+     * book's bolt.
+     */
+    const CHAIN_MS = 300;
+    const GOLD_EMBERS = ['goldCore', 'goldHot', 'goldGlow', 'goldDeep'];
+    const RAPIER_SPARK = { ...SHOT_FX.spark, legend: { '.': null, M: 'goldCore', h: 'goldHot', n: 'goldGlow' } };
+    function chain(from, to) {
+        const seed = Math.floor(Math.random() * 1e9);
+        const shapes = [0, 1, 2].map((i) => FX.chain(from, to, seed + i));
+        const g = new Graphics();
+        particleLayer.addChild(g);
+        let shown = -1;
+        const tick = (q) => {
+            const k = reduced ? 0 : Math.min(3, Math.floor(q.age / 0.05));
+            const fadeStep = k < 3 ? 0 : 1 + Math.floor((q.age - 0.15) / 0.05);
+            const key = k * 10 + fadeStep;
+            if (key === shown) return;
+            shown = key;
+            g.clear();
+            const { core, edge } = shapes[Math.min(2, k)];
+            // Dying, it thins out in steps: every other pixel, then every third.
+            const keep = (i) => fadeStep === 0 || i % (fadeStep + 1) === 0;
+            if (k < 3) {
+                for (const [x, y] of edge) g.rect(x, y, 1, 1);
+                g.fill(PALETTE.goldGlow);
+            }
+            core.forEach(([x, y], i) => keep(i) && g.rect(x, y, 1, 1));
+            g.fill(k < 3 ? PALETTE.goldCore : PALETTE.goldHot);
+        };
+        particles.push({ sprite: g, x: 0, y: 0, vx: 0, vy: 0, gravity: 0, life: reduced ? 0.15 : CHAIN_MS / 1000, age: 0, tick });
+        if (reduced) return;
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2 + between(0, 0.8);
+            ember(Math.round(to.x), Math.round(to.y), Math.cos(a) * between(20, 45), Math.sin(a) * between(20, 45) - 10, 50, between(0.25, 0.45), 0, GOLD_EMBERS);
+        }
+    }
+
     // A burp bubble: floats from the mug at the target, wobbling, slower than a shot, and pops where it ends. Drawn as
     // is — a shiny film catches whatever light there is, and a relit one would vanish at night; with reduced motion one
     // pop at the mug.
@@ -3129,7 +3447,7 @@ export async function createScene(rootEl, snapshot) {
     // stop for it.
     function walkerShot(event) {
         const w = walkers.get(event.player?.id);
-        if (!w || !w.sprite) return;
+        if (!w || !w.sprite || w.zombie) return;
         if (walkAt(w.track, clock).moving) return;
         const f = flyers.get(event.flyer);
         const me = walkerArt(walkAt(w.track, clock).at);
@@ -3142,7 +3460,18 @@ export async function createScene(rootEl, snapshot) {
             : Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
         const item = w.item ?? null;
         const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
-        w.shoot = { dir, flip, item, target: f ? { ...f.pos } : null, at: clock, until, sparked: false, puffs: 0, fired: 0 };
+        // The rapier's lightning is thinned like a click shot: the pose without the bolt past the scene's cap or within
+        // the walker's own refire time.
+        const quiet = item === 'rapier' && ((w.shoot && clock - w.shoot.at < CLICK_REFIRE_MS) || !clickShotFree());
+        w.shoot = { dir, flip, item, target: f ? { ...f.pos } : null, at: clock, until, sparked: false, puffs: 0, fired: quiet ? Infinity : 0 };
+    }
+
+    // Whether the scene may fire one more thinned shot now (CLICK_SHOT_CAP per CLICK_WINDOW_MS); counts it if so.
+    function clickShotFree() {
+        while (clickShots.length && clickShots[0] <= clock - CLICK_WINDOW_MS) clickShots.shift();
+        if (clickShots.length >= CLICK_SHOT_CAP) return false;
+        clickShots.push(clock);
+        return true;
     }
 
     // Click shots fired lately over the whole scene (their clock), for CLICK_SHOT_CAP.
@@ -3157,7 +3486,7 @@ export async function createScene(rootEl, snapshot) {
     function walkerClickShot(id, target) {
         if (!id || !target || isBar(state.scene)) return;
         const w = walkers.get(id);
-        if (!w?.sprite || w.clinking || w.drinkUntil > clock || w.shrugUntil > clock) return;
+        if (!w?.sprite || w.zombie || w.clinking || w.drinkUntil > clock || w.shrugUntil > clock) return;
         const s = walkAt(w.track, clock);
         if (s.moving) return;
         const me = walkerArt(s.at);
@@ -3244,7 +3573,7 @@ export async function createScene(rootEl, snapshot) {
 
         for (const bug of bugs) {
             // Butterflies are a daytime thing.
-            bug.sprite.visible = !reduced && lighting === 'day';
+            bug.sprite.visible = !reduced && (lighting === 'day' || lighting === 'dawn');
             const t = clock / 1000 + bug.phase;
             const x = bug.x + Math.sin(t * 0.31) * 16 + Math.sin(t * 0.9) * 3;
             const y = bug.y + Math.sin(t * 0.47) * 5 - Math.abs(Math.sin(t * 2.3)) * 2;
@@ -3291,7 +3620,11 @@ export async function createScene(rootEl, snapshot) {
 
     // The sunset sun sinking behind the hills, the bigger stars twinkling, the frozen old lighting fading out.
     function animateSky() {
-        if (sun) {
+        if (sun?.rising) {
+            // The dawn of finale step 7: up from behind the hills, slowing as it clears them.
+            const t = reduced ? 1 : clamp(sinceStep() / FINALE_T.sunrise, 0, 1);
+            sun.sprite.position.set(sun.x, Math.round(sun.rest + (sun.high - sun.rest) * (1 - (1 - t) * (1 - t))));
+        } else if (sun) {
             const t = reduced ? 1 : clamp((clock - sunSetAt) / SUNSET_MS, 0, 1);
             sun.sprite.position.set(sun.x, Math.round(sun.high + (sun.rest - sun.high) * (1 - (1 - t) * (1 - t))));
         }
@@ -3354,6 +3687,7 @@ export async function createScene(rootEl, snapshot) {
             veilStart = clock;
             veilFrames = STRIKE_VEIL;
         },
+        boss: () => boss,
     });
 
     /** Takes the finale's step and the circle's state as they are, without animating into them. */
@@ -3362,8 +3696,30 @@ export async function createScene(rootEl, snapshot) {
         finale.ready = Boolean(ready);
         finale.at = -1e9;
         finale.pullAt = -1e9;
-        owlFlight = { mode: step !== null && step >= 5 ? 'away' : 'perched', at: 0, leave: false };
+        // Gone at step 5; back on the branch from step 6, the rapier already up.
+        owlFlight = { mode: step === 5 ? 'away' : 'perched', at: 0, leave: false };
+        owlRapier = step !== null && step >= 6 ? { at: -1e9 } : null;
+        owlLines = 0;
     }
+
+    /*
+     * FrankenPHP as the boss of step 6 (docs/spec/frontend.md, «Рапира»): { hp, max, woke, downAt, hitAt } — whether he
+     * ever woke (his glasses end up on the ash), when his health ran out and when a strike last hit him, scene clock
+     * (-1e9: long ago); null without a boss.
+     */
+    let boss = null;
+    const bossOf = (b, prev = null) => (b ? { hp: b.hp, max: b.max, woke: true, downAt: prev?.downAt ?? -1e9, hitAt: prev?.hitAt ?? -1e9 } : null);
+    boss = bossOf(snapshot.boss);
+    // The point over FrankenPHP's head for the DOM health bar, art px.
+    const bossTop = () => {
+        const c = centre();
+        return { x: c.x, y: c.y - FRANKEN_HEAD + 6 };
+    };
+    // Where a rapier's lightning strikes him: the chest.
+    const bossChest = () => {
+        const c = centre();
+        return { x: c.x, y: c.y - 44 };
+    };
 
     settleFinale(snapshot.finale?.step ?? null, snapshot.ready);
     for (const w of snapshot.walkers ?? []) setWalker(w);
@@ -3391,16 +3747,23 @@ export async function createScene(rootEl, snapshot) {
     }).observe(rootEl);
 
     return {
-        render(next) {
+        /**
+         * A whole state: the snapshot, a resync, a reset. `again` — the dawn's «В бар» (`reset` with `again`): the old
+         * lighting fades into the bar over FADE_MS instead of the cut and the flash of a new round.
+         */
+        render(next, { again = false } = {}) {
             // Flyers live seconds and are not in the snapshot: a full render (state, reset) starts without them.
             for (const f of flyers.values()) dropFlyer(f);
             flyers.clear();
-            if (!reduced && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
+            const fadeIn = again && !reduced;
+            if (!reduced && !fadeIn && next.round !== undefined && state.round !== undefined && next.round !== state.round) {
                 veilStart = clock;
                 veilFrames = VEIL;
             }
             // A resync or reset jumps straight to the state: no hop, no blast, no fade.
             endFade();
+            if (fadeIn) startFade(FADE_MS);
+            boss = bossOf(next.boss);
             jumpAt = -1e9;
             blastAt = -1e9;
             sunSetAt = -1e9;
@@ -3608,7 +3971,8 @@ export async function createScene(rootEl, snapshot) {
 
         /**
          * Moments the sound plays that no channel event marks, as fn({type, ...}): `owl-away` (the owl takes off at
-         * finale step 5), `franken` {text, x} (a phrase of FrankenPHP comes up), `clink` {x} (a planned clink strikes);
+         * finale step 5), `owl-rapier` (it draws the rapier at step 6), `franken` {text, x} (a phrase of FrankenPHP
+         * comes up), `clink` {x} (a planned clink strikes);
          * x in percent of the width.
          */
         onCue(fn) {
@@ -3686,9 +4050,103 @@ export async function createScene(rootEl, snapshot) {
          * The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. Returns the ms
          * until it starts. After the owl has flown away (finale step 5) the line is just shown over FrankenPHP.
          */
-        owl({ ms, hoot = false }) {
+        owl({ ms, hoot = false, rapier = false }) {
             if (!owlGone()) owlTalk = { at: clock, until: clock + ms, hoot };
+            // Step 6: the owl draws its rapier with the second part of `finale-6`, or with a line that asks for it.
+            if (inFinale() && finale.step >= 6 && !owlGone()) {
+                owlLines++;
+                if (rapier || owlLines === 2) drawRapier();
+            }
             return 0;
+        },
+
+        /** The owl flies back onto its branch (finale step 6); its lines hang over it again. */
+        owlBack() {
+            if (!owlGone()) return;
+            owlFlight = { mode: reduced ? 'perched' : 'arriving', at: clock, leave: false };
+        },
+
+        /**
+         * Channel events `boss` and `strike`: FrankenPHP's health { hp, max }, null without a boss. While hp > 0 he
+         * wears the black glasses; the moment it reaches 0 he crumbles into ash (a boss already at 0 just lies there).
+         */
+        boss(next) {
+            const prev = boss;
+            boss = bossOf(next, prev);
+            if (boss && boss.hp <= 0 && prev && prev.hp > 0 && !reduced) boss.downAt = clock;
+        },
+
+        /**
+         * Channel event `strike` {player, hp}: the striker turns to FrankenPHP and the golden chain lightning runs from
+         * its rapier to his chest (thinned like click shots), and he flinches.
+         */
+        strike(event) {
+            const target = bossChest();
+            const w = walkers.get(event?.player?.id);
+            walkerClickShot(w?.id, target);
+            // One walking strikes without the pose: the bolt starts at its hand.
+            if (w?.sprite && walkAt(w.track, clock).moving && clickShotFree()) {
+                const at = walkerArt(walkAt(w.track, clock).at);
+                chain({ x: at.x + (target.x < at.x ? -6 : 6), y: at.y - 22 }, target);
+            }
+            if (boss) boss.hitAt = clock;
+        },
+
+        /** Channel event `word` {player, ok}: a golden flash for the rapier; a wrong word turns the walker into a zombie. */
+        word(event) {
+            const w = walkers.get(event?.player?.id);
+            if (!w?.track) return;
+            const at = walkerArt(walkAt(w.track, clock).at);
+            if (reduced) return;
+            if (event.ok) {
+                const flash = spawn([defTexture(RAPIER_SPARK)], at.x, at.y - 20, 0, 0, 0, 0.2);
+                flash.sprite.pivot.set(RAPIER_SPARK.anchor.x, RAPIER_SPARK.anchor.y);
+                for (let i = 0; i < 8; i++) {
+                    const a = (i / 8) * Math.PI * 2;
+                    ember(at.x, at.y - 16, Math.cos(a) * 30, Math.sin(a) * 22 - 12, 20, between(0.4, 0.7), 0, GOLD_EMBERS);
+                }
+                return;
+            }
+            w.turnAt = clock;
+            const spark = spawn([defTexture(SHOT_FX.spark)], at.x, at.y - 16, 0, 0, 0, 0.25);
+            spark.sprite.pivot.set(SHOT_FX.spark.anchor.x, SHOT_FX.spark.anchor.y);
+            for (let i = 0; i < 6; i++) spawn('magic', at.x + between(-5, 5), at.y - between(6, 24), sign() * between(4, 16), -between(10, 30), -10, between(0.5, 0.9));
+            for (let i = 0; i < 3; i++) puff({ x: at.x + between(-4, 4), y: at.y - between(4, 18) }, [0, -1], false);
+        },
+
+        /** Channel event `cure` {player, by}: a white spark flies from `by` to the zombie, a flash, the green fades. */
+        cure(event) {
+            const w = walkers.get(event?.player?.id);
+            if (!w?.track) return;
+            w.turnAt = -1e9;
+            w.cureAt = clock;
+            const by = walkers.get(event?.by?.id);
+            if (reduced || !by?.track) return;
+            const from = walkerArt(walkAt(by.track, clock).at);
+            const to = walkerArt(walkAt(w.track, clock).at);
+            const sec = CURE_FLY_MS / 1000;
+            const p = spawn([defTexture(SHOT_FX.pop)], from.x, from.y - 20, (to.x - from.x) / sec, (to.y - from.y) / sec, 0, sec);
+            p.sprite.pivot.set(2, 2);
+            p.tick = (q) => {
+                if (Math.random() < 0.5) ember(Math.round(q.x), Math.round(q.y), between(-4, 4), between(-6, 2), 0, between(0.15, 0.3), 0, ['white', 'hazeLight', 'grayLight']);
+            };
+        },
+
+        /**
+         * A pumpkin of step 5 hands walker `playerId` a fresh mug (`take` with `pumpkin`): ~GIVE_MS of its arms, the
+         * walker's beer showing once it is held out.
+         */
+        takeFromPumpkin(pumpkinId, playerId) {
+            const p = pumpkins.get(pumpkinId);
+            if (p && !reduced) p.give = { at: clock, player: playerId };
+            const w = walkers.get(playerId);
+            if (w && p && !reduced) w.beerAt = clock + GIVE_MS;
+        },
+
+        /** The point over FrankenPHP's head in CSS pixels of the scene root (also published as --boss-x|y). */
+        bossAnchor() {
+            const top = bossTop();
+            return { x: top.x * layout.cssPx, y: top.y * layout.cssPx };
         },
 
         /**
@@ -3699,13 +4157,24 @@ export async function createScene(rootEl, snapshot) {
             const prev = finale.step;
             finale.ready = Boolean(ready);
             if (step === prev) return;
+            const before = lighting;
             if (reduced || prev === null || step !== prev + 1) settleFinale(step, ready);
             else {
                 finale.step = step;
                 finale.at = clock;
                 if (step === 1) finale.pullAt = clock;
-                // The owl leaves the branch once its last line is over.
+                // The owl leaves the branch once its last line is over, and comes back with step 6.
                 if (step === 5) owlFlight = { mode: 'perched', at: clock, leave: true };
+                if (step === 6) {
+                    owlLines = 0;
+                    owlRapier = null;
+                    if (owlGone()) owlFlight = { mode: 'arriving', at: clock, leave: false };
+                }
+                // The night fades slowly into the dawn.
+                if (step === 7 && before !== 'dawn') {
+                    stage.hideFigure();
+                    startFade(FINALE_T.dawnFade);
+                }
             }
             if (lightingOf(state.scene) !== lighting) rebuild();
             else pumpkins.forEach(applyArt);

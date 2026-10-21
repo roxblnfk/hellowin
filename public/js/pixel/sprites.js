@@ -1060,13 +1060,28 @@ const ARM_POSES = {
     half: (r, rise) => [[0, 0], [1, -1], ...Array.from({ length: Math.round(rise / 2) }, (_, i) => [2 + (i >> 2), -2 - i])],
     up: (r, rise) => [[0, 0], [1, -1], [2, -2], ...Array.from({ length: rise - 2 }, (_, i) => [2 + (i >> 2), -3 - i])],
 };
+// Handing a fresh mug to a walker (finale step 5): its own mug set down by the foot, the hand into the top cut, a new
+// mug pulled out over the top, held out to the side. `at` — the hand's [dx, dy] of the set-down mug, `top` — the top
+// cut. Each is { arm, glass: where the hand's mug is ('hand' or none), ground: the own mug stands on the ground }.
+const line = ([x0, y0], [x1, y1]) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+    return Array.from({ length: n }, (_, i) => [Math.round(x0 + ((x1 - x0) * (i + 1)) / n), Math.round(y0 + ((y1 - y0) * (i + 1)) / n)]);
+};
+const GIVE_POSES = [
+    { arm: (r, rise, { at }) => [[0, 0], ...line([0, 0], [1, 2]), ...line([1, 2], at)], glass: 'hand' },
+    { arm: (r, rise, { top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1]]), ...line([2, top[1]], top)], ground: true },
+    { arm: (r, rise, { top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1] - 3]), ...line([2, top[1] - 3], [Math.round(top[0] / 2), top[1] - 5])], glass: 'hand', ground: true },
+    { arm: (r) => [[0, 0], ...line([0, 0], [r + 4, -1])], glass: 'hand', ground: true },
+];
 const FREE_ARM = (r) => [[0, 0], [1, 1], ...Array.from({ length: r - 1 }, (_, i) => [2 + (i >> 1), 2 + i])];
 const armsCache = new Map();
 
 /**
  * Arms with a beer mug for a pumpkin of the cursed world: { anchor, frames } with frames hold, half, up (raised over
- * the head), each { lit, beer } sprites of one w×h and that anchor at the pumpkin's foot, like pumpkinLayers. The mug's
- * side follows the seed. The frames reach past the pumpkin's own grid, so the scene places them by their own anchor.
+ * the head), then the four of handing a fresh mug out (~225 ms each): 3 — its own mug set down by the foot, 4 — the
+ * hand in the top cut, 5 — a new mug pulled out over the top, 6 — held out to the side; each { lit, beer } sprites of
+ * one w×h and that anchor at the pumpkin's foot, like pumpkinLayers. The mug's side follows the seed. The frames reach
+ * past the pumpkin's own grid, so the scene places them by their own anchor.
  */
 export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
     const sz = ARMS[size] ? size : 'm';
@@ -1086,7 +1101,15 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
     const gw = glass[0].length;
     const gh = glass.length;
     const rise = shoulder - y0 + gh - grip[1] + 1;
-    const frames = Object.values(ARM_POSES).map((pose) => {
+    const foot = solid[solid.length - 1];
+    const sx = dir > 0 ? xr + 1 : xl - 1;
+    const ctx = {
+        at: [2, foot - gh + 1 + grip[1] - shoulder],
+        top: [Math.round(((xl + xr) / 2 - sx) * dir), y0 - shoulder - 1],
+    };
+    let ground = null;
+    const poses = [...Object.values(ARM_POSES).map((arm) => ({ arm, glass: 'hand' })), ...GIVE_POSES];
+    const frames = poses.map((pose) => {
         const px = new Map();
         const put = (x, y, ch) => px.set(`${x},${y}`, { x, y, ch });
         // 2 px thick: a light core, the dark outline under it and on its right.
@@ -1103,8 +1126,8 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
             put(x, y + 1, 'O');
             put(x + d, y + 1, 'O');
         };
-        const sx = dir > 0 ? xr + 1 : xl - 1;
-        const arm = pose(reach, rise);
+        const arm = pose.arm(reach, rise, ctx);
+        if (pose.ground && ground) glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(ground[0] + dx, ground[1] + dy, ch)));
         stroke(sx, dir, arm);
         const [hx, hy] = arm[arm.length - 1];
         const handX = sx + dir * hx;
@@ -1112,7 +1135,9 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
         const gripX = dir > 0 ? grip[0] : gw - 1 - grip[0];
         const gx = handX + dir - gripX;
         const gy = handY - grip[1];
-        glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(gx + dx, gy + dy, ch)));
+        if (pose.glass === 'hand') glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(gx + dx, gy + dy, ch)));
+        // The first give pose sets the mug down: where it stands from then on.
+        if (pose === GIVE_POSES[0]) ground = [gx, gy];
         mitten(handX, handY, dir);
         const fx = dir > 0 ? xl - 1 : xr + 1;
         const free = FREE_ARM(Math.max(2, reach - 1));

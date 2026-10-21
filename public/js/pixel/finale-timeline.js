@@ -29,4 +29,15 @@ export const T = {
     leave: 1200,
     back: 4400,
     quiet: 14000,
+    // Step 6: the owl flies back in (2.5 s of wingbeats, then the landing), FrankenPHP keeps quiet through its three
+    // lines; the boss flinches at a strike, and at zero health crumbles to ash frame by frame.
+    owlFly: 2500,
+    owlLand: 150,
+    quiet6: 23000,
+    hit: 120,
+    collapseFrame: 270,
+    // Step 7: the night fades into the dawn while the sun climbs out from behind the hills; the pumpkins settle down.
+    dawnFade: 6000,
+    sunrise: 8000,
+    settle: 1000,
 };

@@ -13,8 +13,12 @@ const CARDS = [
     ['jobs', ['задачу', 'задачи', 'задач'], 'выполнила очередь', 'каждая — шаг тыквы, костра, круга или сцены'],
     ['burned', ['лишний клик', 'лишних клика', 'лишних кликов'], 'он отбросил', 'тыква не проскочила ни одной стадии'],
     ['shot', ['летуна', 'летунов', 'летунов'], 'сбили', 'каждого — первый успевший, под локом'],
-    ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили в баре', 'последнюю — первый дошедший до стойки'],
+    ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили за вечер', 'последнюю — первый дошедший до стойки'],
+    ['slain', ['зомби-воркера', 'зомби-воркера', 'зомби-воркеров'], 'упокоили', 'каждого — первый успевший, под локом'],
+    ['damage', ['урона', 'урона', 'урона'], 'FrankenPHP нанесли рапирами', 'весь зал бьёт в один элемент под одним локом'],
 ];
+// The rapier's numbers: their cards show only once there is something to count.
+const SKIP_ZERO = new Set(['slain', 'damage']);
 
 function plural(n, [one, few, many]) {
     const tens = n % 100;
@@ -98,7 +102,7 @@ export function createReveal(root) {
             }
             for (const [key, forms, caption, note] of CARDS) {
                 // A server without the bar sends no `drinks`: its card stays out.
-                panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined;
+                panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined || (SKIP_ZERO.has(key) && !(Number(reveal[key]) > 0));
                 const n = Math.max(0, Math.trunc(Number(reveal[key]) || 0));
                 panel.querySelector(`[data-reveal-${key}]`).textContent = NUMBER.format(n);
                 panel.querySelector(`[data-reveal-label="${key}"]`).textContent = `${plural(n, forms)} ${caption}`;
