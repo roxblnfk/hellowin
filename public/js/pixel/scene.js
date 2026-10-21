@@ -12,16 +12,16 @@ import { BAR_LAYOUT, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, j
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
-import { BAR_TOASTS, TOASTS } from '../toasts.js';
+import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
-import { FX } from './finale.js';
+import { FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { DEATH_MS, GONE_MS, createDeaths } from './deaths.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
-import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar } from './bar.js';
+import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, mugSlots, paintBar } from './bar.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -1443,6 +1443,15 @@ export async function createScene(rootEl, snapshot) {
             rootEl.style.setProperty('--counter-w', `${(box.x2 - box.x1) * px}px`);
             rootEl.style.setProperty('--counter-h', `${(box.y - box.top) * px}px`);
         }
+        // RoadRunner's button covers him above the counter, facing the hall (the frame mirrored).
+        if (hall?.runner) {
+            const def = RUNNER.l.bar[0];
+            const { x, y } = hall.runner;
+            rootEl.style.setProperty('--rr-x', `${(x - (def.w - def.anchor.x)) * px}px`);
+            rootEl.style.setProperty('--rr-y', `${(y - def.h) * px}px`);
+            rootEl.style.setProperty('--rr-w', `${def.w * px}px`);
+            rootEl.style.setProperty('--rr-h', `${(def.h - RR_BAR_HIDE) * px}px`);
+        }
         rootEl.style.setProperty('--float-lift', `${FLOAT_LIFT * px}px`);
         // FrankenPHP of the final scene: the point over his head for the health bar (CSS px of the scene root) and his
         // clickable body around his foot on the circle, for the strike button.
@@ -1476,7 +1485,7 @@ export async function createScene(rootEl, snapshot) {
     const DOOR_HOLD_MS = 600;
     // The counter's state as the client model passes it in, and when the last mug was set down (scene clock). Taken
     // from the page's snapshot at once: the client re-reads the state only after a reconnect or a gap.
-    const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9 };
+    const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9, roadrunner: snapshot.bar?.roadrunner === true };
     // What buildBar() laid out, art px: the counter's box, the owl's spot, the mug sprites, the flickering flames.
     let hall = null;
     // Lines only the scene knows: the local «Сначала чокнись…» hint over my own walker.
@@ -1573,7 +1582,23 @@ export async function createScene(rootEl, snapshot) {
             groundLayer.addChild(s);
             return { sprite: s, y: slot.y };
         });
-        hall = { box, flicker, mugs, door };
+        // RoadRunner after the dawn: behind the counter like the owl, facing the hall; shown while `bar.roadrunner`.
+        const rrSpot = barRunnerSpot(L, artW, artH, opts);
+        let runner = null;
+        if (rrSpot) {
+            const s = new Sprite();
+            const feet = rrSpot.y + RR_BAR_HIDE;
+            const { x } = rrSpot;
+            s.position.set(x, feet);
+            s.scale.x = -1;
+            // Sorted by the counter's back edge, not his feet: behind the owl too, so on a narrow screen, where the
+            // counter is short, his tail goes behind the owl instead of covering its face.
+            s.zIndex = depthKey(x, rrSpot.y);
+            s.visible = false;
+            groundLayer.addChild(s);
+            runner = { sprite: s, x, y: feet };
+        }
+        hall = { box, flicker, mugs, door, runner };
         animateOwl();
         animateBar();
     }
@@ -1616,6 +1641,62 @@ export async function createScene(rootEl, snapshot) {
             f.sprite.texture = f.frames[k];
         }
         if (hall.door) hall.door.sprite.texture = hall.door.frames[doorFrame(serverNow())];
+        animateRunner();
+    }
+
+    /*
+     * RoadRunner behind the counter (docs/spec/frontend.md, «RoadRunner за стойкой»): RUNNER.l.bar in the hall's light.
+     * His toast and its moment come from the server clock (toasts.js, rrToastAt), so the room sees the same; he lifts
+     * the mug for each toast, and toward a walker clinking with him by click, whose clink silences his own toast.
+     */
+    const RR_LIFT_MS = 400;
+    // His raised mug's middle, art px toward the hall from his anchor (finale.js, RR_BAR_MUG mirrored).
+    const RR_MUG_REACH = 11;
+    const RR_TOAST_FRESH_MS = 1500;
+    let rrToastSaid = null;
+    const runnerShown = () => Boolean(hall?.runner && barState.roadrunner && isBar(state.scene));
+    // The clink by click with him playing at server time `now`, or null.
+    const runnerClink = (now) => [...clinks.values()].find((c) => c.roadrunner && now >= c.at && now < c.until) ?? null;
+    // His toast at `now` unless a clink with him overlaps it.
+    function runnerToast(now) {
+        const toast = rrToastAt(now);
+        if (!toast) return null;
+        return [...clinks.values()].some((c) => c.roadrunner && c.at < toast.until && c.until > toast.at) ? null : toast;
+    }
+    // The frame `t` ms into a lift: the mug at the chest before it, two lifting frames over RR_LIFT_MS, then held up.
+    const liftFrame = (t) => (reduced || t < 0 ? 0 : t < RR_LIFT_MS / 2 ? 1 : t < RR_LIFT_MS ? 2 : 3);
+
+    function runnerFrame(now) {
+        const c = runnerClink(now);
+        if (c) {
+            const t = now - c.at;
+            return RUNNER.l.bar[t < CLINK.reach ? 0 : liftFrame(((t - CLINK.reach) / (CLINK.strike - CLINK.reach)) * RR_LIFT_MS)];
+        }
+        const toast = runnerToast(now);
+        return RUNNER.l.bar[toast ? liftFrame(now - toast.at) : 0];
+    }
+
+    function animateRunner() {
+        const r = hall?.runner;
+        if (!r) return;
+        r.sprite.visible = runnerShown();
+        if (!r.sprite.visible) return;
+        const def = runnerFrame(serverNow());
+        r.sprite.texture = barTexture(def);
+        r.sprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+    }
+
+    // The point over his head for a bubble, art px.
+    const runnerHead = () => ({ x: hall.runner.x, y: hall.runner.y - RUNNER.l.bar[0].h - 1 });
+
+    // His toast's bubble, and its cue once as it comes up (one caught later than RR_TOAST_FRESH_MS stays silent).
+    function runnerSpeech(now) {
+        const toast = runnerShown() ? runnerToast(now) : null;
+        if (!toast) return;
+        toastSpeech.say('rr', toast.text, runnerHead());
+        if (rrToastSaid === toast.at) return;
+        rrToastSaid = toast.at;
+        if (now - toast.at < RR_TOAST_FRESH_MS) cue({ type: 'rr-toast', x: (hall.runner.x / layout.artW) * 100 });
     }
 
     /**
@@ -2941,6 +3022,15 @@ export async function createScene(rootEl, snapshot) {
             if (now >= c.until + SLOT_MS) clinks.delete(key);
             if (!planned || now < c.at || now >= c.until) continue;
             const by = walkers.get(c.player);
+            if (c.roadrunner) {
+                if (!by?.sprite || !by.track || !runnerShown()) continue;
+                const first = walkerArt(walkAt(by.track, clock).at);
+                const at = { x: hall.runner.x, y: hall.runner.y };
+                const sides = [{ w: by, at: first, head: { x: first.x, y: first.y - WALKER_HEAD } }, { at, head: runnerHead() }];
+                // The glasses meet at his mug, held out toward the hall: a walker right in front of him turns to it.
+                take({ ...c, sides, meet: { x: at.x - RR_MUG_REACH, y: first.y } });
+                continue;
+            }
             const target = c.walker ? walkers.get(c.walker) : pumpkins.get(c.pumpkin);
             if (!by?.sprite || !by.track || !target || (c.walker && (!target.sprite || !target.track)) || (c.pumpkin && !target.art)) continue;
             const first = walkerArt(walkAt(by.track, clock).at);
@@ -3035,8 +3125,9 @@ export async function createScene(rootEl, snapshot) {
     // The toast over the group from CLINK.toast; a toast of two voices puts the line over the first (by click: the walker
     // who came up) and the reply over the second (its target, the pumpkin too), one after the other.
     function toastBubbles(groups, now) {
-        if (!groups.length && !hints.size && !toastSpeech) return;
+        if (!groups.length && !hints.size && !toastSpeech && !runnerShown()) return;
         toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
+        runnerSpeech(now);
         for (const [id, hint] of hints) {
             const w = walkers.get(id);
             if (clock >= hint.until || !w?.track) {
@@ -3777,7 +3868,7 @@ export async function createScene(rootEl, snapshot) {
                 bushes: next.bushes ?? state.bushes,
                 barLayout: next.barLayout ?? state.barLayout,
             };
-            Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9 });
+            Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9, roadrunner: next.bar?.roadrunner === true });
             hints.clear();
             settleFinale(state.scene >= state.sceneStages ? next.finale?.step ?? null : null, next.ready);
             // Walkers outlive rounds (players.md, «На поле»): the snapshot's list replaces ours as a whole.
@@ -3972,7 +4063,7 @@ export async function createScene(rootEl, snapshot) {
         /**
          * Moments the sound plays that no channel event marks, as fn({type, ...}): `owl-away` (the owl takes off at
          * finale step 5), `owl-rapier` (it draws the rapier at step 6), `franken` {text, x} (a phrase of FrankenPHP
-         * comes up), `clink` {x} (a planned clink strikes);
+         * comes up), `clink` {x} (a planned clink strikes), `rr-toast` {x} (RoadRunner behind the counter raises a toast);
          * x in percent of the width.
          */
         onCue(fn) {

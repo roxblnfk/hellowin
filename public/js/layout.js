@@ -51,6 +51,7 @@ export const BAR_LAYOUT = {
     spawn: { y1: 90, y2: 94 },
     door: { x: 12, y: 50 },
     door_in: 6,
+    roadrunner: { x: 74, y: 46 },
     perches: [
         { x1: 3, x2: 97, y: 8, name: 'beam' },
         { x1: 9, x2: 15, y: 30, name: 'lintel' },

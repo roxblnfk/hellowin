@@ -207,10 +207,12 @@ async function main() {
     bindWord(root, client, (text) => centrifuge.rpc('word', { text }).then(({ data }) => data));
     bindStriking(root, client, () => rpc('strike'));
 
-    // The bar (protocol.md, «Бар») and the cursed world: a mug from the counter, a drink by Space or «Выпить».
+    // The bar (protocol.md, «Бар») and the cursed world: a mug from the counter, a clink with RoadRunner behind it (its
+    // refusals — `not bar`, `no target`, `no beer`… — only warned, like any clink's), a drink by Space or «Выпить».
     // `not clinked` is a hint over my own walker only; the server broadcasts nothing for it.
     bindBar(root, client, {
         take: () => rpc('bar.take'),
+        clink: () => clink({ roadrunner: true }),
         drink: () => rpc('drink').then((data) => {
             if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),

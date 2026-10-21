@@ -6,7 +6,7 @@ import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jump
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
 // The counter outside the bar (protocol.md, `bar` in the snapshot); `drunk` and `target` — the hall's goal.
-const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target: 0 });
+const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target: 0, roadrunner: false });
 // The finale steps of docs/spec/scenario.md, «Рапира»: the cursed world with its goal (5), the owl's rapier and the boss
 // (6, still the cursed world), the dawn (7).
 const CURSED_STEP = 5;
@@ -51,7 +51,8 @@ export function barOf(bar) {
     if (!bar || !Number.isInteger(bar.mugs)) return { ...NO_BAR };
     const count = (n) => (Number.isInteger(n) && n >= 0 ? n : 0);
     // `max` — how many mugs the counter is set for (0 — not told); the counter's slots cap the drawing anyway.
-    return { mugs: bar.mugs, max: count(bar.max), pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target) };
+    // `roadrunner` — RoadRunner stands behind the counter (after the dawn's «В бар», until the moderator's reset).
+    return { mugs: bar.mugs, max: count(bar.max), pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target), roadrunner: bar.roadrunner === true };
 }
 
 /** «Выпито 12 из 30» and how full the meter is, 0–1 (full once the goal is reached). */
@@ -298,6 +299,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             counter.hidden = !bar;
             counter.setAttribute('aria-disabled', String(!(bar && canWalk() && !holdsBeer())));
         }
+        const runner = root.querySelector('[data-roadrunner]');
+        if (runner) {
+            runner.hidden = !(bar && model.bar.roadrunner);
+            runner.setAttribute('aria-disabled', String(!clinksRoadrunner()));
+        }
         const drink = root.querySelector('[data-drink]');
         // Alone on the field a player may drink without a clink (the server checks the same walkers).
         if (drink) drink.hidden = !(drinks() && (model.clinked || model.walkers.length <= 1));
@@ -493,7 +499,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         clink(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (w) delete w.clink;
-            // A clink counts for both glasses (with a pumpkin, the one who came up): mine, whether I came up or was the target.
+            // A clink counts for both glasses (with a pumpkin or RoadRunner, the one who came up): mine, whether I came up or was the target.
             if ((isBar(model.scene) || cursed()) && model.me !== null && (event.player?.id === model.me || event.walker?.id === model.me)) {
                 model.clinked = true;
                 paintBar();
@@ -598,7 +604,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (circle) circle.stageMax = event.circleStageMax ?? 0;
             // Out of the bar the mugs on the counter and in hand are gone (protocol.md, «Бар»).
             if (!isBar(model.scene)) {
-                model.bar = { ...NO_BAR, max: model.bar.max };
+                // RoadRunner's flag outlives the scene changes: only a reset sets or clears it.
+                model.bar = { ...NO_BAR, max: model.bar.max, roadrunner: model.bar.roadrunner };
                 model.clinked = false;
             }
             paintAll();
@@ -736,6 +743,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.
             model.bar = barOf(event.bar ? { target: model.bar.target, ...event.bar } : null);
+            // The dawn's «В бар» brings RoadRunner behind the counter, the moderator's reset sends him away; the
+            // server's `reset.bar.roadrunner` says so too, an event without it is read the same way.
+            if (typeof event.bar?.roadrunner !== 'boolean') model.bar.roadrunner = event.again === true;
             model.ready = model.bar.target > 0 && model.bar.drunk >= model.bar.target;
             model.stageMax = stageMaxByScene.get(SCENE.bar) ?? 0;
             model.elements.forEach((e) => {
@@ -790,6 +800,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const inBar = () => isBar(model.scene);
     const beerOf = (id) => model.walkers.find((w) => w.id === id)?.item === 'beer';
     const zombieOf = (id) => model.walkers.find((w) => w.id === id)?.zombie === true;
+    /** Whether a click on RoadRunner behind the counter is RPC `clink {roadrunner: true}`: he stands there, beer in my hand. */
+    function clinksRoadrunner() {
+        return inBar() && model.bar.roadrunner && canWalk() && holdsBeer();
+    }
     /** Whether Space or «Выпить» sends RPC `drink`: in the bar or the cursed world with beer in hand — the server says. */
     function drinks() {
         return (inBar() || cursed()) && canWalk() && holdsBeer();
@@ -862,6 +876,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             wordClosed = true;
             paintRapier();
         },
+
+        clinksRoadrunner,
 
         /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and empty hands. */
         takesBeer() {
@@ -982,7 +998,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-word], [data-word-zombie]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-word], [data-word-zombie]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
@@ -1060,24 +1076,33 @@ export function isDrinkKey(event, doc = globalThis.document) {
     if (event.code !== 'Space' && event.key !== ' ') return false;
     if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
     const taker = event.target?.closest?.(SPACE_TAKERS);
-    if ((taker && !taker.matches('[data-bar-counter], .pumpkin')) || event.target?.isContentEditable) return false;
+    if ((taker && !taker.matches('[data-bar-counter], [data-roadrunner], .pumpkin')) || event.target?.isContentEditable) return false;
     return !doc?.querySelector?.('dialog[open]');
 }
 
 /**
- * The bar's input (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the counter button asks for a mug, Space and
- * the «Выпить» button drink. Nothing is drawn locally: the walk comes as `move`, the mug as `take`, the gulp as `drink`.
+ * The bar's input (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the counter button asks for a mug, the button
+ * over RoadRunner clinks with him, Space and the «Выпить» button drink. Nothing is drawn locally: the walk comes as
+ * `move`, the mug as `take`, the glasses as `clink`, the gulp as `drink`.
  *
- * @param {{takesBeer: () => boolean, drinks: () => boolean}} client  the client model's routing
+ * @param {{takesBeer: () => boolean, drinks: () => boolean, clinksRoadrunner?: () => boolean}} client  the client model's routing
  * @param {object} actions
  * @param {() => void} actions.take  sends RPC `bar.take`
  * @param {() => void} actions.drink  sends RPC `drink`
+ * @param {() => void} [actions.clink]  sends RPC `clink {roadrunner: true}`
  */
-export function bindBar(root, client, { take, drink }, doc = globalThis.document) {
+export function bindBar(root, client, { take, drink, clink = null }, doc = globalThis.document) {
     root.querySelector('[data-bar-counter]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         if (client.takesBeer()) take();
+    });
+    // He stands over the counter's button: with empty hands a click on him is still a click on the counter.
+    root.querySelector('[data-roadrunner]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (clink && client.clinksRoadrunner?.()) clink();
+        else if (client.takesBeer()) take();
     });
     root.querySelector('[data-drink]')?.addEventListener('click', () => {
         if (client.drinks()) drink();

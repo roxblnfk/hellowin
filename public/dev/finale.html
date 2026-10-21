@@ -21,7 +21,7 @@
   Light sources (FINALE_EMISSIVE, plus night.js EMISSIVE) are baked unlit here, as the scene will once it adds them.
 -->
 <body>
-<h2>Финал (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,mock1x,franken,silhouette,runner,fx,ritual,owl,rapier,pumpkins,palette)</h2>
+<h2>Финал (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,mock1x,franken,silhouette,runner,runner-bar,fx,ritual,owl,rapier,pumpkins,palette)</h2>
 <div id="out"></div>
 <script type="module">
     import { PALETTE } from '../js/pixel/palette.js';
@@ -433,6 +433,9 @@
                 sheet([[`${size} meep`, RUNNER[size].meep]], lighting, zoom)[0],
             ]),
         ], lighting === 'day' ? '#5cac3c' : '#2a2630');
+    }
+    for (const lighting of ['day', 'firelight']) {
+        section('runner-bar', `RoadRunner за стойкой бара: l bar — с кружкой, подъём ×2, поднята — ${lighting}`, () => RUNNER.l.bar.map((s, i) => sheet([[`bar${i}`, s]], lighting, zoom)[0]), '#2a2630');
     }
     section('runner', 'RoadRunner в 1× — far, s, m, l, xl (бег) и xl meep', () => [
         live('night', (t) => RUNNER.far[frameAt(t, 4, 100)], RUNNER.far[0], 1),

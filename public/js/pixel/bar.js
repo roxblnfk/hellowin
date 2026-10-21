@@ -46,6 +46,7 @@ import { paintFlames } from './sprites.js';
  *   barOwlSpot(layout, artW, artH, opts)         → {x, y, tap, mug} — where OWL_BAR's anchor goes (the owl is drawn
  *                                                before the counter prop, which hides its lower body); tap — the
  *                                                nozzle tip, mug — the bottom centre of the mug being poured.
+ *   barRunnerSpot(layout, artW, artH, opts)      → {x, y} — RoadRunner's place behind the counter, y its back edge.
  *   mugSlots(layout, artW, artH, max, opts)      → [{x, y}] up to `max` counter mugs, nearest the owl first; place
  *                                                BAR_MUG's anchor there and draw the mugs right after the counter.
  *   counterBox(layout, artW, artH, opts)         → {x1, x2, top, y} — the drawn counter (top = the keg's top, y = the
@@ -1417,6 +1418,18 @@ export function barOwlSpot(layout, artW, artH, opts = {}) {
     if (!g.owl) return null;
     const { x, y } = g.owl;
     return { x, y, tap: { x: x + OWL_BAR.tap.x, y: y + OWL_BAR.tap.y }, mug: { x: x + OWL_BAR.mug.x, y: y + OWL_BAR.mug.y } };
+}
+
+/**
+ * Where RoadRunner stands behind the counter after the dawn (`walk.bar.roadrunner`), art px: x of the layout's point, y
+ * the counter's back edge as the owl's spot takes it (the point's own y without a counter); null without the point.
+ */
+export function barRunnerSpot(layout, artW, artH, opts = {}) {
+    const point = (layout?.area ? layout : DEFAULT_BAR_LAYOUT).roadrunner;
+    if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return null;
+    const g = geometry(layout, artW, artH, opts);
+    const at = (opts.toArt ?? ((p) => ({ x: (p.x / 100) * artW, y: (p.y / 100) * artH })))(point);
+    return { x: Math.round(at.x), y: g.counter ? g.counter.back : Math.round(at.y) };
 }
 
 /** Up to `max` counter mug spots (BAR_MUG's anchor), nearest the owl first: a front row, then a row behind it. */

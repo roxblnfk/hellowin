@@ -64,6 +64,9 @@
         <!-- The bar's counter (scene 0): over the counter's art, a mug for a character with empty hands. -->
         <button type="button" class="bar-counter" data-bar-counter aria-disabled="true" hidden
                 aria-label="Взять пиво" title="Взять пиво"><span class="bar-counter__emoji" aria-hidden="true">🍺</span></button>
+        <!-- RoadRunner behind the counter after the dawn: over him, a clink for a character with beer in hand. -->
+        <button type="button" class="roadrunner" data-roadrunner aria-disabled="true" hidden
+                aria-label="Чокнуться с RoadRunner" title="Чокнуться с RoadRunner"><span class="roadrunner__emoji" aria-hidden="true">🐦</span></button>
 
         <!-- The rapier (docs/spec/frontend.md, «Рапира»): over FrankenPHP his health and the button a rapier strikes; at the
              top the magic word, or the line of a zombie worker. -->

@@ -238,6 +238,38 @@ body:not([data-final]) .circle,
     outline-offset: calc(var(--px, 2px) * 2);
 }
 
+/*
+ * RoadRunner behind the counter after the dawn: a transparent hit zone over his body above the counter (--rr-*, from
+ * the scene), above the counter's button; without a canvas, a bird emoji next to the owl's usual spot.
+ */
+.roadrunner {
+    position: absolute;
+    left: var(--rr-x, 70%);
+    top: var(--rr-y, 30%);
+    width: var(--rr-w, 8%);
+    height: var(--rr-h, 12%);
+    z-index: 401;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: clamp(24px, 4vw, 44px);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.has-canvas .roadrunner__emoji {
+    visibility: hidden;
+}
+
+.roadrunner[aria-disabled="true"] {
+    cursor: default;
+}
+
+.roadrunner:focus-visible {
+    outline: calc(var(--px, 2px) * 1) dashed var(--gold);
+    outline-offset: calc(var(--px, 2px) * 2);
+}
+
 /* Link to the "how it works" page: a small pumpkin with a question mark, not a game element. */
 .help-link {
     position: absolute;

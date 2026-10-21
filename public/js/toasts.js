@@ -116,3 +116,54 @@ export const REFUSALS = [
 
 /** A refusal line for `not clinked`. */
 export const refusal = (random = Math.random) => REFUSALS[Math.floor(random() * REFUSALS.length)];
+
+/**
+ * RoadRunner's toasts behind the bar's counter after the dawn (docs/spec/scenario.md, «RoadRunner в баре»). Same rule:
+ * add at the end, so the slots keep their toasts.
+ */
+export const RR_TOASTS = [
+    'Мип-мип! За вас!',
+    'За аптайм!',
+    'За тех, кто ни разу не упал!',
+    'За воркеров — живых и перезапущенных!',
+    'Слухи о моей смерти сильно преувеличены!',
+    'За Spiral!',
+    'За PHP — он тоже живее всех живых!',
+    'За Centrifugo — вас все слышали!',
+    'За Temporal — переживём любой рестарт!',
+    'За идемпотентность — пью один раз, наливай дважды!',
+    'Франкен, без обид!',
+    'За nginx — пусть земля ему будет пухом!',
+    'За тех, кто воскрешал меня всю ночь!',
+    'Мип-мип! (это тост)',
+];
+
+/** RoadRunner's toast slots, ms; he speaks in about two thirds of them. */
+export const RR_SLOT_MS = 8000;
+// The toast starts this far into its slot and leaves at least RR_END_GAP of the slot empty.
+const RR_START_MS = 600;
+const RR_END_GAP = 1000;
+const RR_SEED = 0x2b2b2b;
+
+/** How long a toast of RoadRunner stays up: long enough to read, within its slot. */
+export const rrToastMs = (text) => Math.min(RR_SLOT_MS - RR_START_MS - RR_END_GAP, 2000 + text.length * 65);
+
+// The slot's toast, moved one on from the slot before's own pick (looked back a few slots, which settles it).
+function rrIndex(slot, depth = 4) {
+    const index = (mix(RR_SEED, slot) >>> 8) % RR_TOASTS.length;
+    return depth > 0 && index === rrIndex(slot - 1, depth - 1) ? (index + 1) % RR_TOASTS.length : index;
+}
+
+/**
+ * RoadRunner's toast at server time `now`: { text, at, until } in server ms, or null when he is silent. Like FrankenPHP's
+ * phrases (franken.js): the slot's hash decides whether he speaks and picks the toast, moved one on when it would repeat
+ * the slot before.
+ */
+export function rrToastAt(now) {
+    const slot = Math.floor(now / RR_SLOT_MS);
+    if (mix(RR_SEED ^ 0x55, slot) % 100 >= 67) return null;
+    const text = RR_TOASTS[rrIndex(slot)];
+    const at = slot * RR_SLOT_MS + RR_START_MS;
+    const until = at + rrToastMs(text);
+    return now >= at && now < until ? { text, at, until } : null;
+}

@@ -621,6 +621,11 @@ const RR_LEGEND = {
     o: 'pumpkin',
     M: 'innerDark',
     g: 'smokeLight',
+    // The bar's mug: foam, foam shade, beer shine, beer and glass, as the counter's (bar.js, BAR_MUG).
+    c: 'cream',
+    y: 'pumpkinShine',
+    B: 'pumpkinLight',
+    G: 'grayLight',
 };
 
 const REF_H = 48;
@@ -753,11 +758,57 @@ function rasteriseRunner(parts, height) {
 // Heights: the far horizon sprite of flyers.js is 4 px; then 12, 20, 30 and the foreground 46.
 const RUNNER_SIZES = { s: 12, m: 20, l: 30, xl: 46 };
 
+// RoadRunner behind the bar's counter (docs/spec/frontend.md, «RoadRunner за стойкой»): the standing l frame with a
+// mug of beer in its wing. The mug is stamped in pixels, not rasterised, so it stays crisp and matches BAR_MUG; the
+// wing is a capsule from the shoulder to the mug's handle.
+const RR_MUG = [
+    '...OOOOO.',
+    '..OwwcwwO',
+    '.OOwwwwwO',
+    'OGOyBBBGO',
+    'O.OyBBBGO',
+    'OGOyBBBGO',
+    '.OOGGGGGO',
+    '...OOOOO.',
+];
+
+/**
+ * How many rows above the feet the counter's back edge must pass to hide RUNNER.l.bar's legs and belly: place the
+ * anchor this far below the edge (bar.js, barRunnerSpot) and draw the counter over it; the mug at the chest rests on it.
+ */
+export const RR_BAR_HIDE = 9;
+const RR_SHOULDER = [16, 14];
+// The mug's left column and bottom row per frame, in the standing l frame: at the chest, two lifting steps, raised
+// under the beak — close to the body, so the wing reads as a wing and the beak stays clear.
+const RR_BAR_MUG = [[23, 22], [24, 19], [24, 16], [24, 14]];
+
+/** Frame 0–3 of RUNNER.l.bar: the mug at the chest, lifting it (1, 2), holding it raised; same size and anchor as stop. */
+function runnerAtBar(frame) {
+    const base = rasteriseRunner(runnerParts('stop'), RUNNER_SIZES.l);
+    const g = base.rows.map((row) => [...row]);
+    const [left, bottom] = RR_BAR_MUG[frame];
+    const top = bottom - RR_MUG.length + 1;
+    const wing = capsule(RR_SHOULDER[0], RR_SHOULDER[1], left + 0.5, top + 4.5, 2);
+    const inWing = (x, y) => wing(x + 0.5, y + 0.5);
+    for (let y = 0; y < g.length; y++) {
+        for (let x = 0; x < g[0].length; x++) {
+            if (!inWing(x, y)) continue;
+            const edge = !inWing(x - 1, y) || !inWing(x + 1, y) || !inWing(x, y - 1) || !inWing(x, y + 1);
+            g[y][x] = edge ? 'O' : 'd';
+        }
+    }
+    RR_MUG.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch !== '.') g[top + y][left + x] = ch;
+    }));
+    return toSprite(g, RR_LEGEND, base.anchor);
+}
+
 /**
  * RoadRunner, facing right (mirror for the left). far: the 7×4 horizon run of flyers.js (4 frames). s / m / l / xl —
  * 12, 20, 30 and 46 px tall, each { run: 4 frames (~70 ms; ~100 ms when small and far), stop, meep } with the anchor
  * at the feet under the hip; swap sizes as it comes nearer (the scene scales nothing). meep: beak wide open, head
- * tipped up — hold it for the «мип-мип».
+ * tipped up — hold it for the «мип-мип». l also has `bar`: 4 frames behind the bar's counter, the mug in the wing
+ * (runnerAtBar).
  */
 export const RUNNER = {
     far: FLYERS.roadrunner[0].fly,
@@ -765,6 +816,7 @@ export const RUNNER = {
         run: [0, 1, 2, 3].map((f) => rasteriseRunner(runnerParts('run', f), height)),
         stop: rasteriseRunner(runnerParts('stop'), height),
         meep: rasteriseRunner(runnerParts('meep'), height),
+        ...(size === 'l' ? { bar: [0, 1, 2, 3].map(runnerAtBar) } : {}),
     }])),
 };
 

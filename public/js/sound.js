@@ -405,6 +405,8 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (c?.type === 'franken' && !quiet()) audio.speak('franken', c.text, { pan: panOf(c.x) });
             if (c?.type === 'clink') play('clink.glass', { pan: panOf(c.x), volume: 0.5 });
             if (c?.type === 'owl-rapier') play('owl.rapier', { pan: panOf(c.x) });
+            // RoadRunner's toast behind the bar's counter: a soft «мип» as he lifts the mug.
+            if (c?.type === 'rr-toast') play('bar.meep', { pan: panOf(c.x), volume: 0.4 });
         },
     };
 }

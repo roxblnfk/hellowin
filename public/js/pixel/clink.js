@@ -130,15 +130,17 @@ export const CLINK_STALE_MS = 3000;
 const CLICK_TOAST_MAX = CLINK.end + 1300;
 
 /**
- * A `clink` event as the scene plays it: { key, player, walker, pumpkin, at, toast: [line] | [line, reply], until },
- * or null for an event without a player, a target or a time.
+ * A `clink` event as the scene plays it: { key, player, walker, pumpkin, roadrunner, at, toast: [line] | [line, reply],
+ * until }, or null for an event without a player, a target or a time. `roadrunner` — the clink with RoadRunner behind
+ * the bar's counter (the event's `roadrunner: true` instead of a walker or a pumpkin).
  */
 export function clinkOf(event, toasts = TOASTS) {
     const player = event?.player?.id;
     const walker = event?.walker?.id ?? null;
     const pumpkin = event?.pumpkin?.id ?? null;
-    if (!player || (!walker && !pumpkin) || !Number.isFinite(event.at)) return null;
+    const roadrunner = !walker && !pumpkin && event?.roadrunner === true;
+    if (!player || (!walker && !pumpkin && !roadrunner) || !Number.isFinite(event.at)) return null;
     const toast = toastAt(event.toast, toasts);
     const shown = Math.min(CLICK_TOAST_MAX, CLINK.toast + 2000 + toast.join(' ').length * 65 + (toast.length > 1 ? 1600 : 0));
-    return { key: `${player}@${event.at}`, player, walker, pumpkin, at: event.at, toast, until: event.at + Math.max(CLINK.end, shown) };
+    return { key: `${player}@${event.at}`, player, walker, pumpkin, roadrunner, at: event.at, toast, until: event.at + Math.max(CLINK.end, shown) };
 }
