@@ -379,6 +379,74 @@ export const SFX = {
         },
     }),
 
+    // ---------------------------------------------------------------- the bar
+    // The owl pours one mug (HELLOWIN_BAR_POUR_MS, 2–3 s): the tap opens, beer streams into a mug whose ring rises as
+    // it fills, the foam fizzes up, the tap closes.
+    'bar.pour': fx({
+        dur: 2.8, variants: 3, voices: 2, level: -15, jitter: 0.02,
+        render(r, out) {
+            thump(r, out, 0, { f0: 420, f1: 300, dur: 0.04, amp: 0.4 });
+            const sr = r.sr;
+            const n = Math.round(2.3 * sr);
+            const f = new SVF(sr);
+            const lp = new SVF(sr).set(2600, 0.6);
+            let g = 1;
+            for (let i = 0; i < n; i++) {
+                const k = i / n;
+                if (r.rnd() < 30 / sr) g = 0.6 + r.rnd() * 0.8;
+                g += (1 - g) * 0.001;
+                f.run(r.noise(), 380 * 4 ** k, 5);
+                const e = Math.min(1, i / (0.08 * sr)) * Math.min(1, (n - i) / (0.15 * sr));
+                const v = lp.tick(f.bp * 1.2 + r.noise() * 0.05) * e * g * 0.6;
+                out.put(Math.round(0.05 * sr) + i, v, v, 0.2);
+            }
+            bubbles(r, out, 0.4, 14, { spread: 1.9, low: 500, high: 1400, amp: 0.08 });
+            noiseSweep(r, out, 1.6, 0.9, { from: 5000, to: 7000, q: 0.8, amp: 0.05, mode: 'hp', attack: 0.3, curve: 1, grain: 200 });
+            thump(r, out, 2.4, { f0: 380, f1: 260, dur: 0.04, amp: 0.35 });
+        },
+    }),
+    // A full mug set down on the counter: a heavy wooden knock with a slosh.
+    'bar.mug': fx({
+        dur: 0.5, variants: 4, voices: 3, level: -16,
+        render(r, out) {
+            tom(r, out, 0, { amp: 0.6, tone: 150 + r.rnd() * 30, send: 0.15 });
+            thump(r, out, 0, { f0: 900, f1: 500, dur: 0.02, amp: 0.25 });
+            noiseSweep(r, out, 0.03, 0.2, { from: 900, to: 500, q: 2, amp: 0.15, attack: 0.02, curve: 1.5 });
+        },
+    }),
+    // A mug taken off the counter: a light scrape and the beer swaying in it.
+    'bar.take': fx({
+        dur: 0.5, variants: 4, voices: 3, level: -12,
+        render(r, out) {
+            noiseSweep(r, out, 0, 0.12, { from: 1400, to: 1000, q: 1.5, amp: 0.25, attack: 0.02, grain: 60 });
+            noiseSweep(r, out, 0.08, 0.3, { from: 500, to: 1100, q: 3, amp: 0.3, attack: 0.04, curve: 1.2 });
+            thump(r, out, 0.02, { f0: 600, f1: 420, dur: 0.03, amp: 0.15 });
+        },
+    }),
+    // No mug left: two dull knocks of knuckles on bare wood.
+    'bar.empty': fx({
+        dur: 0.45, variants: 3, voices: 2, level: -15,
+        render(r, out) {
+            for (const [t, a] of [[0, 0.6], [0.14, 0.45]]) {
+                thump(r, out, t, { f0: 200, f1: 130, dur: 0.07, amp: a });
+                noiseSweep(r, out, t, 0.03, { from: 700, to: 500, q: 1, amp: a * 0.3, mode: 'lp' });
+            }
+        },
+    }),
+    // Drinking: two or three gulps, then a contented, low «а-ах».
+    'bar.gulp': fx({
+        dur: 1.6, variants: 3, voices: 3, level: -16,
+        render(r, out) {
+            const gulps = 2 + Math.floor(r.rnd() * 2);
+            for (let k = 0; k < gulps; k++) {
+                const t = k * 0.24;
+                thump(r, out, t, { f0: 260, f1: 140, dur: 0.09, amp: 0.5 });
+                noiseSweep(r, out, t, 0.1, { from: 300, to: 700, q: 4, amp: 0.3, attack: 0.01, curve: 1 });
+            }
+            murmur(r, out, gulps * 0.24 + 0.1, 0.7, 50 + r.rnd() * 3, { glide: -3, cutoff: 700, breath: 0.25, amp: 0.4 });
+        },
+    }),
+
     // ---------------------------------------------------------------- voices
     'owl.hoot': fx({
         dur: 1.5, variants: 2, voices: 1, level: -14,

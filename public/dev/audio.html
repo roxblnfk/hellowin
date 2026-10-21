@@ -135,11 +135,11 @@
             $('tracks').append(trackButtons[name]);
         }
         $('tracks').append(button('стоп', () => audio.setMusic(null)));
-        const scenes = [{ scene: 0 }, { scene: 1 }, { scene: 2 }, { scene: 3, finale: { step: 0 } }, { scene: 3, finale: { step: 5 } }];
+        const scenes = [{ scene: 0 }, { scene: 1 }, { scene: 2 }, { scene: 3 }, { scene: 4, finale: { step: 0 } }, { scene: 4, finale: { step: 5 } }];
         let sceneIndex = -1;
         $('tracks').append(button('следующая сцена →', () => {
             sceneIndex = (sceneIndex + 1) % scenes.length;
-            audio.setMusic(trackOf({ sceneStages: 3, ...scenes[sceneIndex] }));
+            audio.setMusic(trackOf({ sceneStages: 4, ...scenes[sceneIndex] }));
         }));
 
         $('intensity').addEventListener('input', (e) => {

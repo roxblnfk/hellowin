@@ -15,14 +15,14 @@ const CEILING = 10 ** (-1 / 20);
 const MAX_VOICES = 32;
 const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
-/** Which track a scene state plays: by scene, and in the final scene by the finale step. */
-export function trackOf({ scene = 0, sceneStages = 3, finale = null } = {}) {
+/** Which track a scene state plays: the bar is scene 0, the day 1 …; in the final scene by the finale step. */
+export function trackOf({ scene = 0, sceneStages = 4, finale = null } = {}) {
     if (scene >= sceneStages) return (finale?.step ?? 0) >= 5 ? 'cursed' : 'blood';
-    return ['day', 'dusk', 'night'][scene] ?? 'night';
+    return ['bar', 'day', 'dusk', 'night'][scene] ?? 'night';
 }
 
 /** The track worth rendering ahead: the one the next scene (or the end of the finale) will ask for. */
-export const NEXT_TRACK = { day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: null };
+export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: null };
 
 const smooth = (x, a, b) => {
     const k = Math.min(1, Math.max(0, (x - a) / (b - a)));

@@ -1,7 +1,7 @@
 import { createRender, measure, reverb, scale } from './core.js';
 import {
-    bass, bird, chip, chipHat, chipKick, chipSnare, choir, crickets, drone, fire, heart, musicbox, organ, pad, pizz,
-    theremin, toll, tom, tri, wind, xylo,
+    bird, chip, chipHat, chipKick, chipSnare, choir, clap, crickets, drone, fire, hat, heart, kick, musicbox, organ,
+    pad, pizz, theremin, toll, tom, tri, vox, wind, xylo,
 } from './instruments.js';
 
 /**
@@ -23,7 +23,60 @@ function melody(T, beat, bars, fn) {
     });
 }
 
-// ---------------------------------------------------------------- scene 0: «День: подготовка»
+// ---------------------------------------------------------------- scene 0: «Бар»
+// A Viking drinking song in D Dorian, a 6/8 jig: a bagpipe drone and a low male chant, a frame drum with stomps and
+// lute strums, and a hurdy-gurdy tune with an 8-bit pulse twin an octave up. The hall is merry, but a chromatic turn
+// through G-sharp and a bell at the top of the loop wink at the night to come. Beats are eighth notes.
+const BAR = {
+    bpm: 198,
+    beats: 6,
+    bars: 12,
+    render({ r, T, beat, bar: barLen, base, rhythm, lead }) {
+        const chant = [[50, 57, 62], [48, 55, 60], [50, 57, 62], [52, 57, 60], [50, 57, 62], [48, 55, 60], [50, 55, 59], [49, 52, 57], [50, 53, 58], [48, 55, 60], [50, 57, 62], [49, 55, 57]];
+        const lute = [[62, 65, 69], [60, 64, 67], [62, 65, 69], [57, 60, 64], [62, 65, 69], [60, 64, 67], [59, 62, 67], [57, 61, 64], [58, 62, 65], [60, 64, 67], [62, 65, 69], [57, 61, 67]];
+        drone(r, base, 0, 12 * barLen, 38, { amp: 0.035, cutoff: 700, fade: 2 });
+        for (let bar = 0; bar < 12; bar++) {
+            choir(r, base, T(bar, 0), barLen, chant[bar], { amp: 0.07, vowel: 'o', attack: 0.25, release: 0.6, send: 0.5, singers: 3 });
+            kick(r, rhythm, T(bar, 0), { amp: 0.45, tone: 48 });
+            kick(r, rhythm, T(bar, 3), { amp: 0.4, tone: 48 });
+            tom(r, rhythm, T(bar, 0), { amp: 0.3, tone: 65, send: 0.35 });
+            tom(r, rhythm, T(bar, 5), { amp: 0.14, tone: 110, pan: 0.3, send: 0.3 });
+            if (bar % 2 === 1) clap(r, rhythm, T(bar, 3), { amp: 0.22 });
+            for (const b of [1, 2, 4, 5]) hat(r, rhythm, T(bar, b), { amp: 0.035, open: b === 5, pan: -0.35 });
+            // Lute: a downstroke on each dotted beat, a lighter upstroke before the next.
+            for (const [b, a] of [[0, 0.22], [2, 0.1], [3, 0.18], [5, 0.1]]) {
+                lute[bar].forEach((m, k) => pizz(r, rhythm, T(bar, b) + k * 0.014, m, { amp: a, bright: 0.55, dur: 0.6, pan: 0.25, send: 0.2 }));
+            }
+        }
+        // The hall shouts «Хей!» at the end of each half.
+        for (const bar of [7, 11]) {
+            for (let k = 0; k < 4; k++) vox(r, rhythm, T(bar, 3) + r.rnd() * 0.03, 0.18, 47 + r.rnd() * 4, { vowel: 'e', to: 'a', duty: 0.3, drive: 1.5, amp: 0.1, pan: (r.rnd() - 0.5) * 1.2, breath: 0.2, send: 0.4 });
+        }
+        fire(r, base, 0, 12 * barLen, { amp: 0.01, rate: 4 });
+
+        const tune = [
+            [[0, 81, 2], [2, 79, 1], [3, 77, 2], [5, 76, 1]],
+            [[0, 74, 2], [2, 76, 1], [3, 79, 2], [5, 76, 1]],
+            [[0, 77, 1], [1, 79, 1], [2, 81, 1], [3, 86, 2], [5, 84, 1]],
+            [[0, 81, 3], [3, 76, 3]],
+            [[0, 81, 2], [2, 79, 1], [3, 77, 2], [5, 76, 1]],
+            [[0, 74, 1], [1, 76, 1], [2, 79, 1], [3, 84, 2], [5, 83, 1]],
+            [[0, 83, 2], [2, 81, 1], [3, 79, 2], [5, 83, 1]],
+            [[0, 81, 6]],
+            [[0, 82, 2], [2, 81, 1], [3, 77, 2], [5, 74, 1]],
+            [[0, 76, 2], [2, 77, 1], [3, 79, 3]],
+            [[0, 81, 1], [1, 80, 1], [2, 81, 1], [3, 86, 1], [4, 85, 1], [5, 84, 1]],
+            [[0, 85, 2], [2, 79, 1], [3, 76, 2], [5, 73, 1]],
+        ];
+        melody(T, beat, tune, (t, m, d) => {
+            organ(r, lead, t, d * 0.92, [m - 12], { amp: 0.06, stops: 'reed', detune: 14, attack: 0.015, release: 0.05, send: 0.35, leslie: 5, pan: -0.15 });
+            chip(r, lead, t, Math.min(d, 2 * beat) * 0.8, m, { duty: 0.25, amp: 0.035, decay: 4, send: 0.25, pan: 0.3 });
+        });
+        toll(r, lead, 0, 50, { amp: 0.05, dur: 5, send: 0.7 });
+    },
+};
+
+// ---------------------------------------------------------------- scene 1: «День: подготовка»
 // Chiptune morning in F major: a music-box pulse tune over a bouncing triangle bass, birds all round. One borrowed
 // D-flat chord in the middle and a chromatic slip keep it a little wicked under the sunshine.
 const DAY = {
@@ -75,7 +128,7 @@ const DAY = {
     },
 };
 
-// ---------------------------------------------------------------- scene 1: «Закат: зажигание»
+// ---------------------------------------------------------------- scene 2: «Закат: зажигание»
 // Sunset in A minor, slower: a warm pad and crickets, a rippling 25 % pulse arpeggio, and an ocarina-like square
 // singing a waiting tune with a dotted-eighth echo. The last bar's E7 hangs the loop on a question.
 const DUSK = {
@@ -119,7 +172,7 @@ const DUSK = {
     },
 };
 
-// ---------------------------------------------------------------- scene 2: «Ночь: заклинание»
+// ---------------------------------------------------------------- scene 3: «Ночь: заклинание»
 // A witches' waltz in D harmonic minor, 3/4: drawbar organ in three voices — held chords, a pedal, and a flute line in
 // contrary motion — under a theremin that glides like green smoke. The campfire crackles under it all.
 const NIGHT = {
@@ -156,7 +209,7 @@ const NIGHT = {
     },
 };
 
-// ---------------------------------------------------------------- scene 3: «Кровавая луна»
+// ---------------------------------------------------------------- scene 4: «Кровавая луна»
 // Four-part choir in C-sharp Phrygian over a low drone: chords that lean on the flat second (D) and end on G-sharp
 // major, so the loop pulls back into its own minor. A heartbeat under it; a soprano and a tolling bell on top.
 const BLOOD = {
@@ -231,7 +284,7 @@ const CURSED = {
     },
 };
 
-export const TRACKS = { day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, cursed: CURSED };
+export const TRACKS = { bar: BAR, day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, cursed: CURSED };
 
 /** Seconds of one bar and of the loop. */
 export function timing(name) {
