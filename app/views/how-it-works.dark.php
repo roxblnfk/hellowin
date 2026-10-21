@@ -1186,7 +1186,7 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
 <text class="d-n" x="380" y="286" text-anchor="middle">первое 6-6-6 — winner под тем же</text>
 <text class="d-n" x="380" y="302" text-anchor="middle">локом: второе видит его, not now</text>
 <path class="d-e d-e--ok" d="M490 180 L540 180 L540 70 L580 70" marker-end="url(#n-ok)"/>
-<text class="d-l" x="548" y="120" text-anchor="start">n = last + 1</text>
+<text class="d-l" x="548" y="150" text-anchor="start">n = last + 1</text>
 <path class="d-e d-e--ret" d="M490 200 L580 200" marker-end="url(#n-ln)"/>
 <text class="d-l" x="535" y="192" text-anchor="middle">n = last</text>
 <path class="d-e" d="M490 220 L540 220 L540 340 L580 340" marker-end="url(#n-ln)"/>
