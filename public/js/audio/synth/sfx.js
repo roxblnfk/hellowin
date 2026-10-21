@@ -466,6 +466,17 @@ export const SFX = {
             thump(r, out, 0.8, { f0: 1400, f1: 900, dur: 0.02, amp: 0.15 });
         },
     }),
+    // RoadRunner raises his mug in the bar: a soft, friendly «мип-мип» — round sines sliding up, not the finale's
+    // bright chirp — and a little clink of the mug.
+    'bar.meep': fx({
+        dur: 0.7, variants: 3, voices: 1, level: -19, jitter: 0.03,
+        render(r, out, v) {
+            const root = [86, 88, 84][v];
+            murmur(r, out, 0, 0.11, root, { glide: 1.5, cutoff: 3200, breath: 0, amp: 0.5, send: 0.25 });
+            murmur(r, out, 0.17, 0.13, root + 5, { glide: 1.5, cutoff: 3200, breath: 0, amp: 0.5, send: 0.25 });
+            partials(r, out, 0.36, 2200 + r.rnd() * 300, [[1, 1, 12], [2.32, 0.5, 16], [4.25, 0.25, 22]], { amp: 0.12, dur: 0.3, send: 0.3 });
+        },
+    }),
     // A full mug set down on the counter: a heavy wooden knock with a slosh.
     'bar.mug': fx({
         dur: 0.5, variants: 4, voices: 3, level: -16,
@@ -627,6 +638,32 @@ export const SFX = {
                 noiseSweep(r, out, t, 0.06, { from: 900, to: 400, amp: 0.25, mode: 'lp' });
             }
             vox(r, out, 0.05, 0.35, 40 + r.rnd() * 3, { vowel: 'u', to: 'o', duty: 0.15, glide: -4, drive: 2, amp: 0.25, breath: 0.3, send: 0.3 });
+        },
+    }),
+    // The head flies off: a lashing wet pop, a whistle falling away into the distance, a splat on the ground, while the
+    // body slumps down behind.
+    'zombie.die.head': fx({
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -10,
+        render(r, out) {
+            thump(r, out, 0, { f0: 480, f1: 160, dur: 0.06, amp: 0.7 });
+            noiseSweep(r, out, 0, 0.1, { from: 2400, to: 700, q: 4, amp: 0.5, curve: 1.5 });
+            const sr = r.sr;
+            const n = Math.round(0.65 * sr);
+            const f0 = 1700 + r.rnd() * 400;
+            const side = r.rnd() < 0.5 ? -1 : 1;
+            let ph = 0;
+            for (let i = 0; i < n; i++) {
+                const k = i / n;
+                ph += (f0 * (0.45 ** k)) / sr;
+                const v = Math.sin(TAU * ph) * Math.min(1, k / 0.05) * (1 - k) ** 1.5 * 0.18;
+                const [pl, pr] = panLR(side * 0.6 * k);
+                out.put(Math.round(0.05 * sr) + i, v * pl, v * pr, 0.4);
+            }
+            noiseSweep(r, out, 0.72, 0.12, { from: 500, to: 1300, q: 5, amp: 0.3, curve: 1.2, pan: side * 0.6 });
+            thump(r, out, 0.72, { f0: 180, f1: 90, dur: 0.06, amp: 0.3, pan: side * 0.6 });
+            thump(r, out, 0.35, { f0: 140, f1: 60, dur: 0.15, amp: 0.55 });
+            thump(r, out, 0.55, { f0: 120, f1: 50, dur: 0.2, amp: 0.5 });
+            noiseSweep(r, out, 0.35, 0.4, { from: 700, to: 300, q: 0.8, amp: 0.15, mode: 'lp', curve: 1.5 });
         },
     }),
     // Bursts: a low boom and wet splats flying off.
