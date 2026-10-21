@@ -22,9 +22,11 @@ final class FlyerConfig extends InjectableConfig
         'points' => '3,2,1',
         'bush_chance' => 0.4,
         'arc_chance' => 0.5,
-        'kinds' => ';duck,chicken;;bat;worm',
+        'kinds' => 'fly;duck,chicken;;bat;worm',
         'kinds_cursed' => 'worm,bat,firefly',
         'firefly_points' => 1,
+        'fly_duration' => 2500,
+        'fly_points' => 1,
         'rare' => ';roadrunner;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
@@ -146,6 +148,22 @@ final class FlyerConfig extends InjectableConfig
     public function getFireflyPoints(): int
     {
         return self::positiveInt($this->config['firefly_points'] ?? null, 'firefly_points', 'HELLOWIN_FLYER_FIREFLY_POINTS');
+    }
+
+    /**
+     * @return positive-int Milliseconds of a fly's flight over the bar.
+     */
+    public function getFlyDuration(): int
+    {
+        return self::positiveInt($this->config['fly_duration'] ?? null, 'fly_duration', 'HELLOWIN_FLYER_FLY_DURATION');
+    }
+
+    /**
+     * @return positive-int Points for a fly.
+     */
+    public function getFlyPoints(): int
+    {
+        return self::positiveInt($this->config['fly_points'] ?? null, 'fly_points', 'HELLOWIN_FLYER_FLY_POINTS');
     }
 
     /**

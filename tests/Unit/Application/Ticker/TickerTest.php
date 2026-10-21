@@ -156,6 +156,25 @@ final class TickerTest
         Assert::same($ritual->flyers->shoot($worm['flyer'], 'aaaaaaaaaaaaaaaa'), 2);
     }
 
+    public function fliesBuzzAboutTheBarUntilPaused(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        $ticker = self::ticker($ritual);
+        $ticker->tick(0);
+        $ticker->tick(2_000);
+        $ticker->tick(4_000);
+        $ritual->story->pause(true);
+        $ticker->tick(6_000);
+
+        $flies = $ritual->broadcast->ofType('flyer');
+        Assert::count($flies, 2);
+        Assert::same(\array_unique(\array_column($flies, 'kind')), ['fly']);
+        Assert::same([$flies[0]['depth'] ?? null, $flies[0]['duration'] ?? null], [1, 2500]);
+        $ritual->clock->now = 4_100;
+        Assert::same($ritual->flyers->shoot($flies[1]['flyer'], 'aaaaaaaaaaaaaaaa'), 1);
+        Assert::null($ritual->flyers->shoot($flies[1]['flyer'], 'bbbbbbbbbbbbbbbb'));
+    }
+
     public function cursedWorldLaunchesItsOwnSetUntilPaused(): void
     {
         $ritual = new RitualHarness(stageMax: [1]);

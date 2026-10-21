@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Flyer;
 
+use App\Domain\Bar\BarLayout;
 use App\Domain\Walk\WalkZone;
 use Random\Randomizer;
 
@@ -23,6 +24,10 @@ use Random\Randomizer;
  *
  * Fireflies fly like the others but only at the middle and near depths ({@see FIREFLY_DEPTHS}), wobble sluggishly
  * ({@see FIREFLY_AMP}, {@see FIREFLY_WAVES}) and bring their own points instead of the depth's.
+ *
+ * Flies are the flyers of the bar: at the middle depth from one point over its floor to another, over the tables
+ * and never out of the room, wobbling hard and often; with {@see FLY_PERCH_CHANCE} through a point over the counter,
+ * where the fly lands for a while (`perch`). They bring their own points and fly their own duration.
  *
  * Kinds come by scene; the cursed world has a set of its own instead of its scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
@@ -59,6 +64,27 @@ final readonly class FlyerFactory
     /** Attempts to find a crawl that stays on the lawn before falling back to one along its bottom. */
     private const WORM_ATTEMPTS = 20;
 
+    /** Probability that a fly lands on the counter on its way. */
+    private const FLY_PERCH_CHANCE = 0.3;
+
+    /** How far inside the floor of the bar a fly's ends stay, percents of the screen: its wobble keeps in the room. */
+    private const FLY_INSET = 3.0;
+
+    /** Shortest flight of a fly, percents of the screen: a dart across the room rather than a hover in place. */
+    private const FLY_MIN_LENGTH = 15.0;
+
+    /** Attempts to find ends at least {@see FLY_MIN_LENGTH} apart before taking the last ones drawn. */
+    private const FLY_ATTEMPTS = 20;
+
+    /** Range of the height above the counter line where a fly lands: on the counter top and the mugs on it. */
+    private const FLY_PERCH_RISE = [4.0, 10.0];
+
+    /** Range of a fly's swing across its path, percents of the screen. */
+    private const FLY_AMP = [3.0, 6.0];
+
+    /** Range of a fly's full swings over its flight: many, so it jitters rather than loops. */
+    private const FLY_WAVES = [6.0, 10.0];
+
     /** @var non-empty-list<FlyerDepth> */
     private array $depths;
 
@@ -80,6 +106,9 @@ final readonly class FlyerFactory
      * @param list<non-empty-string> $cursed Kinds of the cursed world in place of its scene's set; an empty set
      *        launches no flyers there but the rare one of the scene.
      * @param positive-int $fireflyPoints Points for a firefly at any depth.
+     * @param BarLayout|null $bar Where flies fly; needed only when a set has flies.
+     * @param positive-int $flyDuration Milliseconds of a fly's flight.
+     * @param positive-int $flyPoints Points for a fly.
      */
     public function __construct(
         array $depths,
@@ -95,9 +124,16 @@ final readonly class FlyerFactory
         private ?WalkZone $lawn = null,
         private array $cursed = [],
         private int $fireflyPoints = 1,
+        private ?BarLayout $bar = null,
+        private int $flyDuration = 2500,
+        private int $flyPoints = 1,
     ) {
-        $lawn !== null || !\in_array(Flyer::KIND_WORM, \array_merge($cursed, ...$kinds), true) or throw new \InvalidArgumentException(
+        $all = \array_merge($cursed, ...$kinds);
+        $lawn !== null || !\in_array(Flyer::KIND_WORM, $all, true) or throw new \InvalidArgumentException(
             'Worms crawl over the lawn: pass the walk zone to the flyer factory.',
+        );
+        $bar !== null || !\in_array(Flyer::KIND_FLY, $all, true) or throw new \InvalidArgumentException(
+            'Flies fly about the bar: pass the bar layout (walk.bar) to the flyer factory.',
         );
 
         foreach ($bushes as $bush) {
@@ -147,6 +183,9 @@ final readonly class FlyerFactory
         }
         if ($kind === Flyer::KIND_FIREFLY) {
             return $this->firefly($id, $now, $bush, $arc, $from, $via, $to);
+        }
+        if ($kind === Flyer::KIND_FLY) {
+            return $this->fly($id, $now);
         }
 
         return new Flyer(
@@ -330,6 +369,49 @@ final readonly class FlyerFactory
         $y = \round($lawn->y2 - 2.0, 1);
 
         return [new Point(\round($lawn->patch()->cx - 20.0, 1), $y), new Point(\round($lawn->patch()->cx - 5.0, 1), $y)];
+    }
+
+    /**
+     * @param non-empty-string $id
+     */
+    private function fly(string $id, int $now): Flyer
+    {
+        $bar = $this->bar ?? throw new \LogicException('Flies need the bar.');
+        $floor = $bar->zone;
+        $x = [$floor->x1 + self::FLY_INSET, $floor->x2 - self::FLY_INSET];
+        $y = [$floor->y1 + self::FLY_INSET, $floor->y2 - self::FLY_INSET];
+
+        $from = $to = new Point(0, 0);
+        for ($i = 0; $i < self::FLY_ATTEMPTS; ++$i) {
+            $from = new Point($this->float(...$x), $this->float(...$y));
+            $to = new Point($this->float(...$x), $this->float(...$y));
+            if (\hypot($to->x - $from->x, $to->y - $from->y) >= self::FLY_MIN_LENGTH) {
+                break;
+            }
+        }
+
+        $perch = $this->chance(self::FLY_PERCH_CHANCE);
+        [$x1, $x2, $counter] = $bar->counter;
+        $via = $perch
+            ? new Point($this->float($x1, $x2), \max($floor->y1, \round($counter - $this->float(...self::FLY_PERCH_RISE), 1)))
+            : null;
+        /** @var int<0, max> $depth */
+        $depth = \min(1, \count($this->depths) - 1);
+
+        return new Flyer(
+            id: $id,
+            depth: $depth,
+            from: $from,
+            to: $to,
+            via: $via,
+            bush: null,
+            duration: $this->flyDuration,
+            points: $this->flyPoints,
+            launchedAt: $now,
+            kind: Flyer::KIND_FLY,
+            wobble: new Wobble($this->float(...self::FLY_AMP), $this->float(...self::FLY_WAVES)),
+            perch: $perch,
+        );
     }
 
     private function wobble(): Wobble

@@ -40,6 +40,15 @@ final class FlyerTest
         Assert::equals(Flyer::fromArray($flyer->toArray()), $flyer);
     }
 
+    public function perchGoesIntoTheEventOnlyWhenTheFlyerLands(): void
+    {
+        $fly = new Flyer('f-00000003', 1, new Point(20, 70), new Point(50, 90), new Point(80, 55), null, 2_500, 1, 10_000, 'fly', new Wobble(4.0, 8.0), true);
+
+        Assert::true($fly->toEvent()['perch']);
+        Assert::false(\array_key_exists('perch', self::flyer()->toEvent()));
+        Assert::equals(Flyer::fromArray($fly->toArray()), $fly);
+    }
+
     private static function flyer(): Flyer
     {
         return new Flyer('f-00000001', 1, new Point(-8, 20), new Point(108, 10), null, null, 4_000, 2, 10_000);

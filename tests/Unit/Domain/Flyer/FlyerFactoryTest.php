@@ -16,6 +16,7 @@ use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
+use Tests\Fake\RitualHarness;
 
 #[Test]
 #[Covers(FlyerFactory::class)]
@@ -194,6 +195,43 @@ final class FlyerFactoryTest
         $factory = new FlyerFactory([new FlyerDepth(1000, 3)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['firefly']]);
 
         Assert::same($factory->launch(0)?->depth, 0);
+    }
+
+    public function fliesDartAboutTheBarAndSometimesLandOnTheCounter(): void
+    {
+        $bar = RitualHarness::barLayout();
+        $depths = \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS);
+        $factory = new FlyerFactory($depths, [new Bush('bush-left', new Point(4, 86), 2)], 1.0, 1.0, new Randomizer(new Mt19937(7)), [['fly'], ['duck']], bar: $bar, flyDuration: 2500, flyPoints: 3);
+
+        $flies = \array_map(static fn(int $_): ?Flyer => $factory->launch(0), \range(1, 200));
+        foreach ($flies as $fly) {
+            Assert::notNull($fly);
+            Assert::same([$fly->kind, $fly->depth, $fly->duration, $fly->points, $fly->bush], ['fly', 1, 2500, 3, null]);
+            // Over the floor of the bar, tables or not, never at the screen edge
+            foreach ([$fly->from, $fly->to] as $end) {
+                Assert::numeric($end->x)->between(6, 91);
+                Assert::numeric($end->y)->between(53, 94);
+            }
+            Assert::numeric(\hypot($fly->to->x - $fly->from->x, $fly->to->y - $fly->from->y))->greaterThanOrEqual(15);
+            Assert::numeric($fly->wobble?->amp)->between(3, 6);
+            Assert::numeric($fly->wobble?->waves)->between(6, 10);
+            if ($fly->perch) {
+                Assert::numeric($fly->via?->x)->between(66, 92);
+                Assert::numeric($fly->via?->y)->between(52, 58);
+            } else {
+                Assert::null($fly->via);
+            }
+            Assert::equals(Flyer::fromArray($fly->toArray()), $fly);
+        }
+        $perched = \count(\array_filter($flies, static fn(?Flyer $f): bool => $f?->perch === true));
+        Assert::numeric($perched)->between(30, 90);
+    }
+
+    public function fliesNeedTheBar(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk.bar');
+
+        new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, kinds: [['fly'], ['duck']]);
     }
 
     public function cursedWormsNeedTheLawnToo(): never

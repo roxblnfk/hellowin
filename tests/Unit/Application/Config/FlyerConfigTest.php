@@ -63,7 +63,7 @@ final class FlyerConfigTest
 
     public function kindsComeByScene(): void
     {
-        Assert::same((new FlyerConfig())->getKinds(), [[], ['duck', 'chicken'], [], ['bat'], ['worm']]);
+        Assert::same((new FlyerConfig())->getKinds(), [['fly'], ['duck', 'chicken'], [], ['bat'], ['worm']]);
         Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), [['duck', 'bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; bat ']))->getKinds(), [['duck'], ['bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; ;bat']))->getKinds(), [['duck'], [], ['bat']]);
@@ -106,6 +106,22 @@ final class FlyerConfigTest
 
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_FIREFLY_POINTS');
         (new FlyerConfig(['firefly_points' => 0]))->getFireflyPoints();
+    }
+
+    public function fliesHaveTheirOwnDurationAndPoints(): never
+    {
+        Assert::same([(new FlyerConfig())->getFlyDuration(), (new FlyerConfig())->getFlyPoints()], [2500, 1]);
+        Assert::same((new FlyerConfig(['fly_duration' => '1800', 'fly_points' => '2']))->getFlyDuration(), 1800);
+        Assert::same((new FlyerConfig(['fly_points' => '2']))->getFlyPoints(), 2);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_FLY_DURATION');
+        (new FlyerConfig(['fly_duration' => 0]))->getFlyDuration();
+    }
+
+    public function flyPointsArePositive(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_FLY_POINTS');
+        (new FlyerConfig(['fly_points' => 'many']))->getFlyPoints();
     }
 
     public function rareFlyersComeByScene(): void

@@ -86,7 +86,7 @@ final class RitualHarness
 
     /**
      * @param positive-int $threshold
-     * @param non-empty-list<int<0, max>> $stageMax A leading 0 makes scene 0 the bar.
+     * @param non-empty-list<int<0, max>> $stageMax A leading 0 makes scene 0 the bar, with flies for its flyers.
      * @param list<non-empty-string> $pumpkins
      * @param list<int>|null $bonfire Last bonfire stage by scene; null leaves the patch without a bonfire.
      * @param positive-int $bonfireThreshold
@@ -155,10 +155,11 @@ final class RitualHarness
                 0.5,
                 0.5,
                 new Randomizer(new Mt19937(42)),
-                [[Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
+                [...(($stageMax[0] ?? null) === 0 ? [[Flyer::KIND_FLY]] : []), [Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
                 lawn: self::walkZone(),
                 cursed: [Flyer::KIND_FIREFLY],
                 fireflyPoints: 1,
+                bar: self::barLayout(),
             ),
             $this->flyerStore,
             $this->store,

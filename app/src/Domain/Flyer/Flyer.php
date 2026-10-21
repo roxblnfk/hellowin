@@ -29,6 +29,9 @@ final readonly class Flyer
     /** A small flyer of the cursed world: a sluggish wobble at the middle and near depths, its own few points. */
     public const KIND_FIREFLY = 'firefly';
 
+    /** The flyer of the bar: darts from one point over the floor to another, now and then landing on the counter. */
+    public const KIND_FLY = 'fly';
+
     /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.
@@ -39,6 +42,7 @@ final readonly class Flyer
      * @param int $launchedAt Unix time in milliseconds.
      * @param non-empty-string $kind
      * @param Wobble|null $wobble Swing across the path; null flies the base trajectory as it is.
+     * @param bool $perch The flyer sits down at `via` for a while within its duration.
      */
     public function __construct(
         public string $id,
@@ -52,6 +56,7 @@ final readonly class Flyer
         public int $launchedAt,
         public string $kind = self::KIND_DUCK,
         public ?Wobble $wobble = null,
+        public bool $perch = false,
     ) {}
 
     /**
@@ -99,6 +104,7 @@ final readonly class Flyer
             $launchedAt,
             $kind,
             Wobble::fromArray($value['wobble'] ?? null),
+            ($value['perch'] ?? false) === true,
         );
     }
 
@@ -132,6 +138,7 @@ final readonly class Flyer
         $this->bush === null or $event['bush'] = $this->bush;
         $event['from'] = $this->from->toArray();
         $this->via === null or $event['via'] = $this->via->toArray();
+        $this->perch and $event['perch'] = true;
         $event['to'] = $this->to->toArray();
         $this->wobble === null or $event['wobble'] = $this->wobble->toArray();
         $event['duration'] = $this->duration;

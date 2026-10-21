@@ -225,6 +225,9 @@ final class HellowinBootloader extends Bootloader
                 lawn: $config->getWalkZone(),
                 cursed: $flyers->getCursedKinds(),
                 fireflyPoints: $flyers->getFireflyPoints(),
+                bar: $config->getBarLayout(),
+                flyDuration: $flyers->getFlyDuration(),
+                flyPoints: $flyers->getFlyPoints(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),
