@@ -45,6 +45,9 @@ const PUMPKIN_LEGEND = {
     k: 'blush',
 };
 
+// The pulp in the cut-outs before scooping (stages 1–3), in the back layer and the flattened sprite.
+const PULP_LEGEND = { u: 'pulp', U: 'pulpShade' };
+
 // The inner light (chars w s l o d in back and glow, the cut flesh f in rim) per stage: warm candlelight, then in
 // scene 2 a green cast at the edges (9) and full dark-magic green (10+); the blood-moon variant swaps green for violet.
 const GREENISH = { l: 'eyeGreen', o: 'eerieDark', d: 'eerieDeep', f: 'leafShine' };
@@ -504,7 +507,8 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
                 const wall = !edge && !inside(x, y - 2) && inside(x, y + 2);
                 let k = edge ? 'rim' : wall ? 'wall' : 'open';
                 if (k === 'open' && st === 3 && y > o.cy - 0.5) {
-                    k = ((x * 37 + y * 101) ^ (x * y)) % 7 === 0 ? 'seed' : 'pulp';
+                    const n = ((x * 37 + y * 101) ^ (x * y)) % 7;
+                    k = n === 0 ? 'seed' : n === 3 ? 'fibre' : 'pulp';
                 }
                 kind[top + y][x] = k;
             }
@@ -512,6 +516,19 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
     }
 
     const filled = (x, y) => (kind[y]?.[x] ?? '.') !== '.';
+    // Until scooped (stage 4) the cut-outs are full of pulp, not dark: shaded where the skin's edge overhangs it
+    // (top and left, against the light), seeds and fibres inside; under the opening the far wall shades into it.
+    const unscooped = st >= 1 && st <= 3;
+    const isCut = (x, y) => kind[y]?.[x] === 'hole' || kind[y]?.[x] === 'rim';
+    const pulpAt = (x, y) => {
+        if (!isCut(x, y - 1) || !isCut(x - 1, y)) return 'U';
+        if (!isCut(x, y - 2)) return 'F';
+        const n = ((x * 37 + y * 101) ^ (x * y)) % 9;
+        return n === 0 ? 'c' : n === 4 ? 'F' : 'u';
+    };
+    const backOf = unscooped
+        ? { wall: 'U', open: 'F', pulp: 'u', fibre: 'F', seed: 'c' }
+        : { wall: 'x', pulp: 'F', seed: 'c' };
     const back = blank();
     const body = blank();
     const rim = blank();
@@ -521,7 +538,7 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
         for (let x = 0; x < w; x++) {
             const k = kind[y][x];
             if (k === '.') continue;
-            back[y][x] = { wall: 'x', pulp: 'F', seed: 'c' }[k] ?? 'X';
+            back[y][x] = unscooped && k === 'hole' ? pulpAt(x, y) : backOf[k] ?? 'X';
             if (k === 'skin') {
                 let ch = tones[y - top][x];
                 if (!filled(x, y - 1) || !filled(x, y + 1) || !filled(x - 1, y) || !filled(x + 1, y)) {
@@ -556,7 +573,7 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
     const pw = grids.body[0].length;
     const ph = grids.body.length;
     const anchor = { x: pw >> 1, y: ph };
-    const legend = { ...PUMPKIN_LEGEND, ...look.skin };
+    const legend = { ...PUMPKIN_LEGEND, ...look.skin, ...(unscooped ? PULP_LEGEND : {}) };
     const magic = MAGIC[tone] ?? MAGIC.green;
     const cast = { l: magic.l, o: magic.o, d: magic.d, f: magic.f };
     // The inner light: warm up to stage 8, a magic cast at the edges at 9, full magic from 10.
@@ -571,7 +588,7 @@ export function pumpkinLayers(stage, size, seed = 0, tone = 'green') {
         anchor,
         emit,
         layers: {
-            back: layerSprite(grids.back, lightLegend, anchor),
+            back: layerSprite(grids.back, unscooped ? { ...lightLegend, ...PULP_LEGEND } : lightLegend, anchor),
             body: layerSprite(grids.body, legend, anchor),
             rim: layerSprite(grids.rim, st >= 9 ? { ...PUMPKIN_LEGEND, f: magic.f } : PUMPKIN_LEGEND, anchor),
             // From stage 8 the stem slot holds the cap; the lid reuses the skin colours.

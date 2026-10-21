@@ -17,11 +17,11 @@
 <!--
   Art for scenes 1–3: pumpkin stages 5–11, caps, bonfire, explosion, ash pit and magic circle, items, lighting.
   Query: ?t=ms freezes the clock at that moment (otherwise everything animates), ?zoom=N scales the sheets (default 3),
-  ?only=id,id shows only those sections (mock, stages, caps, frames, float, bonfire, explosion, ash, items, particles,
+  ?only=id,id shows only those sections (mock, stages, carve, caps, frames, float, bonfire, explosion, ash, items, particles,
   lighting).
 -->
 <body>
-<h2>Закат, ночь, кровавая луна (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,stages,caps,frames,float,bonfire,explosion,ash,items,particles,lighting)</h2>
+<h2>Закат, ночь, кровавая луна (?t=мс — стоп-кадр, ?zoom=N, ?only=mock,stages,carve,caps,frames,float,bonfire,explosion,ash,items,particles,lighting)</h2>
 <div id="out"></div>
 <script type="module">
     import { PALETTE } from '../js/pixel/palette.js';
@@ -287,6 +287,25 @@
         const L = pumpkinLayers(st, size, seedOf(SHOW[size]));
         return cell(L.w, L.h, Math.max(1, zoom - 1), (ctx, t) => drawPumpkin(ctx, L, 'day', t, L.w >> 1, L.h), `${size}${st}`);
     })), '#8ccff0');
+    // Scene 1 carving: until scooped (stage 4) the cut-outs show the pulp, lit like the skin.
+    for (const lighting of ['day', 'sunset', 'night']) {
+        section('carve', `вырезание 0–4 (до выскабливания в прорезях мякоть), l m s, ${lighting}`, SIZES.flatMap((size) => [0, 1, 2, 3, 4].map((st) => {
+            const L = pumpkinLayers(st, size, seedOf(SHOW[size]));
+            return cell(L.w, L.h, zoom, (ctx, t) => {
+                ctx.fillStyle = lighting === 'day' ? css(PALETTE.soil) : css(BG[lighting]);
+                ctx.fillRect(0, 0, L.w, L.h);
+                drawPumpkin(ctx, L, lighting, t, L.w >> 1, L.h);
+            }, `${size}${st}`);
+        })));
+    }
+    section('carve', 'стадии 2–4 разных id (день), m и s', IDS.slice(0, 8).flatMap(({ id, size }) => [2, 3, 4].map((st) => {
+        const L = pumpkinLayers(st, size, seedOf(id));
+        return cell(L.w, L.h, 2, (ctx, t) => {
+            ctx.fillStyle = css(PALETTE.soil);
+            ctx.fillRect(0, 0, L.w, L.h);
+            drawPumpkin(ctx, L, 'day', t, L.w >> 1, L.h);
+        }, `${id} ${st}`);
+    })));
     section('stages', 'стадии 4–11 в 1× (масштаб сцены, ночь)', SIZES.flatMap((size) => STAGES.map((st) => {
         const L = pumpkinLayers(st, size, seedOf(SHOW[size]));
         return cell(L.w, L.h, 1, (ctx, t) => {

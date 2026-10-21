@@ -199,4 +199,7 @@ export const PALETTE = {
     ironLight: 0x6e6c80,
     shieldBlue: 0x2e4f86,
     shieldGreen: 0x2f6a40,
+    // The pulp in a pumpkin's cut-outs before it is scooped: pale flesh, and its shade under the skin's edge.
+    pulp: 0xe6a447,
+    pulpShade: 0x96441c,
 };
