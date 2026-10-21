@@ -1,6 +1,6 @@
 import { SVF, Saw, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
 import {
-    bell, blip, brass, chip, choir, crackle, heart, impact, kick, murmur, musicbox, noiseSweep, partials, pizz, riser,
+    bell, bird, blip, brass, chip, choir, crackle, heart, impact, kick, murmur, musicbox, noiseSweep, partials, pizz, riser,
     theremin, toll, tom, vox, xylo,
 } from './instruments.js';
 
@@ -580,6 +580,156 @@ export const SFX = {
                 noiseSweep(r, out, t, 0.12, { from: 300, to: 900, q: 0.8, amp: 0.7 * (1 - k / 12), mode: 'lp', attack: 0.04, pan: 0.1 + k * 0.08 });
             }
             vox(r, out, 1.4, 0.6, 65, { vowel: 'u', duty: 0.5, glide: -2, amp: 0.2, pan: 0.8, send: 0.9, breath: 0.3 });
+        },
+    }),
+
+    // ---------------------------------------------------------------- the rapier: zombies, the word, the boss
+    // Falls apart: bones crack, limbs thud down one after another, a last short groan.
+    'zombie.die.pieces': fx({
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -13,
+        render(r, out) {
+            for (let k = 0; k < 4; k++) noiseSweep(r, out, k * 0.05 + r.rnd() * 0.03, 0.03, { from: 3000, to: 2000, q: 2, amp: 0.4, curve: 3, pan: (r.rnd() - 0.5) * 0.6 });
+            for (let k = 0; k < 5; k++) {
+                const t = 0.15 + k * (0.12 + r.rnd() * 0.08);
+                thump(r, out, t, { f0: 220 - k * 20, f1: 90, dur: 0.1, amp: 0.6 - k * 0.07, pan: (r.rnd() - 0.5) * 0.8 });
+                noiseSweep(r, out, t, 0.06, { from: 900, to: 400, amp: 0.25, mode: 'lp' });
+            }
+            vox(r, out, 0.05, 0.35, 40 + r.rnd() * 3, { vowel: 'u', to: 'o', duty: 0.15, glide: -4, drive: 2, amp: 0.25, breath: 0.3, send: 0.3 });
+        },
+    }),
+    // Bursts: a low boom and wet splats flying off.
+    'zombie.die.meat': fx({
+        group: 'finale', dur: 1.4, variants: 3, voices: 2, level: -12,
+        render(r, out) {
+            thump(r, out, 0, { f0: 120, f1: 40, dur: 0.35, amp: 0.8 });
+            noiseSweep(r, out, 0, 0.3, { from: 1800, to: 300, q: 3, amp: 0.6, curve: 1.2 });
+            for (let k = 0; k < 6; k++) {
+                const t = 0.15 + r.rnd() * 0.8;
+                noiseSweep(r, out, t, 0.12, { from: 300 + r.rnd() * 300, to: 1200, q: 6, amp: 0.3, curve: 1, pan: (r.rnd() - 0.5) * 1.2 });
+            }
+            bubbles(r, out, 0.2, 5, { spread: 0.6, low: 150, high: 400, amp: 0.3 });
+        },
+    }),
+    // Crumbles to dust: a soft whoosh and sand trickling away, a sigh.
+    'zombie.die.dust': fx({
+        group: 'finale', dur: 2, variants: 3, voices: 2, level: -12,
+        render(r, out) {
+            noiseSweep(r, out, 0, 0.5, { from: 400, to: 1800, q: 0.7, amp: 0.5, mode: 'lp', attack: 0.15, curve: 1.5 });
+            noiseSweep(r, out, 0.1, 1.8, { from: 6000, to: 2500, q: 0.8, amp: 0.35, mode: 'hp', attack: 0.1, curve: 1.6, grain: 300 });
+            vox(r, out, 0.05, 0.6, 43, { vowel: 'a', to: 'u', duty: 0.3, glide: -5, amp: 0.15, breath: 0.6, send: 0.5 });
+        },
+    }),
+    // Burns up: flames catch, crackle, and a moan rising into the smoke.
+    'zombie.die.burn': fx({
+        group: 'finale', dur: 2, variants: 3, voices: 2, level: -13,
+        render(r, out) {
+            noiseSweep(r, out, 0, 1.4, { from: 200, to: 1800, q: 0.7, amp: 0.7, mode: 'lp', attack: 0.1, curve: 1.6 });
+            crackle(r, out, 0.1, 1.6, { rate: 60, amp: 0.35 });
+            vox(r, out, 0.15, 0.9, 41 + r.rnd() * 3, { vowel: 'o', to: 'u', duty: 0.15, glide: 7, drive: 2, amp: 0.25, breath: 0.3, send: 0.4 });
+        },
+    }),
+    // Sinks into the ground: a gloop, a falling slide and the earth closing over.
+    'zombie.die.sink': fx({
+        group: 'finale', dur: 1.6, variants: 3, voices: 2, level: -13,
+        render(r, out) {
+            blip(r, out, 0, 520, 90, 0.9, { amp: 0.3, send: 0.3 });
+            bubbles(r, out, 0.1, 4, { spread: 0.5, low: 120, high: 300, amp: 0.3 });
+            noiseSweep(r, out, 0.5, 1, { from: 160, to: 70, q: 0.7, amp: 0.8, mode: 'lp', attack: 0.1, curve: 1.2, grain: 8 });
+        },
+    }),
+    // A pumpkin pulls a mug out of itself: a hollow pop, foam fizzing, a little glassy tick.
+    'pumpkin.beer': fx({
+        group: 'finale', dur: 0.9, variants: 3, voices: 3, level: -14,
+        render(r, out) {
+            thump(r, out, 0, { f0: 320, f1: 180, dur: 0.08, amp: 0.6 });
+            noiseSweep(r, out, 0.05, 0.25, { from: 500, to: 1200, q: 3, amp: 0.25, attack: 0.03 });
+            noiseSweep(r, out, 0.15, 0.6, { from: 5000, to: 7000, q: 0.8, amp: 0.12, mode: 'hp', attack: 0.1, grain: 250 });
+            partials(r, out, 0.08, 2100 + r.rnd() * 300, [[1, 1, 12], [2.32, 0.5, 16]], { amp: 0.15, dur: 0.5, send: 0.3 });
+        },
+    }),
+    // The owl draws the glowing rapier: steel singing out of the sheath, a ring that hangs, a shimmer.
+    'owl.rapier': fx({
+        group: 'finale', stereo: true, dur: 3, voices: 1, level: -7, jitter: 0, duck: 1.5,
+        render(r, out) {
+            noiseSweep(r, out, 0, 0.45, { from: 2500, to: 9000, q: 4, amp: 0.5, attack: 0.05, curve: 0.8, pan: -0.4, pan1: 0.4 });
+            partials(r, out, 0.42, 1318, [[1, 1, 1.4], [2.41, 0.5, 2], [3.87, 0.3, 3], [5.33, 0.2, 4]], { amp: 0.25, dur: 2.5, send: 0.6, trem: 0.15, tremRate: 7 });
+            [91, 95, 98, 103].forEach((m, k) => bell(r, out, 0.5 + k * 0.08, m, { amp: 0.08, decay: 2.5, dur: 1.8, pan: (k - 1.5) * 0.3 }));
+        },
+    }),
+    // The word is right: a sparkle climbing a major chord.
+    'word.ok': fx({
+        group: 'finale', dur: 1.6, voices: 2, level: -10, jitter: 0,
+        render(r, out) {
+            [79, 83, 86, 91, 95].forEach((m, k) => bell(r, out, k * 0.06, m, { amp: 0.2, decay: 2.5, dur: 1.4, pan: (k - 2) * 0.2 }));
+            noiseSweep(r, out, 0, 0.8, { from: 5000, to: 10000, q: 2, amp: 0.06, attack: 0.2, curve: 1, send: 0.6 });
+        },
+    }),
+    // The word is wrong: a low, ominous «бу-у», two voices a semitone apart sinking.
+    'word.fail': fx({
+        group: 'finale', dur: 1.8, voices: 2, level: -12, jitter: 0,
+        render(r, out) {
+            for (const m of [43, 44]) vox(r, out, 0, 1.3, m, { vowel: 'u', to: 'o', duty: 0.3, glide: -4, amp: 0.3, breath: 0.2, send: 0.6 });
+            thump(r, out, 0, { f0: 90, f1: 45, dur: 0.4, amp: 0.4 });
+        },
+    }),
+    // A player turns into a zombie: a woozy wobble sliding down into a groan.
+    'player.zombify': fx({
+        group: 'finale', dur: 1.8, variants: 2, voices: 2, level: -14,
+        render(r, out) {
+            theremin(r, out, [[0, 72, 0.3], [0.3, 60, 0.4], [0.7, 50, 0.5]], { amp: 0.25, glide: 0.12, vib: 1.2, vibRate: 7, send: 0.5 });
+            vox(r, out, 0.9, 0.7, 40, { vowel: 'u', to: 'o', duty: 0.15, glide: -2, drive: 2, amp: 0.25, breath: 0.3, send: 0.4 });
+        },
+    }),
+    // Cured: bright bells rising and a short warm «а» of a choir.
+    'player.cure': fx({
+        group: 'finale', dur: 1.8, variants: 2, voices: 2, level: -11, jitter: 0,
+        render(r, out) {
+            [72, 76, 79, 84].forEach((m, k) => bell(r, out, k * 0.07, m + 12, { amp: 0.15, decay: 3, dur: 1.4 }));
+            choir(r, out, 0.15, 0.6, [64, 67, 72], { amp: 0.15, vowel: 'a', attack: 0.15, release: 0.6, send: 0.8 });
+        },
+    }),
+    // The rapier's golden chain lightning: three links jumping target to target, each a crackle and a chime.
+    'shot.rapira': fx({
+        group: 'finale', dur: 1, variants: 4, voices: 4, level: -4,
+        render(r, out) {
+            for (let k = 0; k < 3; k++) {
+                const t = k * 0.09;
+                const p = -0.5 + k * 0.5;
+                noiseSweep(r, out, t, 0.08, { from: 4000, to: 2200, q: 1.2, amp: 0.5 - k * 0.1, curve: 2, grain: 400, pan: p });
+                bell(r, out, t, 88 + k * 4 + Math.floor(r.rnd() * 2), { amp: 0.14, decay: 5, dur: 0.6, pan: p });
+            }
+            blip(r, out, 0, 900, 1800, 0.3, { amp: 0.12, send: 0.4 });
+        },
+    }),
+    // A rapier strikes the boss: short and dull — it plays on every hit.
+    'franken.hit': fx({
+        group: 'finale', dur: 0.3, variants: 5, voices: 4, level: -16,
+        render(r, out) {
+            thump(r, out, 0, { f0: 260 + r.rnd() * 60, f1: 110, dur: 0.08, amp: 0.7 });
+            partials(r, out, 0, 700 + r.rnd() * 200, [[1, 1, 30], [2.7, 0.5, 40]], { amp: 0.15, dur: 0.2, send: 0.1 });
+        },
+    }),
+    // The boss crumbles to ash: a heavy blow, a choir falling, ash pouring down for seconds, the bell.
+    'franken.die': fx({
+        group: 'finale', stereo: true, dur: 6, voices: 1, level: -8, jitter: 0, duck: 4.5,
+        render(r, out) {
+            impact(r, out, 0, { amp: 0.8, dur: 3, low: 30 });
+            choir(r, out, 0.1, 2.2, [52, 55, 59, 64], { amp: 0.2, vowel: 'o', attack: 0.1, release: 1.5, send: 0.9 });
+            blip(r, out, 0.2, 400, 80, 2.2, { amp: 0.1, wave: 'square', send: 0.4 });
+            noiseSweep(r, out, 0.3, 4.5, { from: 7000, to: 1500, q: 0.7, amp: 0.3, mode: 'hp', attack: 0.4, curve: 1.3, grain: 200, send: 0.5 });
+            crackle(r, out, 0.3, 3, { rate: 30, amp: 0.2, width: 1 });
+            toll(r, out, 1.2, 40, { amp: 0.25, dur: 4.5 });
+        },
+    }),
+    // Dawn: a rooster («ку-ка-ре-ку», pitch climbing and holding), a bright brass chord swelling, birds waking.
+    'dawn.rise': fx({
+        group: 'finale', stereo: true, dur: 4.5, voices: 1, level: -7, jitter: 0, duck: 3.5,
+        render(r, out) {
+            const crow = [[0, 0.12, 74, 'u', 0], [0.15, 0.12, 79, 'a', 0], [0.3, 0.14, 81, 'e', 0], [0.47, 0.75, 83, 'u', -4]];
+            for (const [t, d, m, v, g] of crow) vox(r, out, t, d, m, { vowel: v, duty: 0.3, glide: g, drive: 2.5, amp: 0.3, breath: 0.15, pan: -0.5, send: 0.4 });
+            for (const m of [67, 71, 74, 79]) brass(r, out, 1.1, 2.2, m, { amp: 0.12, bright: 1, vib: 0.1, send: 0.6 });
+            choir(r, out, 1.1, 2.2, [67, 71, 74, 79, 83], { amp: 0.12, vowel: 'a', attack: 0.6, release: 1, send: 0.9 });
+            for (let k = 0; k < 5; k++) bird(r, out, 1.6 + k * 0.45 + r.rnd() * 0.2, { amp: 0.06, pan: r.rnd() * 1.6 - 0.8 });
         },
     }),
 

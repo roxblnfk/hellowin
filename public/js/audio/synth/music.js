@@ -1,7 +1,7 @@
 import { createRender, measure, reverb, scale } from './core.js';
 import {
-    bird, chip, chipHat, chipKick, chipSnare, choir, clap, crickets, drone, fire, hat, heart, kick, musicbox, organ,
-    pad, pizz, theremin, toll, tom, tri, vox, wind, xylo,
+    bird, brass, chip, chipHat, chipKick, chipSnare, choir, clap, crickets, drone, fire, hat, heart, kick, musicbox,
+    organ, pad, pizz, theremin, toll, tom, tri, vox, wind, xylo,
 } from './instruments.js';
 
 /**
@@ -284,7 +284,86 @@ const CURSED = {
     },
 };
 
-export const TRACKS = { bar: BAR, day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, cursed: CURSED };
+// ---------------------------------------------------------------- the boss: FrankenPHP in sunglasses
+// A chiptune boss fight that thinks it is an organ toccata, in E harmonic minor: a pulse lead races down mordents and
+// scale runs over a pipe-organ pedal and a driving triangle, the noise kit pushes, and every other bar a brass stab
+// lands on the off-beat — the boss adjusting his sunglasses.
+const SCALE_E = [52, 54, 55, 57, 59, 60, 63, 64, 66, 67, 69, 71, 72, 75, 76, 78, 79, 81, 83, 84, 87, 88];
+
+const BOSS = {
+    bpm: 160,
+    beats: 4,
+    bars: 16,
+    render({ r, T, beat, bar: barLen, base, rhythm, lead }) {
+        const organChords = [[52, 59, 64, 67], [48, 55, 64, 67], [50, 57, 62, 66], [47, 54, 63, 69], [52, 59, 64, 67], [48, 55, 64, 67], [45, 57, 60, 64], [47, 54, 63, 69]];
+        const roots = [40, 36, 38, 35, 40, 36, 33, 35];
+        const tops = [76, 76, 78, 75, 79, 76, 76, 78, 79, 79, 81, 78, 83, 79, 81, 78];
+        for (let bar = 0; bar < 16; bar++) {
+            const c = bar % 8;
+            organ(r, base, T(bar, 0), barLen * 0.97, organChords[c], { amp: 0.045, stops: 'full', attack: 0.02, release: 0.2, send: 0.6 });
+            for (let k = 0; k < 8; k++) tri(r, base, T(bar, k / 2), beat * 0.4, roots[c] + (k % 4 === 3 ? 12 : 0) + 12, { amp: 0.3 });
+            chipKick(r, rhythm, T(bar, 0), { amp: 0.55 });
+            chipKick(r, rhythm, T(bar, 2), { amp: 0.5 });
+            chipKick(r, rhythm, T(bar, 2.5), { amp: 0.35 });
+            chipSnare(r, rhythm, T(bar, 1), { amp: 0.2 });
+            chipSnare(r, rhythm, T(bar, 3), { amp: 0.22 });
+            for (let k = 0; k < 16; k++) chipHat(r, rhythm, T(bar, k / 4), { amp: k % 4 === 2 ? 0.05 : 0.02, pan: 0.35 });
+            if (bar % 2 === 0) tom(r, rhythm, T(bar, 0), { amp: 0.35, tone: 60, send: 0.5 });
+            if (bar % 4 === 3) for (const b of [3, 3.25, 3.5, 3.75]) chipSnare(r, rhythm, T(bar, b), { amp: 0.14, decay: 30, pan: -0.3 });
+
+            // The toccata: a mordent on the top note, a run down the scale, the chord climbing back up.
+            const top = SCALE_E.indexOf(tops[bar]);
+            const seq = [0, -1, 0, -2, -3, -4, -5, -6].map((d) => SCALE_E[top + d]);
+            const ch = organChords[c].slice(1).map((m) => m + 12);
+            const run = [...seq, ch[0], ch[1], ch[2], ch[0] + 12, ch[2], ch[1], ch[0], SCALE_E[top - 1]];
+            run.forEach((m, k) => chip(r, lead, T(bar, k / 4), beat * 0.22, m, { duty: 0.25, amp: 0.07, decay: 6, pan: 0.15, send: 0.25 }));
+            if (bar % 2 === 1 || bar >= 12) for (const m of [64, 67, 71]) brass(r, lead, T(bar, 3.5), beat * 0.4, m, { amp: 0.08, bright: 1.1, vib: 0 });
+        }
+    },
+};
+
+// ---------------------------------------------------------------- dawn: the victory
+// The day's tune comes back a tone higher (G major) and broader: brass carries it over a bright choir,
+// timpani roll at the turns, chip arpeggios sparkle and the birds are back. Triumph, and relief.
+const DAWN = {
+    bpm: 92,
+    beats: 4,
+    bars: 8,
+    render({ r, T, beat, bar: barLen, base, rhythm, lead }) {
+        const roots = [43, 40, 36, 38, 43, 39, 45, 38];
+        const pads = [[55, 59, 62, 67], [52, 59, 64, 67], [55, 60, 64, 67], [54, 57, 62, 66], [55, 59, 62, 67], [55, 58, 63, 67], [52, 57, 60, 64], [54, 57, 60, 66]];
+        for (let bar = 0; bar < 8; bar++) {
+            choir(r, base, T(bar, 0), barLen, pads[bar], { amp: 0.06, vowel: 'a', attack: 0.5, release: 1, send: 0.7 });
+            tri(r, base, T(bar, 0), beat * 1.8, roots[bar] + 12, { amp: 0.3 });
+            tri(r, base, T(bar, 2), beat * 1.8, roots[bar] + 19, { amp: 0.25 });
+            tom(r, rhythm, T(bar, 0), { amp: 0.4, tone: 70, send: 0.5 });
+            tom(r, rhythm, T(bar, 2), { amp: 0.3, tone: 62, send: 0.5 });
+            if (bar % 4 === 3) for (let k = 0; k < 8; k++) tom(r, rhythm, T(bar, 2 + k / 4), { amp: 0.08 + k * 0.03, tone: 66, send: 0.5 });
+            const arp = pads[bar].map((m) => m + 24);
+            for (let k = 0; k < 16; k++) chip(r, rhythm, T(bar, k / 4), beat * 0.2, arp[[0, 1, 2, 3, 2, 1][k % 6]], { duty: 0.125, amp: 0.035, decay: 10, pan: Math.sin(k) * 0.4, send: 0.3 });
+        }
+        for (let k = 0; k < 12; k++) bird(r, base, (k + r.rnd() * 0.8) * (8 * barLen) / 12, { amp: 0.01 + r.rnd() * 0.015, pan: r.rnd() * 1.6 - 0.8, base: 2800 + r.rnd() * 1500 });
+
+        const tune = [
+            [[0, 86, 0.5], [0.5, 83, 0.5], [1, 79, 1], [2, 83, 0.5], [2.5, 86, 0.5], [3, 88, 1]],
+            [[0, 86, 1.5], [1.5, 83, 0.5], [2, 79, 0.5], [2.5, 76, 0.5], [3, 79, 1]],
+            [[0, 84, 0.5], [0.5, 83, 0.5], [1, 81, 0.5], [1.5, 79, 0.5], [2, 76, 1], [3, 79, 1]],
+            [[0, 81, 1.5], [1.5, 78, 0.5], [2, 74, 1], [3, 76, 0.5], [3.5, 78, 0.5]],
+            [[0, 86, 0.5], [0.5, 83, 0.5], [1, 79, 1], [2, 83, 0.5], [2.5, 86, 0.5], [3, 88, 1]],
+            [[0, 87, 0.5], [0.5, 86, 0.5], [1, 82, 1], [2, 79, 0.5], [2.5, 82, 0.5], [3, 87, 1]],
+            [[0, 84, 1], [1, 81, 0.5], [1.5, 84, 0.5], [2, 88, 1], [3, 86, 0.5], [3.5, 84, 0.5]],
+            [[0, 83, 0.5], [0.5, 81, 0.5], [1, 78, 0.5], [1.5, 81, 0.5], [2, 79, 2]],
+        ];
+        melody(T, beat, tune, (t, m, d) => {
+            brass(r, lead, t, d * 0.95, m - 12, { amp: 0.09, bright: 0.9, vib: 0.1, send: 0.5 });
+            brass(r, lead, t, d * 0.95, m - 24, { amp: 0.05, bright: 0.7, vib: 0.08, send: 0.4, pan: -0.3 });
+            musicbox(r, lead, t, m + 12, { amp: 0.03, pan: 0.3, send: 0.5 });
+        });
+        toll(r, lead, 0, 67, { amp: 0.05, dur: 5, send: 0.7 });
+    },
+};
+
+export const TRACKS = { bar: BAR, day: DAY, dusk: DUSK, night: NIGHT, blood: BLOOD, cursed: CURSED, boss: BOSS, dawn: DAWN };
 
 /** Seconds of one bar and of the loop. */
 export function timing(name) {

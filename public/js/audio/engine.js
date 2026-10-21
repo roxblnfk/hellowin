@@ -15,14 +15,23 @@ const CEILING = 10 ** (-1 / 20);
 const MAX_VOICES = 32;
 const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
+/**
+ * Tracks of the final scene by finale step, [first step, track] in rising order: each holds until the next.
+ * A later part of the finale (the boss fight, the dawn) gets its track by a row here.
+ */
+export const FINALE_TRACKS = [[0, 'blood'], [5, 'cursed']];
+
 /** Which track a scene state plays: the bar is scene 0, the day 1 …; in the final scene by the finale step. */
 export function trackOf({ scene = 0, sceneStages = 4, finale = null } = {}) {
-    if (scene >= sceneStages) return (finale?.step ?? 0) >= 5 ? 'cursed' : 'blood';
+    if (scene >= sceneStages) {
+        const step = finale?.step ?? 0;
+        return FINALE_TRACKS.reduce((track, [from, name]) => (step >= from ? name : track), 'blood');
+    }
     return ['bar', 'day', 'dusk', 'night'][scene] ?? 'night';
 }
 
-/** The track worth rendering ahead: the one the next scene (or the end of the finale) will ask for. */
-export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: null };
+/** The track worth rendering ahead: the one the next scene (or the next part of the finale) will ask for. */
+export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: 'boss', boss: 'dawn', dawn: null };
 
 const smooth = (x, a, b) => {
     const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -368,7 +377,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
             }
             return;
         }
-        if (name === 'blood' || name === 'cursed') loadGroup('finale');
+        if (['blood', 'cursed', 'boss', 'dawn'].includes(name)) loadGroup('finale');
         loadTrack(name).then((track) => {
             if (track && token === switchToken) startTrack(track);
             const next = NEXT_TRACK[name];
