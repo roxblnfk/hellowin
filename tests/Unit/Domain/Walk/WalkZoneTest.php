@@ -119,7 +119,7 @@ final class WalkZoneTest
         $zone = RitualHarness::barLayout()->zone;
 
         Assert::equals($zone->clamp(new Point(80, 58)), new Point(80, 60));
-        Assert::equals($zone->clamp(new Point(65, 55)), new Point(64, 55));
+        Assert::equals($zone->clamp(new Point(64, 55)), new Point(62.5, 55));
         Assert::true($zone->contains($zone->clamp(new Point(44, 78))));
     }
 
