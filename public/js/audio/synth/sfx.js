@@ -174,7 +174,7 @@ export const SFX = {
 
     // ---------------------------------------------------------------- magic circle
     'circle.click': fx({
-        group: 'finale', dur: 0.5, variants: 5, voices: 6, level: -13,
+        group: 'finale', dur: 0.5, variants: 5, voices: 6, level: -20,
         render(r, out) {
             noiseSweep(r, out, 0, 0.16, { from: 2500 + r.rnd() * 1500, to: 3500, q: 3, amp: 0.5, grain: 30, pan: (r.rnd() - 0.5) * 0.5 });
             blip(r, out, 0, 110, 98, 0.3, { amp: 0.4, wave: 'square', send: 0.4 });
