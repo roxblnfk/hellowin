@@ -31,6 +31,7 @@ final readonly class Reveal
      *        the last ready scene.
      * @param int<0, max> $slain Zombies slain in the cursed world.
      * @param int<0, max> $damage Strikes FrankenPHP took.
+     * @param int<0, max> $rolls New throws of the dice by the players.
      */
     public function __construct(
         public int $clicks,
@@ -41,6 +42,7 @@ final readonly class Reveal
         public int $drinks = 0,
         public int $slain = 0,
         public int $damage = 0,
+        public int $rolls = 0,
     ) {}
 
     /**
@@ -50,8 +52,9 @@ final readonly class Reveal
      * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin
      * @param int<0, max> $slain
      * @param int<0, max> $damage
+     * @param int<0, max> $rolls
      */
-    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin, int $drinks = 0, int $slain = 0, int $damage = 0): self
+    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin, int $drinks = 0, int $slain = 0, int $damage = 0, int $rolls = 0): self
     {
         $k = $ritual->story->k;
         $elements = \array_map(
@@ -72,11 +75,11 @@ final readonly class Reveal
             $spent += $element->spent + \min($element->clicks, $cost);
         }
 
-        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin, $drinks, $slain, $damage);
+        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin, $drinks, $slain, $damage, $rolls);
     }
 
     /**
-     * @return array{clicks: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, slain: int<0, max>, damage: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
+     * @return array{clicks: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, slain: int<0, max>, damage: int<0, max>, rolls: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
      */
     public function toArray(): array
     {
@@ -88,6 +91,7 @@ final readonly class Reveal
             'drinks' => $this->drinks,
             'slain' => $this->slain,
             'damage' => $this->damage,
+            'rolls' => $this->rolls,
             'lastPumpkin' => $this->lastPumpkin,
         ];
     }

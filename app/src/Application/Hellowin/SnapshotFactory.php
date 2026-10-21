@@ -6,6 +6,7 @@ namespace App\Application\Hellowin;
 
 use App\Application\Bar\BarService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Domain\Clock\Clock;
@@ -41,6 +42,7 @@ use App\Domain\Walk\WalkerStore;
  *     zombies: bool,
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
  *     boss: array{hp: int<0, max>, max: positive-int}|null,
+ *     dice: array{on: bool, winner?: array}|null,
  *     startedAt: int,
  *     now: int
  * }
@@ -63,6 +65,7 @@ final readonly class SnapshotFactory
         private ?BarService $bar = null,
         private ?CursedService $cursed = null,
         private ?RapierService $rapier = null,
+        private ?DiceService $dice = null,
     ) {}
 
     /**
@@ -112,6 +115,7 @@ final readonly class SnapshotFactory
             'zombies' => $ritual->story->zombies,
             'cursed' => $this->cursed?->state($ritual->round, $ritual->story, \count($walkers)),
             'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,
+            'dice' => $this->dice?->state($ritual->round, $ritual->story),
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now
             'startedAt' => $this->startTime?->at() ?? $this->clock->now(),

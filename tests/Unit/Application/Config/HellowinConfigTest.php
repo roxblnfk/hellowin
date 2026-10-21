@@ -312,6 +312,30 @@ final class HellowinConfigTest
         $config->getBossHpPerPlayer();
     }
 
+    public function diceSecretIsConfiguredOrDerivedFromTheEncryptionKey(): void
+    {
+        Assert::null((new HellowinConfig())->getDiceSecret());
+        Assert::same((new HellowinConfig(['dice' => ['secret' => 'mine', 'encrypter_key' => 'key']]))->getDiceSecret(), 'mine');
+
+        $derived = (new HellowinConfig(['dice' => ['secret' => '', 'encrypter_key' => 'key']]))->getDiceSecret();
+
+        Assert::same($derived, \hash_hmac('sha256', 'hellowin:dice', 'key'));
+        Assert::notSame($derived, 'key');
+    }
+
+    public function diceCooldownComesFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getDiceCooldown(), 1800);
+        Assert::same((new HellowinConfig(['dice' => ['cooldown_ms' => '0']]))->getDiceCooldown(), 0);
+    }
+
+    public function rejectsAnInvalidDiceCooldown(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DICE_COOLDOWN_MS');
+
+        (new HellowinConfig(['dice' => ['cooldown_ms' => '-1']]))->getDiceCooldown();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();

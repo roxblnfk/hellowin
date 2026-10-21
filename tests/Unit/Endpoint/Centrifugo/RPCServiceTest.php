@@ -132,6 +132,7 @@ final class RPCServiceTest
             'zombies' => false,
             'cursed' => null,
             'boss' => null,
+            'dice' => null,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);
@@ -174,6 +175,7 @@ final class RPCServiceTest
             'points' => 0,
             'drinks' => 0,
             'damage' => 0,
+            'rolls' => 0,
         ]]);
     }
 
@@ -418,6 +420,7 @@ final class RPCServiceTest
     #[DataSet(['thresholds'])]
     #[DataSet(['cursed.target'])]
     #[DataSet(['boss.hp'])]
+    #[DataSet(['dice.owl'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
         $ritual = new RitualHarness();
@@ -506,7 +509,7 @@ final class RPCServiceTest
             $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
 
-        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
+        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
         Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal]);
         Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal]);
     }
@@ -851,6 +854,27 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'bar.ready', [], moderator: true), ['ok' => false, 'error' => 'not bar']);
     }
 
+    public function rollAnswersTheDiceAndTheLastAttemptOnABadOne(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1], circle: 1);
+        $ritual->transitions->scene(1, 1);
+        $ritual->players->register(self::PLAYER, 'Jack', ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin']);
+        $ritual->walks->move(self::PLAYER, 20, 90);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER), ['ok' => false, 'error' => 'not now']);
+        $this->call($ritual, 'finale.step', ['step' => 1, 'force' => true], moderator: true);
+
+        $response = $this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER);
+
+        Assert::same($response['ok'] ?? null, true);
+        Assert::same($response['attempt'] ?? null, 1);
+        Assert::count($response['dice'] ?? [], 3);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER), $response);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 5], self::PLAYER), ['ok' => false, 'error' => 'bad attempt', 'last' => 1]);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 2], self::PLAYER), ['ok' => false, 'error' => 'busy']);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 1]), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'dice.owl', [], moderator: true)['attempt'] ?? null, 1);
+    }
+
     public function moderatorIsNeverRateLimited(): void
     {
         $ritual = new RitualHarness();
@@ -913,6 +937,7 @@ final class RPCServiceTest
             $ritual->bar,
             $ritual->rapier,
             $ritual->cursed,
+            $ritual->dice,
         );
         $service->handle(new RPC(
             worker: $this->worker,

@@ -143,7 +143,7 @@ final class CircleTest
         $ritual->runJobs();
 
         Assert::same($ritual->story->finaleStep(1), 1);
-        Assert::same($ritual->story->finaleStep(2), 2);
+        Assert::same($ritual->story->finaleStep(2, force: true), 2);
         Assert::same(\array_column($ritual->broadcast->ofType('finale'), 'step'), [1, 2]);
     }
 

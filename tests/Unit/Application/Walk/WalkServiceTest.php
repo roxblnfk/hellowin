@@ -240,9 +240,9 @@ final class WalkServiceTest
         $ritual->story->finaleStep(1, force: true);
         $ritual->broadcast->published = [];
 
-        $ritual->story->finaleStep(2);
+        $ritual->story->finaleStep(2, force: true);
 
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'owl', 'move', 'move']);
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['dice', 'finale', 'owl', 'move', 'move']);
         $zone = RitualHarness::walkZone();
         foreach ($ritual->broadcast->ofType('move') as $move) {
             $path = $move['walk']['path'];

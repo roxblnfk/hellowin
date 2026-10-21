@@ -55,6 +55,15 @@ return [
         'boss_hp_per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 5),
     ],
 
+    // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): the faces are HMAC-SHA256 of the attempt under
+    // `secret`; empty derives it from ENCRYPTER_KEY, and without that key the first throw draws a random one and keeps
+    // it in Valkey. A player throws anew at most once in `cooldown_ms` milliseconds
+    'dice' => [
+        'secret' => env('HELLOWIN_DICE_SECRET', ''),
+        'encrypter_key' => env('ENCRYPTER_KEY', ''),
+        'cooldown_ms' => env('HELLOWIN_DICE_COOLDOWN_MS', 1800),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [

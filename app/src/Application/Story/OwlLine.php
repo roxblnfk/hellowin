@@ -24,6 +24,8 @@ final class OwlLine
     public const BAR_AGAIN = 'bar-again';
     public const CURSED_READY = 'cursed-ready';
     public const BOSS_DOWN = 'boss-down';
+    public const DICE_WIN = 'dice-win';
+    public const DICE_OWL_WIN = 'dice-owl-win';
 
     /**
      * What the owl says, naming the player, when the element of the type made the scene ready.

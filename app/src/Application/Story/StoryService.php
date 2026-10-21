@@ -36,6 +36,7 @@ final readonly class StoryService
         private ?CursedService $cursed = null,
         private ?RapierService $rapier = null,
         private ?RitualMetrics $metrics = null,
+        private ?DiceService $dice = null,
     ) {}
 
     /**
@@ -207,6 +208,7 @@ final readonly class StoryService
         } catch (LockBusyException) {
         }
 
+        $before->finale === Story::DICE_STEP and $this->dice?->end($round);
         $this->publisher->finale($round, $ritual->scene, $step, $this->reveal->finale($ritual)['reveal'] ?? null);
         if ($step === Story::CURSED_STEP) {
             try {
@@ -216,6 +218,7 @@ final readonly class StoryService
             $before->zombies or $this->publisher->zombies($round, true);
         }
         $this->publisher->owl($round, OwlLine::finale($step));
+        $step === Story::DICE_STEP and $this->dice?->begin($round);
         $step === Story::SCATTER_STEP and $this->scatter();
     }
 

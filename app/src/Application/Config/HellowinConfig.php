@@ -39,6 +39,7 @@ final class HellowinConfig extends InjectableConfig
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
         'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5],
+        'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -312,6 +313,40 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.rapier.boss_hp_per_player" (env HELLOWIN_BOSS_HP_PER_PLAYER) must be a non-negative integer.');
+    }
+
+    /**
+     * The key of the dice HMAC: the configured one, or one derived from the application's encryption key under a salt
+     * of its own, so the dice never share a key with the encrypter.
+     *
+     * @return non-empty-string|null Null — neither is set: the dice draw a random key and keep it in the store.
+     */
+    public function getDiceSecret(): ?string
+    {
+        /** @var mixed $secret */
+        $secret = $this->dice()['secret'] ?? null;
+        if (\is_string($secret) && $secret !== '') {
+            return $secret;
+        }
+
+        /** @var mixed $key */
+        $key = $this->dice()['encrypter_key'] ?? null;
+
+        return \is_string($key) && $key !== '' ? \hash_hmac('sha256', 'hellowin:dice', $key) : null;
+    }
+
+    /**
+     * @return int<0, max> Milliseconds between new throws of the dice by one player.
+     */
+    public function getDiceCooldown(): int
+    {
+        /** @var mixed $value */
+        $value = $this->dice()['cooldown_ms'] ?? null;
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.dice.cooldown_ms" (env HELLOWIN_DICE_COOLDOWN_MS) must be a non-negative integer.');
     }
 
     /**
@@ -727,6 +762,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($rapier) or throw new \InvalidArgumentException('Config "hellowin.rapier" must be an array.');
 
         return $rapier;
+    }
+
+    private function dice(): array
+    {
+        $dice = $this->config['dice'] ?? [];
+        \is_array($dice) or throw new \InvalidArgumentException('Config "hellowin.dice" must be an array.');
+
+        return $dice;
     }
 
     private function walk(): array

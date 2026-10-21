@@ -298,6 +298,34 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * The dice of finale step 1 come on or go off; off with the winner after the first 6-6-6.
+     *
+     * @param array|null $winner `{player: {id, name}, attempt}` or `{owl: true, attempt}`.
+     */
+    public function dice(int $round, bool $on, ?array $winner = null): void
+    {
+        $message = ['type' => 'dice', 'round' => $round, 'on' => $on];
+        $winner === null or $message['winner'] = $winner;
+
+        $this->publish($message);
+    }
+
+    /**
+     * A new throw of the dice: a player's, or the owl's when there is no player.
+     *
+     * @param positive-int $attempt
+     * @param array{int, int, int} $dice
+     * @param int $at Unix time in milliseconds of the throw.
+     */
+    public function roll(int $round, ?Player $player, int $attempt, array $dice, int $at): void
+    {
+        $message = ['type' => 'roll', 'round' => $round];
+        $message += $player === null ? ['owl' => true] : ['player' => $player->ref()];
+
+        $this->publish($message + ['attempt' => $attempt, 'dice' => $dice, 'at' => $at]);
+    }
+
+    /**
      * A line of the owl's catalogue; the frontend holds the texts and fills the params in.
      *
      * @param non-empty-string $line

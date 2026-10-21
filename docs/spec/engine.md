@@ -10,7 +10,7 @@
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
 — сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
-слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»).
+слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»).
 
 ## Классы
 
@@ -38,6 +38,7 @@
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 | Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale` |
+| Кости 6-6-6: запись, грани, секрет | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 
 ## Периодический процесс (тикер)
 
@@ -339,6 +340,41 @@
 - **Сброс** сбрасывает всё это без отдельного кода: записи цели и босса привязаны к раунду, перестановка в бар
   (`relocate`) опустошает руки и снимает заклятие; без бара заклятие снимает `cureAll`.
 
+## Кости
+
+Правила — [`scenario.md`](scenario.md), «Кости 6-6-6»; сообщения — [`protocol.md`](protocol.md), «Кости». Классы —
+`Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`).
+
+- **Шаг.** `Story::DICE_STEP` 1: `stepTo(1)` снимает `ready` (круг замкнут давно), `awaitsReady(2)` на шаге 1 ждёт
+  `ready` — без него `not ready`, с `force` — можно. Режим «включён» не хранится: это шаг 1 без победителя.
+  `StoryService::entered` на шаге 1 после `finale-1` шлёт `dice {on: true}`, при уходе с шага 1 без победителя (только
+  `force`) — `dice {on: false}` перед `finale {step: 2}`.
+- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at}}, winner, owl, rolls}` под RR-локом `dice`
+  (`DiceStore`); запись другого раунда читается как пустая — сброс её не трогает. Граней в записи нет: только последняя
+  попытка игрока и время его последнего нового броска.
+- **Бросок** (`roll {attempt}`, `DiceService::roll`): без лока — фигурка (`no character`), не зомби, шаг 1 (`not now`);
+  под локом `dice` по порядку: `attempt` = последней — повтор: грани заново из HMAC, без записи, события, счёта и паузы
+  (отвечает и после победы — ответ на победный бросок мог потеряться); есть победитель — `not now`; не последняя + 1 —
+  `bad attempt` с `last`; с прошлого нового броска меньше `HELLOWIN_DICE_COOLDOWN_MS` — `busy`; иначе грани, запись
+  `{attempt, at}`, `rolls + 1`, а при 6-6-6 — `winner`. После лока: `rolls + 1` игроку, событие `roll`; победа —
+  `dice {on: false, winner}`, `RitualStore::markReady(round, финальная, step: 1)` → `ready`, реплика `dice-win`.
+- **Почему повтор не перебрасывает.** Ключ идемпотентности попытки — `{round}:roll:{player}:{attempt}`, а грани —
+  функция от него: `DiceRoller` берёт HMAC-SHA256(секрет, `"{round}:{player}:{attempt}"`) и превращает байты в грани
+  выборкой с отбрасыванием: байт ≥ 252 пропускается, остальные — `byte % 6 + 1` (252 = 6 × 42, без смещения по модулю);
+  кончились 32 байта — следующий блок HMAC от ключа со счётчиком. Повтор того же запроса (двойной клик, переподключение)
+  получает те же грани без хранения результата, а новая попытка — только следующая по номеру и не чаще паузы, так что
+  перебрать попытки быстрее зала нельзя; без секрета нельзя и предсказать, на какой выпадет 6-6-6.
+- **Первое 6-6-6** — под локом `dice`: все броски зала проходят через одну запись, и победитель записывается тем, кто
+  взял лок первым; следующий 6-6-6 видит `winner` и получает `not now`, как второй выстрел по сбитому летуну.
+- **Сова** (`dice.owl`, `DiceService::owl`): под тем же локом `owl + 1`; броски 1 и 2 — HMAC от `"{round}:owl:{n}"`,
+  тройка 6-6-6 пропускается (следующие три грани потока), бросок 3 — 6-6-6 и победа `{owl: true, attempt: 3}`, реплика
+  `dice-owl-win`. В `rolls` не идут.
+- **Секрет** — `HELLOWIN_DICE_SECRET`; пусто — `HMAC-SHA256("hellowin:dice", ENCRYPTER_KEY)` (своя соль, ключ шифрования
+  в кости не попадает); нет и его — `DiceSecret` при первом броске под локом `dice:secret` создаёт случайный и кладёт в
+  `hellowin:dice:secret`: все воркеры и перезапуски RoadRunner бросают одинаково. Спрашивается при броске, не при старте
+  воркера.
+- **Снимок** — `dice`: с шага 1 `{on, winner?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
+
 ## Модератор
 
 - **Роль.** `ConnectService` сравнивает `moderatorSecret` из `data` подключения с `HELLOWIN_MODERATOR_SECRET`
@@ -514,8 +550,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
+| Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -589,6 +626,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_CURSED_PER_PLAYER` | 5 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
 | `HELLOWIN_BOSS_HP_BASE` | 40 | здоровье FrankenPHP при пробуждении без игроков, до множителя `k` |
 | `HELLOWIN_BOSS_HP_PER_PLAYER` | 5 | добавка к здоровью FrankenPHP на каждого игрока на поле |
+| `HELLOWIN_DICE_SECRET` | пусто | ключ HMAC костей; пусто — из `ENCRYPTER_KEY` с солью, без него — случайный в `hellowin:dice:secret` |
+| `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |

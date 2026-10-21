@@ -13,6 +13,9 @@ use App\Domain\Player\PlayerId;
  */
 final readonly class Story
 {
+    /** The silhouette rises out of the circle: the room rolls the dice until someone rolls 6-6-6. */
+    public const DICE_STEP = 1;
+
     /** The finale step where FrankenPHP stands revealed and the characters run to the edges of the lawn. */
     public const SCATTER_STEP = 2;
 
@@ -138,21 +141,26 @@ final readonly class Story
         }
         /** @var int<1, 7> $step */
 
-        // The cursed world is ready by its goal alone, not by the circle closed long ago; its zombies come out by themselves
-        return $step === self::CURSED_STEP
-            ? new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner)
-            : new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
+        // The dice and the cursed world are ready by their own goal, not by the circle closed long ago; the zombies of the
+        // cursed world come out by themselves
+        return match ($step) {
+            self::DICE_STEP => new self(null, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
+            self::CURSED_STEP => new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
+            default => new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
+        };
     }
 
     /**
-     * A step that waits for the room: the first one for the closed circle FrankenPHP rises out of, the rapier for the
-     * goal of the cursed world, the dawn for the fallen boss — which the moderator never has at hand: the boss's last
+     * A step that waits for the room: the first one for the closed circle FrankenPHP rises out of, the second for the
+     * first 6-6-6 of the dice, the rapier for the goal of the cursed world, the dawn for the fallen boss — which the moderator never has at hand: the boss's last
      * hit takes the dawn by itself.
      */
     public function awaitsReady(int $step): bool
     {
         return match (true) {
-            $this->finale === 0 && $step === 1, $this->finale === self::CURSED_STEP && $step === self::RAPIER_STEP => $this->ready === null,
+            $this->finale === 0 && $step === self::DICE_STEP,
+            $this->finale === self::DICE_STEP && $step === self::SCATTER_STEP,
+            $this->finale === self::CURSED_STEP && $step === self::RAPIER_STEP => $this->ready === null,
             $this->finale === self::RAPIER_STEP && $step === self::DAWN_STEP => true,
             default => false,
         };
@@ -197,6 +205,11 @@ final readonly class Story
     public function cursed(): bool
     {
         return $this->finale === self::CURSED_STEP || $this->finale === self::RAPIER_STEP;
+    }
+
+    public function dice(): bool
+    {
+        return $this->finale === self::DICE_STEP;
     }
 
     public function rapier(): bool

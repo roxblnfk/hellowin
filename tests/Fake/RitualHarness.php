@@ -20,6 +20,7 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
@@ -42,6 +43,8 @@ use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
+use App\Domain\Story\DiceRoller;
+use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
@@ -61,6 +64,7 @@ final class RitualHarness
 {
     public const BONFIRE = 'bonfire';
     public const CIRCLE = 'circle';
+    public const DICE_SECRET = 'test-dice-secret';
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -92,6 +96,8 @@ final class RitualHarness
     public readonly CursedService $cursed;
     public readonly BossStore $bossStore;
     public readonly RapierService $rapier;
+    public readonly DiceStore $diceStore;
+    public readonly DiceService $dice;
 
     /**
      * @param positive-int $threshold
@@ -156,8 +162,10 @@ final class RitualHarness
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, 40, 5, new Randomizer(new Mt19937(5)));
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier);
+        $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
+        $this->dice = new DiceService($this->diceStore, DiceRoller::withSecret(self::DICE_SECRET), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800);
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -211,7 +219,7 @@ final class RitualHarness
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice);
     }
 
     /**

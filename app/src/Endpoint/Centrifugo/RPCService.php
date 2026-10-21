@@ -17,7 +17,9 @@ use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
+use App\Application\Story\BadAttemptException;
 use App\Application\Story\CursedService;
+use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
@@ -52,7 +54,7 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -70,6 +72,7 @@ final readonly class RPCService implements ServiceInterface
         private ?BarService $bar = null,
         private ?RapierService $rapier = null,
         private ?CursedService $cursed = null,
+        private ?DiceService $dice = null,
     ) {}
 
     #[\Override]
@@ -119,6 +122,8 @@ final readonly class RPCService implements ServiceInterface
             'strike' => $player === null ? self::fail('anonymous') : ['ok' => true, 'hp' => $this->rapierService()->strike($player)],
             'cursed.target' => ['ok' => true, 'target' => $this->cursedService()->moveTarget($request->getData()['goal'] ?? null, $request->getData()['delta'] ?? null)],
             'boss.hp' => ['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null),
+            'roll' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->diceService()->roll($player, $request->getData()['attempt'] ?? null),
+            'dice.owl' => ['ok' => true] + $this->diceService()->owl(),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -174,6 +179,8 @@ final readonly class RPCService implements ServiceInterface
             return $call();
         } catch (StoryRefusedException|BarRefusedException|ClinkRefusedException|ZombifiedException $e) {
             return self::fail($e->error);
+        } catch (BadAttemptException $e) {
+            return self::fail('bad attempt') + ['last' => $e->last];
         } catch (NoCharacterException) {
             return self::fail('no character');
         } catch (RitualBusyException|LockBusyException) {
@@ -419,6 +426,11 @@ final readonly class RPCService implements ServiceInterface
     private function rapierService(): RapierService
     {
         return $this->rapier ?? throw new StoryRefusedException('not now');
+    }
+
+    private function diceService(): DiceService
+    {
+        return $this->dice ?? throw new StoryRefusedException('not now');
     }
 
     private function cursedService(): CursedService

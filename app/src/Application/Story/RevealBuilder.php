@@ -10,6 +10,7 @@ use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualSnapshot;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
+use App\Domain\Story\DiceStore;
 use App\Domain\Story\Reveal;
 use App\Domain\Story\ShotTally;
 
@@ -25,6 +26,7 @@ final readonly class RevealBuilder
         private ?BarStore $bar = null,
         private ?CursedStore $cursed = null,
         private ?BossStore $boss = null,
+        private ?DiceStore $dice = null,
     ) {}
 
     /**
@@ -56,6 +58,7 @@ final readonly class RevealBuilder
             ($this->bar?->drinks($ritual->round) ?? 0) + ($cursed?->drunk ?? 0),
             $cursed?->slain ?? 0,
             $this->boss?->get($ritual->round)?->damage ?? 0,
+            $this->dice?->get($ritual->round)->rolls ?? 0,
         );
     }
 }

@@ -17,7 +17,7 @@ use Psr\SimpleCache\CacheInterface;
  * Builds the leaderboard from every player: the KV store cannot sort, so the ticker reads the players by the index
  * and ranks them here. The result is kept under `hellowin:leaderboard` for RPC `me` and published to the channel.
  *
- * @psalm-type Top = list<array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>}>
+ * @psalm-type Top = list<array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>, rolls: int<0, max>}>
  */
 final readonly class LeaderboardService
 {

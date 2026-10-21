@@ -17,6 +17,7 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
@@ -40,6 +41,9 @@ use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
+use App\Domain\Story\DiceRoller;
+use App\Domain\Story\DiceSecret;
+use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
@@ -98,6 +102,7 @@ final class HellowinBootloader extends Bootloader
                 StartTime $startTime,
                 CursedService $cursed,
                 RapierService $rapier,
+                DiceService $dice,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -111,6 +116,7 @@ final class HellowinBootloader extends Bootloader
                 $bar,
                 $cursed,
                 $rapier,
+                $dice,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -138,12 +144,36 @@ final class HellowinBootloader extends Bootloader
                 BarStore $bar,
                 CursedStore $cursed,
                 BossStore $boss,
-            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss),
+                DiceStore $dice,
+            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice),
             CursedStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): CursedStore => new CursedStore($cache->storage($config->getStorage()), new Locks($lock)),
+            DiceStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): DiceStore => new DiceStore($cache->storage($config->getStorage()), new Locks($lock)),
+            DiceSecret::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): DiceSecret => new DiceSecret($config->getDiceSecret(), $cache->storage($config->getStorage()), new Locks($lock)),
+            // The secret is asked on the first throw, not on boot: a worker starts even while Valkey is away
+            DiceRoller::class => static fn(DiceSecret $secret): DiceRoller => new DiceRoller($secret->get(...)),
+            DiceService::class => static fn(
+                HellowinConfig $config,
+                DiceStore $store,
+                DiceRoller $roller,
+                RitualStore $ritual,
+                RitualPolicy $policy,
+                WalkerStore $walkers,
+                PlayerService $players,
+                ChannelPublisher $publisher,
+                Clock $clock,
+            ): DiceService => new DiceService($store, $roller, $ritual, $policy, $walkers, $players, $publisher, $clock, $config->getDiceCooldown()),
             BossStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
