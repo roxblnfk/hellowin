@@ -58,7 +58,11 @@
   in any scene (?wshot=ms shoots the first one); ?fireflies=1 launches three fireflies at the start (?fshot=ms shoots a
   near one); ?flies=N launches N flies (the bar's flyer: loops between landings on the tables and the counter) at the
   start in any scene, seeded (?flyshot=ms has the first walker shoot the first one);
-  zombies walk only at finale step 5 with zombies on and no pause; the scene is ready when every pumpkin is done, and
+  zombies wander at finale steps 5–6 (protocol.md, «Бродячие зомби»): ?zmin=N at least (HELLOWIN_ZOMBIE_MIN, default
+  5), all of them at once on entering step 5 and a new one at once after a death below it, then one every 4–9 s while
+  fewer than max(zmin, ?zper=N × walkers) live (HELLOWIN_ZOMBIE_PER_PLAYER, default 5); the pause stops that, the zombie
+  switch does nothing there; ?wander=N starts with N already wandering (zmin by default at steps 5–6), ?gone=ms sends
+  them away at that moment (as the dawn and a reset do), ?wkill=ms shoots the first one; the scene is ready when every pumpkin is done, and
   waits for «Следующая сцена».
   Bonfire (scenes 2–3): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
   nothing), its own threshold ?bclicks=N (default 20, HELLOWIN_BONFIRE_CLICKS_PER_STAGE) and last stages per scene
@@ -211,7 +215,7 @@
     </form>
 </dialog>
 <script type="module">
-    import { bindBar, bindClinking, bindDice, bindMeep, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
+    import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
     import { deathOf } from '/js/sound.js';
     import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
     import { initDebugPanel } from '/js/debug.js';
@@ -220,6 +224,7 @@
     import { createReveal } from '/js/reveal.js';
     import { ITEMS, randomLook } from '/js/pixel/characters.js';
     import { createScene } from '/js/pixel/scene.js';
+    import { inWanderZone } from '/js/pixel/wander.js';
 
     const params = new URLSearchParams(location.search);
     const root = document.getElementById('app');
@@ -556,7 +561,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime() });
+    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)) });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
@@ -664,6 +669,7 @@
             delete w.zombie;
             w.walk = standing(clampToBar(walkPoint(w.walk, now)), now);
         });
+        wanderGone();
         deliver({ type: 'reset', item: null, walkers: structuredClone(engine.walkers.map(publicWalker)), bar: structuredClone(engine.bar), ...(again ? { again: true } : {}) });
         if (again) deliver({ type: 'owl', line: 'bar-again' });
     }
@@ -748,11 +754,9 @@
             deliver({ type: 'finale', ...structuredClone(engine.finale), ...(item !== undefined ? { item } : {}) });
             if (step === CURSED_STEP) {
                 deliver({ type: 'cursed', ...engine.cursed });
-                if (!engine.zombies) {
-                    engine.zombies = true;
-                    deliver({ type: 'zombies', on: true });
-                }
+                wanderTopUp();
             }
+            if (step === LAST_STEP) wanderGone();
             // Step 2 scatters the walkers: each one outward from the patch to the edge of the lawn.
             if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
@@ -792,6 +796,7 @@
             engine[name] = on;
             deliver({ type: name === 'paused' ? 'pause' : 'zombies', on });
             if (name === 'zombies' && on) deliver({ type: 'owl', line: 'zombies' });
+            if (name === 'paused' && !on) wanderTopUp();
         }
         return { ok: true, on };
     }
@@ -884,6 +889,43 @@
             k += 0.05;
         }
         return launchFlyer(id, 'zombie', 1, ZOMBIE.duration, ZOMBIE.points, { from, to: round1(rim(angle, k)) });
+    }
+
+    // The wandering zombies of finale steps 5–6 (protocol.md, «Бродячие зомби»): HELLOWIN_ZOMBIE_MIN (?zmin, 5) at
+    // least, topped up at once after a death; one more every HELLOWIN_ZOMBIE_INTERVAL (4–9 s) while fewer than
+    // max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER (?zper, 5) × walkers) live; the pause stops both, its end tops up; the dawn
+    // and a reset send them away with `gone`. Seeded under ?freeze, so a frozen screenshot shows the same crowd.
+    const ZOMBIE_MIN = Math.max(0, Number.parseInt(params.get('zmin') ?? '5', 10) || 0);
+    const ZOMBIE_PER = Math.max(0, Number.parseInt(params.get('zper') ?? '5', 10) || 0);
+    let wanderRandom = simulated ? seeded(6150) : Math.random;
+    const wandering = () => [...live].filter(([, f]) => f.wander && !f.shot);
+    const wanderOn = () => engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step) && !engine.paused;
+
+    function engineWanderer(launchedAt = serverTime()) {
+        let from;
+        do from = round1({ x: 5 + wanderRandom() * 90, y: 46 + wanderRandom() * 49 });
+        while (!inWanderZone(from));
+        const id = nextId();
+        const event = { flyer: id, kind: 'zombie', depth: 1, from, points: ZOMBIE.points, launchedAt, wander: true };
+        live.set(id, { until: Infinity, points: ZOMBIE.points, kind: 'zombie', shot: false, wander: true, event });
+        if (launchedAt >= serverTime()) deliver({ type: 'flyer', ...event });
+        return id;
+    }
+
+    function wanderTopUp() {
+        if (!wanderOn()) return;
+        for (let n = wandering().length; n < ZOMBIE_MIN; n++) engineWanderer();
+    }
+
+    function wanderTick() {
+        if (wanderOn() && wandering().length < Math.max(ZOMBIE_MIN, ZOMBIE_PER * engine.walkers.length)) engineWanderer();
+        later(wanderTick, 4000 + wanderRandom() * 5000);
+    }
+
+    function wanderGone() {
+        const ids = wandering().map(([id]) => id);
+        ids.forEach((id) => live.delete(id));
+        if (ids.length) deliver({ type: 'gone', flyers: ids });
     }
 
     // A worm crawls from one lawn point to another 12–25 % away, both off the patch and the line between them clear of
@@ -993,6 +1035,10 @@
             engine.cursed.slain++;
             cursedUpdate();
         }
+        if (f.wander) {
+            live.delete(id);
+            wanderTopUp();
+        }
         return { ok: true, hit: true, points: f.points };
     }
 
@@ -1024,18 +1070,27 @@
     // walker — beside the end of its path, CLINK_GAP in x on the clinker's side (the other side when the lawn's edge
     // pushed the spot onto it); to a reachable pumpkin — the nearest lawn point. The move carries `clink`; once both
     // have arrived (plus the ticker's delay) and neither was sent elsewhere, `clink` with a random toast. `busy` while
-    // the player's last clink plays.
+    // the player's last clink plays; a clink with a mug already clinked is `{ok: true}` and changes nothing.
+    // The mug's busy spells like the server's (docs/spec/frontend.md, «Ввод в баре»): `clinkedUntil` — a clink by click
+    // plays to `at` + CLINK_DURATION for both mugs, a counted `clink.auto` to now + CLINK_DURATION; a `drink` meanwhile
+    // is `busy`. HELLOWIN_DRINK_MS after a drink, and until a pumpkin's hand-over is over (`take` with `until`,
+    // HELLOWIN_BEER_HANDOVER_MS), `drink`, `bar.take` and `beer` are `busy` too.
     const CLINK_GAP = 4;
     const CLINK_DURATION = 3200;
     const CLINK_TICK = 100;
-    const clinkedAt = new Map();
+    const DRINK_MS = 1200;
+    const HANDOVER_MS = 900;
+    const clinkedUntil = new Map();
+    const drankAt = new Map();
+    const handUntil = new Map();
+    const drinkBusy = (id) => serverTime() < Math.max((drankAt.get(id) ?? -Infinity) + DRINK_MS, handUntil.get(id) ?? -Infinity);
     function engineClink(id, { walker, pumpkin, roadrunner } = {}, toast = null) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (roadrunner === true) return engineClinkRoadrunner(w, toast);
         const bar = engine.scene === 0;
-        if (!bar && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP)) return { ok: false, error: 'not cursed' };
+        if (!bar && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= CURSED_STEP)) return { ok: false, error: 'not cursed' };
         // In the bar both glasses have to be there: mine first, then the target's (protocol.md, RPC `clink`).
         if (bar && w.item !== 'beer') return { ok: false, error: 'no beer' };
         if (bar && walker === undefined) return { ok: false, error: 'no target' };
@@ -1056,7 +1111,8 @@
             spot = clampToZone(p);
             target = { pumpkin: { id: pumpkin } };
         }
-        if (serverTime() < (clinkedAt.get(id) ?? -Infinity) + CLINK_DURATION) return { ok: false, error: 'busy' };
+        if (w.item === 'beer' && w.clinked) return { ok: true };
+        if (serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
         const { walk } = engineMove(id, spot, target);
         const targetWalk = t?.walk;
         const due = Math.max(walk.arrivesAt, targetWalk?.arrivesAt ?? 0) + CLINK_TICK;
@@ -1070,7 +1126,8 @@
             w.clinked = true;
             if (t) t.clinked = true;
             const at = serverTime();
-            clinkedAt.set(id, at);
+            clinkedUntil.set(id, at + CLINK_DURATION);
+            if (t) clinkedUntil.set(t.id, at + CLINK_DURATION);
             deliver({ type: 'clink', player: { id }, ...target, toast: toast ?? Math.floor(Math.random() * 2 ** 31), at });
         }, due - serverTime());
         return { ok: true, walk };
@@ -1084,7 +1141,8 @@
         if (engine.scene !== 0) return { ok: false, error: 'not bar' };
         if (!engine.bar.roadrunner || !BAR.roadrunner) return { ok: false, error: 'no target' };
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
-        if (serverTime() < (clinkedAt.get(id) ?? -Infinity) + CLINK_DURATION) return { ok: false, error: 'busy' };
+        if (w.clinked) return { ok: true };
+        if (serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
         const target = { roadrunner: true };
         const spot = { x: Math.min(BAR.counter.x2, Math.max(BAR.counter.x1, BAR.roadrunner.x)), y: BAR.counter.y };
         const { walk } = engineMove(id, spot, target);
@@ -1094,7 +1152,7 @@
             if (engine.scene !== 0 || !engine.bar.roadrunner || w.item !== 'beer') return;
             w.clinked = true;
             const at = serverTime();
-            clinkedAt.set(id, at);
+            clinkedUntil.set(id, at + CLINK_DURATION);
             deliver({ type: 'clink', player: { id }, roadrunner: true, toast: toast ?? Math.floor(Math.random() * 2 ** 31), at });
         }, walk.arrivesAt + CLINK_TICK - serverTime());
         return { ok: true, walk };
@@ -1165,6 +1223,7 @@
         if (!w) return { ok: false, error: 'no character' };
         if (engine.scene !== 0) return { ok: false, error: 'not bar' };
         if (w.item === 'beer') return { ok: false, error: 'has beer' };
+        if (drinkBusy(id)) return { ok: false, error: 'busy' };
         const here = walkPoint(w.walk, serverTime());
         const spot = { x: Math.min(BAR.counter.x2, Math.max(BAR.counter.x1, here.x)), y: BAR.counter.y };
         const { walk } = engineMove(id, spot);
@@ -1196,8 +1255,10 @@
         if (!drinkWorld()) return { ok: false, error: 'not bar' };
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
         if (!w.clinked && engine.walkers.length > 1) return { ok: false, error: 'not clinked' };
+        if (drinkBusy(id) || serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
         w.item = null;
         w.clinked = false;
+        drankAt.set(id, serverTime());
         stats.drinks++;
         deliver({ type: 'drink', player: { id } });
         if (engine.scene !== 0) {
@@ -1226,7 +1287,9 @@
         const a = walkPoint(w.walk, now);
         const b = walkPoint(t.walk, now);
         if (Math.hypot(a.x - b.x, a.y - b.y) > BAR.clink_reach) return { ok: false, error: 'no target' };
+        if (w.clinked) return { ok: true };
         w.clinked = true;
+        clinkedUntil.set(id, now + CLINK_DURATION);
         return { ok: true };
     }
 
@@ -1272,13 +1335,15 @@
         return { ok: true, ...engine.boss };
     }
 
-    // `beer {pumpkin}` at step 5: a walk to the pumpkin like a clink with it, a mug on arrival — bottomless.
+    // `beer {pumpkin}` at step 5: a walk to the pumpkin like a clink with it, a mug on arrival — bottomless. The `take`
+    // goes out on arrival with `until`, when the hand-over is over; the walker holds the beer from then.
     function engineBeer(id, { pumpkin } = {}) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (engine.scene < engine.sceneStages || engine.finale?.step !== CURSED_STEP) return { ok: false, error: 'not cursed' };
         if (w.item === 'beer') return { ok: false, error: 'has beer' };
+        if (drinkBusy(id)) return { ok: false, error: 'busy' };
         const p = engine.elements.find((e) => e.id === pumpkin);
         if (!p || p.type !== 'pumpkin' || !p.reachable) return { ok: false, error: 'no target' };
         const { walk } = engineMove(id, clampToZone(p));
@@ -1287,9 +1352,13 @@
         later(() => {
             if (w.taking !== token || engine.finale?.step !== CURSED_STEP) return;
             w.taking = null;
-            w.item = 'beer';
+            const until = serverTime() + HANDOVER_MS;
+            handUntil.set(id, until);
             w.clinked = false;
-            deliver({ type: 'take', player: { id }, pumpkin: { id: pumpkin }, ok: true });
+            deliver({ type: 'take', player: { id }, pumpkin: { id: pumpkin }, ok: true, until });
+            later(() => {
+                if (engine.walkers.includes(w) && engine.finale?.step === CURSED_STEP) w.item = 'beer';
+            }, HANDOVER_MS);
         }, walk.arrivesAt + CLINK_TICK - serverTime());
         return { ok: true, walk };
     }
@@ -1712,6 +1781,14 @@
         // The cursed world's zombies come on by themselves (steps 5–6) unless the query says otherwise.
         const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
         engine.zombies = params.has('zombies') ? params.get('zombies') === '1' : cursedNow;
+        seedWanderers();
+    }
+
+    // Steps 5–6 open on a crowd already wandering: ?wander=N of them (HELLOWIN_ZOMBIE_MIN by default), risen 2–40 s ago.
+    function seedWanderers() {
+        const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
+        const n = params.has('wander') ? Math.max(0, Number.parseInt(params.get('wander'), 10) || 0) : cursedNow ? ZOMBIE_MIN : 0;
+        for (let i = 0; i < n; i++) engineWanderer(serverTime() - 2000 - Math.round(wanderRandom() * 38000));
     }
 
     // At the start of the run: the owl's line and the special flyers of the query; returns the zombie and the first
@@ -1816,16 +1893,18 @@
         const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
         return (list.length ? list : open)[Math.floor(Math.random() * (list.length || open.length))].id;
     };
-    // Your clinks by click, warned like app.js warns a rejected RPC.
-    const labClink = (target) => {
-        const reply = engineClink(ME, target);
-        if (!reply.ok) console.warn('clink rejected', reply.error);
-    };
+    // Your mug RPCs like app.js: none while the mug is busy, a refusal warned unless it is `busy`.
+    const mugCall = (method, call) => client.mugRpc(method, () => {
+        const reply = call();
+        if (!reply.ok && reply.error !== 'busy') console.warn(`${method} rejected`, reply.error);
+        return reply;
+    });
+    const labClink = (target) => mugCall('clink', () => engineClink(ME, target));
     // Like app.js: a locked bonfire is not even asked, a reachable pumpkin in the cursed world takes a clink instead.
     root.addEventListener('click', (event) => {
         const el = event.target.closest('[data-element]');
         if (!el) return;
-        if (client.beersPumpkin(el.dataset.element)) warned(engineBeer(ME, { pumpkin: el.dataset.element }), 'beer');
+        if (client.beersPumpkin(el.dataset.element)) mugCall('beer', () => engineBeer(ME, { pumpkin: el.dataset.element }));
         else if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
         else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element, myClicker());
     });
@@ -1836,6 +1915,7 @@
     const meep = (data = {}) => engineCall('meep', data).catch((error) => console.warn('meep failed', error));
     bindShooting(root, scene, (id) => (client.meepsFlyer(scene?.flyerKind?.(id)) ? meep({ flyer: id }) : engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null)));
     bindMeep(root, () => meep());
+    bindObjectKeys();
     bindDice(root, client);
     bindClinking(root, scene, client, labClink, (target) => warned(engineCure(ME, target), 'cure'));
     bindWord(root, client, async (text) => engineWord(ME, { text }));
@@ -1846,13 +1926,12 @@
         return reply;
     };
     bindBar(root, client, {
-        take: () => warned(engineTake(ME), 'bar.take'),
+        take: () => mugCall('bar.take', () => engineTake(ME)),
         clink: () => labClink({ roadrunner: true }),
         meep: () => meep(),
-        drink: () => {
-            const reply = warned(engineDrink(ME), 'drink');
-            if (reply.error === 'not clinked') scene?.hint?.(ME, LINES['bar-clink'].text);
-        },
+        drink: () => mugCall('drink', () => engineDrink(ME)).then((reply) => {
+            if (reply?.error === 'not clinked') scene?.hint?.(ME, LINES['bar-clink'].text);
+        }),
     });
     // The scene's moments: the sound, and the automatic clinks of the bar — my browser reports mine (like app.js), the
     // bots theirs, each with its nearest partner holding beer.
@@ -1872,15 +1951,15 @@
         if (!engine.paused) engineFlyer();
         launchLater();
     }, (engine.finale?.step ?? -1) >= LAST_STEP ? 800 + Math.random() * 1600 : 3000 + Math.random() * 5000);
-    // Zombies only in the cursed world, with zombies on and no pause (HELLOWIN_ZOMBIE_INTERVAL 4000-9000).
-    const zombieLater = () => setTimeout(() => {
-        if (engine.zombies && !engine.paused && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step)) engineZombie();
-        zombieLater();
-    }, 4000 + Math.random() * 5000);
+    // ?gone=ms: the wandering zombies sent away at that moment, as at the dawn.
+    const goneAt = params.has('gone') ? Math.round(Number.parseInt(params.get('gone'), 10) / 16) * 16 : -1;
+    // ?wkill=ms (with ?freeze): the first walker shoots the first wandering zombie at that moment.
+    const wkillAt = params.has('wkill') ? Math.round(Number.parseInt(params.get('wkill'), 10) / 16) * 16 : -1;
     if (!simulated) {
         setInterval(() => deliver({ type: 'leaderboard', top: [], online: engine.walkers.length }), 5000);
         launchLater();
-        zombieLater();
+        later(wanderTick, 4000 + Math.random() * 5000);
+        if (goneAt >= 0) later(wanderGone, goneAt);
         later(startEvents, 500);
         tickBar();
         zombieWalks();
@@ -1930,7 +2009,9 @@
         queue.length = 0;
         pending.clear();
         live.clear();
-        clinkedAt.clear();
+        clinkedUntil.clear();
+        drankAt.clear();
+        handUntil.clear();
         inBarZone = engine.scene === 0;
         emptySaidAt = -Infinity;
         takeSeq = 0;
@@ -1945,6 +2026,8 @@
         dawnSeed();
         forcedRoll = rollParam.length === 3 && rollParam.every((n) => n >= 1 && n <= 6) ? rollParam : null;
         if (engine.dice?.on) wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + 300 + i * 450));
+        wanderRandom = seeded(6150);
+        seedWanderers();
         client.load(engineSnapshot());
         let nextClick = 0;
         let target = null;
@@ -1983,7 +2066,10 @@
             if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             if (worm && simTime === wormShotAt) engineShoot(worm, engine.walkers[0] ?? null);
             // Frozen bots all set off at the start, so a screenshot catches them on the way.
+            if (simTime === goneAt) wanderGone();
+            if (simTime === wkillAt && wandering().length) engineShoot(wandering()[0][0], engine.walkers[0] ?? null);
             if (simTime === 0) {
+                later(wanderTick, 4000 + wanderRandom() * 5000);
                 tickBar();
                 zombieWalks();
                 strikeBots();

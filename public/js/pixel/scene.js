@@ -17,7 +17,8 @@ import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.j
 import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, isSix } from '../dice.js';
-import { DEATH_MS, GONE_MS, createDeaths } from './deaths.js';
+import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
+import { RISE_MS, wanderAt } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
@@ -1942,6 +1943,46 @@ export async function createScene(rootEl, snapshot) {
         return { pos: groundPathAt(f, t), frame };
     }
 
+    // A wandering zombie (wander.js): RISE_MS out of the ground over 5 frames, then shuffling on its own route,
+    // swaying in IDLE_MS steps while it stands; `gone` sinks it over SINK_MS (8 frames).
+    const RISE_FRAME_MS = RISE_MS / 5;
+    const IDLE_MS = 420;
+    const SINK_MS = 800;
+
+    /** A wanderer's point and frame at `local` ms after its launch; clods fly off the mound as it breaks out. */
+    function wandererAt(id, f, set, local) {
+        const w = wanderAt(id, f.from, local, f.wander);
+        const pos = walkerArt(w);
+        if (w.phase === 'rise') {
+            if (w.since >= RISE_FRAME_MS * 2 && !f.clods) {
+                f.clods = true;
+                clods(pos);
+            }
+            return { pos, left: w.left, frame: wanderArt().rise[Math.min(4, Math.floor(w.since / RISE_FRAME_MS))] };
+        }
+        const frame = w.phase === 'walk' ? set.fly[Math.floor(w.since / STEP_MS.zombie) % set.fly.length] : set.idle[Math.floor(w.since / IDLE_MS) % 2];
+        return { pos, left: w.left, frame };
+    }
+
+    function clods(at) {
+        if (reduced) return;
+        const bits = feathersOf('worm').slice(0, 3).map((def) => flyerArt(def, false, lightAt(at.x, at.y)).texture);
+        for (let i = 0; i < 5; i++) spawn(bits, at.x + (i - 2) * 3, at.y - 2, (i - 2) * 14, -40 - (i % 2) * 20, 200, 0.6);
+    }
+
+    /** `gone`: an unshot wanderer sinks into the ground where it stands (blinks out at once with reduced motion). */
+    function sink(id) {
+        const f = flyers.get(id);
+        if (!f?.wander || f.shotAt !== null || f.sinkAt !== null) return;
+        if (reduced) {
+            dropFlyer(f);
+            flyers.delete(id);
+            return;
+        }
+        f.sinkAt = clock;
+        clods(f.pos);
+    }
+
     function animateFlyers() {
         for (const [id, f] of flyers) {
             const set = FLYERS[f.kind]?.[f.depth] ?? FLYERS.duck[0];
@@ -1965,6 +2006,19 @@ export async function createScene(rootEl, snapshot) {
                     f.flip = flip = p.left;
                     f.sitting = p.sitting;
                     frame = p.sitting ? flySitFrame(set, p.since, f.phase) : set.fly[Math.floor(local / FLY_FLAP_MS) % set.fly.length];
+                } else if (f.wander && f.sinkAt !== null) {
+                    const since = clock - f.sinkAt;
+                    if (since >= SINK_MS) {
+                        dropFlyer(f);
+                        flyers.delete(id);
+                        continue;
+                    }
+                    const under = wanderArt().under;
+                    frame = under[Math.min(under.length - 1, Math.floor((since / SINK_MS) * under.length))];
+                } else if (f.wander) {
+                    let left;
+                    ({ pos: f.pos, frame, left } = wandererAt(id, f, set, local));
+                    f.flip = flip = left;
                 } else if (set.emerge) ({ pos: f.pos, frame } = wormAt(f, set, local));
                 else {
                     f.pos = f.ground ? groundPathAt(f, t) : pathAt(f, t);
@@ -2095,7 +2149,10 @@ export async function createScene(rootEl, snapshot) {
         if (flyers.has(event.flyer)) return;
         const now = serverNow();
         const launchedAt = event.launchedAt ?? now;
-        const expiresAt = event.expiresAt ?? launchedAt + event.duration;
+        // A wandering zombie has no path end and no expiry: it walks until shot or `gone`.
+        const wander = event.wander === true && event.kind === 'zombie' && Number.isFinite(event.from?.x) && Number.isFinite(event.from?.y);
+        const expiresAt = wander ? Infinity : event.expiresAt ?? launchedAt + event.duration;
+        if (!wander && !event.to) return;
         if (now >= expiresAt) return;
         const sprite = new Sprite();
         const ground = GROUND.has(event.kind);
@@ -2116,12 +2173,15 @@ export async function createScene(rootEl, snapshot) {
             depth: event.depth ?? 0,
             from: event.from,
             via: event.via ?? null,
-            to: event.to,
+            to: event.to ?? event.from,
             wobble: Number.isFinite(event.wobble?.amp) && Number.isFinite(event.wobble?.waves) ? event.wobble : null,
-            duration: Math.max(1, event.duration),
+            duration: Math.max(1, event.duration || 1),
             launchedAt,
             expiresAt,
-            flip: event.to.x < event.from.x,
+            flip: !wander && event.to.x < event.from.x,
+            // A wanderer's route memo (wander.js) and the moment `gone` began to sink it.
+            wander: wander ? {} : null,
+            sinkAt: null,
             // A fly loops between its stops (fly-path.js): the whole flight is planned once from the event.
             plan: event.kind === 'fly' ? flyPlan(event) : null,
             sitting: false,
@@ -2162,7 +2222,7 @@ export async function createScene(rootEl, snapshot) {
 
     function down(event) {
         const f = flyers.get(event.flyer);
-        if (!f || f.shotAt !== null) return;
+        if (!f || f.shotAt !== null || f.sinkAt !== null) return;
         f.shotAt = clock;
         f.shotPos = { ...f.pos };
         f.drift = (f.flip ? -1 : 1) * 12;
@@ -2231,7 +2291,7 @@ export async function createScene(rootEl, snapshot) {
         const rect = app.canvas.getBoundingClientRect();
         const x = (clientX - rect.left) / layout.cssPx;
         const y = (clientY - rect.top) / layout.cssPx;
-        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.art).sort(([, a], [, b]) => b.depth - a.depth);
+        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.sinkAt === null && f.art).sort(([, a], [, b]) => b.depth - a.depth);
         for (const [id, f] of live) {
             if (hits(f, x, y)) return id;
         }
@@ -3978,7 +4038,8 @@ export async function createScene(rootEl, snapshot) {
          * lighting fades into the bar over FADE_MS instead of the cut and the flash of a new round.
          */
         render(next, { again = false } = {}) {
-            // Flyers live seconds and are not in the snapshot: a full render (state, reset) starts without them.
+            // Flyers live seconds and are not in the snapshot: a full render (state, reset) starts without them. Only
+            // the wandering zombies of `flyers` come back, mid-walk (their route runs on the server clock).
             for (const f of flyers.values()) dropFlyer(f);
             flyers.clear();
             const fadeIn = again && !reduced;
@@ -4022,6 +4083,7 @@ export async function createScene(rootEl, snapshot) {
                 }
             }
             rebuild();
+            for (const event of Array.isArray(next.flyers) ? next.flyers : []) if (event?.wander === true) launch(event);
         },
 
         click(id, { stage, clicks, threshold, player = null }) {
@@ -4099,6 +4161,11 @@ export async function createScene(rootEl, snapshot) {
         shot(event) {
             walkerShot(event);
             down(event);
+        },
+
+        /** Channel event `gone` {flyers}: the wandering zombies left unshot sink into the ground; null — all of them. */
+        gone(ids) {
+            for (const id of Array.isArray(ids) ? ids : ids === null ? [...flyers.keys()] : []) sink(id);
         },
 
         /** Channel event `walker`: a character entered the field or changed its look or name. */
@@ -4396,13 +4463,15 @@ export async function createScene(rootEl, snapshot) {
 
         /**
          * A pumpkin of step 5 hands walker `playerId` a fresh mug (`take` with `pumpkin`): ~GIVE_MS of its arms, the
-         * walker's beer showing once it is held out.
+         * walker's beer showing once it is held out. `until` (server clock, the event's) is when the hand-over ends: the
+         * arms play the GIVE_MS before it, so a late viewer catches them midway; without it they start now.
          */
-        takeFromPumpkin(pumpkinId, playerId) {
+        takeFromPumpkin(pumpkinId, playerId, until = null) {
+            const end = clock + (until === null ? GIVE_MS : Math.max(0, until - serverNow()));
             const p = pumpkins.get(pumpkinId);
-            if (p && !reduced) p.give = { at: clock, player: playerId };
+            if (p && !reduced) p.give = { at: end - GIVE_MS, player: playerId };
             const w = walkers.get(playerId);
-            if (w && p && !reduced) w.beerAt = clock + GIVE_MS;
+            if (w && p && !reduced) w.beerAt = end;
         },
 
         /** The point over FrankenPHP's head in CSS pixels of the scene root (also published as --boss-x|y). */

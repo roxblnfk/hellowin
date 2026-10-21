@@ -3,6 +3,7 @@
 
 import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
 import { flyAt, flyPlan } from './pixel/fly-path.js';
+import { wanderAt } from './pixel/wander.js';
 import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar } from './layout.js';
@@ -55,6 +56,11 @@ const DOOR_FRESH_MS = 400;
 // A roll or a meep heard later than this after its `at` stays silent, like a flyer.
 const ROLL_FRESH_MS = 1500;
 const MEEP_FRESH_MS = 1500;
+// The wandering zombies of finale steps 5–6 (frontend.md, «Бродячие зомби»): a crowd rising at once groans once per
+// RISE_GAP_MS, and the living ones mutter now and then — one groan every 6–10 s from one of them, quieter.
+const RISE_GAP_MS = 400;
+const AMBIENT_MS = [6000, 10000];
+const AMBIENT_VOLUME = 0.4;
 // The bar's level: no pumpkins to make progress with.
 const BAR_INTENSITY = 0.2;
 const BROKEN_INTENSITY = 0.1;
@@ -66,9 +72,13 @@ export const panOf = (x) => (Number.isFinite(x) ? clamp((x - 50) / 50, -1, 1) * 
 const isPumpkin = (e) => e?.type === 'pumpkin';
 const lastPoint = (walk) => walk?.path?.[walk.path.length - 1] ?? null;
 
-/** x of a flyer at server time `now`, in percent: along its curve through `via`, or straight; a fly along its loops. */
+/**
+ * x of a flyer at server time `now`, in percent: along its curve through `via`, or straight; a fly along its loops, a
+ * wandering zombie along its route.
+ */
 function flyerX(f, now) {
     if (f.kind === 'fly') return flyAt(f.plan ??= flyPlan(f), now - f.launchedAt).x;
+    if (f.wander === true) return wanderAt(f.flyer, f.from, now - f.launchedAt, f.memo ??= {}).x;
     const k = clamp((now - f.launchedAt) / Math.max(1, f.duration), 0, 1);
     const from = f.from?.x ?? 50;
     const to = f.to?.x ?? from;
@@ -98,6 +108,24 @@ export function deathOf(id) {
  */
 export function createSound(audio, { serverNow, now = () => performance.now(), owlGone = () => false, later = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), doc = globalThis.document ?? null, owlX = () => null, runnerAt = () => null }) {
     const flyers = new Map();
+    let roseAt = -1e9;
+    let muttering = null;
+    const wanderers = () => [...flyers.values()].filter((f) => f.wander === true);
+    const forgetWanderers = (ids = null) => {
+        for (const f of wanderers()) if (!ids || ids.includes(f.flyer)) flyers.delete(f.flyer);
+    };
+    /** Keeps one groan scheduled while any wandering zombie lives; the groan comes from where a random one walks. */
+    function mutter() {
+        if (muttering !== null || !wanderers().length) return;
+        muttering = later(() => {
+            muttering = null;
+            const live = wanderers();
+            if (!live.length) return;
+            const f = live[Math.floor(Math.random() * live.length)];
+            play('zombie.groan', { pan: panOf(flyerX(f, serverNow())), volume: AMBIENT_VOLUME });
+            mutter();
+        }, AMBIENT_MS[0] + Math.random() * (AMBIENT_MS[1] - AMBIENT_MS[0]));
+    }
     let shownAt = -1e9;
     let steps = [];
     let joined = null;
@@ -169,14 +197,18 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
 
     function flyer(model, event) {
         const at = serverNow();
-        const expiresAt = event.expiresAt ?? event.launchedAt + event.duration;
+        const wander = event.wander === true;
+        const expiresAt = wander ? Infinity : event.expiresAt ?? event.launchedAt + event.duration;
         for (const [id, f] of flyers) if (at > f.expiresAt + 2000) flyers.delete(id);
         if (!(at < expiresAt)) return;
         flyers.set(event.flyer, { ...event, expiresAt });
+        if (wander) mutter();
         if (at - event.launchedAt > FLYER_FRESH_MS) return;
         const delay = Math.max(0, (event.launchedAt - at) / 1000);
         const volume = DEPTH_VOLUME[event.depth] ?? 1;
         const name = FLYER_SOUNDS[event.kind];
+        if (wander && now() - roseAt < RISE_GAP_MS) return;
+        if (wander) roseAt = now();
         if (name) play(name, { pan: panOf(event.from?.x), volume, delay });
         const bush = event.bush && model.bushes.find((b) => b.id === event.bush);
         if (bush) play('bush.rustle', { pan: panOf(bush.x), volume, delay });
@@ -192,6 +224,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         // A zombie worker does not fall: it dies its own way.
         if (f.kind === 'zombie') play(DEATH_SOUNDS[deathOf(event.flyer)] ?? 'flyer.fall', { pan, delay: 0.05 });
         else play('flyer.fall', { pan, delay: 0.05 });
+        if (f.wander === true) flyers.delete(event.flyer);
         const id = event.player?.id;
         const walker = id && model.walkers.find((w) => w.id === id);
         const fire = walker && SHOT_SOUNDS[walker.item];
@@ -386,6 +419,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         },
         reset(model, event) {
             base = { scene: 0, stage: 0 };
+            forgetWanderers();
             steps.forEach(cancel);
             steps = [];
             // A new round of the evening (`again`) is a story's turn, not the console's cut: the dawn's music crossfades
@@ -399,6 +433,9 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         },
         flyer,
         shot,
+        gone(model, event) {
+            forgetWanderers(Array.isArray(event.flyers) ? event.flyers : []);
+        },
         move: walk,
         clink,
         walker,
@@ -411,6 +448,12 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         /** A snapshot taken as a whole (the page's start, a resync): music and intensity, never an effect. */
         load(model) {
             base = baseFor(model);
+            // The wandering zombies of the snapshot walk on silently; only their mutter goes on.
+            forgetWanderers();
+            const at = serverNow();
+            for (const f of Array.isArray(model.flyers) ? model.flyers : []) if (f?.wander === true && f.flyer) flyers.set(f.flyer, { ...f, expiresAt: Infinity });
+            for (const [id, f] of flyers) if (at > f.expiresAt + 2000) flyers.delete(id);
+            mutter();
             music(model);
             progress(model);
             if (model.scene >= model.sceneStages - 1) audio.whenReady?.('finale');
@@ -418,6 +461,8 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
 
         /** A channel event the client has just applied; `before` — {scene, stageMax, step, walkers: Set} before it. */
         event(event, model, before) {
+            // The dawn sends the wandering zombies away whether or not its `gone` arrives.
+            if (event?.type === 'finale' && event.step >= 7) forgetWanderers();
             handlers[event?.type]?.(model, event, before);
         },
 

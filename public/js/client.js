@@ -4,6 +4,7 @@
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
 import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf } from './dice.js';
 import { createDawnTable, dawnOf } from './dawn.js';
+import { CLINK } from './pixel/clink.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
@@ -23,6 +24,10 @@ const DAWN_COMPACT_PX = 600;
 // A `meep` older than this by its `at` is not drawn (docs/spec/frontend.md, «Пульт модератора», «Мип-мип»).
 const MEEP_STALE_MS = 1500;
 const OWL_TRY = 'Дайте я попробую!';
+// My mug's busy spells (docs/spec/frontend.md, «Ввод в баре»), the server's defaults: the gulp (HELLOWIN_DRINK_MS, also
+// the scene's drink pose) and a pumpkin's hand-over when its `take` carries no `until` (HELLOWIN_BEER_HANDOVER_MS).
+const DRINK_MS = 1200;
+const HANDOVER_MS = 900;
 // The HUD's connection line; through the evening the other side seems to answer.
 const STATUS = { connecting: 'подключение…', connected: 'связь с потусторонним: есть', disconnected: 'нет связи' };
 
@@ -137,6 +142,8 @@ export function readSnapshot(root) {
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
         dawn: dawnOf(parseJson(root.dataset.dawn, null)),
+        // The wandering zombies alive (protocol.md, «Бродячие зомби»): `flyer` events with `wander`, steps 5–6 only.
+        flyers: parseList(root.dataset.flyers),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => {
             const element = {
                 id: el.dataset.element,
@@ -207,6 +214,22 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const dawnTable = createDawnTable(root, { reduced });
     let seenAttempt = 0;
     let diceLoop = false;
+    // Until when, on the server clock, my clink plays, my gulp runs and a pumpkin hands me a mug; `pending` — my mug
+    // RPCs not answered yet. Meanwhile no `drink`, `beer`, `bar.take` or `clink` goes out (the server says `busy`).
+    const mug = { clinkUntil: 0, drinkUntil: 0, handUntil: 0, pending: 0 };
+    let mugTimer = null;
+    const mugFree = () => Math.max(mug.clinkUntil, mug.drinkUntil, mug.handUntil);
+    function mugBusy() {
+        return mug.pending > 0 || now() + offset < mugFree();
+    }
+    // «Выпить» is disabled while busy and comes back when the last spell is over.
+    function holdMug(field, until) {
+        mug[field] = Math.max(mug[field], until);
+        clearTimeout(mugTimer);
+        const left = mugFree() - (now() + offset);
+        if (left > 0) mugTimer = setTimeout(paintBar, left + 20);
+        paintBar();
+    }
 
     function paintElement(element) {
         const el = button(element.id);
@@ -326,7 +349,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         }
         const drink = root.querySelector('[data-drink]');
         // Alone on the field a player may drink without a clink (the server checks the same walkers).
-        if (drink) drink.hidden = !(drinks() && (model.clinked || model.walkers.length <= 1));
+        if (drink) {
+            drink.hidden = !(drinks() && (model.clinked || model.walkers.length <= 1));
+            drink.disabled = mugBusy();
+        }
         const { text, fill } = drinksOf(model.bar);
         paintMeter(hud('drinks'), root.querySelector('[data-hud-drinks-text]'), { shown: bar, text, fill, n: model.bar.drunk, target: model.bar.target });
     }
@@ -472,6 +498,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
             dawn: dawnOf(snapshot.dawn),
+            flyers: Array.isArray(snapshot.flyers) ? snapshot.flyers : [],
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
@@ -536,13 +563,18 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: element.threshold ?? model.threshold, player: event.player ?? null });
         },
 
-        // Flyers live a few seconds and are not part of the snapshot: they are only passed on to the scene.
+        // Flyers are only passed on to the scene; of them only the wandering zombies are in the snapshot (`flyers`).
         flyer(event) {
             scene?.flyer(event);
         },
 
         shot(event) {
             scene?.shot(event);
+        },
+
+        // The wandering zombies of finale steps 5–6 left unshot (the dawn, a reset): the scene sinks them.
+        gone(event) {
+            scene?.gone?.(Array.isArray(event.flyers) ? event.flyers : []);
         },
 
         // Characters on the field survive a reset: they live in the snapshot's `walkers`, not in the round.
@@ -572,7 +604,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             // A clink counts for both glasses (with a pumpkin or RoadRunner, the one who came up): mine, whether I came up or was the target.
             if ((isBar(model.scene) || cursed()) && model.me !== null && (event.player?.id === model.me || event.walker?.id === model.me)) {
                 model.clinked = true;
-                paintBar();
+                holdMug('clinkUntil', (event.at > 0 ? event.at : now() + offset) + CLINK.end);
             }
             scene?.clink(event);
         },
@@ -612,7 +644,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         take(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (event.pumpkin?.id) {
-                scene?.takeFromPumpkin?.(event.pumpkin.id, event.player?.id ?? null);
+                const until = event.until > 0 ? event.until : null;
+                scene?.takeFromPumpkin?.(event.pumpkin.id, event.player?.id ?? null, until);
+                if (event.player?.id === model.me) holdMug('handUntil', until ?? now() + offset + HANDOVER_MS);
                 if (w) {
                     w.item = 'beer';
                     scene?.walker({ ...w });
@@ -641,7 +675,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (!w) return;
             w.item = null;
-            if (w.id === model.me) model.clinked = false;
+            if (w.id === model.me) {
+                model.clinked = false;
+                holdMug('drinkUntil', now() + offset + DRINK_MS);
+            }
             scene?.drink?.(w.id);
             paintBar();
         },
@@ -714,6 +751,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if ('item' in event) model.clinked = false;
             else lifted.forEach((w) => scene?.walker({ ...w }));
             if (event.step >= DAWN_STEP) wordClosed = false;
+            // The dawn sends the wandering zombies away with `gone`; one missed must not keep them walking.
+            if (event.step >= DAWN_STEP) scene?.gone?.(null);
             // The circle takes clicks at step 0 only; the pumpkins drop at step 2 and float again at step 5.
             paintElements();
             paintStory();
@@ -864,6 +903,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.boss = null;
             model.dice = null;
             model.dawn = null;
+            model.flyers = [];
             forgetDice();
             wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.
@@ -1090,11 +1130,38 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             return best?.id ?? null;
         },
 
-        /** A successful `clink.auto` reply: my beer counts as clinked. */
+        /**
+         * A successful `clink.auto` reply: my beer counts as clinked, and its clink plays for CLINK.end from now, as the
+         * server counts it. A repeat with the same mug changes nothing on the server, nor here.
+         */
         clinkedAuto() {
-            if (!holdsBeer()) return;
+            if (!holdsBeer() || model.clinked) return;
             model.clinked = true;
+            holdMug('clinkUntil', now() + offset + CLINK.end);
+        },
+
+        mugBusy,
+
+        /**
+         * Sends a mug RPC of mine (`drink`, `beer`, `bar.take`, `clink`) unless my mug is busy; until it is answered
+         * no other goes out. A drink's gulp starts with its `{ok: true}`: the `drink` event may come after the reply,
+         * and the beer still in hand would take another Space meanwhile. Returns the reply, or null when nothing was sent.
+         *
+         * @param {string} method  the RPC's name
+         * @param {() => unknown} send  the RPC; a promise of its reply or the reply itself
+         */
+        async mugRpc(method, send) {
+            if (mugBusy()) return null;
+            mug.pending++;
             paintBar();
+            try {
+                const reply = await send();
+                if (method === 'drink' && reply?.ok === true) holdMug('drinkUntil', now() + offset + DRINK_MS);
+                return reply;
+            } finally {
+                mug.pending--;
+                paintBar();
+            }
         },
 
         /**
@@ -1222,7 +1289,8 @@ export function bindShooting(root, scene, shoot) {
  * (`clinksWalker`), instead of a step to that spot or a click on a pumpkin button over it. Runs on the root in the
  * capture phase after bindShooting, so a flyer shot (already prevented) stays first; a keyboard click (`detail` 0,
  * no pointer position) is left to its button. Over such a walker the root gets `data-clink-hover` (a pointer cursor).
- * At finale step 6 a click on a zombie player cures it instead (`curesWalker`).
+ * At finale step 6 a click on a zombie player cures it instead (`curesWalker`). While my mug is busy (`mugBusy`) a click
+ * on a walker sends no clink and is no step either.
  *
  * @param {{clinksWalker: (id: string) => boolean, curesWalker?: (id: string) => boolean}} client  the client model's routing
  * @param {(target: {walker: string}) => void} clink  sends RPC `clink`; nothing is drawn until the `move` and `clink` events
@@ -1243,7 +1311,7 @@ export function bindClinking(root, scene, client, clink, cure = null) {
         event.preventDefault();
         event.stopPropagation();
         if (cures(id)) cure({ walker: id });
-        else clink({ walker: id });
+        else if (!client.mugBusy?.()) clink({ walker: id });
     }, { capture: true });
     root.addEventListener('pointermove', (event) => {
         if (event.pointerType === 'touch') return;
@@ -1254,27 +1322,50 @@ export function bindClinking(root, scene, client, clink, cure = null) {
 
 // Where Space belongs to the control: typing, a button it presses, a select it opens.
 const SPACE_TAKERS = 'input, textarea, select, button, [contenteditable]:not([contenteditable="false"]), [role="button"]';
+// The buttons over the scene's objects. Space never presses them: a mouse click keeps the focus there, and Space is then
+// the drink or the roll; Enter still presses them.
+const OBJECT_BUTTONS = '[data-element], [data-bar-counter], [data-roadrunner], [data-franken], [data-rr-meep]';
+
+const isSpace = (event) => event.code === 'Space' || event.key === ' ';
 
 /**
  * Whether a keydown is the bar's Space for a drink: plain Space (no modifiers, no auto-repeat), not on a control that
- * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say. The
- * counter button and a pumpkin button are no such controls: a mouse click on them (a mug, a beer or a clink) keeps the
- * focus there, and while I may drink Space is the drink; Enter still presses them.
+ * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say. An
+ * object button is no such control (OBJECT_BUTTONS, bindObjectKeys).
  */
 export function isDrinkKey(event, doc = globalThis.document) {
-    if (event.code !== 'Space' && event.key !== ' ') return false;
+    if (!isSpace(event)) return false;
     if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
     const taker = event.target?.closest?.(SPACE_TAKERS);
-    if ((taker && !taker.matches('[data-bar-counter], [data-roadrunner], .pumpkin')) || event.target?.isContentEditable) return false;
+    if ((taker && !taker.matches(OBJECT_BUTTONS)) || event.target?.isContentEditable) return false;
     return !doc?.querySelector?.('dialog[open]');
+}
+
+/**
+ * Keys on the object buttons (docs/spec/frontend.md, «Ввод в баре»). Space on a focused one is never its native press:
+ * a button clicks on Space's keyup, so a drink by keydown was followed by a `beer` or a `clink` of the same press. And
+ * the focus ring shows only after a Tab: the browser draws `:focus-visible` for Space after a mouse click too, so CSS
+ * keys the ring off `data-kbd` on <html>, set by Tab and taken off by a pointer press.
+ */
+export function bindObjectKeys(doc = globalThis.document) {
+    const guard = (event) => {
+        if (isSpace(event) && event.target?.closest?.(OBJECT_BUTTONS)) event.preventDefault();
+    };
+    doc.addEventListener('keydown', (event) => {
+        if (event.key === 'Tab') doc.documentElement?.setAttribute('data-kbd', '');
+        guard(event);
+    }, { capture: true });
+    doc.addEventListener('keyup', guard, { capture: true });
+    doc.addEventListener('pointerdown', () => doc.documentElement?.removeAttribute('data-kbd'), { capture: true });
 }
 
 /**
  * The bar's input (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the counter button asks for a mug, the button
  * over RoadRunner clinks with him, Space and the «Выпить» button drink. Nothing is drawn locally: the walk comes as
- * `move`, the mug as `take`, the glasses as `clink`, the gulp as `drink`.
+ * `move`, the mug as `take`, the glasses as `clink`, the gulp as `drink`. None of them goes out while my mug is busy
+ * (`mugBusy`); the moderator's meep is no mug action.
  *
- * @param {{takesBeer: () => boolean, drinks: () => boolean, clinksRoadrunner?: () => boolean}} client  the client model's routing
+ * @param {{takesBeer: () => boolean, drinks: () => boolean, clinksRoadrunner?: () => boolean, mugBusy?: () => boolean}} client  the client model's routing
  * @param {object} actions
  * @param {() => void} actions.take  sends RPC `bar.take`
  * @param {() => void} actions.drink  sends RPC `drink`
@@ -1282,26 +1373,28 @@ export function isDrinkKey(event, doc = globalThis.document) {
  * @param {() => void} [actions.meep]  sends the moderator's RPC `meep {}`
  */
 export function bindBar(root, client, { take, drink, clink = null, meep = null }, doc = globalThis.document) {
+    const free = () => !client.mugBusy?.();
     root.querySelector('[data-bar-counter]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (client.takesBeer()) take();
+        if (client.takesBeer() && free()) take();
     });
     // He stands over the counter's button: with empty hands a click on him is still a click on the counter.
     root.querySelector('[data-roadrunner]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         if (meep && client.meepsRoadrunner?.()) meep();
+        else if (!free()) return;
         else if (clink && client.clinksRoadrunner?.()) clink();
         else if (client.takesBeer()) take();
     });
     root.querySelector('[data-drink]')?.addEventListener('click', () => {
-        if (client.drinks()) drink();
+        if (client.drinks() && free()) drink();
     });
     doc.addEventListener('keydown', (event) => {
         if (!isDrinkKey(event, doc) || !client.drinks()) return;
         event.preventDefault();
-        drink();
+        if (free()) drink();
     });
 }
 

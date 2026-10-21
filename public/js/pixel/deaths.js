@@ -272,6 +272,43 @@ export function deathArt() {
     return art;
 }
 
+// A clawing hand out of the ground (a wanderer's rise), top to bottom: fingers, palm, wrist, the grey sleeve.
+const HAND = ['.K.K.', 'KzKzK', 'KzzZK', '.KzZK', '.KgGK', '.KgGK'];
+
+/** Two hands out of a mound of soil at the zombie's feet, `rows` of each showing (the left one a row higher). */
+function handsFrame(src, rows) {
+    const g = blank(src.w, src.h);
+    const ground = src.anchor.y;
+    const cx = src.anchor.x;
+    for (const [x0, show, flip] of [[cx - 6, rows + 1, false], [cx + 1, rows, true]]) {
+        const top = ground - 1 - show;
+        HAND.forEach((row, y) => {
+            if (top + y >= ground - 1) return;
+            [...(flip ? [...row].reverse().join('') : row)].forEach((ch, x) => {
+                if (ch !== '.' && x0 + x >= 0 && x0 + x < src.w) g[top + y][x0 + x] = ch;
+            });
+        });
+    }
+    heapOn(g, cx + 0.5, 9, rows > 3 ? 3 : 2.2, ['I', 'I', 'i'], rows);
+    return sprite(g, legendOf(src), src.anchor);
+}
+
+let wander = null;
+
+/**
+ * A wanderer's way in and out of the ground (frontend.md, «Бродячие зомби»): `rise` — 5 frames, hands clawing out of
+ * a mound, then the body up to the head, the chest, the knees; `under` — 8 frames of the standing body sinking.
+ */
+export function wanderArt() {
+    if (wander) return wander;
+    const walk = FLYERS.zombie[1].fly[0];
+    wander = {
+        rise: [handsFrame(walk, 3), handsFrame(walk, 5), sinkFrame(walk, 18), sinkFrame(walk, 10), sinkFrame(walk, 4)],
+        under: Array.from({ length: 8 }, (_, k) => sinkFrame(walk, Math.round((k * walk.h) / 7))),
+    };
+    return wander;
+}
+
 /**
  * Plays deaths on the scene. env: spawn(textures, x, y, vx, vy, gravity, life) — a particle of the scene, texture(def,
  * lit) — a lit texture, glow(def) — an unlit one, sprite('ground' | 'light') — a new sprite in that layer,

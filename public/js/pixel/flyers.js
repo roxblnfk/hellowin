@@ -639,9 +639,15 @@ function zombieSet() {
         arms: [piece(['nearArm']), piece(['farArm'])],
         legs: [piece(['nearLeg']), piece(['farLeg'])],
     };
+    // A wanderer standing between legs sways from foot to foot, arms and head swinging the other way.
+    const idle = [
+        { near: [14, 30], far: [9, 30], sway: 0.9, arms: 0.6, head: 0.5 },
+        { near: [14, 30], far: [9, 30], bob: 0.5, sway: -0.9, arms: -0.4, head: -0.5 },
+    ].map((p) => ({ ...rasterise(zombiePose(p), 24), anchor: { x: 12, y: 31 } }));
     // Every depth shares the depth-1 size: a ground walker does not shrink with depth the way a flyer does.
     const near = {
         fly: walk.map((s) => ({ ...s, anchor: { x: 12, y: 31 } })),
+        idle,
         hit: { ...hit, anchor: { x: 12, y: 31 } },
         fall: [{ ...kneel, anchor: { x: 12, y: 31 } }, ground(flat)],
         headless,
@@ -948,7 +954,8 @@ const FEATHER_LEGEND = {
  * `roadrunner` and `zombie` move on the ground: `fly` is their run / walk cycle. The road-runner's far sprite is
  * 7×4, a little more than a speck. The zombie keeps one size at depths 1 and 2, its anchor is between the feet, and its
  * fall frames collapse in place (kneel, then flat) instead of tumbling; for its deaths (DEATHS) it adds `headless`
- * (hit, kneel, flat without the head) and `pieces` (head, skull, hat, torso, arms, legs — anchored at their middle). `worm` crawls on the lawn too: one 16×9 set at
+ * (hit, kneel, flat without the head) and `pieces` (head, skull, hat, torso, arms, legs — anchored at their middle), and
+ * `idle` (2 swaying frames of a wanderer standing between legs; its rise and sink are in deaths.js, `wanderArt`). `worm` crawls on the lawn too: one 16×9 set at
  * every depth, anchor on the ground under its middle, `box` — the opaque bounds; besides the crawl it has `emerge` (3
  * frames, out of a mound) and `burrow` (2, into one), its `hit` writhes and `fall` sinks it into the ground in place.
  * `firefly` adds `glow` (its lantern: dim, mid, bright, on the same grid, to draw unlit over the body) and `lantern` —
@@ -1010,6 +1017,8 @@ export const DEATHS = ['pieces', 'meat', 'dust', 'head', 'fire', 'sink'];
 
 /** The death of the zombie with flyer id `id`. */
 export const deathOf = (id) => DEATHS[seedOf(id) % DEATHS.length];
+
+export { wanderAt } from './wander.js';
 
 export function feathersOf(kind) {
     const own = FLYERS.feathers.filter((f) => f.kind === kind);

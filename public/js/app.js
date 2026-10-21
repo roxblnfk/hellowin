@@ -1,4 +1,4 @@
-import { bindBar, bindClinking, bindDice, bindMeep, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
+import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 import { createOwl } from './owl.js';
 import { refusal } from './toasts.js';
@@ -194,14 +194,20 @@ async function main() {
         if (data?.ok === false) console.warn(`${method} rejected`, data.error);
         return data;
     }).catch((error) => console.warn(`${method} rpc failed`, error));
+    // A mug RPC (`drink`, `beer`, `bar.take`, `clink`): not sent while my mug is busy, one at a time; the server's
+    // `busy` is the same rule seen from its side and stays quiet.
+    const mugRpc = (method, params = {}) => client.mugRpc(method, () => centrifuge.rpc(method, params).then(({ data }) => {
+        if (data?.ok === false && data.error !== 'busy') console.warn(`${method} rejected`, data.error);
+        return data;
+    })).catch((error) => console.warn(`${method} rpc failed`, error));
     // In the cursed world a reachable pumpkin takes a clink instead: the walk comes as `move`, the glasses as `clink`.
-    const clink = (target) => rpc('clink', target);
+    const clink = (target) => mugRpc('clink', target);
     // At finale step 5 with empty hands it hands out a mug instead: `move`, then `take` with `pumpkin`.
     root.addEventListener('click', (event) => {
         const element = event.target.closest('[data-element]');
         if (!element) return;
         const id = element.dataset.element;
-        if (client.beersPumpkin(id)) rpc('beer', { pumpkin: id });
+        if (client.beersPumpkin(id)) mugRpc('beer', { pumpkin: id });
         else if (client.clinksPumpkin(id)) clink({ pumpkin: id });
         else click(id);
     });
@@ -221,6 +227,7 @@ async function main() {
     });
     // RoadRunner of the finale (step 3+) meeps on the moderator's click; the dice roll by «Бросить» or Space.
     bindMeep(root, () => rpc('meep'));
+    bindObjectKeys();
     bindDice(root, client);
     // After the shots: a press on a flyer stays a shot even over a walker; a zombie player at step 6 is cured.
     bindClinking(root, scene, client, clink, (target) => rpc('cure', target));
@@ -232,10 +239,10 @@ async function main() {
     // refusals — `not bar`, `no target`, `no beer`… — only warned, like any clink's), a drink by Space or «Выпить».
     // `not clinked` is a hint over my own walker only; the server broadcasts nothing for it.
     bindBar(root, client, {
-        take: () => rpc('bar.take'),
+        take: () => mugRpc('bar.take'),
         clink: () => clink({ roadrunner: true }),
         meep: () => rpc('meep'),
-        drink: () => rpc('drink').then((data) => {
+        drink: () => mugRpc('drink').then((data) => {
             if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),
     });

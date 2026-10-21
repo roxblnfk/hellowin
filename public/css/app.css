@@ -184,6 +184,12 @@ body:not([data-final]) .circle,
     outline-color: var(--cream);
 }
 
+/* The object buttons' ring is for Tab only: the browser shows `:focus-visible` for Space after a mouse click too, and
+   on them Space is the drink or the roll. `data-kbd` on <html> — bindObjectKeys in client.js. */
+:root:not([data-kbd]) :is([data-element], .bar-counter, .roadrunner, .franken, .rr-meep):focus-visible {
+    outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .pumpkin,
     .bonfire,
@@ -1043,6 +1049,12 @@ body:not([data-final]) .circle,
 
 .hud__button:hover {
     background: var(--cream);
+}
+
+/* «Выпить» while my clink, gulp or hand-over still plays. */
+.hud__button:disabled {
+    opacity: 0.55;
+    cursor: default;
 }
 
 .hud__button:focus-visible {

@@ -27,7 +27,8 @@
           data-cursed="{{ json_encode($cursed ?? null) }}"
           data-boss="{{ json_encode($boss ?? null) }}"
           data-dice="{{ json_encode($dice ?? null) }}"
-          data-dawn="{{ json_encode($dawn ?? null) }}">
+          data-dawn="{{ json_encode($dawn ?? null) }}"
+          data-flyers="{{ json_encode($flyers ?? []) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
