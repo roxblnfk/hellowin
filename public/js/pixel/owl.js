@@ -221,5 +221,107 @@ export const OWL_FLIGHT = {
 
 /** The same frame with glowing eyes, for the night scenes. */
 export function glowing(sprite) {
-    return { ...sprite, legend: NIGHT_LEGEND };
+    return { ...sprite, legend: { ...sprite.legend, ...NIGHT_LEGEND } };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The bartender (scene 0, the bar): the perched drawing stands behind the counter, which hides its lower body. Frames
+// are 30 × 22: the owl's 19 × 18 frame four rows down, room on the right for the wing, the mug under the tap and the
+// stream. The anchor stays on the talons, (9, 21).
+
+const BAR_W = 30;
+const BAR_H = 22;
+const BAR_TOP = BAR_H - H;
+// Mug glass and beer use the walkers' beer colours (characters.js, beer): foam, foam shade, beer shine, beer, glass.
+const BAR_LEGEND = { ...LEGEND, w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', g: 'grayLight' };
+
+// The mug under the tap: left column 19, rows 12–17, so it stands on the counter's back edge, BAR_HIDE rows above the talons. Fill levels
+// 0 (empty) … 5 (full, the foam crowning the rim); the counter mug of bar.js is level 5.
+const MUG_X = 19;
+const MUG_Y = 12;
+const MUG_LEVELS = [
+    ['.....', 'g...g', 'g...g', 'g...g', 'g...g', 'ggggg'],
+    ['.....', 'g...g', 'g...g', 'g...g', 'gwcwg', 'ggggg'],
+    ['.....', 'g...g', 'g...g', 'gwwwg', 'yYYYg', 'ggggg'],
+    ['.....', 'g...g', 'gwcwg', 'yYYYg', 'yYYYg', 'ggggg'],
+    ['.....', 'wwcww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'],
+    ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'],
+];
+// The stream falls from the tap's nozzle (bar.js draws the tap: its tip is at row 10, column 21) into the mug.
+const STREAM_X = 21;
+const STREAM_TOP = 11;
+
+// The right wing (viewer's right) held out level from the shoulder, its tip on the mug's side; and half folded back.
+const HOLD_WING = [
+    [16, 14, 'O'], [17, 14, 'O'], [18, 14, 'O'],
+    [15, 15, 'D'], [16, 15, 'L'], [17, 15, 'L'], [18, 15, 'L'],
+    [15, 16, 'D'], [16, 16, 'M'], [17, 16, 'M'], [18, 16, 'D'],
+    [16, 17, 'O'], [17, 17, 'O'], [18, 17, 'O'],
+];
+const FOLDING_WING = [[16, 15, 'O'], [16, 16, 'O'], [15, 15, 'D'], [15, 16, 'D'], [16, 14, 'O'], [16, 17, 'O']];
+
+function barFrame(owl, { mug = null, stream = false, wing = null } = {}) {
+    const grid = Array.from({ length: BAR_H }, () => Array(BAR_W).fill('.'));
+    owl.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch !== '.') grid[y + BAR_TOP][x] = ch;
+    }));
+    if (mug !== null) {
+        const rows = MUG_LEVELS[mug];
+        const own = new Set();
+        rows.forEach((row, y) => [...row].forEach((ch, x) => {
+            if (ch === '.') return;
+            grid[MUG_Y + y][MUG_X + x] = ch;
+            own.add(`${MUG_X + x},${MUG_Y + y}`);
+        }));
+        // Outline the mug: its empty inside turns dark too, which reads as the glass still to fill.
+        for (let y = MUG_Y - 1; y <= MUG_Y + rows.length; y++) {
+            for (let x = MUG_X - 1; x <= MUG_X + 5; x++) {
+                if (own.has(`${x},${y}`) || grid[y][x] !== '.') continue;
+                if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => own.has(`${x + a},${y + b}`))) grid[y][x] = 'O';
+                else if (x > MUG_X - 1 && x < MUG_X + 5 && y >= MUG_Y + 1 && y < MUG_Y + rows.length) grid[y][x] = 'O';
+            }
+        }
+        if (stream) {
+            const surface = rows.findIndex((row) => /[wcyY]/.test(row));
+            const bottom = MUG_Y + (surface < 0 ? rows.length - 1 : surface) - 1;
+            for (let y = STREAM_TOP; y <= bottom; y++) grid[y][STREAM_X] = 'Y';
+        }
+    }
+    for (const [x, y, ch] of wing ?? []) grid[y][x] = ch;
+    return { w: BAR_W, h: BAR_H, rows: grid.map((r) => r.join('')), legend: BAR_LEGEND, anchor: { x: PAD_X + 6, y: BAR_H - 1 } };
+}
+
+// Looking at the tap while pouring: the half swivel toward the viewer's right.
+const lookRight = mirror(half);
+
+/** How many rows above the talons the counter's top edge must pass to hide the owl's lower body (and the mug's foot). */
+export const BAR_HIDE = 3;
+
+/**
+ * The owl as the bartender, 30 × 22, anchor (9, 21) on the talons; place the anchor BAR_HIDE rows below the counter's
+ * back edge (bar.js, barOwlSpot) and draw the counter over it. `tap` — the nozzle tip relative to the anchor (bar.js
+ * draws the keg and tap there), `mug` — the bottom centre of the mug being poured, relative to the anchor.
+ * idle — 2 breathing frames (~700 ms) and `blink` (~120 ms) over either; pour — 6 frames, the head turned to the tap,
+ * the wing holding the mug under the stream, foam rising: frame min(5, ⌊phase · 6⌋) with phase = (now − since) /
+ * (until − since); set — 2 frames (~180 ms each) after `mugs`: the full mug let go, then the wing folding back (the
+ * mug itself is a counter mug from then on); talk — closed, beak open, open with the raised wing, as OWL.talk.
+ * Mug and stream pixels use the beer colours: bar.js beerLayer() picks them out for the keep-hue overlay.
+ */
+export const OWL_BAR = {
+    idle: [barFrame(OWL.idle[0]), barFrame(OWL.idle[1])],
+    blink: barFrame(OWL.blink),
+    pour: MUG_LEVELS.map((_, level) => barFrame(lookRight, { mug: level, stream: true, wing: HOLD_WING })),
+    set: [barFrame(OWL.idle[0], { mug: 5, wing: HOLD_WING }), barFrame(OWL.idle[0], { wing: FOLDING_WING })],
+    talk: OWL.talk.map((f) => barFrame(f)),
+    anchor: { x: PAD_X + 6, y: BAR_H - 1 },
+    tap: { x: STREAM_X - (PAD_X + 6), y: STREAM_TOP - 1 - (BAR_H - 1) },
+    mug: { x: MUG_X + 2 - (PAD_X + 6), y: MUG_Y + 5 - (BAR_H - 1) },
+};
+
+/** The pour frame for a phase 0–1 of the current pour. */
+export const pourFrame = (phase) => OWL_BAR.pour[Math.max(0, Math.min(5, Math.floor(phase * 6)))];
+
+/** OWL_BAR, as the frame set the integration asks for: { idle, blink, pour, set, talk, anchor, tap, mug }. */
+export function owlBartenderFrames() {
+    return OWL_BAR;
 }

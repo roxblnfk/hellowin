@@ -269,6 +269,38 @@ function rig(dir, pose, frame) {
             r.hold = dir === 'back' ? Object.fromEntries(Object.entries(front).map(([k, v]) => [k, mirrorBlock(v)])) : front;
         }
     }
+    if (pose === 'drink') {
+        // The mug comes up to the mouth (0), tips level (1), then bottom up with the head thrown back (2). The hand
+        // follows the mug: it holds DRINK's grip of the frame.
+        if (frame === 2) r.head = { x: r.head.x - (side ? 1 : 0), y: r.head.y - 1 };
+        if (side) {
+            r.hold = [
+                { sh: [-1, sh], elbow: [2, -8], hand: [4, -12] },
+                { sh: [-1, sh], elbow: [3, -8], hand: [5, -12] },
+                { sh: [-1, sh], elbow: [3, -9], hand: [6, -14] },
+            ][frame];
+        } else {
+            const front = [
+                { sh: [-7, sh], elbow: [-8, -8], hand: [-4, -12] },
+                { sh: [-7, sh], elbow: [-9, -9], hand: [-6, -13] },
+                { sh: [-7, sh], elbow: [-10, -11], hand: [-4, -15] },
+            ][frame];
+            r.hold = dir === 'back' ? Object.fromEntries(Object.entries(front).map(([k, v]) => [k, mirrorBlock(v)])) : front;
+        }
+    }
+    if (pose === 'shrug') {
+        // Empty palms turned up at the sides, the head sinking between raised shoulders on the second frame.
+        r.head = { x: r.head.x, y: r.head.y + frame };
+        r.arms = side
+            ? [
+                { sh: [sx, sh], elbow: [2, -8], hand: [4, -11 - frame], far: true },
+                { sh: [-1 + sx, sh], elbow: [1, -8], hand: [3, -10 - frame], far: false },
+            ]
+            : [
+                { sh: [-7, sh], elbow: [-9, -8], hand: [-11, -10 - frame], far: false },
+                { sh: [5, sh], elbow: [7, -8], hand: [9, -10 - frame], far: false },
+            ];
+    }
     return r;
 }
 
@@ -965,6 +997,26 @@ const AIM = {
     ],
 };
 
+// Drinking always shows the beer, tipped further each frame: [at the mouth, level, bottom up]. The side view faces
+// right with the foam toward the mouth; the front view is its mirror, the mouth right of the item hand.
+const DRINK_SIDE = [
+    { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], keep: 'wcyY' },
+    { rows: ['.wgggg', 'wwyyyg', 'cwYYYg', 'wwYYYg', '.wgggg'], grip: [1, 3], keep: 'wcyY' },
+    { rows: ['....gg', '...gYg', '..gYYg', '.wYYg.', 'wcwg..', '.ww...'], grip: [3, 4], keep: 'wcyY' },
+];
+const mirrorRows = (rows) => {
+    const w = Math.max(...rows.map((r) => r.length));
+    return rows.map((r) => [...r.padEnd(w, '.')].reverse().join(''));
+};
+const DRINK = {
+    side: DRINK_SIDE,
+    front: [
+        DRINK_SIDE[0],
+        { ...DRINK_SIDE[1], rows: mirrorRows(DRINK_SIDE[1].rows), grip: [-1, 2] },
+        { ...DRINK_SIDE[2], rows: mirrorRows(DRINK_SIDE[2].rows), grip: [0, 3] },
+    ],
+};
+
 // The candle flame's flicker: steady, stretched tall, bent and low. The last row stands on the item's flame pixel.
 const FLAME_LEGEND = { Y: 'fxFlame', y: 'fxFlameHot', w: 'fxFlameCore' };
 const CANDLE_FLAME = [
@@ -1218,7 +1270,9 @@ function compose(look, dir, pose, frame, item) {
     // Shooting aims what the hand holds: the pistol has its own aimed sprites, any other item is held out on the aimed
     // arm, an empty hand points.
     const gun = shoot && item === 'pistol';
-    const held = !ritual && !gun && ITEM_DEFS[item];
+    // Drinking always tips the beer to the mouth; the shrug shows empty hands whatever the item.
+    const drink = pose === 'drink';
+    const held = !ritual && !gun && pose !== 'shrug' && (drink || ITEM_DEFS[item]);
     // Clinking and the toast raise the item hand even when it is empty.
     const raised = pose === 'clink' || pose === 'toast';
     const holding = !shoot && (held || raised);
@@ -1237,21 +1291,17 @@ function compose(look, dir, pose, frame, item) {
     layer((g) => free.filter((a) => a.far).forEach((a) => drawArm(g, body, a)));
     over(out, outlined(drawTorso(body, r)));
     if (body.tail && dir === 'back') layer((g) => body.tail(g, r));
-    // A body's own ears (the cat) show only bare-headed: every hat sits where they stand, the «Ушки» hat brings its own.
-    over(out, outlined(drawHead(body, FACES[look.face], r, look.hat === 'none')));
-    if (body.whiskers) over(out, body.whiskers(r));
-    layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
-    layer((g) => HATS[look.hat].paint(g, r.head.x, r.head.y, dir));
-    layer((g) => cloak.paint(g, r, 'front'));
-
     const fx = blank();
     const result = { out };
     let keep = null;
-    if (shoot || holding) {
+    const holdLayer = () => {
         const arm = shoot ? r.aim : r.hold;
         layer((g) => {
             const flip = dir === 'back';
-            const spr = gun ? AIM[dir === 'side' ? 'side' : 'front'][frame] : held ? ITEM_DEFS[item][dir === 'side' ? 'side' : 'front'] : null;
+            const spr = gun
+                ? AIM[dir === 'side' ? 'side' : 'front'][frame]
+                : drink ? DRINK[dir === 'side' ? 'side' : 'front'][frame]
+                    : held ? ITEM_DEFS[item][dir === 'side' ? 'side' : 'front'] : null;
             if (!spr) {
                 // The fingertip past the pointing hand.
                 if (shoot) result.muzzle = [dir === 'front' ? arm.hand[0] - 1 : arm.hand[0] + 2, arm.hand[1]];
@@ -1291,7 +1341,18 @@ function compose(look, dir, pose, frame, item) {
         over(out, handOut);
         // What the hand covers is not beer any more.
         if (keep) keep = keep.map((k, i) => (handOut[i] ? null : k));
-    }
+    };
+    // Drinking seen from the back: the head hides the mug at the mouth, only the raised elbow shows past it.
+    const behindHead = drink && dir === 'back';
+    if ((shoot || holding) && behindHead) holdLayer();
+    // A body's own ears (the cat) show only bare-headed: every hat sits where they stand, the «Ушки» hat brings its own.
+    over(out, outlined(drawHead(body, FACES[look.face], r, look.hat === 'none')));
+    if (body.whiskers) over(out, body.whiskers(r));
+    layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
+    layer((g) => HATS[look.hat].paint(g, r.head.x, r.head.y, dir));
+    layer((g) => cloak.paint(g, r, 'front'));
+
+    if ((shoot || holding) && !behindHead) holdLayer();
     if (ritual) {
         // A small light over each palm, in the eye colour; on odd frames a spark flickers off it.
         r.arms.forEach(({ hand: [hx, hy] }, i) => {
@@ -1303,6 +1364,8 @@ function compose(look, dir, pose, frame, item) {
     }
     over(out, fx);
     if (ritual || gun) result.glow = fx;
+    // Drinking, the head or the hat may cover the mug: only the beer still on top stays.
+    if (drink && keep) keep = keep.map((k, i) => (out[i] === k ? k : null));
     if (keep?.some(Boolean)) result.keep = keep.map((k, i) => (fx[i] ? null : k));
     return result;
 }
@@ -1380,6 +1443,8 @@ export const POSES = {
     ritual: { frames: 4, ms: 380 },
     clink: { frames: 2, ms: 350 },
     toast: { frames: 2, ms: 450 },
+    drink: { frames: 3, ms: 400 },
+    shrug: { frames: 2, ms: 400 },
 };
 
 /** Canvas size shared by every frame and the anchor inside it (bottom centre, between the feet). */
@@ -1429,7 +1494,9 @@ function paintGrid(grid, colorOf) {
  * `canvas` too. A held candle (and the red flame) has its flame only in the
  * glow: `flames` — its flicker frames (`glow` is the first), `flame` — the flame's core. A held beer brings `beer`:
  * the beer and foam pixels of `canvas` alone, for the scene to keep their hue at night over the relit frame. Clinking
- * (`clink`) and the toast (`toast`) raise the item hand; their `muzzle` is the glass's top.
+ * (`clink`) and the toast (`toast`) raise the item hand; their `muzzle` is the glass's top. Drinking (`drink`, 3 frames, play
+ * once) always tips the beer to the mouth whatever the item, its `beer` the part not hidden by the head; the shrug
+ * (`shrug`, 2 frames) shows empty palms whatever the item.
  */
 export function characterFrame(look, { dir, pose, frame = 0, item = null } = {}) {
     const full = normalizeLook(look);

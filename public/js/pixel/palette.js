@@ -179,4 +179,24 @@ export const PALETTE = {
     lightning: 0xc4d4ff,
     lightningEdge: 0x7c8cf0,
     columnCore: 0xffe0d0,
+    // The bar (scene 0, bar.js): the mead hall's timber — a warm brown ramp for logs, tables and benches, a
+    // greyer one for the worn floor planks — the hearth's stones, the iron of hoops and sconces, and the shields'
+    // paint. The darkest timber stays a step above the outline, so the gaps between logs still read as gaps.
+    timberDeep: 0x341c16,
+    timberDark: 0x52301e,
+    timber: 0x7a4a2a,
+    timberLight: 0xa26a3c,
+    timberShine: 0xc88e54,
+    plankDeep: 0x3a2620,
+    plankDark: 0x5a3c2a,
+    plank: 0x7c5838,
+    plankLight: 0x9e7a4e,
+    stoneDeep: 0x332c34,
+    stoneDark: 0x4e4650,
+    stone: 0x72686e,
+    stoneLight: 0x988a8c,
+    iron: 0x3c3a48,
+    ironLight: 0x6e6c80,
+    shieldBlue: 0x2e4f86,
+    shieldGreen: 0x2f6a40,
 };
