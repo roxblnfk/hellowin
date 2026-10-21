@@ -53,6 +53,7 @@ const POUR_FRESH_MS = 400;
 const DOOR_FRESH_MS = 400;
 // The bar's level: no pumpkins to make progress with.
 const BAR_INTENSITY = 0.2;
+const BROKEN_INTENSITY = 0.1;
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 /** Stereo position of a point x in percent of the width. */
@@ -106,12 +107,16 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     const finalScene = (model) => model.scene >= model.sceneStages;
     const music = (model) => audio.setMusic(trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale, boss: model.boss }));
     let struckAt = -1e9;
+    // The rise's brass and drums dropping out as FrankenPHP steps out of the smoke (finale step 2).
+    let breaking = null;
     const walkerX = (model, id) => lastPoint(model.walkers.find((w) => w.id === id)?.walk)?.x;
     const volumeOf = (model, ...ids) => (model.me !== null && ids.includes(model.me) ? 1 : OTHERS_VOLUME);
 
     /** 0.2 + 0.8 × the share of the scene passed; the whole way from the scene's readiness and finale step 1. */
     function intensity(model) {
         if (isBar(model.scene)) return BAR_INTENSITY;
+        // The epic breaks on FrankenPHP: only the choir of the rise hangs on through step 2.
+        if (finalScene(model) && model.finale?.step === 2) return BROKEN_INTENSITY;
         if (model.ready || (finalScene(model) && (model.finale?.step ?? 0) >= 1)) return 1;
         let share;
         if (finalScene(model)) {
@@ -342,7 +347,16 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         finale(model, event, before) {
             finale(model, before);
             music(model);
-            progress(model);
+            if (breaking !== null) cancel(breaking);
+            breaking = null;
+            if (finalScene(model) && model.finale?.step === 2 && before.step === 1) {
+                // The rise plays in full until FrankenPHP is revealed, then breaks.
+                audio.setIntensity(1);
+                breaking = later(() => {
+                    breaking = null;
+                    progress(model);
+                }, T.reveal);
+            } else progress(model);
         },
         reset(model, event) {
             base = { scene: 0, stage: 0 };
