@@ -434,6 +434,38 @@ export const SFX = {
             thump(r, out, 2.4, { f0: 380, f1: 260, dur: 0.04, amp: 0.35 });
         },
     }),
+    // The hall's heavy door: forged hinges creak (stick-slip pulses through the plank's resonances), then it thuds shut
+    // and the latch drops.
+    'bar.door': fx({
+        dur: 1.2, variants: 3, voices: 2, level: -19,
+        render(r, out) {
+            const sr = r.sr;
+            const n = Math.round(0.7 * sr);
+            const bodies = [[380 + r.rnd() * 60, 6], [900 + r.rnd() * 150, 8], [1900 + r.rnd() * 300, 10]].map(([f, q]) => new SVF(sr).set(f, q));
+            const rate0 = 70 + r.rnd() * 40;
+            let ph = 0;
+            for (let i = 0; i < n; i++) {
+                const k = i / n;
+                // The creak's pitch sags and wavers as the door swings and slows.
+                ph += (rate0 * (1.6 - k) * (1 + 0.25 * Math.sin(TAU * 3 * k + r.rnd() * 0.3))) / sr;
+                let x = 0;
+                if (ph >= 1) {
+                    ph -= 1;
+                    x = 0.6 + r.rnd() * 0.4;
+                }
+                let y = 0;
+                for (const b of bodies) {
+                    b.tick(x);
+                    y += b.bp;
+                }
+                const e = Math.min(1, k / 0.1) * Math.min(1, (1 - k) / 0.15);
+                out.put(i, y * e * 0.5, y * e * 0.5, 0.25);
+            }
+            tom(r, out, 0.72, { amp: 0.7, tone: 70 + r.rnd() * 15, send: 0.35 });
+            noiseSweep(r, out, 0.72, 0.15, { from: 600, to: 250, amp: 0.3, mode: 'lp' });
+            thump(r, out, 0.8, { f0: 1400, f1: 900, dur: 0.02, amp: 0.15 });
+        },
+    }),
     // A full mug set down on the counter: a heavy wooden knock with a slosh.
     'bar.mug': fx({
         dur: 0.5, variants: 4, voices: 3, level: -16,

@@ -1,4 +1,4 @@
-// Voice limits of the engine against a recording fake AudioContext: node tools/audio/voices.mjs
+// Voice limits and the music crossfade of the engine against a recording fake AudioContext: node tools/audio/voices.mjs
 // Each source's start and stop are logged; a source sounds if it is never stopped or stopped after it starts.
 // Exit code 1 when a check fails.
 
@@ -13,7 +13,9 @@ class Param {
 
     cancelScheduledValues() {}
 
-    setValueCurveAtTime() {}
+    setValueCurveAtTime(values, start, duration) {
+        this.curve = { rising: values[values.length - 1] > values[0], start, duration };
+    }
 }
 
 class FakeNode {
@@ -127,5 +129,45 @@ check('speech after a hoot, with delay', () => {
 check('three owl lines at once', () => {
     for (let k = 0; k < 3; k++) audio.speak('owl', 'Что это? Что мы… ЧТО ВЫ НАДЕЛАЛИ?');
 }, (got, all) => got === (all / 3) * 2);
+
+// ---------------------------------------------------------------- music: dawn → bar, the new evening
+// The bar's stems start on a bar line of the dawn, and the dawn fades out over one of its bars from that very moment.
+{
+    const { NEXT_TRACK } = await import('../../public/js/audio/engine.js');
+    const gains = [];
+    const createGain = ctx.createGain.bind(ctx);
+    ctx.createGain = () => {
+        const g = createGain();
+        gains.push(g);
+        return g;
+    };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const stems = () => sources.filter((s) => s.loop);
+
+    sources.length = 0;
+    audio.setMusic('dawn');
+    await audio.preload('dawn');
+    await settle();
+    const dawn = stems();
+    const t0 = dawn[0]?.startAt;
+    const dawnOut = gains.find((g) => g.gain.curve?.rising && g.gain.curve.start === t0);
+    const bar = (await audio.preload('dawn')).bar;
+
+    ctx.currentTime = t0 + 5.3;
+    sources.length = 0;
+    audio.setMusic('bar');
+    await audio.preload('bar');
+    await settle();
+    const barStems = stems();
+    const at = barStems[0]?.startAt;
+    const k = (at - t0) / bar;
+    const ok = NEXT_TRACK.dawn === 'bar'
+        && dawn.length === 3 && barStems.length === 3 && barStems.every((s) => s.startAt === at)
+        && Math.abs(k - Math.round(k)) < 1e-9 && at > ctx.currentTime && at - ctx.currentTime <= bar + 0.1
+        && dawnOut?.gain.curve && !dawnOut.gain.curve.rising
+        && Math.abs(dawnOut.gain.curve.start - at) < 1e-9 && Math.abs(dawnOut.gain.curve.duration - bar) < 1e-9;
+    if (!ok) failed = true;
+    console.log(`${ok ? 'ok  ' : 'FAIL'} dawn → bar: the bar starts on the dawn's bar line ${Math.round(k)} (${at?.toFixed(3)} s), the dawn fades over ${bar.toFixed(3)} s`);
+}
 
 process.exit(failed ? 1 : 0);

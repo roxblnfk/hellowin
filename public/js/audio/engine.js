@@ -36,7 +36,7 @@ export function trackOf({ scene = 0, sceneStages = 4, finale = null, boss = null
 }
 
 /** The track worth rendering ahead: the one the next scene (or the next part of the finale) will ask for. */
-export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: 'boss', boss: 'dawn', dawn: null };
+export const NEXT_TRACK = { bar: 'day', day: 'dusk', dusk: 'night', night: 'blood', blood: 'cursed', cursed: 'boss', boss: 'dawn', dawn: 'bar' };
 
 const smooth = (x, a, b) => {
     const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
