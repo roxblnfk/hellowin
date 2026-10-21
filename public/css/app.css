@@ -158,11 +158,14 @@ body {
 }
 
 /*
- * Scene 0 has no bonfire yet (the root and its foliage are there instead), the final scene none any more (the ash pit
+ * The day has no bonfire yet (the root and its foliage are there instead), the final scene none any more (the ash pit
  * takes its place); the circle exists only in the final scene (docs/spec/scenario.md). An element of an unknown type
- * is not drawn at all.
+ * is not drawn at all. The bar has no patch at all: hidden buttons take no clicks and no focus.
  */
-body[data-scene="0"] .bonfire,
+body[data-scene="1"] .bonfire,
+body[data-bar] .pumpkin,
+body[data-bar] .bonfire,
+body[data-bar] .circle,
 body[data-final] .bonfire,
 body:not([data-final]) .circle,
 .element {
@@ -201,6 +204,38 @@ body:not([data-final]) .circle,
 .patch:not(.has-canvas) .bonfire[data-locked],
 .patch:not(.has-canvas) .circle[data-locked] {
     opacity: 0.6;
+}
+
+/*
+ * The bar's counter (scene 0): a transparent hit zone over the counter and its mugs. The scene publishes the box in CSS
+ * pixels (--counter-*); without a canvas it is a mug emoji at the counter's usual spot.
+ */
+.bar-counter {
+    position: absolute;
+    left: var(--counter-x, 64%);
+    top: var(--counter-y, 34%);
+    width: var(--counter-w, 30%);
+    height: var(--counter-h, 16%);
+    z-index: 400;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: clamp(28px, 5vw, 56px);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.has-canvas .bar-counter__emoji {
+    visibility: hidden;
+}
+
+.bar-counter[aria-disabled="true"] {
+    cursor: default;
+}
+
+.bar-counter:focus-visible {
+    outline: calc(var(--px, 2px) * 1) dashed var(--gold);
+    outline-offset: calc(var(--px, 2px) * 2);
 }
 
 /* Link to the "how it works" page: a small pumpkin with a question mark, not a game element. */
@@ -968,6 +1003,11 @@ body:not([data-final]) .circle,
     pointer-events: auto;
 }
 
+/* «Выпить»: the drink a phone has no Space for, so it stands out from the other HUD buttons. */
+.hud__button--drink {
+    background: var(--cream);
+}
+
 .hud__button:hover {
     background: var(--cream);
 }
@@ -1183,4 +1223,47 @@ body:not([data-final]) .circle,
     .join__actions > .join__button {
         flex: 1;
     }
+}
+
+.console__group[hidden] {
+    display: none;
+}
+
+/*
+ * The bar's meter in the HUD (scene 0): «Выпито 12 из 30» beside a pixel glass filling with beer, a foam head on the
+ * level; --fill (0–1) comes from client.js. Full — the foam runs over.
+ */
+.hud__drinks {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hud__drinks[hidden] {
+    display: none;
+}
+
+.hud__meter {
+    position: relative;
+    width: clamp(64px, 18vw, 120px);
+    height: 10px;
+    background: var(--soil-dark);
+    box-shadow: 0 0 0 2px var(--cream);
+    overflow: hidden;
+}
+
+.hud__meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--fill, 0) * 100%);
+    background: linear-gradient(180deg, var(--cream) 0 3px, var(--gold) 3px);
+    box-shadow: 2px 0 0 var(--cream);
+}
+
+.hud__drinks[data-full] .hud__meter-fill {
+    box-shadow: none;
+}
+
+.hud__drinks[data-full] .hud__meter {
+    box-shadow: 0 0 0 2px var(--gold);
 }

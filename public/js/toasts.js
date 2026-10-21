@@ -44,10 +44,36 @@ export const TOASTS = [
     'За тыквы — они тоже работали всю ночь!',
 ];
 
-/** The toast of a `clink` event's index (the catalog wraps around): [line] or [line, reply]. */
-export function toastAt(index) {
+/**
+ * Toasts of the bar (scene 0; docs/spec/scenario.md, «Сцена 0 — «Бар»»): to PHP. Same rules as TOASTS — add at the end;
+ * the scene picks the catalog, the index comes the same way.
+ */
+export const BAR_TOASTS = [
+    'За PHP!',
+    'За PHP — сто лет без смерти!',
+    'За elePHPant!',
+    'За declare(strict_types=1)!',
+    'За composer install без ошибок!',
+    'За PSR!',
+    'За тех, кто ещё на PHP 5!',
+    'За JIT!',
+    'За match вместо switch!',
+    'За readonly!',
+    "За enum'ы!",
+    'За пайп-оператор |>!',
+    'За Fibers!',
+    'За PHP Foundation!',
+    'За PHP 9 — доживём!',
+    'За property hooks!',
+    ['Обновимся до свежей версии?', 'Сразу после релиза!'],
+    'За тех, кто пишет тесты!',
+    'За RoadRunner — пусть воркеры не устают!',
+];
+
+/** The toast of a `clink` event's index in a catalog (it wraps around): [line] or [line, reply]. */
+export function toastAt(index, list = TOASTS) {
     const n = Number.isInteger(index) && index >= 0 ? index : 0;
-    const toast = TOASTS[n % TOASTS.length];
+    const toast = list[n % list.length];
     return Array.isArray(toast) ? toast : [toast];
 }
 
@@ -60,8 +86,8 @@ function mix(a, b) {
     return (h ^ (h >>> 16)) >>> 0;
 }
 
-/** The toast of a group (its hash) in a time slot: [line] or [line, reply]. */
-export function toastOf(groupHash, slot) {
-    const toast = TOASTS[(mix(groupHash ^ SEED, slot) >>> 4) % TOASTS.length];
+/** The toast of a group (its hash) in a time slot, from a catalog: [line] or [line, reply]. */
+export function toastOf(groupHash, slot, list = TOASTS) {
+    const toast = list[(mix(groupHash ^ SEED, slot) >>> 4) % list.length];
     return Array.isArray(toast) ? toast : [toast];
 }

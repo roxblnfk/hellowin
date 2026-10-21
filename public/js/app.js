@@ -1,6 +1,6 @@
-import { bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
+import { bindBar, bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
-import { createOwl } from './owl.js';
+import { LINES, createOwl } from './owl.js';
 import { createReveal } from './reveal.js';
 
 const root = document.getElementById('app');
@@ -80,9 +80,7 @@ async function startSound(modules, scene, serverNow) {
         audio.unlockOn(document);
         bindSoundControls(root, audio);
         bindUiClicks(root, audio);
-        const sound = createSound(audio, { serverNow, owlGone: () => Boolean(scene?.owlGone?.()) });
-        scene?.onCue?.((cue) => sound.cue(cue));
-        return sound;
+        return createSound(audio, { serverNow, owlGone: () => Boolean(scene?.owlGone?.()) });
     } catch (error) {
         console.warn('sound failed to start', error);
         return null;
@@ -101,6 +99,7 @@ async function main() {
     const reveal = createReveal(root);
 
     if (typeof Centrifuge === 'undefined') {
+        scene?.onCue?.((cue) => sound?.cue(cue));
         createClient(root, scene, { requestState: () => Promise.reject(new Error('no centrifuge')), owl, reveal, sound }).start();
         return;
     }
@@ -199,6 +198,27 @@ async function main() {
         .catch((error) => console.warn('shoot rpc failed', error)));
     // After the shots: a press on a flyer stays a shot even over a walker.
     bindClinking(root, scene, client, clink);
+
+    // The bar (protocol.md, «Бар»): a mug from the counter, a drink by Space or «Выпить». `not clinked` is a hint over
+    // my own walker only; the server broadcasts nothing for it.
+    const barRpc = (method, params = {}) => centrifuge.rpc(method, params).then(({ data }) => {
+        if (data?.ok === false) console.warn(`${method} rejected`, data.error);
+        return data;
+    }).catch((error) => console.warn(`${method} rpc failed`, error));
+    bindBar(root, client, {
+        take: () => barRpc('bar.take'),
+        drink: () => barRpc('drink').then((data) => {
+            if (data?.error === 'not clinked') scene?.hint?.(client.model.me, LINES['bar-clink'].text);
+        }),
+    });
+    // The scene's moments: the sound's cues, and an automatic clink in the bar that my walker strikes — reported once,
+    // by this browser only, while the tab is visible (a hidden one does not get the clink counted, by design).
+    scene?.onCue?.((cue) => {
+        sound?.cue(cue);
+        if (cue?.type !== 'clink' || document.visibilityState !== 'visible') return;
+        const partner = client.autoClinkPartner(cue);
+        if (partner) barRpc('clink.auto', { walker: partner }).then((data) => data?.ok && client.clinkedAuto());
+    });
 
     // The character appears when the channel's `walker` event comes back, like everything else.
     // Lazy like the scene: without the character sprites the page still clicks pumpkins and shoots.

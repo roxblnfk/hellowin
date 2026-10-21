@@ -8,15 +8,17 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { ROOT, floats, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
+import { BAR_LAYOUT, ROOT, SCENE, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
+import { BAR_TOASTS, TOASTS } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { BUSH, FLYERS, bake as flyerBake, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
-import { OWL, OWL_FLIGHT, glowing } from './owl.js';
+import { OWL, OWL_BAR, OWL_FLIGHT, glowing, pourFrame } from './owl.js';
+import { BAR_FLICKER_MS, BAR_MUG, bakeBar, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar } from './bar.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -29,7 +31,7 @@ const LIGHT_LAYERS = new Set(['aura', 'glow', 'fire']);
 const LIT_STAGE = 5;
 // Frame periods of the light layers, ms.
 const FRAME_MS = { glow: 120, fire: 110, aura: 160 };
-// The jump out of scene 1: hop length and height (art px); app.css moves the buttons over the same time.
+// The jump out at the sunset: hop length and height (art px); app.css moves the buttons over the same time.
 const JUMP_MS = 600;
 const JUMP_H = 12;
 // Floating pumpkins hover this high (art px) and bob ±2 around it.
@@ -263,6 +265,7 @@ export async function createScene(rootEl, snapshot) {
         threshold: snapshot.threshold ?? 1,
         elements: snapshot.elements ?? [],
         bushes: snapshot.bushes ?? [],
+        barLayout: snapshot.barLayout ?? null,
     };
 
     // The finale (docs/spec/scenario.md, «Финал»): the step (null outside the final scene), whether the circle is
@@ -272,10 +275,12 @@ export async function createScene(rootEl, snapshot) {
     const sinceStep = () => clock - finale.at;
     const inFinale = () => state.scene >= state.sceneStages && finale.step !== null;
 
-    // Lighting per scene (docs/spec/scenario.md, «Сцены 1–3»): day, sunset, night; the final scene is the blood moon
-    // until the lightning of finale step 2, then the night again.
+    // Lighting per scene (docs/spec/scenario.md, «Сцены 1–4»): the bar by its fire (the art sheet's light), day, sunset,
+    // night; the
+    // final scene is the blood moon until the lightning of finale step 2, then the night again.
+    const DAYLIGHT = { [SCENE.bar]: 'firelight', [SCENE.day]: 'day', [SCENE.sunset]: 'sunset', [SCENE.night]: 'night' };
     const lightingOf = (scene) => {
-        if (scene < state.sceneStages) return ['day', 'sunset', 'night'][scene] ?? 'night';
+        if (scene < state.sceneStages) return DAYLIGHT[scene] ?? 'night';
         return finale.step !== null && nightOf(finale.step, sinceStep()) ? 'night' : 'blood';
     };
     let lighting = 'day';
@@ -299,8 +304,9 @@ export async function createScene(rootEl, snapshot) {
     const pumpkinElements = () => state.elements.filter(isPumpkin);
     // The magic circle is drawn on the bonfire's pit: its clicks shake the pit like the bonfire's shook the fire.
     const onPit = (id) => bonfire?.ash && state.elements.some((e) => e.id === id && e.type === 'circle');
-    // The bonfire takes the root's place once the foliage is freed in scene 1; scene 0 keeps the root.
-    const hasBonfire = () => state.scene > 0 && Boolean(bonfireElement());
+    // The bonfire takes the root's place once the foliage is freed at the sunset; the day keeps the root, the bar has
+    // no patch at all.
+    const hasBonfire = () => state.scene > SCENE.day && Boolean(bonfireElement());
     // Whether the pumpkins stand jumped out (layout.js), and when the hop started (it is over after JUMP_MS).
     let out = false;
     let jumpAt = -1e9;
@@ -330,9 +336,9 @@ export async function createScene(rootEl, snapshot) {
     let owlAt = { x: 0, y: 0 };
     let owlTalk = { at: -1e9, until: -1e9, hoot: false };
     let clock = 0;
-    // The bonfire in the middle from scene 1 (its sprites, stage and click shake), the pit in the final scene.
+    // The bonfire in the middle from the sunset (its sprites, stage and click shake), the pit in the final scene.
     let bonfire = null;
-    // The explosion 2 → 3 starts here; the pit's embers die out after it. A frozen frame fades out over the relit
+    // The explosion night → final starts here; the pit's embers die out after it. A frozen frame fades out over the relit
     // world after a scene change.
     let blastAt = -1e9;
     let fade = null;
@@ -775,8 +781,16 @@ export async function createScene(rootEl, snapshot) {
         owlSprite.visible = Boolean(pose);
         if (!pose) return;
         let { def } = pose;
+        // Behind the counter: the bartender's own frames, its beer keeping its hue.
+        if (isBar(state.scene)) {
+            def = barOwlFrame();
+            owlSprite.texture = barTexture(def);
+            owlSprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+            owlSprite.position.set(Math.round(pose.at.x), Math.round(pose.at.y));
+            return;
+        }
         // From the night scene on, the eyes glow.
-        if (state.scene >= 2) {
+        if (state.scene >= SCENE.night) {
             if (!owlNight.has(def)) owlNight.set(def, glowing(def));
             def = owlNight.get(def);
         }
@@ -948,7 +962,7 @@ export async function createScene(rootEl, snapshot) {
             return;
         }
         plantLayer.addChild(new Sprite(texture(relight(c))));
-        // From scene 1 the freed tops are the bonfire's heap (buildBonfire): no root and no leaf heap in the middle.
+        // From the sunset the freed tops are the bonfire's heap (buildBonfire): no root and no leaf heap in the middle.
         foliage.forEach((leaf) => addGround(leaf.def, leaf.x, leaf.y));
         if (hasBonfire()) return;
         // A heap of the largest leaves around the root; the root itself stays on top of it.
@@ -964,7 +978,7 @@ export async function createScene(rootEl, snapshot) {
         addGround(DECOR.root, root.x, root.y, { sortY: root.y + 20 });
     }
 
-    // The blast of 2 → 3 burns the foliage away (docs/spec/frontend.md, «Взрыв 2 → 3»): vines, leaves and tendrils char
+    // The blast into the final scene burns the foliage away (docs/spec/frontend.md, «Взрыв 3 → 4»): vines, leaves and tendrils char
     // and smoulder, crumble to ash in BURN_FRAMES steps and are gone; from then on the patch is bare. A reload, a resync
     // or reduced motion shows the bare patch at once.
     const BURN_START = 250;
@@ -1253,7 +1267,7 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /**
-     * The bonfire from scene 1 on (bonfire.js): the heap and its flames in place of the root, the ground light under
+     * The bonfire from the sunset on (bonfire.js): the heap and its flames in place of the root, the ground light under
      * it; in the final scene the ash pit with the magic circle. Stage and frames are set per tick (animateBonfire).
      */
     function buildBonfire() {
@@ -1349,8 +1363,165 @@ export async function createScene(rootEl, snapshot) {
         rootEl.style.setProperty('--hit-h-circle', `${pit.h * px}px`);
         rootEl.style.setProperty('--hit-x-circle', `${-(pit.w >> 1) * px}px`);
         rootEl.style.setProperty('--hit-y-circle', `${-(pit.h >> 1) * px}px`);
+        // The bar's counter button covers the counter with its tap and the mugs standing on it.
+        if (hall?.box) {
+            const { box } = hall;
+            rootEl.style.setProperty('--counter-x', `${box.x1 * px}px`);
+            rootEl.style.setProperty('--counter-y', `${box.top * px}px`);
+            rootEl.style.setProperty('--counter-w', `${(box.x2 - box.x1) * px}px`);
+            rootEl.style.setProperty('--counter-h', `${(box.y - box.top) * px}px`);
+        }
         rootEl.style.setProperty('--float-lift', `${FLOAT_LIFT * px}px`);
         rootEl.style.setProperty('--px', `${px}px`);
+    }
+
+    /*
+     * The bar (scene 0; docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): a hall instead of the patch. Its geometry
+     * is the server's `walk.bar` in screen percents without the patch spread; the counter and the tables stand in
+     * groundLayer and sort with the walkers. The owl stands behind the counter (it covers the talons) and pours one
+     * mug at a time by `pouring` on the server clock; the counter holds exactly `mugs` full mugs.
+     */
+    // Set-down after `mugs`: two owl frames (pixel/owl.js, OWL_BAR.set); the shrug and the gulp of a walker; the hint.
+    const SET_FRAME_MS = 180;
+    const SHRUG_MS = 800;
+    const DRINK_MS = 1200;
+    const HINT_MS = 2500;
+    // Counter mug slots laid out at most; the counter holds HELLOWIN_BAR_MUGS, which the client does not know.
+    const MUG_SLOTS = 12;
+    // The flames' halos on the floor, like the art sheet (public/dev/bar.html).
+    const FLAME_HALO_ALPHA = 0.35;
+    const barLayoutOf = () => state.barLayout ?? BAR_LAYOUT;
+    // The counter's state as the client model passes it in, and when the last mug was set down (scene clock).
+    const barState = { mugs: 0, pouring: null, setAt: -1e9 };
+    // What buildBar() laid out, art px: the counter's box, the owl's spot, the mug sprites, the flickering flames.
+    let hall = null;
+    // Lines only the scene knows: the local «Сначала чокнись…» hint over my own walker.
+    const hints = new Map();
+    // The bartender's frames keep their beer hue in the hall's light (bar.js, bakeBar).
+    const barBakes = new WeakMap();
+    const barTexture = (def) => {
+        if (!barBakes.has(def)) barBakes.set(def, texture(bakeBar(def, lighting)));
+        return barBakes.get(def);
+    };
+
+    // The hall's art (pixel/bar.js) in the walkers' coordinates: screen percents, no patch spread.
+    function buildBar() {
+        const { artW, artH } = layout;
+        const L = barLayoutOf();
+        const opts = { lighting, toArt: toScreenArt };
+
+        skyLayer.removeChildren().forEach((s) => s.destroy());
+        cloudLayer.removeChildren().forEach((s) => s.destroy());
+        plantLayer.removeChildren().forEach((s) => s.destroy());
+        bugLayer.removeChildren().forEach((s) => s.destroy());
+        flashLayer.removeChildren().forEach((s) => s.destroy());
+        clouds = [];
+        bugs = [];
+        twinkles = [];
+        sun = null;
+        bushes.clear();
+        pumpkins.clear();
+        bonfire = null;
+
+        const base = canvas(artW, artH);
+        paintBar(base.getContext('2d', { willReadFrequently: true }), artW, artH, L, opts);
+        baseLayer.removeChildren().forEach((s) => s.destroy());
+        baseLayer.addChild(new Sprite(texture(base)));
+
+        const flicker = [];
+        // The wall flames over the background and under everything standing; their light on the floor.
+        for (const l of barLights(L, artW, artH, opts)) {
+            const s = new Sprite();
+            s.position.set(Math.round(l.x - l.anchor.x), Math.round(l.y - l.anchor.y));
+            plantLayer.addChild(s);
+            flicker.push({ sprite: s, frames: l.frames.map((c) => texture(c)), phase: l.phase });
+            if (!l.halo) continue;
+            const glow = new Sprite(defTexture(halo(l.halo.rx, l.halo.ry, 'warm')));
+            glow.anchor.set(0.5);
+            glow.blendMode = 'add';
+            glow.alpha = FLAME_HALO_ALPHA;
+            glow.position.set(Math.round(l.x), Math.round(l.y + 4));
+            lightLayer.addChild(glow);
+        }
+        let counterZ = null;
+        for (const p of barProps(L, artW, artH, opts)) {
+            const s = new Sprite(texture(p.canvas));
+            s.position.set(Math.round(p.x - p.anchor.x), Math.round(p.y - p.anchor.y));
+            s.zIndex = depthKey(p.x, p.y);
+            groundLayer.addChild(s);
+            if (p.kind === 'counter') counterZ = s.zIndex;
+            if (!p.glow) continue;
+            const g = new Sprite();
+            g.position.copyFrom(s.position);
+            g.zIndex = s.zIndex + 0.5;
+            groundLayer.addChild(g);
+            flicker.push({ sprite: g, frames: p.glow.map((c) => texture(c)), phase: p.phase ?? 0 });
+        }
+
+        // The owl stands behind the counter (sorted by its own, farther foot line), the counter hides its lower body.
+        const spot = barOwlSpot(L, artW, artH, opts);
+        const box = counterBox(L, artW, artH, opts);
+        owlSprite = null;
+        if (spot) {
+            owlAt = { x: spot.x, y: spot.y };
+            perch = { x: owlAt.x * layout.cssPx, y: owlAt.y * layout.cssPx };
+            owlSprite = new Sprite();
+            owlSprite.zIndex = depthKey(spot.x, spot.y);
+            groundLayer.addChild(owlSprite);
+        }
+        // The full mugs right after the counter in depth.
+        const mugTex = texture(bakeBar(BAR_MUG, lighting));
+        const mugs = mugSlots(L, artW, artH, MUG_SLOTS, opts).map((slot, i) => {
+            const s = new Sprite(mugTex);
+            s.anchor.set(BAR_MUG.anchor.x / BAR_MUG.w, BAR_MUG.anchor.y / BAR_MUG.h);
+            s.position.set(slot.x, slot.y);
+            s.zIndex = (counterZ ?? depthKey(slot.x, box?.y ?? slot.y)) + 1 + i / 100;
+            s.visible = false;
+            groundLayer.addChild(s);
+            return { sprite: s, y: slot.y };
+        });
+        hall = { box, flicker, mugs };
+        animateOwl();
+        animateBar();
+    }
+
+    // The pour runs on the server clock, so a viewer who opened the page mid-pour sees the same foam; a `pouring`
+    // whose `until` has passed is a mug about to be set down and is not drawn.
+    function pourPhase(now) {
+        const p = barState.pouring;
+        if (!p || !(p.until > p.since) || now >= p.until) return null;
+        return clamp((now - p.since) / (p.until - p.since), 0, 1);
+    }
+
+    /** The bartender's frame: pouring by the server clock, setting the mug down, talking, else idle with a blink. */
+    function barOwlFrame() {
+        const phase = pourPhase(serverNow());
+        // Reduced motion: no stream, the full mug held until it is set down.
+        if (phase !== null) return reduced ? OWL_BAR.set[0] : pourFrame(phase);
+        const set = clock - barState.setAt;
+        if (!reduced && set >= 0 && set < 2 * SET_FRAME_MS) return OWL_BAR.set[set < SET_FRAME_MS ? 0 : 1];
+        if (clock >= owlTalk.at && clock < owlTalk.until) {
+            if (reduced) return OWL_BAR.talk[0];
+            const beat = Math.floor((clock - owlTalk.at) / 160);
+            return beat % 10 >= 7 ? OWL_BAR.talk[2] : OWL_BAR.talk[beat % 2];
+        }
+        if (reduced) return OWL_BAR.idle[0];
+        const now = serverNow();
+        return idleOwl(now) === OWL.blink ? OWL_BAR.blink : OWL_BAR.idle[Math.floor(now / 700) % 2];
+    }
+
+    function animateBar() {
+        if (!hall || !isBar(state.scene)) return;
+        hall.mugs.forEach((m, i) => {
+            m.sprite.visible = i < barState.mugs;
+            // The newest mug lands with a small bump as the owl lets go of it.
+            const bump = i === barState.mugs - 1 && !reduced && clock - barState.setAt < SET_FRAME_MS ? -1 : 0;
+            m.sprite.position.y = m.y + bump;
+        });
+        for (const f of hall.flicker) {
+            const k = reduced ? 0 : Math.floor(clock / BAR_FLICKER_MS + f.phase) % f.frames.length;
+            f.sprite.texture = f.frames[k];
+        }
     }
 
     function rebuild() {
@@ -1376,14 +1547,19 @@ export async function createScene(rootEl, snapshot) {
         } else {
             fireLight = null;
         }
-        drawSky();
-        drawBase();
-        drawTree();
-        drawPlants();
-        placeBugs();
-        placeBushes();
-        buildPumpkins();
-        buildBonfire();
+        hall = null;
+        if (isBar(state.scene)) {
+            buildBar();
+        } else {
+            drawSky();
+            drawBase();
+            drawTree();
+            drawPlants();
+            placeBugs();
+            placeBushes();
+            buildPumpkins();
+            buildBonfire();
+        }
         stage.build();
         buildWalkers();
         // Ground targets outlive a resize like walkers: their sprites went with groundLayer.
@@ -1421,7 +1597,7 @@ export async function createScene(rootEl, snapshot) {
         fade = null;
     }
 
-    /** The bonfire blows up (2 → 3): flash, shake, the fireball over the fresh pit. */
+    /** The bonfire blows up (night → final): flash, shake, the fireball over the fresh pit. */
     function startBlast() {
         blastAt = clock;
         veilStart = clock;
@@ -1820,12 +1996,12 @@ export async function createScene(rootEl, snapshot) {
             for (let i = 0; i < 2; i++) {
                 spawn('spark', at.x, at.y - 1, sign() * between(10, 30), -between(20, 45), 60, 0.4);
             }
-        } else if (state.scene === 1) {
+        } else if (state.scene === SCENE.sunset) {
             const at = emitPoint(p, 'top');
             for (let i = 0; i < 6; i++) {
                 spawn(i % 3 === 0 ? 'cinder' : 'ember', at.x, at.y, sign() * between(4, 22), -between(30, 70), i % 3 === 0 ? 40 : -20, between(0.6, 1));
             }
-        } else if (state.scene >= 2) {
+        } else if (state.scene >= SCENE.night) {
             const at = emitPoint(p, 'top');
             for (let i = 0; i < 5; i++) spawn('magic', at.x, at.y, sign() * between(4, 20), -between(15, 45), -15, between(0.7, 1.1));
         } else if (stage >= 3) {
@@ -2034,7 +2210,8 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function walkerArt(p) {
-        const at = toArt(p);
+        // The bar's floor has no patch to spread: its percents are the screen's.
+        const at = isBar(state.scene) ? toScreenArt(p) : toArt(p);
         return { x: clamp(at.x, WALKER_MARGIN, layout.artW - WALKER_MARGIN), y: at.y };
     }
 
@@ -2241,6 +2418,12 @@ export async function createScene(rootEl, snapshot) {
                 const [dir, flip] = facing(s.from, s.to);
                 const walk = poseOf('walk');
                 view = { dir, flip, pose: 'walk', frame: Math.floor((clock - w.track.startedAt) / walk.ms) % walk.frames, item: w.item ?? null };
+            } else if (w.drinkUntil > clock) {
+                // The gulp: the mug tipped to the mouth, then the hands are empty (the model already says so).
+                const pose = POSES.drink ? 'drink' : 'toast';
+                view = { dir: 'front', flip: false, pose, frame: Math.min(poseOf(pose).frames - 1, Math.floor((DRINK_MS - (w.drinkUntil - clock)) / (DRINK_MS / poseOf(pose).frames))), item: 'beer' };
+            } else if (w.shrugUntil > clock) {
+                view = { dir: 'front', flip: false, pose: 'shrug', frame: Math.floor((SHRUG_MS - (w.shrugUntil - clock)) / poseOf('shrug').ms) % poseOf('shrug').frames, item: w.item ?? null };
             } else if (w.shoot && clock < w.shoot.until) {
                 // One shot with what the hand holds: the aimed frame, then the follow-through (the pistol's recoil).
                 view = { dir: w.shoot.dir, flip: w.shoot.flip, pose: 'shoot', frame: clock - w.shoot.at < RECOIL_MS ? 0 : 1, item: w.shoot.item };
@@ -2331,24 +2514,27 @@ export async function createScene(rootEl, snapshot) {
     const WALKER_HIT = { half: 8, up: 30, down: 2 };
 
     const walkersOf = (c) => [c.player, c.walker].filter(Boolean);
+    // The bar toasts to PHP; the cursed world keeps its own catalog.
+    const toastsNow = () => (isBar(state.scene) ? BAR_TOASTS : TOASTS);
 
     // A planned clink rings once, at its strike; one caught later than STRIKE_FRESH_MS (a reload, a background tab)
     // stays silent. Clinks by click are rung from their channel event (sound.js).
     const STRIKE_FRESH_MS = 400;
     const struck = new Set();
-    function strikeCue(g, meet, now) {
+    function strikeCue(g, meet, now, sides) {
         const at = g.at + CLINK.strike;
         const key = `${g.key}@${g.at}`;
         if (now < at || struck.has(key)) return;
         struck.add(key);
         if (struck.size > 64) struck.delete(struck.values().next().value);
-        if (now - at < STRIKE_FRESH_MS) cue({ type: 'clink', x: (meet.x / layout.artW) * 100 });
+        // `sides` in config coordinates: in the bar a participant's browser reports the clink with its nearest partner.
+        if (now - at < STRIKE_FRESH_MS) cue({ type: 'clink', x: (meet.x / layout.artW) * 100, sides: sides.map((side) => ({ id: side.w.id, ...walkAt(side.w.track, clock).at })) });
     }
 
     function addClink(event) {
         const by = walkers.get(event?.player?.id);
         if (by) by.clink = null;
-        const c = clinkOf(event);
+        const c = clinkOf(event, toastsNow());
         if (!c || serverNow() - c.at > CLINK_STALE_MS) return;
         // One clink per walker and pumpkin at a time: a newer one takes over.
         for (const [key, old] of clinks) {
@@ -2389,12 +2575,14 @@ export async function createScene(rootEl, snapshot) {
         const of = new Map();
         const groups = [];
         const cursed = inFinale() && finale.step >= 5;
+        // The bar clinks like the cursed world: every walker holds its own beer or nothing.
+        const planned = cursed || isBar(state.scene);
         const take = (group) => {
             groups.push(group);
             if (now - group.at < CLINK.end) group.sides.forEach((side, index) => side.w && of.set(side.w.id, { group, index, meet: group.meet }));
         };
-        if (cursed) {
-            for (const g of clinkPlan.at(now, [...walkers.values()].filter((w) => !headingToClink(w, now)))) {
+        if (planned) {
+            for (const g of clinkPlan.at(now, [...walkers.values()].filter((w) => !headingToClink(w, now)), toastsNow())) {
                 if (now >= g.until || g.ids.some((id) => clickedBetween(id, g.at, g.until))) continue;
                 const sides = g.ids.map((id) => walkers.get(id)).filter((w) => w?.sprite && w.track).map((w) => {
                     const at = walkerArt(walkAt(w.track, clock).at);
@@ -2402,14 +2590,14 @@ export async function createScene(rootEl, snapshot) {
                 });
                 if (!sides.length) continue;
                 const meet = { x: sides.reduce((a, side) => a + side.at.x, 0) / sides.length, y: Math.min(...sides.map((side) => side.at.y)) };
-                strikeCue(g, meet, now);
+                strikeCue(g, meet, now, sides);
                 take({ key: g.key, at: g.at, until: g.until, toast: g.toast, sides, meet });
             }
         }
         for (const [key, c] of clinks) {
             // Kept a slot longer than it plays, so the planned group it overlapped does not come back for its tail.
             if (now >= c.until + SLOT_MS) clinks.delete(key);
-            if (!cursed || now < c.at || now >= c.until) continue;
+            if (!planned || now < c.at || now >= c.until) continue;
             const by = walkers.get(c.player);
             const target = c.walker ? walkers.get(c.walker) : pumpkins.get(c.pumpkin);
             if (!by?.sprite || !by.track || !target || (c.walker && (!target.sprite || !target.track)) || (c.pumpkin && !target.art)) continue;
@@ -2505,8 +2693,17 @@ export async function createScene(rootEl, snapshot) {
     // The toast over the group from CLINK.toast; a toast of two voices puts the line over the first (by click: the walker
     // who came up) and the reply over the second (its target, the pumpkin too), one after the other.
     function toastBubbles(groups, now) {
-        if (!groups.length && !toastSpeech) return;
+        if (!groups.length && !hints.size && !toastSpeech) return;
         toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
+        for (const [id, hint] of hints) {
+            const w = walkers.get(id);
+            if (clock >= hint.until || !w?.track) {
+                hints.delete(id);
+                continue;
+            }
+            const at = walkerArt(walkAt(w.track, clock).at);
+            toastSpeech.say('hint:' + id, hint.text, { x: at.x, y: at.y - WALKER_HEAD });
+        }
         for (const g of groups) {
             const t = now - g.at;
             if (t < CLINK.toast || now >= g.until) continue;
@@ -2879,8 +3076,11 @@ export async function createScene(rootEl, snapshot) {
         const rect = app.canvas.getBoundingClientRect();
         const x = clientX - rect.left;
         const y = clientY - rect.top;
-        if (x < 0 || y < 0 || x > rect.width || y > rect.height || y / layout.cssPx < layout.horizon + 2) return null;
+        if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
         const left = (x / rect.width) * 100;
+        // The bar has no sky and no spread: a click anywhere is a point the server brings onto the floor.
+        if (isBar(state.scene)) return { x: Math.round(left * 10) / 10, y: Math.round((y / rect.height) * 1000) / 10 };
+        if (y / layout.cssPx < layout.horizon + 2) return null;
         return {
             x: Math.round((ROOT.x + (left - ROOT.x) / spreadX(layout.width)) * 10) / 10,
             y: Math.round((y / rect.height) * 1000) / 10,
@@ -2910,6 +3110,7 @@ export async function createScene(rootEl, snapshot) {
 
         pumpkins.forEach(animatePumpkin);
         animateBonfire();
+        animateBar();
         animateSky();
         animateBlast();
         animateBurn();
@@ -3092,7 +3293,10 @@ export async function createScene(rootEl, snapshot) {
                 threshold: next.threshold ?? state.threshold,
                 elements: next.elements ?? [],
                 bushes: next.bushes ?? state.bushes,
+                barLayout: next.barLayout ?? state.barLayout,
             };
+            Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9 });
+            hints.clear();
             settleFinale(state.scene >= state.sceneStages ? next.finale?.step ?? null : null, next.ready);
             // Walkers outlive rounds (players.md, «На поле»): the snapshot's list replaces ours as a whole.
             if (next.walkers) {
@@ -3159,7 +3363,7 @@ export async function createScene(rootEl, snapshot) {
             p.stage = stage;
             p.clicks = 0;
             applyArt(p);
-            // The last pumpkin lit in scene 1: the whole patch jumps out.
+            // The last pumpkin lit at the sunset: the whole patch jumps out.
             if (!out && jumpedOut(state.scene, state.stageMax, pumpkinElements())) {
                 out = true;
                 jumpAt = clock;
@@ -3198,6 +3402,50 @@ export async function createScene(rootEl, snapshot) {
             w.clink = clink;
             w.shoot = null;
             retrack(w, walk);
+        },
+
+        /**
+         * Another location (out of the bar, a reset into it): the list replaces the walkers, each put down where the
+         * server has it — nobody walks over from the old location.
+         */
+        setWalkers(list) {
+            for (const w of walkers.values()) dropWalkerSprites(w);
+            walkers.clear();
+            for (const data of list ?? []) setWalker(data);
+        },
+
+        /** Channel event `pour`: the owl fills the next mug from `since` until `until` (server ms). */
+        pour(since, until) {
+            barState.pouring = { since, until };
+        },
+
+        /** Channel events `mugs` and `take`: `n` full mugs on the counter; one more than before was just set down. */
+        mugs(n) {
+            if (n > barState.mugs) {
+                barState.setAt = clock;
+                barState.pouring = null;
+            }
+            barState.mugs = Math.max(0, n | 0);
+        },
+
+        /** A `take` that found no mug: the walker spreads its hands. */
+        shrug(id) {
+            const w = walkers.get(id);
+            if (w) w.shrugUntil = clock + SHRUG_MS;
+        },
+
+        /** Channel event `drink`: the gulp with the mug, then empty hands. */
+        drink(id) {
+            const w = walkers.get(id);
+            if (!w) return;
+            w.item = null;
+            w.shrugUntil = 0;
+            w.drinkUntil = clock + DRINK_MS;
+        },
+
+        /** A local hint over walker `id` for a few seconds (`not clinked`: only this browser sees it). */
+        hint(id, text) {
+            if (walkers.has(id) && text) hints.set(id, { text, until: clock + HINT_MS });
         },
 
         /** Channel event `leave`: the player has no connections left. */
@@ -3270,7 +3518,7 @@ export async function createScene(rootEl, snapshot) {
 
         /**
          * Channel event `scene`: relights the world (the old lighting fades out over a few seconds, the sun sinks into
-         * the sunset), lets the pumpkins jump out from scene 2 on, and blows the bonfire up on the way into the final
+         * the sunset), lets the pumpkins jump out after the sunset, and blows the bonfire up on the way into the final
          * scene. The bonfire's lock lives in the DOM (client.js); the scene only draws its stage.
          */
         setScene(n, stageMax) {

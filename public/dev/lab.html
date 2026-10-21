@@ -54,11 +54,11 @@
   near one);
   zombies walk only at finale step 5 with zombies on and no pause; the scene is ready when every pumpkin is done, and
   waits for «Следующая сцена».
-  Bonfire (scenes 1–2): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
+  Bonfire (scenes 2–3): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
   nothing), its own threshold ?bclicks=N (default 20, HELLOWIN_BONFIRE_CLICKS_PER_STAGE) and last stages per scene
-  0,4,7 (HELLOWIN_BONFIRE_STAGE_MAX); owl lines last-pumpkin → bonfire-open, then ready → bonfire-done → scene-ready.
+  0,0,4,7 (HELLOWIN_BONFIRE_STAGE_MAX); owl lines last-pumpkin → bonfire-open, then ready → bonfire-done → scene-ready.
   ?bonfire=N starts the bonfire at stage N; ?next=ms presses «Следующая сцена» (forced) at that frozen-clock moment —
-  with ?scene=0 the sunset fade, with ?scene=2 the explosion.
+  without ?scene out of the bar, with ?scene=1 the sunset fade, with ?scene=3 the explosion.
   Magic circle (docs/spec/scenario.md «Магический круг»): on the bonfire's spot, clickable in the final scene at finale
   step 0 (the bonfire before it, never both), own threshold ?cclicks=N (default 10) and CIRCLE_STAGES = 4 stages, the
   last stage in `scene.circleStageMax`; closed → ready, circle-done, scene-ready. ?circle=N starts it at stage N;
@@ -73,13 +73,24 @@
   the bonfire ?bclicks, the circle ?cclicks) by k, max(1, round(base × k)), k from 0.1 to 10 kept across a reset;
   ?k=N starts with that multiplier. `online` is the number of walkers, in the snapshot and in a `leaderboard` event
   every 5 s (with an empty `top`).
+  Scenes are numbered with the bar first (docs/spec/scenario.md): 0 bar, 1 day, 2 sunset, 3 night, 4 the final scene.
+  Bar (the default without ?scene): the ticker pours one mug at a time (?mugs=N at the start, default 5; ?pour=ms per
+  mug, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
+  (a latecomer gets `take ok:false` and `bar-empty`); `drink` needs a clink (`not clinked`), counts `drunk` against the
+  goal ?target=N (default 10; ?drunk=N already drunk) and sends `drinks`; the goal reached or «Отмашка» (`bar.ready`,
+  ?mod=1) makes the bar ready once (`ready`, `bar-intro`); «+5/−5 бокалов» is `bar.target`; clinks by click need beer on
+  both sides, `clink.auto` is reported by your browser and, for the bots, by the lab. Bots fetch beer, clink and drink.
+  ?bar=1 stands beer-holding bots in pairs by the tables (?bar=1&walkers=8&epoch=18000&freeze=5100 — the strike, 6400 —
+  toasts to PHP); ?bardemo=1 plays a scripted evening (two mugs, a slow pour, the farthest bot shrugs, two clink and
+  drink). With ?me=1: the counter takes a mug, Space or «Выпить» drinks.
 -->
 <body data-scene="0">
-<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="3" data-stage-max="4" data-threshold="5"
+<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
       data-bushes='[{"id":"bush-1","x":4,"y":86},{"id":"bush-2","x":96,"y":88},{"id":"bush-3","x":2,"y":62},{"id":"bush-4","x":98,"y":66},{"id":"bush-5","x":16,"y":44},{"id":"bush-6","x":88,"y":43}]'>
     <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
     </a>
+    <button type="button" class="bar-counter" data-bar-counter aria-disabled="true" hidden aria-label="Взять пиво" title="Взять пиво"><span class="bar-counter__emoji" aria-hidden="true">🍺</span></button>
     <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
     <aside class="debug lab-tools" data-lab-panel aria-label="Лаборатория">
         <button type="button" class="debug__button" data-lab-duck>утка</button>
@@ -95,9 +106,11 @@
         <span class="hud__item hud__status" data-status="connected">лаборатория</span>
         <span class="hud__item">Раунд <b data-hud-round>1</b></span>
         <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
-        <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
+        <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
+        <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
         <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
+        <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
     </footer>
@@ -129,10 +142,11 @@
     </form>
 </dialog>
 <script type="module">
-    import { bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
+    import { bindBar, bindClinking, bindShooting, bindWalking, createClient, readSnapshot } from '/js/client.js';
+    import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
     import { initDebugPanel } from '/js/debug.js';
     import { initJoin, storedLook } from '/js/join.js';
-    import { createOwl } from '/js/owl.js';
+    import { LINES, createOwl } from '/js/owl.js';
     import { createReveal } from '/js/reveal.js';
     import { ITEMS, randomLook } from '/js/pixel/characters.js';
     import { createScene } from '/js/pixel/scene.js';
@@ -152,7 +166,7 @@
     const startStage = Math.max(0, Math.min(11, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
     // The bonfire of app/config/hellowin.php: on the root, its own threshold and last stage per scene.
     const BONFIRE_CLICKS = Math.max(1, Number.parseInt(params.get('bclicks') ?? '20', 10) || 20);
-    const BONFIRE_STAGE_MAX = [0, 4, 7, 7];
+    const BONFIRE_STAGE_MAX = [0, 0, 4, 7, 7];
     // The magic circle of the final scene (HELLOWIN_CIRCLE_CLICKS_PER_STAGE, HELLOWIN_CIRCLE_STAGES; no values yet).
     const CIRCLE_CLICKS = Math.max(1, Number.parseInt(params.get('cclicks') ?? '10', 10) || 10);
     const CIRCLE_STAGES = 4;
@@ -306,6 +320,49 @@
         return (valid.length ? valid : arcs).sort((a, b) => lengthOf(a) - lengthOf(b))[0];
     }
 
+    // The bar's floor (`walk.bar`, protocol.md «Бар»): the area minus the counter and the tables. The fake router walks
+    // straight when the line is clear, else through one or two corners of the obstacles' boxes — enough for a lab.
+    const BAR = JSON.parse(root.dataset.barLayout || 'null') ?? BAR_LAYOUT;
+    root.dataset.barLayout = JSON.stringify(BAR);
+    const BAR_COUNTER = barCounterOf(BAR);
+    const BAR_MARGIN = 1.5;
+    const insideObstacle = (p, o, m = 0) => (Number.isFinite(o.cx)
+        ? Math.hypot((p.x - o.cx) / (o.rx + m), (p.y - o.cy) / (o.ry + m)) < 1
+        : p.x > o.x1 - m && p.x < o.x2 + m && p.y > o.y1 - m && p.y < o.y2 + m);
+    const barBlocked = (p) => BAR.obstacles.some((o) => insideObstacle(p, o));
+    function clampToBar(p) {
+        const { x1, y1, x2, y2 } = BAR.area;
+        let q = { x: Math.min(x2, Math.max(x1, p.x)), y: Math.min(y2, Math.max(y1, p.y)) };
+        for (const o of BAR.obstacles) {
+            if (!insideObstacle(q, o, BAR_MARGIN)) continue;
+            if (Number.isFinite(o.cx)) {
+                const a = Math.atan2((q.y - o.cy) / o.ry, (q.x - o.cx) / o.rx) || Math.PI / 2;
+                q = { x: o.cx + Math.cos(a) * (o.rx + BAR_MARGIN), y: o.cy + Math.sin(a) * (o.ry + BAR_MARGIN) };
+            } else {
+                const out = [[q.x - (o.x1 - BAR_MARGIN), { x: o.x1 - BAR_MARGIN, y: q.y }], [o.x2 + BAR_MARGIN - q.x, { x: o.x2 + BAR_MARGIN, y: q.y }], [o.y2 + BAR_MARGIN - q.y, { x: q.x, y: o.y2 + BAR_MARGIN }]];
+                q = out.sort((a, b) => a[0] - b[0])[0][1];
+            }
+            q = { x: Math.min(x2, Math.max(x1, q.x)), y: Math.min(y2, Math.max(y1, q.y)) };
+        }
+        return round1(q);
+    }
+    const barClear = (a, b) => Array.from({ length: 41 }, (_, i) => i / 40).every((t) => !barBlocked({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }));
+    function barRoute(from, to) {
+        if (barClear(from, to)) return [from, to];
+        const corners = BAR.obstacles.flatMap((o) => {
+            const [ax, ay, bx, by] = Number.isFinite(o.cx) ? [o.cx - o.rx, o.cy - o.ry, o.cx + o.rx, o.cy + o.ry] : [o.x1, o.y1, o.x2, o.y2];
+            const m = BAR_MARGIN + 0.5;
+            return [{ x: ax - m, y: ay - m }, { x: bx + m, y: ay - m }, { x: ax - m, y: by + m }, { x: bx + m, y: by + m }].map(clampToBar);
+        });
+        let best = null;
+        const consider = (path) => {
+            if (path.slice(1).every((p, i) => barClear(path[i], p)) && (!best || lengthOf(path) < lengthOf(best))) best = path;
+        };
+        corners.forEach((c) => consider([from, c, to]));
+        if (!best) corners.forEach((c) => corners.forEach((d) => c !== d && consider([from, c, d, to])));
+        return best ?? [from, to];
+    }
+
     // Seeded randomness for the bots' looks, so a reload shows the same crowd.
     const seeded = (seed) => () => {
         seed = (seed + 0x6d2b79f5) | 0;
@@ -316,9 +373,23 @@
     const BOT_NAMES = ['Jack', 'Тыквоед', 'Ведьма Ира', 'Graf_Drak', 'Мумия', 'Bones', 'Кот-Баюн', 'Zed.13'];
     const botCount = Math.max(0, Math.min(BOT_NAMES.length, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
     const standing = (p, at) => ({ path: [p], startedAt: at, arrivesAt: at });
-    const spawnPoint = (random = Math.random) => clampToZone({ x: 8 + random() * 84, y: 91 + random() * 5 });
     // In the finale the bots start around the patch, as a room gathered for the ritual would.
     const finaleStart = params.has('finale') || params.get('ritual') === '1';
+    // The lab starts in the bar unless the query names another scene (or a stage past the bar's).
+    const barStart = !finaleStart && (Number.parseInt(params.get('scene') ?? '0', 10) || 0) === 0 && startStage === 0;
+    // Where the walk zone of the current scene is: the bar's floor or the lawn.
+    let inBarZone = barStart;
+    const zoneClamp = (p) => (inBarZone ? clampToBar(p) : clampToZone(p));
+    const spawnPoint = (random = Math.random) => (inBarZone
+        ? clampToBar({ x: 8 + random() * 84, y: BAR.spawn.y1 + random() * (BAR.spawn.y2 - BAR.spawn.y1) })
+        : clampToZone({ x: 8 + random() * 84, y: 91 + random() * 5 }));
+    // ?bar=1: the bots start in the bar with beer, in pairs by the tables, and stay there — the planner clinks them.
+    const barPairs = barStart && params.get('bar') === '1';
+    const BAR_SPOTS = [{ x: 14, y: 70 }, { x: 19, y: 71 }, { x: 33, y: 89 }, { x: 38, y: 90 }, { x: 66, y: 85 }, { x: 71, y: 86 }, { x: 52, y: 64 }, { x: 57, y: 65 }];
+    // ?bardemo=1: a scripted evening at the counter — two mugs, three bots go for them, the farthest one shrugs; the
+    // first two clink by click and drink; the latecomer takes the next poured mug.
+    const barDemo = barStart && params.get('bardemo') === '1';
+    const DEMO_SPOTS = [{ x: 50, y: 70 }, { x: 58, y: 74 }, { x: 10, y: 94 }, { x: 30, y: 60 }, { x: 86, y: 92 }];
     const gatherPoint = (i, n) => clampToZone(rim(Math.PI * (0.08 + (0.84 * i) / Math.max(1, n - 1)), 1.12));
     // ?clink=1: the bots stand in little groups of 2, 3, 2, 1… a few steps apart, off the patch, and do not wander — in
     // the cursed world (?finale=5) the beer glasses clink.
@@ -343,29 +414,42 @@
             id: `lab-bot-${String(i).padStart(9, '0')}`,
             name: BOT_NAMES[i],
             look: randomLook(random),
-            item: i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
-            walk: standing(clinkStart || clickClinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
+            item: barStart ? (barPairs ? 'beer' : null) : i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
+            walk: standing(barPairs ? clampToBar(BAR_SPOTS[i] ?? spawnPoint(random)) : barDemo ? clampToBar(DEMO_SPOTS[i] ?? spawnPoint(random))
+                : barStart ? spawnPoint(random)
+                : clinkStart || clickClinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     if (params.get('me') === '1') {
-        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk: standing({ x: 50, y: 93 }, serverTime()) });
+        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk: standing(zoneClamp({ x: 50, y: 93 }), serverTime()) });
     }
     root.dataset.walkers = JSON.stringify(startWalkers);
 
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
     const engine = readSnapshot(root);
-    // HELLOWIN_SCENE_STAGE_MAX=4,8,11; the final scene keeps the last value.
-    const SCENE_STAGE_MAX = [4, 8, 11, 11];
+    // HELLOWIN_BAR_MUGS and HELLOWIN_BAR_POUR_MS: ?mugs=N full mugs at the start, ?pour=ms per mug.
+    const BAR_MUGS = 5;
+    // The scripted demo pours slowly, so its latecomer finds the counter empty.
+    const POUR_MS = Math.max(200, Number.parseInt(params.get('pour') ?? (barDemo ? '8000' : '2500'), 10) || 2500);
+    const startMugs = Math.max(0, Math.min(BAR_MUGS, Number.parseInt(params.get('mugs') ?? (barDemo ? '2' : String(BAR_MUGS)), 10)));
+    // HELLOWIN_BAR_DRINKS: the hall's goal, ?target=N (default 10 in the lab); kept across a reset like k.
+    // HELLOWIN_BAR_RUMOR_CHANCE: about every third pour carries a rumour.
+    const BAR_TARGET = Math.max(1, Number.parseInt(params.get('target') ?? '10', 10) || 10);
+    const RUMOR_CHANCE = 1 / 3;
+    const startDrunk = Math.max(0, Number.parseInt(params.get('drunk') ?? '0', 10) || 0);
+    engine.bar = { mugs: barStart ? startMugs : 0, pouring: null, drunk: startDrunk, target: BAR_TARGET };
+    // HELLOWIN_SCENE_STAGE_MAX=0,4,8,11 (the bar first); the final scene keeps the last value.
+    const SCENE_STAGE_MAX = [0, 4, 8, 11, 11];
     // Stand-in for the `items` of app/config/hellowin.php (what the walkers hold in each scene); an id without art
     // yet shows an empty hand.
     // ?item=<id> makes every scene hand out that item (a candle at night, say).
-    const ITEM_BY_SCENE = params.has('item') ? Array(4).fill(params.get('item')) : ['pistol', 'candle', 'book', 'red-flame'];
+    const ITEM_BY_SCENE = params.has('item') ? [null, ...Array(4).fill(params.get('item'))] : [null, 'pistol', 'candle', 'book', 'red-flame'];
     // And of `finale_items`: the final scene's item at step 0, empty hands on steps 1–4, beer from step 5 on.
-    const itemOfFinale = (step) => (params.has('item') ? params.get('item') : step === 0 ? ITEM_BY_SCENE[3] : step >= 5 ? 'beer' : null);
+    const itemOfFinale = (step) => (params.has('item') ? params.get('item') : step === 0 ? ITEM_BY_SCENE[4] : step >= 5 ? 'beer' : null);
     const LAST_STEP = 5;
     const moderator = params.get('mod') === '1';
     // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
-    const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, lastPumpkin: null };
+    const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, lastPumpkin: null };
     const pending = new Set();
     // A random 20–60 ms of latency, but in order: the channel never reorders publications.
     let deliveredBy = 0;
@@ -374,7 +458,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone(engine), online: engine.walkers.length, now: serverTime() });
+    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime() });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
@@ -446,14 +530,29 @@
         engine.ready = false;
         engine.finale = null;
         engine.zombies = false;
-        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, lastPumpkin: null });
+        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, lastPumpkin: null });
         engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
         engineBonfire().stageMax = BONFIRE_STAGE_MAX[0];
         if (engineCircle()) engineCircle().stageMax = 0;
         bonfireNeeded = false;
-        engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[0]; });
-        deliver({ type: 'reset', item: ITEM_BY_SCENE[0] });
+        // Back into the bar: everyone put down on its floor with empty hands, the counter full, nothing drunk yet; the
+        // goal is the room's and stays (protocol.md, `reset`).
+        engine.ready = false;
+        inBarZone = true;
+        engine.bar = { mugs: BAR_MUGS, pouring: null, drunk: 0, target: engine.bar.target };
+        const now = serverTime();
+        engine.walkers.forEach((w) => {
+            w.item = null;
+            w.clinked = false;
+            w.taking = null;
+            delete w.clink;
+            w.walk = standing(clampToBar(walkPoint(w.walk, now)), now);
+        });
+        deliver({ type: 'reset', item: null, walkers: structuredClone(engine.walkers.map(publicWalker)), bar: structuredClone(engine.bar) });
     }
+
+    // A walker as the protocol shows it: the server's own flags (a pending take, the clinked mug) stay inside.
+    const publicWalker = ({ taking, clinked, ...w }) => w;
 
     const finaleOf = (step) => (step >= 4 ? { step, reveal: structuredClone(stats) } : { step });
 
@@ -466,12 +565,27 @@
         const to = engine.scene + 1;
         later(() => {
             stats.jobs++;
+            const fromBar = engine.scene === 0;
             engine.scene = to;
             engine.stageMax = SCENE_STAGE_MAX[to];
             engine.ready = false;
             setBonfireMax();
             engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[to]; });
-            deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, bonfireStageMax: engineBonfire().stageMax, circleStageMax: engineCircle()?.stageMax ?? 0, item: ITEM_BY_SCENE[to] });
+            // Out of the bar: mugs burn, pending takes and clinks are dropped, everyone stands on the lawn at once.
+            let walkers;
+            if (fromBar) {
+                inBarZone = false;
+                engine.bar = { ...engine.bar, mugs: 0, pouring: null };
+                const now = serverTime();
+                engine.walkers.forEach((w) => {
+                    w.taking = null;
+                    w.clinked = false;
+                    delete w.clink;
+                    w.walk = standing(clampToZone(walkPoint(w.walk, now)), now);
+                });
+                walkers = structuredClone(engine.walkers.map(publicWalker));
+            }
+            deliver({ type: 'scene', scene: to, stageMax: engine.stageMax, bonfireStageMax: engineBonfire().stageMax, circleStageMax: engineCircle()?.stageMax ?? 0, item: ITEM_BY_SCENE[to], ...(walkers ? { walkers } : {}) });
             if (to >= engine.sceneStages) {
                 engine.finale = finaleOf(0);
                 deliver({ type: 'finale', ...engine.finale, item: itemOfFinale(0) });
@@ -559,6 +673,8 @@
             case 'zombies': return engineSwitch('zombies', data);
             case 'pause': return engineSwitch('paused', data);
             case 'thresholds': return engineThresholds(data);
+            case 'bar.target': return engineBarTarget(data);
+            case 'bar.ready': return engineBarReady();
             case 'reset':
                 if (data.round === engine.round) engineReset();
                 return { ok: true, round: engine.round };
@@ -571,11 +687,11 @@
     const DURATION = [16000, 6500, 4000];
     const POINTS = [3, 2, 1];
     // HELLOWIN_FLYER_KINDS and HELLOWIN_FLYER_RARE by scene, the rare one at a 1-in-8 chance; the sunset has none.
-    const KINDS = [['duck', 'chicken'], [], ['bat'], ['worm']];
+    const KINDS = [[], ['duck', 'chicken'], [], ['bat'], ['worm']];
     // HELLOWIN_FLYER_KINDS_CURSED: the cursed world (finale step 5) flies its own set.
     const CURSED_KINDS = ['worm', 'bat', 'firefly'];
     const FIREFLY_POINTS = 1;
-    const RARE = ['roadrunner', null, null, null];
+    const RARE = [null, 'roadrunner', null, null, null];
     const RARE_POINTS = 5;
     const HORIZON = 38;
     const ZOMBIE = { duration: 14000, points: 2 };
@@ -688,10 +804,13 @@
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
         const now = serverTime();
-        const path = route(round1(walkPoint(w.walk, now)), clampToZone(target));
+        const from = round1(walkPoint(w.walk, now));
+        const path = inBarZone ? barRoute(from, clampToBar(target)) : route(from, clampToZone(target));
         w.walk = { path, startedAt: now, arrivesAt: now + Math.round((lengthOf(path) / WALK_SPEED) * 1000) };
         if (clink) w.clink = clink;
         else delete w.clink;
+        // Any new path drops a `bar.take` not reached yet.
+        w.taking = null;
         deliver({ type: 'move', player: { id }, walk: structuredClone(w.walk), ...(clink ? { clink: structuredClone(clink) } : {}) });
         return { ok: true, walk: w.walk };
     }
@@ -708,16 +827,21 @@
     function engineClink(id, { walker, pumpkin } = {}, toast = null) {
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
-        if (!(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP)) return { ok: false, error: 'not cursed' };
+        const bar = engine.scene === 0;
+        if (!bar && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP)) return { ok: false, error: 'not cursed' };
+        // In the bar both glasses have to be there: mine first, then the target's (protocol.md, RPC `clink`).
+        if (bar && w.item !== 'beer') return { ok: false, error: 'no beer' };
+        if (bar && walker === undefined) return { ok: false, error: 'no target' };
         const t = walker !== undefined ? engine.walkers.find((x) => x.id === walker) : null;
+        if (bar && t && t.item !== 'beer') return { ok: false, error: 'no target' };
         let spot;
         let target;
         if (walker !== undefined) {
             if (!t || walker === id) return { ok: false, error: 'no target' };
             const end = t.walk.path[t.walk.path.length - 1];
             const side = walkPoint(w.walk, serverTime()).x <= end.x ? -1 : 1;
-            spot = clampToZone({ x: end.x + side * CLINK_GAP, y: end.y });
-            if (Math.abs(spot.x - end.x) < CLINK_GAP / 2) spot = clampToZone({ x: end.x - side * CLINK_GAP, y: end.y });
+            spot = zoneClamp({ x: end.x + side * CLINK_GAP, y: end.y });
+            if (Math.abs(spot.x - end.x) < CLINK_GAP / 2) spot = zoneClamp({ x: end.x - side * CLINK_GAP, y: end.y });
             target = { walker: { id: walker } };
         } else {
             const p = engine.elements.find((e) => e.id === pumpkin);
@@ -733,6 +857,9 @@
             if (w.walk !== walk || w.clink !== target) return;
             delete w.clink;
             if (t && (t.walk !== targetWalk || !engine.walkers.includes(t))) return;
+            // In the bar nobody may have drunk up on the way; the clink counts for both mugs.
+            if (bar && (engine.scene !== 0 || w.item !== 'beer' || t?.item !== 'beer')) return;
+            if (bar) w.clinked = t.clinked = true;
             const at = serverTime();
             clinkedAt.set(id, at);
             deliver({ type: 'clink', player: { id }, ...target, toast: toast ?? Math.floor(Math.random() * 2 ** 31), at });
@@ -753,6 +880,139 @@
         }
     }
 
+    // The bar as the server plays it (protocol.md, «Бар»). The ticker pours one mug at a time while there is room; the
+    // first walker to reach the counter gets a mug, a latecomer none (and the owl's `bar-empty`, at most every 20 s).
+    const BAR_TICK = 200;
+    const EMPTY_LINE_MS = 20000;
+    let emptySaidAt = -Infinity;
+    let takeSeq = 0;
+    function pourTick() {
+        if (engine.scene !== 0) return;
+        const now = serverTime();
+        const bar = engine.bar;
+        if (bar.pouring && now >= bar.pouring.until) {
+            bar.mugs++;
+            bar.pouring = null;
+            deliver({ type: 'mugs', mugs: bar.mugs });
+        }
+        if (!bar.pouring && bar.mugs < BAR_MUGS) {
+            bar.pouring = { since: now, until: now + POUR_MS };
+            if (Math.random() < RUMOR_CHANCE) bar.pouring.rumor = Math.floor(Math.random() * 2 ** 31);
+            deliver({ type: 'pour', ...bar.pouring });
+        }
+    }
+
+    // The bar is ready once the hall has drunk its goal or the moderator waved: once per round, `ready` and `bar-intro`.
+    function barReady() {
+        if (engine.scene !== 0 || engine.ready) return;
+        engine.ready = true;
+        deliver({ type: 'ready', scene: 0 });
+        deliver({ type: 'owl', line: 'bar-intro' });
+    }
+    const drinksEvent = () => deliver({ type: 'drinks', drunk: engine.bar.drunk, target: engine.bar.target });
+    function engineBarTarget({ delta }) {
+        if (!Number.isInteger(delta)) throw new Error('invalid delta');
+        engine.bar.target = Math.max(1, engine.bar.target + delta);
+        drinksEvent();
+        if (engine.bar.drunk >= engine.bar.target) barReady();
+        return { ok: true, target: engine.bar.target };
+    }
+    function engineBarReady() {
+        if (engine.scene !== 0) throw new Error('not bar');
+        barReady();
+        return { ok: true };
+    }
+    function tickBar() {
+        pourTick();
+        later(tickBar, BAR_TICK);
+    }
+
+    function engineTake(id) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (engine.scene !== 0) return { ok: false, error: 'not bar' };
+        if (w.item === 'beer') return { ok: false, error: 'has beer' };
+        const here = walkPoint(w.walk, serverTime());
+        const spot = { x: Math.min(BAR.counter.x2, Math.max(BAR.counter.x1, here.x)), y: BAR.counter.y };
+        const { walk } = engineMove(id, spot);
+        const token = ++takeSeq;
+        w.taking = token;
+        later(() => {
+            if (w.taking !== token || engine.scene !== 0) return;
+            w.taking = null;
+            if (engine.bar.mugs > 0) {
+                engine.bar.mugs--;
+                w.item = 'beer';
+                w.clinked = false;
+                deliver({ type: 'take', player: { id }, ok: true, mugs: engine.bar.mugs });
+                return;
+            }
+            deliver({ type: 'take', player: { id }, ok: false });
+            if (serverTime() - emptySaidAt >= EMPTY_LINE_MS) {
+                emptySaidAt = serverTime();
+                deliver({ type: 'owl', line: 'bar-empty' });
+            }
+        }, walk.arrivesAt + CLINK_TICK - serverTime());
+        return { ok: true, walk };
+    }
+
+    function engineDrink(id) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (engine.scene !== 0) return { ok: false, error: 'not bar' };
+        if (w.item !== 'beer') return { ok: false, error: 'no beer' };
+        if (!w.clinked) return { ok: false, error: 'not clinked' };
+        w.item = null;
+        w.clinked = false;
+        stats.drinks++;
+        engine.bar.drunk++;
+        deliver({ type: 'drink', player: { id } });
+        drinksEvent();
+        if (engine.bar.drunk >= engine.bar.target) barReady();
+        return { ok: true };
+    }
+
+    // Reported by a participant's browser at the strike of an automatic clink; counts for the caller only, says nothing.
+    function engineClinkAuto(id, { walker } = {}) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        if (engine.scene !== 0) return { ok: false, error: 'not bar' };
+        if (w.item !== 'beer') return { ok: false, error: 'no beer' };
+        const t = engine.walkers.find((x) => x.id === walker);
+        const now = serverTime();
+        if (!t || walker === id || t.item !== 'beer') return { ok: false, error: 'no target' };
+        const a = walkPoint(w.walk, now);
+        const b = walkPoint(t.walk, now);
+        if (Math.hypot(a.x - b.x, a.y - b.y) > BAR.clink_reach) return { ok: false, error: 'no target' };
+        w.clinked = true;
+        return { ok: true };
+    }
+
+    // The bots' evening in the bar: empty hands go to the counter, a mug in hand looks for company (a clink by click
+    // with another beer, or standing by it so the planner clinks), a clinked mug is drunk after a while. Bots report
+    // their own automatic clinks like a browser would (botAutoClinks).
+    function barBot(w) {
+        const others = engine.walkers.filter((x) => x.id !== w.id && x.id !== ME);
+        if (w.item !== 'beer') return w.taking ? null : engineTake(w.id);
+        if (w.clinked) return Math.random() < 0.5 ? engineDrink(w.id) : null;
+        const mate = others.find((x) => x.item === 'beer');
+        if (mate && Math.random() < 0.5) return engineClink(w.id, { walker: mate.id });
+        return engineMove(w.id, barTarget());
+    }
+    const barTarget = (random = Math.random) => clampToBar({ x: BAR.area.x1 + random() * (BAR.area.x2 - BAR.area.x1), y: 58 + random() * (BAR.area.y2 - 58) });
+
+    // The scripted ?bardemo=1 evening, on the frozen clock or live: ms → step.
+    function barDemoSteps() {
+        const bots = wanderers();
+        const at = (ms, fn) => later(fn, ms);
+        if (bots.length < 3) return;
+        at(300, () => bots.slice(0, 3).forEach((b) => engineTake(b.id)));
+        at(5200, () => engineClink(bots[0].id, { walker: bots[1].id }, 2));
+        at(10500, () => engineDrink(bots[0].id));
+        at(11300, () => engineDrink(bots[1].id));
+        at(12000, () => engineTake(bots[2].id));
+    }
+
     // Name rules of players.md: trimmed, 1–24 letters, digits, single spaces, _ . -, at least one letter or digit.
     async function engineRegister(rawName, look) {
         const name = rawName.trim();
@@ -769,7 +1029,9 @@
             if (!engine.walkers.some((w) => w.id === id)) return;
             // Through the ritual (closed circle, step 1) the bots stand with their hands up.
             const ritual = engine.scene >= engine.sceneStages && (engine.finale?.step === 1 || (engine.finale?.step === 0 && engine.ready));
-            if (!ritual) engineMove(id, randomTarget());
+            const w = engine.walkers.find((x) => x.id === id);
+            if (engine.scene === 0) barBot(w);
+            else if (!ritual) engineMove(id, randomTarget());
             wander(id);
         }, 3000 + Math.random() * 6000);
     }
@@ -794,9 +1056,15 @@
     // Stages past 4 belong to later scenes: the jump moves the scene along with them; the bonfire stands where the
     // scenes before left it.
     function engineJump(stage) {
-        engine.scene = SCENE_STAGE_MAX.findIndex((max) => max >= stage);
+        // The bar has no stages: a jump goes to the first scene of the patch that reaches the stage.
+        engine.scene = SCENE_STAGE_MAX.findIndex((max, i) => i > 0 && max >= stage);
         engine.stageMax = SCENE_STAGE_MAX[engine.scene];
         engine.ready = false;
+        if (inBarZone) {
+            inBarZone = false;
+            engine.bar = { ...engine.bar, mugs: 0, pouring: null };
+            engine.walkers.forEach((w) => { w.walk = standing(clampToZone(walkPoint(w.walk, serverTime())), serverTime()); });
+        }
         engine.finale = engine.scene >= engine.sceneStages ? finaleOf(0) : null;
         enginePumpkins().forEach((e) => { e.stage = stage; e.clicks = 0; });
         Object.assign(engineBonfire(), { stage: engine.scene > 0 ? BONFIRE_STAGE_MAX[engine.scene - 1] : 0, clicks: 0 });
@@ -814,7 +1082,12 @@
             const stage = engine.scene > 0 ? SCENE_STAGE_MAX[engine.scene - 1] : 0;
             enginePumpkins().forEach((e) => { e.stage = stage; e.clicks = 0; });
             engineBonfire().stage = engine.scene > 0 ? BONFIRE_STAGE_MAX[engine.scene - 1] : 0;
-            engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
+            if (engine.scene > 0) engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
+        }
+        // ?ready=1 in the bar: the goal is reached already.
+        if (engine.scene === 0 && params.get('ready') === '1') {
+            engine.bar.drunk = Math.max(engine.bar.drunk, engine.bar.target);
+            engine.ready = true;
         }
         if (params.has('bonfire')) engineBonfire().stage = Math.max(0, Math.min(7, Number.parseInt(params.get('bonfire'), 10) || 0));
         if (params.has('circle') && engineCircle()) engineCircle().stage = Math.max(0, Math.min(CIRCLE_STAGES, Number.parseInt(params.get('circle'), 10) || 0));
@@ -835,7 +1108,7 @@
             engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
         }
         if (engine.scene >= engine.sceneStages) {
-            Object.assign(stats, { clicks: 5230, jobs: 312, burned: 1720, shot: 87, lastPumpkin: { id: ME, name: 'Jack' } });
+            Object.assign(stats, { clicks: 5230, jobs: 312, burned: 1720, shot: 87, drinks: 41, lastPumpkin: { id: ME, name: 'Jack' } });
             // From step 1 on the circle is closed and the scene stays ready (protocol.md).
             if ((Number.parseInt(params.get('finale') ?? '0', 10) || 0) >= 1 && engineCircle()) {
                 engineCircle().stage = CIRCLE_STAGES;
@@ -881,7 +1154,6 @@
         bindSoundControls(root, audio);
         bindUiClicks(root, audio);
         sound = createSound(audio, { serverNow: () => client?.serverNow() ?? Date.now(), owlGone: () => Boolean(scene?.owlGone?.()) });
-        scene?.onCue((cue) => sound.cue(cue));
         window.audio = audio;
     }
     const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line) });
@@ -912,7 +1184,7 @@
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
     if (params.get('join') === '1') join.open();
     root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
-    if (!simulated && !clinkStart && !clickClinkStart) wanderers().forEach((w) => wander(w.id));
+    if (!simulated && !clinkStart && !clickClinkStart && !barPairs && !barDemo) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
     window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);
@@ -942,6 +1214,31 @@
     // Your shots are yours when your character is on the field: a witch then gets the owl's `witch-down`.
     bindShooting(root, scene, (id) => engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null));
     bindClinking(root, scene, client, labClink);
+    // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
+    const warned = (reply, method) => {
+        if (!reply.ok) console.warn(`${method} rejected`, reply.error);
+        return reply;
+    };
+    bindBar(root, client, {
+        take: () => warned(engineTake(ME), 'bar.take'),
+        drink: () => {
+            const reply = warned(engineDrink(ME), 'drink');
+            if (reply.error === 'not clinked') scene?.hint?.(ME, LINES['bar-clink'].text);
+        },
+    });
+    // The scene's moments: the sound, and the automatic clinks of the bar — my browser reports mine (like app.js), the
+    // bots theirs, each with its nearest partner holding beer.
+    scene?.onCue((cue) => {
+        sound?.cue(cue);
+        if (cue?.type !== 'clink' || engine.scene !== 0 || !Array.isArray(cue.sides)) return;
+        const partner = client.autoClinkPartner(cue);
+        if (partner && warned(engineClinkAuto(ME, { walker: partner }), 'clink.auto').ok) client.clinkedAuto();
+        for (const side of cue.sides) {
+            if (side.id === ME) continue;
+            const mate = cue.sides.filter((o) => o.id !== side.id).sort((a, b) => Math.hypot(a.x - side.x, a.y - side.y) - Math.hypot(b.x - side.x, b.y - side.y))[0];
+            if (mate) engineClinkAuto(side.id, { walker: mate.id });
+        }
+    });
     // A flyer every 3–8 s, like the server's launcher; none while paused.
     const launchLater = () => setTimeout(() => {
         if (!engine.paused) engineFlyer();
@@ -957,6 +1254,10 @@
         launchLater();
         zombieLater();
         later(startEvents, 500);
+        tickBar();
+        if (barDemo) barDemoSteps();
+        // ?bar=1: the paired bots drink once their beer is clinked, then fetch the next one.
+        if (barPairs) setInterval(() => wanderers().forEach((w) => engine.scene === 0 && (w.clinked ? engineDrink(w.id) : w.item !== 'beer' && !w.taking && engineTake(w.id))), 4000);
         if (clickClinkStart) {
             later(startClinks, 800);
             setInterval(startClinks, 9000);
@@ -994,6 +1295,9 @@
         pending.clear();
         live.clear();
         clinkedAt.clear();
+        inBarZone = engine.scene === 0;
+        emptySaidAt = -Infinity;
+        takeSeq = 0;
         flyerSeq = 0;
         deliveredBy = 0;
         client.load(engineSnapshot());
@@ -1031,7 +1335,11 @@
             if (zombie && simTime === zombieShotAt) engineShoot(zombie, engine.walkers[0] ?? null);
             if (worm && simTime === wormShotAt) engineShoot(worm, engine.walkers[0] ?? null);
             // Frozen bots all set off at the start, so a screenshot catches them on the way.
-            if (simTime === 0 && !finaleStart) {
+            if (simTime === 0) {
+                tickBar();
+                if (barDemo) barDemoSteps();
+            }
+            if (simTime === 0 && !finaleStart && !barPairs && !barDemo) {
                 const random = seeded(99);
                 // The ?shooter=1 walker stays put: a walker on the way does not stop to shoot.
                 wanderers().filter((w, i) => !(i === 0 && params.get('shooter') === '1')).forEach((w) => engineMove(w.id, randomTarget(random)));

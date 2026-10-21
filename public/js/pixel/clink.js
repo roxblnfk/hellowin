@@ -1,4 +1,4 @@
-import { toastAt, toastOf } from '../toasts.js';
+import { TOASTS, toastAt, toastOf } from '../toasts.js';
 
 /*
  * Clinking glasses in the cursed world (docs/spec/scenario.md, «Чоканье»; docs/spec/frontend.md, «Финал»). Frontend
@@ -91,12 +91,12 @@ function candidates(slot, walkers) {
 }
 
 /** Groups that clink in a slot: the candidates no two of whose walkers shared a candidate in the slots before. */
-export function clinksOf(slot, walkers) {
+export function clinksOf(slot, walkers, toasts = TOASTS) {
     const earlier = [];
     for (let k = 1; k < COOLDOWN; k++) earlier.push(...candidates(slot - k, walkers).map((g) => new Set(g.ids)));
     return candidates(slot, walkers)
         .filter((g) => !earlier.some((set) => g.ids.filter((id) => set.has(id)).length >= 2))
-        .map((g) => ({ ...g, slot, at: slot * SLOT_MS + START_MS, toast: toastOf(g.hash, slot) }));
+        .map((g) => ({ ...g, slot, at: slot * SLOT_MS + START_MS, toast: toastOf(g.hash, slot, toasts) }));
 }
 
 /** How long a toast line stays up from CLINK.toast: long enough to read, within the slot. */
@@ -105,17 +105,18 @@ const toastUntil = (lines) => Math.min(SLOT_MS - START_MS - TOAST_GAP, CLINK.toa
 /**
  * The planner the scene keeps: `at(now, walkers)` gives the clinks of the slot `now` (server ms) falls in, while
  * their toast may still be up — [{ key, ids, at, toast, until }] — or an empty list. A slot is worked out once and
- * again only when a walker's path or item changes (the walk objects are compared by reference).
+ * again only when a walker's path or item, or the toast catalog (the bar's or the cursed world's), changes (the walk
+ * objects are compared by reference).
  */
 export function createClinks() {
     let memo = { slot: null, refs: [], groups: [] };
     return {
-        at(now, walkers) {
+        at(now, walkers, toasts = TOASTS) {
             const slot = Math.floor(now / SLOT_MS);
             const list = [...walkers];
-            const refs = list.flatMap((w) => [w.id, w.item, w.walk]);
+            const refs = [toasts, ...list.flatMap((w) => [w.id, w.item, w.walk])];
             if (memo.slot !== slot || refs.length !== memo.refs.length || refs.some((r, i) => r !== memo.refs[i])) {
-                memo = { slot, refs, groups: clinksOf(slot, list).map((g) => ({ ...g, until: g.at + toastUntil(g.toast) })) };
+                memo = { slot, refs, groups: clinksOf(slot, list, toasts).map((g) => ({ ...g, until: g.at + toastUntil(g.toast) })) };
             }
             return now >= slot * SLOT_MS + START_MS ? memo.groups : [];
         },
@@ -132,12 +133,12 @@ const CLICK_TOAST_MAX = CLINK.end + 1300;
  * A `clink` event as the scene plays it: { key, player, walker, pumpkin, at, toast: [line] | [line, reply], until },
  * or null for an event without a player, a target or a time.
  */
-export function clinkOf(event) {
+export function clinkOf(event, toasts = TOASTS) {
     const player = event?.player?.id;
     const walker = event?.walker?.id ?? null;
     const pumpkin = event?.pumpkin?.id ?? null;
     if (!player || (!walker && !pumpkin) || !Number.isFinite(event.at)) return null;
-    const toast = toastAt(event.toast);
+    const toast = toastAt(event.toast, toasts);
     const shown = Math.min(CLICK_TOAST_MAX, CLINK.toast + 2000 + toast.join(' ').length * 65 + (toast.length > 1 ? 1600 : 0));
     return { key: `${player}@${event.at}`, player, walker, pumpkin, at: event.at, toast, until: event.at + Math.max(CLINK.end, shown) };
 }

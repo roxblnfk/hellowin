@@ -3,6 +3,7 @@
 // events, nothing changes locally. ?debug=1 / ?debug=0 and the backquote key expand and collapse it (remembered).
 
 import { LINES } from './owl.js';
+import { isBar } from './layout.js';
 
 const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
@@ -22,6 +23,7 @@ const ERRORS = {
     'invalid text': 'Пустой текст',
     busy: 'Занято',
     'invalid k': '0,1–10',
+    'not bar': 'Не бар',
 };
 
 const roundK = (k) => Math.round(k * 100) / 100;
@@ -98,9 +100,18 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const step = button(story, { 'data-action': 'finale-step' }, 'Шаг финала');
     const reset = button(story, { 'data-action': 'reset' }, 'Заново');
 
+    // The bar's goal (scenario.md, «Сцена 0 — «Бар»»): mugs the hall drinks before going out; the nudge goes without it.
+    const pub = group('Бар');
+    const more = button(pub, { 'data-action': 'bar-more', title: 'Цель бара больше' }, '+5 бокалов');
+    const less = button(pub, { 'data-action': 'bar-less', title: 'Цель бара меньше' }, '−5 бокалов');
+    const nudge = button(pub, { 'data-action': 'bar-ready', title: 'Бар готов, не дожидаясь шкалы' }, 'Отмашка');
+    const pubInfo = el('span', { class: 'console__info', 'data-console-bar': '' });
+    pub.append(pubInfo);
+    pub.hidden = true;
+
     const owl = group('Сова');
     for (const [id, line] of Object.entries(LINES)) {
-        if (line.button) button(owl, { 'data-owl-line': id, title: line.text }, line.button);
+        if (line.button) button(owl, { 'data-owl-line': id, title: line.text, ...(line.bar ? { 'data-owl-bar': '' } : {}) }, line.button);
     }
     // Lines the server says by itself, for saying again by hand; those naming a player are left out.
     const repeat = el('select', { class: 'console__select', 'data-owl-repeat': '', 'aria-label': 'Повторить реплику' });
@@ -205,6 +216,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     reset.addEventListener('click', () => {
         if (model && armed(reset, 'Точно?')) send(reset, 'reset', { round: model.round });
     });
+    more.addEventListener('click', () => send(more, 'bar.target', { delta: 5 }, { done: true }));
+    less.addEventListener('click', () => send(less, 'bar.target', { delta: -5 }, { done: true }));
+    nudge.addEventListener('click', () => send(nudge, 'bar.ready', {}, { done: true }));
     owl.addEventListener('click', (event) => {
         const b = event.target.closest('[data-owl-line]');
         if (b) send(b, 'owl.say', { line: b.dataset.owlLine }, { done: true });
@@ -263,7 +277,12 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             const current = model.finale?.step ?? 0;
 
             next.hidden = final;
+            const bar = isBar(model.scene);
             next.toggleAttribute('data-ready', model.ready);
+            owl.querySelectorAll('[data-owl-bar]').forEach((b) => { b.hidden = !bar; });
+            pub.hidden = !bar;
+            pubInfo.textContent = `цель ${model.bar?.target ?? 0} · выпито ${model.bar?.drunk ?? 0}`;
+            nudge.disabled = model.ready;
             setLabel(next, model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
             step.hidden = !final;
             step.disabled = current >= LAST_STEP;
@@ -283,8 +302,8 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
                 .filter(Boolean).join(' · ');
             online.textContent = `онлайн: ${model.online ?? 0}`;
 
-            const parts = [final ? (current >= LAST_STEP ? 'проклятый мир' : `финал · шаг ${current}`) : `сцена ${model.scene}`];
-            if (model.ready) parts.push('готова');
+            const parts = [final ? (current >= LAST_STEP ? 'проклятый мир' : `финал · шаг ${current}`) : isBar(model.scene) ? 'бар' : `сцена ${model.scene}`];
+            if (model.ready && !isBar(model.scene)) parts.push('готова');
             if (model.paused) parts.push('пауза');
             if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');

@@ -16,6 +16,8 @@
           data-online="{{ $online ?? 0 }}"
           data-bushes="{{ json_encode($bushes ?? []) }}"
           data-walkers="{{ json_encode($walkers ?? []) }}"
+          data-bar="{{ json_encode($bar ?? ['mugs' => 0, 'pouring' => null, 'drunk' => 0, 'target' => 0]) }}"
+          data-bar-layout="{{ json_encode($barLayout ?? null) }}"
           data-now="{{ $now ?? 0 }}"
           data-started-at="{{ $startedAt ?? 0 }}"
           data-ready="{{ ($ready ?? false) ? 1 : 0 }}"
@@ -57,15 +59,21 @@
             @endif
         @endforeach
 
+        <!-- The bar's counter (scene 0): over the counter's art, a mug for a character with empty hands. -->
+        <button type="button" class="bar-counter" data-bar-counter aria-disabled="true" hidden
+                aria-label="Взять пиво" title="Взять пиво"><span class="bar-counter__emoji" aria-hidden="true">🍺</span></button>
+
         <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
 
         <footer class="hud">
             <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
             <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>
             <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
-            <span class="hud__item">Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
+            <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
+            <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
+            <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         </footer>
     </main>

@@ -3,21 +3,28 @@
 
 /**
  * id → { text, scenes?: {[scene]: text} — the line in that scene instead, hoot?: a dramatic line, the owl puffs up
- * first; button?: label on the moderator's console; auto?: the server says it by itself; then?: a second line said
- * right after this one }. `{player}` is the player's name from `params.player.name`.
+ * first; button?: label on the moderator's console; bar?: the button shows only in the bar (scene 0); auto?: the server
+ * says it by itself; then?: a second line said right after this one }. A text without a scene key is the day's: a line
+ * said in the bar has its own key 0. `{player}` is the player's name from `params.player.name`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
 export const LINES = {
+    'bar-intro': { auto: true, hoot: true, text: 'Ребята, сегодня Хэллоуин! Ух-ху!', then: 'И RoadRunner можно воскресить! Я знаю одно магическое место неподалёку… За мной!' },
     intro: { button: 'Начало', hoot: true, text: 'Ух-ху! Печальные вести: RoadRunner мёртв. Но есть древний ритуал на тыквах — он его вернёт. Беритесь за ножи!' },
     rules: { button: 'Правила', text: 'Кликайте по тыквам — каждый клик видят все. Летунов можно сбивать: очки идут в таблицу.' },
-    hurry: { button: 'Поторопить', text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!', scenes: { 1: 'Свечи сами не зажгутся!', 2: 'Магия сама себя не наколдует!', 3: 'Круг сам себя не нарисует!' } },
+    hurry: { button: 'Поторопить', text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!', scenes: { 0: 'Пиво само себя не выпьет!', 2: 'Свечи сами не зажгутся!', 3: 'Магия сама себя не наколдует!', 4: 'Круг сам себя не нарисует!' } },
     clues: { button: 'Улики', text: 'Странно… Тыквы отзываются слишком быстро — будто кто-то обрабатывает каждый ваш клик.' },
-    flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.', scenes: { 1: 'На закате птицы разлетелись. Все смотрят на тыквы.', 2: 'Летучие мыши! Сбивайте — но не забывайте про тыквы.', 3: 'Червяки… Даже земля здесь ползает. Давите!' } },
+    flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.', scenes: { 0: 'В баре летунов нет — тут пьют.', 2: 'На закате птицы разлетелись. Все смотрят на тыквы.', 3: 'Летучие мыши! Сбивайте — но не забывайте про тыквы.', 4: 'Червяки… Даже земля здесь ползает. Давите!' } },
     outro: { button: 'Прощание', text: 'Спасибо, что пришли! Дверь не закрывайте: тут теперь живут зомби.' },
-    'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 1: 'Костёр пылает. Ждём знака… ух-ху.', 2: 'Достаточно… сейчас рванёт!', 3: 'Круг замкнут. Сейчас что-то поднимется…' } },
-    'scene-1': { auto: true, hoot: true, text: 'Солнце садится. Поджигайте тыквы — пусть горят до самой ночи!' },
-    'scene-2': { auto: true, hoot: true, text: 'Ночь. Открывайте книги — заколдуйте тыквы! Что может пойти не так?' },
-    'scene-3': { auto: true, hoot: true, text: 'Кровавая луна! Всё идёт по плану, ух-ху! Рисуйте круг на пепелище — RoadRunner почти здесь!' },
+    'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 2: 'Костёр пылает. Ждём знака… ух-ху.', 3: 'Достаточно… сейчас рванёт!', 4: 'Круг замкнут. Сейчас что-то поднимется…' } },
+    'bar-who': { button: 'Кому ещё?', bar: true, text: 'Кому ещё?' },
+    'bar-crowd': { button: 'Не толпитесь', bar: true, text: 'Не толпитесь — наливаю!' },
+    'bar-clink': { button: 'Сначала чокнись', bar: true, text: 'Сначала чокнись, потом пей!' },
+    'bar-empty': { auto: true, text: 'Пусто! Подождите, наливаю.' },
+    'scene-1': { auto: true, hoot: true, text: 'Все на грядку! Тыквы сами себя не вырежут.' },
+    'scene-2': { auto: true, hoot: true, text: 'Солнце садится. Поджигайте тыквы — пусть горят до самой ночи!' },
+    'scene-3': { auto: true, hoot: true, text: 'Ночь. Открывайте книги — заколдуйте тыквы! Что может пойти не так?' },
+    'scene-4': { auto: true, hoot: true, text: 'Кровавая луна! Всё идёт по плану, ух-ху! Рисуйте круг на пепелище — RoadRunner почти здесь!' },
     'last-pumpkin': { auto: true, text: 'Последнюю тыкву добил {player}! Запомним героя.' },
     'bonfire-open': { auto: true, hoot: true, text: 'Тыквы готовы! А теперь все вместе — разжигайте костёр!' },
     'bonfire-done': { auto: true, text: 'Костёр разжёг {player}! Ух, как пылает.' },
@@ -30,6 +37,36 @@ export const LINES = {
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
 };
+
+/**
+ * What the owl says while it pours in the bar (docs/spec/scenario.md, «Сцена 0 — «Бар»»): the server sends a number
+ * (`rumor` of `pour`), the line is RUMORS[rumor % length]. Add new ones at the end, so the indexes keep their lines.
+ */
+export const RUMORS = [
+    'Пивка для рывка!',
+    'Ходят слухи, что RoadRunner умер…',
+    'А вас CVE-2026-109618 / CVE-2026-109619 не задели?',
+    'Почём нынче токены?',
+    'Слышали? PHP опять хоронят. В который раз уже?',
+    'Говорят, nginx уволили. Тут, мол, и без него справляются.',
+    'Один воркер шепнул: память течёт. Но это между нами.',
+    'Кто-то опять задеплоил в пятницу. Не вы?',
+    'Говорят, тыквы в этом году особенно сочные…',
+    'Кто-то видел на горизонте странную птицу. Бред, конечно.',
+    'FrankenPHP? Не слышала. Наливаю дальше.',
+    'Composer опять тянет полинтернета. Налить ещё, пока качается?',
+    'Говорят, в очереди задач кто-то живёт. Тихо так шуршит.',
+    'Слыхали? Кто-то клик дважды отправил — а засчитали один. Колдовство!',
+    'Тут один спрашивал, где у нас nginx. Налила ему за счёт заведения.',
+    'Кружек на всех хватит. Наверное. Скорее всего.',
+];
+
+/** The rumour of a `pour` event's number (the catalog wraps around). */
+export const rumorAt = (n) => RUMORS[(Number.isInteger(n) && n >= 0 ? n : 0) % RUMORS.length];
+
+// A rumour stays up at least this long, longer by its length, never past RUMOR_MAX_MS.
+const RUMOR_MIN_MS = 4500;
+const RUMOR_MAX_MS = 9000;
 
 const SOMEONE = 'кто-то';
 
@@ -84,6 +121,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     root.append(bubble);
 
     let holdUntil = -1e9;
+    // Until when the line on show is up (scene clock of `now`): a rumour waits for nothing and takes a free bubble only.
+    let shown = { until: -1e9 };
     let pending = null;
     let waiting = false;
     let token = 0;
@@ -115,11 +154,12 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         bubble.style.setProperty('--tail-x', `${Math.round(Math.min(Math.max(12, perch.x - left), w - 16))}px`);
     }
 
-    function show({ text, hoot, then = null }) {
+    // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up.
+    function show({ text, hoot, then = null, ms = showMs(text), hold = then ? ms + holdOf(then) : holdOf(text) }) {
         const mine = ++token;
         textEl.textContent = text;
-        const ms = showMs(text);
-        holdUntil = now() + (then ? ms + holdOf(then) : holdOf(text));
+        holdUntil = now() + hold;
+        shown = { until: now() + ms };
         // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
         const delay = Number(scene?.owl?.({ ms, hoot })) || 0;
         const open = () => {
@@ -170,6 +210,18 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
                 waiting = true;
                 later(flush, left);
             }
+        },
+
+        /**
+         * A rumour of the pour (`rumor` of `pour`), for at most `left` ms (the rest of the pour, longer if short):
+         * said only while the bubble is free — it never cuts off a line or jumps a waiting one — and holds nothing up.
+         */
+        rumor(n, left = RUMOR_MAX_MS) {
+            const text = rumorAt(n);
+            const t = now();
+            if (!text || pending || waiting || t < shown.until || t < holdUntil) return;
+            const ms = Math.min(RUMOR_MAX_MS, Math.max(RUMOR_MIN_MS, left, 2500 + text.length * 60));
+            show({ text, hoot: false, ms, hold: 0 });
         },
 
         /** Re-anchors the bubble, e.g. after the scene rebuilt for a new size. */

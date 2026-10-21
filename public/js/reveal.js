@@ -13,6 +13,7 @@ const CARDS = [
     ['jobs', ['задачу', 'задачи', 'задач'], 'выполнила очередь', 'каждая — шаг тыквы, костра, круга или сцены'],
     ['burned', ['лишний клик', 'лишних клика', 'лишних кликов'], 'он отбросил', 'тыква не проскочила ни одной стадии'],
     ['shot', ['летуна', 'летунов', 'летунов'], 'сбили', 'каждого — первый успевший, под локом'],
+    ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили в баре', 'последнюю — первый дошедший до стойки'],
 ];
 
 function plural(n, [one, few, many]) {
@@ -48,6 +49,7 @@ export function createReveal(root) {
     for (const [key] of CARDS) {
         const card = document.createElement('div');
         card.className = 'reveal__card';
+        card.dataset.revealCard = key;
         card.innerHTML = `<dt class="reveal__label" data-reveal-label="${key}"></dt><dd class="reveal__number" data-reveal-${key}></dd><dd class="reveal__note" data-reveal-note="${key}"></dd>`;
         grid.append(card);
     }
@@ -95,6 +97,8 @@ export function createReveal(root) {
                 open = step === STEP;
             }
             for (const [key, forms, caption, note] of CARDS) {
+                // A server without the bar sends no `drinks`: its card stays out.
+                panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined;
                 const n = Math.max(0, Math.trunc(Number(reveal[key]) || 0));
                 panel.querySelector(`[data-reveal-${key}]`).textContent = NUMBER.format(n);
                 panel.querySelector(`[data-reveal-label="${key}"]`).textContent = `${plural(n, forms)} ${caption}`;

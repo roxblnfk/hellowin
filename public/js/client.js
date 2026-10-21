@@ -1,10 +1,12 @@
 // Client model of docs/spec/frontend.md: applies channel events to the DOM hooks and to the pixel scene.
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
-import { bonfireOpen, circleOpen, floats, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
+import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
 
-const SCENE_NAMES = { 0: 'День: подготовка', 1: 'Закат', 2: 'Ночь' };
+const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
+// The counter outside the bar (protocol.md, `bar` in the snapshot); `drunk` and `target` — the hall's goal.
+const NO_BAR = Object.freeze({ mugs: 0, pouring: null, drunk: 0, target: 0 });
 // The last finale step: past it the final scene is the cursed world.
 const CURSED_STEP = 5;
 // From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
@@ -41,6 +43,28 @@ function parseFinale(json) {
     }
 }
 
+/** `bar` of a snapshot or an event as the model keeps it; anything else is the empty counter. */
+export function barOf(bar) {
+    if (!bar || !Number.isInteger(bar.mugs)) return { ...NO_BAR };
+    const count = (n) => (Number.isInteger(n) && n >= 0 ? n : 0);
+    return { mugs: bar.mugs, pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target) };
+}
+
+/** «Выпито 12 из 30» and how full the meter is, 0–1 (full once the goal is reached). */
+export function drinksOf(bar) {
+    const target = bar?.target ?? 0;
+    const drunk = bar?.drunk ?? 0;
+    return { text: `Выпито ${drunk} из ${target}`, fill: target > 0 ? Math.min(1, drunk / target) : 0 };
+}
+
+function parseJson(json, fallback) {
+    try {
+        return JSON.parse(json || 'null') ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
 const flag = (value) => value === '1' || value === 'true';
 
 const num = (value, fallback) => {
@@ -62,6 +86,9 @@ export function readSnapshot(root) {
         online: int(root.dataset.online, 0),
         bushes: parseList(root.dataset.bushes),
         walkers: parseList(root.dataset.walkers),
+        bar: barOf(parseJson(root.dataset.bar, null)),
+        // `walk.bar` of the server's config (protocol.md, «Бар»): the hall's floor, tables and counter for the art.
+        barLayout: parseJson(root.dataset.barLayout, null),
         now: int(root.dataset.now, 0),
         startedAt: int(root.dataset.startedAt, 0),
         ready: flag(root.dataset.ready),
@@ -98,7 +125,9 @@ export function readSnapshot(root) {
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  */
 export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null }) {
-    const model = { ...readSnapshot(root), me: null, moderator: false };
+    // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
+    // the server decides (protocol.md, RPC `drink`).
+    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     const bonfireOf = () => model.elements.find((e) => e.type === 'bonfire') ?? null;
@@ -179,6 +208,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         set('scene-name', sceneName());
         set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
         set('total', pumpkinsOf().length);
+        // The bar has no pumpkins: its meter of mugs drunk stands in for «готово N из M».
+        const progress = hud('progress');
+        if (progress) progress.hidden = isBar(model.scene);
         const ready = hud('ready');
         // In the final scene `ready` stays on through the finale; it waits for the moderator only at step 0.
         if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= 1);
@@ -216,6 +248,36 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         node.textContent = !runner ? STATUS[status] : up === null ? 'RoadRunner: работает' : `RoadRunner: работает · аптайм ${formatUptime(up)}`;
     }
 
+    const myWalker = () => (model.me === null ? null : model.walkers.find((w) => w.id === model.me) ?? null);
+    const holdsBeer = () => myWalker()?.item === 'beer';
+
+    // The counter takes a click only with a character and empty hands; «Выпить» shows only when I may drink as far
+    // as the client knows (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»).
+    function paintBar() {
+        const bar = isBar(model.scene);
+        document.body.toggleAttribute('data-bar', bar);
+        root.dataset.bar = JSON.stringify(model.bar);
+        const counter = root.querySelector('[data-bar-counter]');
+        if (counter) {
+            counter.hidden = !bar;
+            counter.setAttribute('aria-disabled', String(!(bar && canWalk() && !holdsBeer())));
+        }
+        const drink = root.querySelector('[data-drink]');
+        if (drink) drink.hidden = !(bar && canWalk() && holdsBeer() && model.clinked);
+        const meter = hud('drinks');
+        if (meter) {
+            const { text, fill } = drinksOf(model.bar);
+            meter.hidden = !bar;
+            meter.toggleAttribute('data-full', fill >= 1);
+            meter.setAttribute('aria-valuenow', String(model.bar.drunk));
+            meter.setAttribute('aria-valuemax', String(model.bar.target));
+            meter.setAttribute('aria-valuetext', text);
+            meter.style.setProperty('--fill', String(fill));
+            const label = root.querySelector('[data-hud-drinks-text]');
+            if (label) label.textContent = text;
+        }
+    }
+
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
@@ -228,6 +290,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         root.dataset.online = model.online;
         paintElements();
         paintHud();
+        paintBar();
     }
 
     function load(snapshot) {
@@ -242,6 +305,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             online: snapshot.online ?? model.online,
             bushes: snapshot.bushes ?? model.bushes,
             walkers: snapshot.walkers ?? model.walkers,
+            bar: barOf(snapshot.bar),
             startedAt: snapshot.startedAt ?? model.startedAt,
             ready: Boolean(snapshot.ready),
             finale: snapshot.finale ?? null,
@@ -249,6 +313,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             zombies: Boolean(snapshot.zombies),
         });
         stageMaxByScene.set(model.scene, model.stageMax);
+        // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
+        if (!holdsBeer()) model.clinked = false;
         const known = new Map(model.elements.map((e) => [e.id, e]));
         model.elements = snapshot.elements.map((e) => (!isPumpkin(e)
             ? { ...known.get(e.id), ...e }
@@ -257,6 +323,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintAll();
         scene?.render(snapshotOf());
         paintCircle();
+        // A rumour still being poured is said by the late viewer too (it is in the snapshot).
+        const pouring = model.bar.pouring;
+        if (isBar(model.scene) && Number.isInteger(pouring?.rumor) && pouring.until > now() + offset) owl?.rumor?.(pouring.rumor, pouring.until - (now() + offset));
         sound?.load(model);
         onChange(model);
     }
@@ -267,7 +336,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     }
 
     function snapshotOf() {
-        return { ...model, elements: model.elements.map((e) => ({ ...e })), walkers: model.walkers.map((w) => ({ ...w })) };
+        return { ...model, bar: { ...model.bar }, elements: model.elements.map((e) => ({ ...e })), walkers: model.walkers.map((w) => ({ ...w })) };
     }
 
     /** Re-reads the whole state over RPC; events arriving meanwhile are dropped, the snapshot covers them. */
@@ -314,6 +383,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (!w?.id) return;
             model.walkers = [...model.walkers.filter((x) => x.id !== w.id), w];
             scene?.walker(w);
+            paintBar();
         },
 
         move(event) {
@@ -330,6 +400,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         clink(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (w) delete w.clink;
+            // In the bar a clink counts for both glasses: mine, whether I came up or was the target.
+            if (isBar(model.scene) && model.me !== null && (event.player?.id === model.me || event.walker?.id === model.me)) {
+                model.clinked = true;
+                paintBar();
+            }
             scene?.clink(event);
         },
 
@@ -337,6 +412,56 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const id = event.player?.id;
             model.walkers = model.walkers.filter((x) => x.id !== id);
             scene?.leave(id);
+            paintBar();
+        },
+
+        // Every viewer plays the same foam from `since` to `until` on the server clock.
+        // Now and then the owl says a rumour as it pours: low priority, it never cuts a line off (owl.js).
+        pour(event) {
+            const rumor = Number.isInteger(event.rumor) ? event.rumor : undefined;
+            model.bar = { ...model.bar, pouring: { since: event.since, until: event.until, ...(rumor === undefined ? {} : { rumor }) } };
+            paintBar();
+            scene?.pour?.(event.since, event.until);
+            if (rumor !== undefined) owl?.rumor?.(rumor, event.until - (now() + offset));
+        },
+
+        mugs(event) {
+            model.bar = { ...model.bar, mugs: event.mugs, pouring: null };
+            paintBar();
+            scene?.mugs?.(event.mugs);
+        },
+
+        // The hall's count against its goal (the HUD's meter); readiness itself comes as `ready`.
+        drinks(event) {
+            model.bar = { ...model.bar, drunk: Number.isInteger(event.drunk) ? event.drunk : model.bar.drunk, target: Number.isInteger(event.target) ? event.target : model.bar.target };
+            paintBar();
+        },
+
+        // A `bar.take` reached the counter: the first to arrive got a mug, a latecomer shrugs.
+        take(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (event.ok) {
+                if (Number.isInteger(event.mugs)) model.bar = { ...model.bar, mugs: event.mugs };
+                if (w) {
+                    w.item = 'beer';
+                    scene?.walker({ ...w });
+                }
+                if (event.player?.id === model.me) model.clinked = false;
+                scene?.mugs?.(model.bar.mugs);
+            } else if (w) {
+                scene?.shrug?.(w.id);
+            }
+            paintBar();
+        },
+
+        // The hands are empty at once in the model; the scene keeps the mug through the gulp.
+        drink(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (!w) return;
+            w.item = null;
+            if (w.id === model.me) model.clinked = false;
+            scene?.drink?.(w.id);
+            paintBar();
         },
 
         pumpkin(event) {
@@ -365,9 +490,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             // The circle's last stage: HELLOWIN_CIRCLE_STAGES in the final scene, 0 before it.
             const circle = circleOf();
             if (circle) circle.stageMax = event.circleStageMax ?? 0;
+            // Out of the bar the mugs on the counter and in hand are gone (protocol.md, «Бар»).
+            if (!isBar(model.scene)) {
+                model.bar = { ...NO_BAR };
+                model.clinked = false;
+            }
             paintAll();
             scene?.setScene(model.scene, model.stageMax);
-            handOut(event);
+            if (!placeAll(event)) handOut(event);
+            paintBar();
         },
 
         ready(event) {
@@ -426,26 +557,41 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         // The pause and the multiplier are about the room, not the story: they survive a reset (protocol.md, «Снимок»).
         reset(event) {
             model.round = event.round;
-            model.scene = 0;
-            model.ready = false;
+            // A reset leads into the bar: no pumpkin stages, ready again only once the hall has drunk its goal.
+            model.scene = SCENE.bar;
             model.finale = null;
             model.zombies = false;
-            model.stageMax = stageMaxByScene.get(0) ?? DEFAULT_STAGE_MAX;
+            model.clinked = false;
+            // The goal is the room's (it survives a reset): an event without one keeps ours.
+            model.bar = barOf(event.bar ? { target: model.bar.target, ...event.bar } : null);
+            model.ready = model.bar.target > 0 && model.bar.drunk >= model.bar.target;
+            model.stageMax = stageMaxByScene.get(SCENE.bar) ?? 0;
             model.elements.forEach((e) => {
                 e.stage = 0;
                 e.clicks = 0;
-                if (e.type === 'bonfire') e.stageMax = bonfireMaxByScene.get(0) ?? 0;
+                if (e.type === 'bonfire') e.stageMax = bonfireMaxByScene.get(SCENE.bar) ?? 0;
                 if (e.type === 'circle') e.stageMax = 0;
             });
+            const placed = Array.isArray(event.walkers);
+            if (placed) model.walkers = event.walkers.map((w) => ({ ...w }));
+            else handOut(event);
             paintAll();
-            handOut(event);
             scene?.render(snapshotOf());
-            if (!stageMaxByScene.has(0)) resync();
+            if (placed) scene?.setWalkers?.(model.walkers.map((w) => ({ ...w })));
         },
     };
 
     // The item in every walker's hand follows the story: `scene`, `finale` and `reset` carry it instead of a walker
     // event each.
+    // Leaving the bar puts every walker down on the lawn at once: the event's list replaces ours, and nobody walks
+    // over from the hall (another location). Returns whether the event carried the list.
+    function placeAll(event) {
+        if (!Array.isArray(event.walkers)) return false;
+        model.walkers = event.walkers.map((w) => ({ ...w }));
+        scene?.setWalkers?.(model.walkers.map((w) => ({ ...w })));
+        return true;
+    }
+
     function handOut(event) {
         if (!('item' in event)) return;
         model.walkers.forEach((w) => {
@@ -458,6 +604,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const canWalk = () => model.me !== null && model.walkers.some((w) => w.id === model.me);
     /** Whether the story is in the cursed world (finale step 5+), where a click may clink glasses. */
     const cursed = () => model.scene >= model.sceneStages && (model.finale?.step ?? -1) >= CURSED_STEP;
+    const inBar = () => isBar(model.scene);
+    const beerOf = (id) => model.walkers.find((w) => w.id === id)?.item === 'beer';
 
     return {
         model,
@@ -468,13 +616,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         /** Whether a click on the element would be accepted: a locked bonfire or circle is not worth an RPC. */
         clickable(id) {
-            return !button(id)?.hasAttribute('data-locked');
+            // The bar has no patch: its hidden buttons send nothing (the server would answer `locked`).
+            return !isBar(model.scene) && !button(id)?.hasAttribute('data-locked');
         },
         resync,
 
         /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
         setMe(id) {
             model.me = id ?? null;
+            paintBar();
             scene?.setMe(model.me);
             sound?.me(model.me, model);
         },
@@ -483,9 +633,50 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         cursed,
 
-        /** Whether a click on walker `id` is a clink (RPC `clink {walker}`): someone else's, in the cursed world, and I am on the field. */
+        inBar,
+
+        /**
+         * Whether a click on walker `id` is a clink (RPC `clink {walker}`): someone else's and I am on the field, in the
+         * cursed world — or in the bar, where both of us hold beer.
+         */
         clinksWalker(id) {
-            return Boolean(id) && id !== model.me && cursed() && canWalk() && model.walkers.some((w) => w.id === id);
+            if (!id || id === model.me || !canWalk() || !model.walkers.some((w) => w.id === id)) return false;
+            return cursed() || (inBar() && beerOf(model.me) && beerOf(id));
+        },
+
+        /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and empty hands. */
+        takesBeer() {
+            return inBar() && canWalk() && !holdsBeer();
+        },
+
+        /** Whether Space or «Выпить» sends RPC `drink`: in the bar with beer in hand, clinked or not — the server says. */
+        drinks() {
+            return inBar() && canWalk() && holdsBeer();
+        },
+
+        /**
+         * The partner to report in RPC `clink.auto` for an automatic clink striking now (scene cue `clink` with `sides`
+         * in config coordinates), or null: only in the bar and only when my walker is in the group with beer — the
+         * nearest other side that holds beer.
+         */
+        autoClinkPartner(cue) {
+            if (!inBar() || !holdsBeer() || !Array.isArray(cue?.sides)) return null;
+            const mine = cue.sides.find((side) => side.id === model.me);
+            if (!mine) return null;
+            let best = null;
+            for (const side of cue.sides) {
+                if (side.id === model.me || !beerOf(side.id)) continue;
+                const d = Math.hypot(side.x - mine.x, side.y - mine.y);
+                if (!best || d < best.d) best = { id: side.id, d };
+            }
+            return best?.id ?? null;
+        },
+
+        /** A successful `clink.auto` reply: my beer counts as clinked. */
+        clinkedAuto() {
+            if (!holdsBeer()) return;
+            model.clinked = true;
+            paintBar();
         },
 
         /** Whether a click on element `id` is a clink (RPC `clink {pumpkin}`) instead of `click`: a reachable pumpkin, likewise. */
@@ -572,7 +763,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
@@ -631,6 +822,45 @@ export function bindClinking(root, scene, client, clink) {
         root.toggleAttribute('data-clink-hover', target(event) !== null);
     });
     root.addEventListener('pointerleave', () => root.removeAttribute('data-clink-hover'));
+}
+
+// Where Space belongs to the control: typing, a button it presses, a select it opens.
+const SPACE_TAKERS = 'input, textarea, select, button, [contenteditable]:not([contenteditable="false"]), [role="button"]';
+
+/**
+ * Whether a keydown is the bar's Space for a drink: plain Space (no modifiers, no auto-repeat), not on a control that
+ * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say.
+ */
+export function isDrinkKey(event, doc = globalThis.document) {
+    if (event.code !== 'Space' && event.key !== ' ') return false;
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
+    if (event.target?.closest?.(SPACE_TAKERS) || event.target?.isContentEditable) return false;
+    return !doc?.querySelector?.('dialog[open]');
+}
+
+/**
+ * The bar's input (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the counter button asks for a mug, Space and
+ * the «Выпить» button drink. Nothing is drawn locally: the walk comes as `move`, the mug as `take`, the gulp as `drink`.
+ *
+ * @param {{takesBeer: () => boolean, drinks: () => boolean}} client  the client model's routing
+ * @param {object} actions
+ * @param {() => void} actions.take  sends RPC `bar.take`
+ * @param {() => void} actions.drink  sends RPC `drink`
+ */
+export function bindBar(root, client, { take, drink }, doc = globalThis.document) {
+    root.querySelector('[data-bar-counter]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (client.takesBeer()) take();
+    });
+    root.querySelector('[data-drink]')?.addEventListener('click', () => {
+        if (client.drinks()) drink();
+    });
+    doc.addEventListener('keydown', (event) => {
+        if (!isDrinkKey(event, doc) || !client.drinks()) return;
+        event.preventDefault();
+        drink();
+    });
 }
 
 /**

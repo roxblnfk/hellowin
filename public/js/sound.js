@@ -3,7 +3,8 @@
 
 import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
 import { T } from './pixel/finale-timeline.js';
-import { trackOf } from './audio/engine.js';
+import { NEXT_TRACK, trackOf } from './audio/engine.js';
+import { SCENE, isBar } from './layout.js';
 
 const FLYER_SOUNDS = {
     duck: 'duck.quack',
@@ -21,7 +22,7 @@ const SHOT_SOUNDS = { pistol: 'shot.pistol', candle: 'shot.candle', book: 'shot.
 const DEPTH_VOLUME = [0.5, 0.75, 1];
 const OTHERS_VOLUME = 0.6;
 const HOOT_S = 0.95;
-// The scoop stage of scene 0 (scenario.md, «Сцена 0»): the sprites draw it at stage 3, whatever HELLOWIN_SCENE_STAGE_MAX says.
+// The scoop stage of the day (scenario.md, «Сцена 1»): the sprites draw it at stage 3, whatever HELLOWIN_SCENE_STAGE_MAX says.
 const SCOOP_STAGE = 3;
 // A flyer heard later than this after its launch (a burst of held-back events) stays silent; it may still fly on screen.
 const FLYER_FRESH_MS = 1500;
@@ -31,6 +32,12 @@ const STEP_S = 0.35;
 const MAX_STEPS = 12;
 // A scheduled part of a clink already this far behind is left out instead of played late.
 const LATE_S = 0.25;
+// A pour heard later than this after it began (a reload mid-pour, a held-back event) stays silent.
+const POUR_FRESH_MS = 400;
+// The bar's level: no pumpkins to make progress with.
+const BAR_INTENSITY = 0.2;
+// An engine that knows the bar's track numbers its scenes with the bar as 0; an older one starts with the day at 0.
+const ENGINE_KNOWS_BAR = 'bar' in NEXT_TRACK;
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 /** Stereo position of a point x in percent of the width. */
@@ -74,12 +81,16 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     const play = (name, options) => (quiet() ? null : audio.play(name, options));
 
     const finalScene = (model) => model.scene >= model.sceneStages;
-    const music = (model) => audio.setMusic(trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale }));
+    // Until the engine has the bar's own track the bar plays the day's.
+    const music = (model) => audio.setMusic(ENGINE_KNOWS_BAR
+        ? trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale })
+        : trackOf({ scene: Math.max(0, model.scene - 1), sceneStages: model.sceneStages - 1, finale: model.finale }));
     const walkerX = (model, id) => lastPoint(model.walkers.find((w) => w.id === id)?.walk)?.x;
     const volumeOf = (model, ...ids) => (model.me !== null && ids.includes(model.me) ? 1 : OTHERS_VOLUME);
 
     /** 0.2 + 0.8 × the share of the scene passed; the whole way from the scene's readiness and finale step 1. */
     function intensity(model) {
+        if (isBar(model.scene)) return BAR_INTENSITY;
         if (model.ready || (finalScene(model) && (model.finale?.step ?? 0) >= 1)) return 1;
         let share;
         if (finalScene(model)) {
@@ -96,7 +107,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     }
 
     function baseFor(model) {
-        if (model.scene === 0) return { scene: 0, stage: 0 };
+        if (model.scene <= SCENE.day) return { scene: model.scene, stage: 0 };
         if (base.scene === model.scene) return base;
         // A page opened mid-scene does not know where the scene began: its lowest pumpkin is the best guess.
         const stages = model.elements.filter(isPumpkin).map((p) => p.stage);
@@ -112,15 +123,15 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         if (element.type === 'circle') return 'circle.click';
         if (!isPumpkin(element)) return null;
         if (event.clicks > event.threshold || event.stage >= model.stageMax || finalScene(model)) return 'pumpkin.burned';
-        if (model.scene === 0) return event.stage >= SCOOP_STAGE ? 'pumpkin.scoop' : 'pumpkin.carve';
-        return model.scene === 1 ? 'pumpkin.ignite' : 'pumpkin.enchant';
+        if (model.scene === SCENE.day) return event.stage >= SCOOP_STAGE ? 'pumpkin.scoop' : 'pumpkin.carve';
+        return model.scene === SCENE.sunset ? 'pumpkin.ignite' : 'pumpkin.enchant';
     }
 
     function stageSound(model, element) {
         if (element.type === 'bonfire') return 'bonfire.stage';
         if (element.type === 'circle') return element.stageMax > 0 && element.stage >= element.stageMax ? 'circle.done' : 'circle.stage';
         if (!isPumpkin(element)) return null;
-        return ['pumpkin.stage', 'pumpkin.lit'][model.scene] ?? 'pumpkin.charged';
+        return model.scene === SCENE.day ? 'pumpkin.stage' : model.scene === SCENE.sunset ? 'pumpkin.lit' : 'pumpkin.charged';
     }
 
     function flyer(model, event) {
@@ -212,7 +223,31 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         play('ui.join');
     }
 
+    // Where the counter stands (`walk.bar.counter` of the markup), for the pan of the mugs; the middle without it.
+    const counterX = (model) => {
+        const c = model.barLayout?.counter;
+        return c && Number.isFinite(c.x1) && Number.isFinite(c.x2) ? (c.x1 + c.x2) / 2 : 50;
+    };
+
     const handlers = {
+        // The bar (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the engine may not know these names yet, and an
+        // unknown name plays nothing.
+        pour(model, event) {
+            const late = serverNow() - event.since;
+            if (!(late < POUR_FRESH_MS)) return;
+            play('bar.pour', { pan: panOf(counterX(model)), delay: Math.max(0, -late / 1000) });
+        },
+        mugs(model) {
+            play('bar.mug', { pan: panOf(counterX(model)) });
+        },
+        take(model, event) {
+            const id = event.player?.id;
+            play(event.ok ? 'bar.take' : 'bar.empty', { pan: panOf(walkerX(model, id)), volume: volumeOf(model, id) });
+        },
+        drink(model, event) {
+            const id = event.player?.id;
+            play('bar.gulp', { pan: panOf(walkerX(model, id)), volume: volumeOf(model, id) });
+        },
         click(model, event) {
             const element = model.elements.find((e) => e.id === event.element);
             if (!element) return;
