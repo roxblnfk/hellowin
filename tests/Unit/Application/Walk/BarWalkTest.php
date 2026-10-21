@@ -141,7 +141,7 @@ final class BarWalkTest
 
         Assert::equals($layout->atCounter(new Point(10, 90)), new Point(66, 62));
         Assert::equals($layout->atCounter(new Point(80, 90)), new Point(80, 62));
-        Assert::same($layout->toArray()['counter'], ['x1' => 66.0, 'x2' => 95.0, 'y' => 62.0]);
+        Assert::same($layout->toArray()['counter'], ['x1' => 66.0, 'x2' => 92.0, 'y' => 62.0]);
         Assert::count($layout->toArray()['obstacles'], 4);
     }
 

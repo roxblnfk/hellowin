@@ -214,14 +214,14 @@ final class RitualHarness
             new WalkZone(
                 3,
                 50,
+                94,
                 97,
-                97,
-                new Box(64, 46, 100, 60),
+                new Box(64, 46, 95, 60),
                 new Ellipse(22, 64, 10, 4.5),
                 new Ellipse(44, 78, 10, 4.5),
                 new Ellipse(76, 80, 10, 4.5),
             ),
-            [66.0, 95.0, 62.0],
+            [66.0, 92.0, 62.0],
             [90.0, 94.0],
             10.0,
         );

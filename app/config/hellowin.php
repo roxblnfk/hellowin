@@ -133,14 +133,14 @@ return [
         // new characters appear in the band `spawn`, and two characters at most `clink_reach` apart clink by
         // themselves. The frontend draws the bar over these numbers
         'bar' => [
-            'area' => ['x1' => 3, 'y1' => 50, 'x2' => 97, 'y2' => 97],
+            'area' => ['x1' => 3, 'y1' => 50, 'x2' => 94, 'y2' => 97],
             'obstacles' => [
-                ['x1' => 64, 'y1' => 46, 'x2' => 100, 'y2' => 60],
+                ['x1' => 64, 'y1' => 46, 'x2' => 95, 'y2' => 60],
                 ['cx' => 22, 'cy' => 64, 'rx' => 10, 'ry' => 4.5],
                 ['cx' => 44, 'cy' => 78, 'rx' => 10, 'ry' => 4.5],
                 ['cx' => 76, 'cy' => 80, 'rx' => 10, 'ry' => 4.5],
             ],
-            'counter' => ['x1' => 66, 'x2' => 95, 'y' => 62],
+            'counter' => ['x1' => 66, 'x2' => 92, 'y' => 62],
             'spawn' => ['y1' => 90, 'y2' => 94],
             'clink_reach' => 10,
         ],

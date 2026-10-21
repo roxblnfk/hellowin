@@ -42,6 +42,16 @@ final class HomeControllerTest extends TestCase
         }
     }
 
+    public function homePageCarriesTheBarLayout(): void
+    {
+        $layout = $this->getContainer()->get(HellowinConfig::class)->getBarLayout()?->toArray();
+        Assert::notNull($layout);
+
+        $this->fakeHttp()->get('/')
+            ->assertOk()
+            ->assertBodyContains(\sprintf('data-bar-layout="%s"', \htmlspecialchars(\json_encode($layout, \JSON_THROW_ON_ERROR), \ENT_QUOTES)));
+    }
+
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8')]
     #[Env('HELLOWIN_CLICKS_PER_STAGE', '5')]
     public function homePageStartsAtSceneZero(): void
