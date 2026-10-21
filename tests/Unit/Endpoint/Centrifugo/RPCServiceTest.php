@@ -421,6 +421,7 @@ final class RPCServiceTest
     #[DataSet(['cursed.target'])]
     #[DataSet(['boss.hp'])]
     #[DataSet(['dice.owl'])]
+    #[DataSet(['meep'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
         $ritual = new RitualHarness();
@@ -873,6 +874,22 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'roll', ['attempt' => 2], self::PLAYER), ['ok' => false, 'error' => 'busy']);
         Assert::same($this->call($ritual, 'roll', ['attempt' => 1]), ['ok' => false, 'error' => 'anonymous']);
         Assert::same($this->call($ritual, 'dice.owl', [], moderator: true)['attempt'] ?? null, 1);
+    }
+
+    public function moderatorMakesRoadrunnerMeepForEveryone(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+
+        Assert::same($this->call($ritual, 'meep', ['flyer' => 'f-0a1b2c3d'], moderator: true), ['ok' => true]);
+        Assert::same($this->call($ritual, 'meep', [], moderator: true), ['ok' => true]);
+        Assert::same($this->call($ritual, 'meep', ['flyer' => ['not', 'an', 'id']], moderator: true), ['ok' => true]);
+
+        Assert::same($ritual->broadcast->ofType('meep'), [
+            ['type' => 'meep', 'round' => 1, 'flyer' => 'f-0a1b2c3d', 'at' => 1_760_900_001_500],
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
+        ]);
     }
 
     public function moderatorIsNeverRateLimited(): void

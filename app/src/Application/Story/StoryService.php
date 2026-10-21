@@ -9,6 +9,8 @@ use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Walk\WalkService;
+use App\Domain\Clock\Clock;
+use App\Domain\Clock\SystemClock;
 use App\Domain\Element\Element;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
@@ -37,6 +39,7 @@ final readonly class StoryService
         private ?RapierService $rapier = null,
         private ?RitualMetrics $metrics = null,
         private ?DiceService $dice = null,
+        private Clock $clock = new SystemClock(),
     ) {}
 
     /**
@@ -134,6 +137,19 @@ final readonly class StoryService
             or throw new StoryRefusedException('invalid text');
 
         $this->publisher->owlText($this->store->round(), $text);
+    }
+
+    /**
+     * RoadRunner says «Мип-мип!» where the moderator clicked him. Nothing is kept: a client that does not see that
+     * runner skips it.
+     *
+     * @param mixed $flyer The runner on the horizon; anything but an id names the RoadRunner of the scene.
+     */
+    public function meep(mixed $flyer): void
+    {
+        $flyer = \is_string($flyer) && $flyer !== '' && \preg_match('/^[A-Za-z0-9_-]{1,64}$/', $flyer) === 1 ? $flyer : null;
+
+        $this->publisher->meep($this->store->round(), $flyer, $this->clock->now());
     }
 
     /**

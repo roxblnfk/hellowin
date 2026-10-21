@@ -326,6 +326,20 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * RoadRunner says «Мип-мип!» on the moderator's click: over the runner `$flyer`, or over the one of the scene.
+     *
+     * @param non-empty-string|null $flyer
+     * @param int $at Unix time in milliseconds.
+     */
+    public function meep(int $round, ?string $flyer, int $at): void
+    {
+        $message = ['type' => 'meep', 'round' => $round];
+        $flyer === null or $message['flyer'] = $flyer;
+
+        $this->publish($message + ['at' => $at]);
+    }
+
+    /**
      * A line of the owl's catalogue; the frontend holds the texts and fills the params in.
      *
      * @param non-empty-string $line

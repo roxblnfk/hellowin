@@ -54,7 +54,7 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -124,6 +124,7 @@ final readonly class RPCService implements ServiceInterface
             'boss.hp' => ['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null),
             'roll' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->diceService()->roll($player, $request->getData()['attempt'] ?? null),
             'dice.owl' => ['ok' => true] + $this->diceService()->owl(),
+            'meep' => $this->meep($request->getData()),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -271,6 +272,13 @@ final readonly class RPCService implements ServiceInterface
         \array_key_exists('text', $params)
             ? $this->story->sayText($params['text'])
             : $this->story->say($params['line'] ?? null, $params['params'] ?? null);
+
+        return ['ok' => true];
+    }
+
+    private function meep(array $params): array
+    {
+        $this->story->meep($params['flyer'] ?? null);
 
         return ['ok' => true];
     }
