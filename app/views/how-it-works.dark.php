@@ -50,6 +50,7 @@
                 <li role="presentation"><a role="tab" id="tab-click" href="#click" aria-controls="click" aria-selected="false">Клик</a></li>
                 <li role="presentation"><a role="tab" id="tab-stages" href="#stages" aria-controls="stages" aria-selected="false">Стадии и лок</a></li>
                 <li role="presentation"><a role="tab" id="tab-idempotency" href="#idempotency" aria-controls="idempotency" aria-selected="false">Идемпотентный переход</a></li>
+                <li role="presentation"><a role="tab" id="tab-dice" href="#dice" aria-controls="dice" aria-selected="false">Кости</a></li>
                 <li role="presentation"><a role="tab" id="tab-live" href="#live" aria-controls="live" aria-selected="false">Модератор, фигурки, летуны</a></li>
                 <li role="presentation"><a role="tab" id="tab-metrics" href="#metrics" aria-controls="metrics" aria-selected="false">Метрики</a></li>
             </ul>
@@ -1142,6 +1143,92 @@ final class TransitionPumpkin extends JobHandler</code></pre>
             </p>
             <pre><code>docker compose exec valkey valkey-cli --scan --pattern 'hellowin:amo:*'
 docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin\Job\TransitionPumpkin::handle:1:pumpkin-3:2'</code></pre>
+        </section>
+
+        <section class="how__section" id="dice" role="tabpanel" aria-labelledby="tab-dice">
+            <h2>Кости: идемпотентность без хранения результата</h2>
+            <p>
+                Перед восстанием в финале зал бросает три кости, пока кто-то не выбросит 6-6-6 — версию PHP, которой
+                никогда не было. Бросает сервер: клиент шлёт RPC <code>roll {attempt}</code> с номером своей попытки, а
+                в ответ и событием <code>roll</code> всем приходят кости. Здесь та же задача, что у перехода тыквы, —
+                повтор запроса не должен дать второй эффект, — но решена иначе: результат не хранится, а
+                <em>вычисляется</em> из ключа.
+            </p>
+
+            <h3>Ключ и HMAC</h3>
+            <p>
+                Ключ идемпотентности попытки — <code>{round}:roll:{player}:{attempt}</code>: раунд, публичный id игрока и
+                номер попытки. Кости — функция от него: <code>DiceRoller</code> считает
+                <code>HMAC-SHA256(HELLOWIN_DICE_SECRET, "{round}:{player}:{attempt}")</code> и превращает байты в грани.
+                Байт ≥ 252 отбрасывается, остальные дают <code>byte % 6 + 1</code>: 252 = 6 × 42, и каждая грань
+                выпадает одинаково часто — простое <code>byte % 6</code> по всем 256 значениям чуть чаще давало бы 1–4.
+                Тот же ключ — тот же HMAC — те же кости, в любом воркере и после перезапуска.
+            </p>
+            <p>
+                В Valkey (<code>hellowin:dice</code>, под локом <code>dice</code>) лежит только последняя попытка игрока
+                и время его последнего нового броска — не грани. Этого хватает, чтобы различить три случая:
+            </p>
+            <figure class="diagram">
+                <div class="diagram__scroll">
+<svg class="diagram__svg" viewBox="0 0 1000 420" style="min-width: 720px" role="img" aria-label="Бросок костей: браузер вызывает RPC roll с номером попытки n. DiceService под локом dice читает из hellowin:dice последнюю попытку игрока last. Если n = last + 1 — новый бросок: кости из HMAC ключа, запись last = n, событие roll всем, счёт бросков; не чаще HELLOWIN_DICE_COOLDOWN_MS. Если n = last — повтор: тот же ключ даёт тот же HMAC и те же кости, без события, без счёта и без паузы. Иначе — ошибка bad attempt с last, клиент берёт last + 1. Первое 6-6-6 записывает победителя под тем же локом.">
+<defs><marker id="n-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="n-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-box g-cf" x="20" y="165" width="170" height="70" rx="6"/>
+<text class="d-t" x="105" y="193" text-anchor="middle">Браузер</text>
+<text class="d-m" x="105" y="212" text-anchor="middle">roll {attempt: n}</text>
+<path class="d-e" d="M190 200 L270 200" marker-end="url(#n-ln)"/>
+<text class="d-l" x="230" y="192" text-anchor="middle">RPC</text>
+<rect class="d-box g-php" x="270" y="145" width="220" height="110" rx="6"/>
+<text class="d-t" x="380" y="172" text-anchor="middle">DiceService::roll</text>
+<text class="d-m" x="380" y="192" text-anchor="middle">лок dice</text>
+<text class="d-m" x="380" y="210" text-anchor="middle">hellowin:dice → last</text>
+<text class="d-s" x="380" y="232" text-anchor="middle">последняя попытка игрока</text>
+<rect class="d-crit" x="270" y="268" width="220" height="44" rx="4"/>
+<text class="d-n" x="380" y="286" text-anchor="middle">первое 6-6-6 — winner под тем же</text>
+<text class="d-n" x="380" y="302" text-anchor="middle">локом: второе видит его, not now</text>
+<path class="d-e d-e--ok" d="M490 180 L540 180 L540 70 L580 70" marker-end="url(#n-ok)"/>
+<text class="d-l" x="548" y="120" text-anchor="start">n = last + 1</text>
+<path class="d-e d-e--ret" d="M490 200 L580 200" marker-end="url(#n-ln)"/>
+<text class="d-l" x="535" y="192" text-anchor="middle">n = last</text>
+<path class="d-e" d="M490 220 L540 220 L540 340 L580 340" marker-end="url(#n-ln)"/>
+<text class="d-l" x="548" y="285" text-anchor="start">иначе</text>
+<rect class="d-note d-note--ok" x="580" y="20" width="400" height="100" rx="4"/>
+<text class="d-h d-ok" x="596" y="44" text-anchor="start">Новый бросок</text>
+<text class="d-m" x="596" y="66" text-anchor="start">HMAC(secret, "{round}:{player}:{n}") → кости</text>
+<text class="d-s" x="596" y="86" text-anchor="start">last = n, событие roll всем, rolls + 1;</text>
+<text class="d-s" x="596" y="104" text-anchor="start">не чаще HELLOWIN_DICE_COOLDOWN_MS, иначе busy</text>
+<rect class="d-note" x="580" y="155" width="400" height="90" rx="4"/>
+<text class="d-h" x="596" y="179" text-anchor="start">Повтор — двойной клик, переподключение</text>
+<text class="d-m" x="596" y="201" text-anchor="start">тот же ключ → тот же HMAC → те же кости</text>
+<text class="d-s" x="596" y="223" text-anchor="start">без записи, события, счёта и паузы:</text>
+<text class="d-s" x="596" y="239" text-anchor="start">повтором не перебросить</text>
+<rect class="d-note d-note--bad" x="580" y="295" width="400" height="80" rx="4"/>
+<text class="d-h d-bad" x="596" y="319" text-anchor="start">bad attempt {last}</text>
+<text class="d-s" x="596" y="341" text-anchor="start">пропустить попытку нельзя: клиент берёт last + 1</text>
+<text class="d-s" x="596" y="359" text-anchor="start">и бросает заново</text>
+<text class="d-s" x="20" y="404" text-anchor="start">ключ идемпотентности {round}:roll:{player}:{attempt}; грани не хранятся — их всегда можно посчитать заново</text>
+</svg>
+                </div>
+                <figcaption>Зелёное — новый эффект, пунктир — тот же ответ без эффекта, красное — отказ; оранжевое — работа под локом.</figcaption>
+            </figure>
+            <ul>
+                <li><strong>Почему повтор не перебрасывает.</strong> Ответ на повтор не берётся из кэша — он
+                    вычисляется заново и совпадает, потому что ключ тот же. Новые кости даёт только следующая попытка, и
+                    не чаще паузы <code>HELLOWIN_DICE_COOLDOWN_MS</code>: перебрать попытки быстрее остальных нельзя, а
+                    без секрета нельзя и заранее узнать, на какой из них выпадет 6-6-6. Сравните с переходом тыквы:
+                    там эффект — запись в KV, и дубль отсекает маркер <code>SET NX</code>; здесь эффект — само число, и
+                    детерминизм делает маркер ненужным.</li>
+                <li><strong>Первое 6-6-6 — под локом.</strong> Все броски зала проходят через одну запись
+                    <code>hellowin:dice</code> под одним локом <code>dice</code>, как удары по FrankenPHP. Победителя
+                    записывает тот, кто взял лок первым; второе 6-6-6 видит его и получает <code>not now</code> — как
+                    второй выстрел по уже сбитому летуну. Победа делает шаг финала готовым
+                    (<code>markReady</code>), и сова называет победителя.</li>
+                <li><strong>Секрет.</strong> <code>HELLOWIN_DICE_SECRET</code>; если он пуст — выводится из
+                    <code>ENCRYPTER_KEY</code> через HMAC с собственной солью, а без него первый бросок создаёт случайный
+                    ключ и кладёт в Valkey (<code>hellowin:dice:secret</code>), чтобы все воркеры бросали одинаково.</li>
+                <li><strong>Сова.</strong> Запасная кнопка модератора <code>dice.owl</code>: первые два броска —
+                    HMAC от <code>{round}:owl:{n}</code> с пропуском 6-6-6, третий — 6-6-6 наверняка. В число попыток
+                    зала (<code>reveal.rolls</code>) не идут.</li>
+            </ul>
         </section>
 
         <section class="how__section" id="live" role="tabpanel" aria-labelledby="tab-live">

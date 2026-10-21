@@ -26,7 +26,7 @@ final class HowItWorksPageTest extends TestCase
         $body = $this->page();
 
         \preg_match_all('/<a role="tab" id="([^"]+)"[^>]*\baria-controls="([^"]+)"/', $body, $tabs, \PREG_SET_ORDER);
-        Assert::count($tabs, 7);
+        Assert::count($tabs, 8);
 
         foreach ($tabs as [, $tab, $panel]) {
             Assert::string($body)->contains(\sprintf('id="%s" role="tabpanel" aria-labelledby="%s"', $panel, $tab));
@@ -65,6 +65,10 @@ final class HowItWorksPageTest extends TestCase
             'HELLOWIN_WALK_LEAVE_AFTER',
             'flyer:{id}',
             'RevealBuilder',
+            '{round}:roll:{player}:{attempt}',
+            'hellowin:dice',
+            'HELLOWIN_DICE_COOLDOWN_MS',
+            'HELLOWIN_DICE_SECRET',
         ];
         foreach ($terms as $term) {
             Assert::string($body)->contains($term);
