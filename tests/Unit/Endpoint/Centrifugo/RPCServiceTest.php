@@ -133,6 +133,7 @@ final class RPCServiceTest
             'cursed' => null,
             'boss' => null,
             'dice' => null,
+            'dawn' => null,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);

@@ -20,6 +20,7 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DawnService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
@@ -43,6 +44,7 @@ use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
+use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
@@ -98,6 +100,8 @@ final class RitualHarness
     public readonly RapierService $rapier;
     public readonly DiceStore $diceStore;
     public readonly DiceService $dice;
+    public readonly DawnStore $dawnStore;
+    public readonly DawnService $dawn;
 
     /**
      * @param positive-int $threshold
@@ -164,8 +168,10 @@ final class RitualHarness
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->dice = new DiceService($this->diceStore, DiceRoller::withSecret(self::DICE_SECRET), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800);
+        $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
+        $this->dawn = new DawnService($this->dawnStore, $publisher, $this->clock, 3);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -194,6 +200,7 @@ final class RitualHarness
             new NullLogger(),
             new ZombieFactory(self::walkZone(), 14000, 2, 1, new Randomizer(new Mt19937(3))),
             $this->cursed,
+            $this->dawn,
         );
         $this->presence = new FakePresence();
         $this->walks = new WalkService(

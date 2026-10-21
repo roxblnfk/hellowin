@@ -38,7 +38,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
-        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5],
+        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5, 'dawn_board' => 200],
         'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
@@ -313,6 +313,14 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.rapier.boss_hp_per_player" (env HELLOWIN_BOSS_HP_PER_PLAYER) must be a non-negative integer.');
+    }
+
+    /**
+     * @return positive-int Rows of the dawn's ranking every hit sends at most.
+     */
+    public function getDawnBoard(): int
+    {
+        return self::positiveInt($this->rapier()['dawn_board'] ?? null, 'rapier.dawn_board', 'HELLOWIN_DAWN_BOARD');
     }
 
     /**

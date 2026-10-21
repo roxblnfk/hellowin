@@ -312,6 +312,19 @@ final class HellowinConfigTest
         $config->getBossHpPerPlayer();
     }
 
+    public function dawnBoardComesFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getDawnBoard(), 200);
+        Assert::same((new HellowinConfig(['rapier' => ['dawn_board' => '10']]))->getDawnBoard(), 10);
+    }
+
+    public function rejectsAnEmptyDawnBoard(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DAWN_BOARD');
+
+        (new HellowinConfig(['rapier' => ['dawn_board' => '0']]))->getDawnBoard();
+    }
+
     public function diceSecretIsConfiguredOrDerivedFromTheEncryptionKey(): void
     {
         Assert::null((new HellowinConfig())->getDiceSecret());

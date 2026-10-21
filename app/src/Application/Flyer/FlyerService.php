@@ -8,6 +8,7 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DawnService;
 use App\Application\Story\OwlLine;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
@@ -15,8 +16,10 @@ use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
+use App\Domain\Player\Player;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\Story;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -41,6 +44,7 @@ final readonly class FlyerService
         private LoggerInterface $logger = new NullLogger(),
         private ?ZombieFactory $zombies = null,
         private ?CursedService $cursed = null,
+        private ?DawnService $dawn = null,
     ) {}
 
     /**
@@ -123,6 +127,7 @@ final readonly class FlyerService
         $round = $this->ritual->round();
         $shooter = $this->players->shotFlyer($player, $flyer->points);
         $this->publisher->shot($round, $flyer, $shooter);
+        $player === null or $this->dawnHit($round, $this->ritual->story(), $shooter ?? new Player($player));
         $this->metrics->flyerShot($flyer);
         $this->count($round);
         $flyer->kind === Flyer::KIND_ZOMBIE and $this->slain($round);
@@ -168,6 +173,18 @@ final readonly class FlyerService
             $this->cursed?->slew($round);
         } catch (\Throwable $e) {
             $this->logger->warning('Zombie is not counted for the cursed world: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+        }
+    }
+
+    /**
+     * The board of the dawn is a show beside the hit: a failure there must not turn the hit into an error.
+     */
+    private function dawnHit(int $round, Story $story, Player $shooter): void
+    {
+        try {
+            $this->dawn?->hit($round, $story, $shooter);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Hit is not counted for the dawn: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
         }
     }
 

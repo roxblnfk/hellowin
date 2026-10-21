@@ -48,11 +48,12 @@ return [
 
     // The end of the night (docs/spec/scenario.md, «Рапира»): the cursed world wants `cursed_per_player` mugs drunk
     // and as many zombies slain per player on the floor; FrankenPHP wakes with `boss_hp_base` health plus
-    // `boss_hp_per_player` per player, times the threshold multiplier
+    // `boss_hp_per_player` per player, times the threshold multiplier; the dawn ranks its shooters, `dawn_board` rows at most
     'rapier' => [
         'cursed_per_player' => env('HELLOWIN_CURSED_PER_PLAYER', 5),
         'boss_hp_base' => env('HELLOWIN_BOSS_HP_BASE', 40),
         'boss_hp_per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 5),
+        'dawn_board' => env('HELLOWIN_DAWN_BOARD', 200),
     ],
 
     // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): the faces are HMAC-SHA256 of the attempt under

@@ -17,6 +17,7 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
+use App\Application\Story\DawnService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
@@ -41,6 +42,7 @@ use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
+use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceSecret;
 use App\Domain\Story\DiceStore;
@@ -103,6 +105,7 @@ final class HellowinBootloader extends Bootloader
                 CursedService $cursed,
                 RapierService $rapier,
                 DiceService $dice,
+                DawnService $dawn,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -117,6 +120,7 @@ final class HellowinBootloader extends Bootloader
                 $cursed,
                 $rapier,
                 $dice,
+                $dawn,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -151,6 +155,17 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): CursedStore => new CursedStore($cache->storage($config->getStorage()), new Locks($lock)),
+            DawnStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): DawnStore => new DawnStore($cache->storage($config->getStorage()), new Locks($lock)),
+            DawnService::class => static fn(
+                HellowinConfig $config,
+                DawnStore $store,
+                ChannelPublisher $publisher,
+                Clock $clock,
+            ): DawnService => new DawnService($store, $publisher, $clock, $config->getDawnBoard()),
             DiceStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

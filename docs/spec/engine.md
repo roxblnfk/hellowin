@@ -37,7 +37,7 @@
 | Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
-| Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale` |
+| Рапира: цель проклятого мира, слово, зомби-игроки, босс, топ рассвета | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
 | Кости 6-6-6: запись, грани, секрет | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 
 ## Периодический процесс (тикер)
@@ -330,6 +330,11 @@
   `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не запускаются (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
+- **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): попадание игрока
+  (`FlyerService::shoot`, не анонимное) на шаге 7 — сразу после `shot` под RR-локом `dawn` `shots + 1` и `at` в
+  `hellowin:dawn` `{round, players: {id: {shots, at, name}}}`, затем событие `dawn {board}` — весь порядок (`shots` ↓,
+  `at` ↑, `id`), не больше `HELLOWIN_DAWN_BOARD` строк. Сбой счёта пишется в лог: попадание остаётся попаданием. Снимок —
+  `dawn {board}` на шаге 7, иначе `null`. Запись другого раунда — пустая: сброс и новый цикл ничего не чистят.
 - **RoadRunner в баре** (бриф «RoadRunner в баре»): флаг `roadrunner` в сюжете `hellowin:story` — `RitualStore::reset(round,
   again)` под локами сброса ставит его новым циклом с рассвета и снимает сбросом модератора; переходы сцен его не
   трогают. Он приходит как `bar.roadrunner` в снимке и `reset.bar`; место — `walk.bar.roadrunner` (`BarLayout`, в разметке).
@@ -553,8 +558,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
+| Топ рассвета: `hellowin:dawn` `{round, players}` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -630,6 +636,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_BOSS_HP_PER_PLAYER` | 5 | добавка к здоровью FrankenPHP на каждого игрока на поле |
 | `HELLOWIN_DICE_SECRET` | пусто | ключ HMAC костей; пусто — из `ENCRYPTER_KEY` с солью, без него — случайный в `hellowin:dice:secret` |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
+| `HELLOWIN_DAWN_BOARD` | 200 | строк топа рассвета в событии `dawn` и снимке, не больше |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |

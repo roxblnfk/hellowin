@@ -340,6 +340,16 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * The whole ranking of the dawn's shooters after a counted hit.
+     *
+     * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}> $board
+     */
+    public function dawn(int $round, array $board): void
+    {
+        $this->publish(['type' => 'dawn', 'round' => $round, 'board' => $board]);
+    }
+
+    /**
      * A line of the owl's catalogue; the frontend holds the texts and fills the params in.
      *
      * @param non-empty-string $line
