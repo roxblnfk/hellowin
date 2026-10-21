@@ -17,11 +17,13 @@
 <p>Арт бара (<code>pixel/bar.js</code>) с <code>DEFAULT_BAR_LAYOUT</code>. Параметры: <code>?light=day|firelight|…</code>
     (свет, по умолчанию firelight), <code>?t=мс</code> (стоп-кадр пламени и розлива), <code>?zoom=N</code> (масштаб
     кадров, по умолчанию 5), <code>?sheet</code> (только кадры, без залов; <code>?sheet=owl</code> — только сова и позы), <code>?mugs=N</code> (кружек на стойке в зале, по умолчанию 3), <code>?boxes</code> —
-    контуры препятствий и места у стойки.</p>
+    контуры препятствий (зелёные), места у стойки и пол под мебелью с полуфигуркой по бокам (красный: должен лежать
+    внутри препятствия), <code>?layout=JSON</code> — раскладка вместо копии конфига (например, <code>walk.bar</code> из
+    <code>#app[data-bar-layout]</code> живого стенда).</p>
 <div id="out"></div>
 <script type="module">
     import {
-        DEFAULT_BAR_LAYOUT, BAR_FLICKER_MS, BAR_MUG, bakeBar, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar,
+        DEFAULT_BAR_LAYOUT, BAR_FLICKER_MS, BAR_MUG, bakeBar, barFootprints, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar,
     } from '../js/pixel/bar.js';
     import { OWL_BAR, pourFrame } from '../js/pixel/owl.js';
     import { characterFrame, POSES } from '../js/pixel/characters.js';
@@ -35,7 +37,7 @@
     const mugCount = params.has('mugs') ? Number(params.get('mugs')) : 3;
     const boxes = params.has('boxes');
     const out = document.getElementById('out');
-    const layout = DEFAULT_BAR_LAYOUT;
+    const layout = params.has('layout') ? JSON.parse(params.get('layout')) : DEFAULT_BAR_LAYOUT;
 
     function heading(text) {
         const h = document.createElement('h2');
@@ -87,13 +89,13 @@
     // Walkers placed by hand on the default layout, in percents: at the counter, a pair by a table, a latecomer.
     const WALKERS = [
         { at: [80, 66], look: 0, view: { dir: 'back', pose: 'idle' } },
-        { at: [40, 74], look: 1, view: { dir: 'side', pose: 'drink', frame: 2 } },
-        { at: [47, 74], look: 2, view: { dir: 'side', pose: 'idle', item: 'beer' }, flip: true },
+        { at: [33, 72], look: 1, view: { dir: 'side', pose: 'drink', frame: 2 } },
+        { at: [40, 69], look: 2, view: { dir: 'side', pose: 'idle', item: 'beer' }, flip: true },
         { at: [87, 70], look: 3, view: { dir: 'front', pose: 'shrug', frame: 1 } },
         { at: [12, 78], look: 4, view: { dir: 'front', pose: 'drink', frame: 1 } },
         { at: [50, 93], look: 5, view: { dir: 'front', pose: 'idle', item: 'beer' } },
-        { at: [22, 57], look: 1, view: { dir: 'back', pose: 'idle' } },
-        { at: [70, 73], look: 2, view: { dir: 'front', pose: 'drink', frame: 0 } },
+        { at: [22, 55], look: 1, view: { dir: 'back', pose: 'idle' } },
+        { at: [60, 72], look: 2, view: { dir: 'front', pose: 'drink', frame: 0 } },
     ];
 
     function hall(w, h, lit, t) {
@@ -134,7 +136,11 @@
                 sprites.push({ y: box.y + 0.1 + (s.y - box.y) * 0.001, draw: () => ctx.drawImage(mug, s.x - BAR_MUG.anchor.x, s.y - BAR_MUG.anchor.y) });
             }
         }
-        for (const wk of WALKERS) {
+        // ?boxes: walkers on the edges of the obstacles too, where the router lets the feet go nearest the furniture.
+        const edge = boxes ? layout.obstacles.flatMap((o) => (o.cx !== undefined
+            ? [0, 40, 140, 180, 220, 320].map((a) => [o.cx + o.rx * Math.cos((a * Math.PI) / 180), o.cy + o.ry * Math.sin((a * Math.PI) / 180)])
+            : [[o.x1, (o.y1 + o.y2) / 2 + 3]]).map((at, i) => ({ at, look: i % LOOKS.length, view: { dir: 'front', pose: 'idle' } }))) : [];
+        for (const wk of [...WALKERS, ...edge]) {
             const x = (wk.at[0] / 100) * artW;
             const y = (wk.at[1] / 100) * artH;
             const f = walkerCanvas(LOOKS[wk.look], wk.view, lit);
@@ -164,6 +170,8 @@
             ctx.stroke();
             ctx.strokeStyle = '#f0f';
             ctx.strokeRect(...P(layout.area.x1, layout.area.y1), ((layout.area.x2 - layout.area.x1) / 100) * artW, ((layout.area.y2 - layout.area.y1) / 100) * artH);
+            ctx.strokeStyle = '#f33';
+            for (const f of barFootprints(layout, artW, artH)) ctx.strokeRect(f.x1 - 7 + 0.5, f.y1 - 1 + 0.5, f.x2 - f.x1 + 14 - 1, f.y2 - f.y1 + 2 - 1);
             if (box) {
                 ctx.strokeStyle = '#ff0';
                 ctx.strokeRect(box.x1, box.top, box.x2 - box.x1, box.y - box.top);

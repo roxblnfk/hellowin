@@ -29,6 +29,10 @@ import { paintFlames } from './sprites.js';
  *                                                'barrel', 'counter'. Put canvas pixel `anchor` at (x, y). `glow` —
  *                                                flicker frames of the same size, drawn unlit over the prop (candle on
  *                                                a table): frame ⌊now / BAR_FLICKER_MS + phase⌋ mod glow.length.
+ *   barFootprints(layout, artW, artH, opts)      → [{kind, x1, y1, x2, y2}] — the floor under the tables, benches,
+ *                                                barrel stacks and the counter; the furniture keeps half a walker
+ *                                                (WALKER_HALF) inside its obstacle, so the router walks bodies clear of
+ *                                                it. For the lab's ?boxes check.
  *   barLights(layout, artW, artH, opts)          → [{kind, x, y, frames, anchor, phase, halo}] — the wall flames
  *                                                ('hearth', 'torch', 'candle' of the chandelier) for a layer over the
  *                                                background and under everything else, drawn unlit, flickering like
@@ -46,21 +50,20 @@ import { paintFlames } from './sprites.js';
  *   bakeBar(sprite, lighting)                    a canvas of a sprite in a lighting with its beer and foam kept
  *                                                (night.js keepHueColor) — for BAR_MUG and the OWL_BAR frames.
  *   beerLayer(sprite)                            the same sprite with only its beer and foam pixels.
- *   DEFAULT_BAR_LAYOUT                           a layout for the lab until the backend config exists.
+ *   DEFAULT_BAR_LAYOUT                           the lab's copy of walk.bar (app/config/hellowin.php).
  */
 
-/** A hall for a wide screen: counter on the right by the back wall, four tables. Screen percents, like walk.bar. */
+/** The lab's hall: a copy of walk.bar in app/config/hellowin.php (and of BAR_LAYOUT in layout.js), screen percents. */
 export const DEFAULT_BAR_LAYOUT = {
-    area: { x1: 4, y1: 52, x2: 96, y2: 96 },
+    area: { x1: 3, y1: 50, x2: 94, y2: 97 },
     obstacles: [
-        { cx: 22, cy: 66, rx: 10, ry: 6 },
-        { cx: 50, cy: 63, rx: 9, ry: 5.5 },
-        { cx: 30, cy: 85, rx: 11, ry: 6 },
-        { cx: 66, cy: 83, rx: 11, ry: 6 },
-        { x1: 70, y1: 52, x2: 95, y2: 60 },
+        { x1: 62.5, y1: 46, x2: 95, y2: 60 },
+        { cx: 22, cy: 64, rx: 13, ry: 7 },
+        { cx: 44, cy: 78, rx: 13, ry: 7 },
+        { cx: 76, cy: 80, rx: 13, ry: 7 },
     ],
-    counter: { x1: 72, x2: 93, y: 64 },
-    spawn: { y1: 72, y2: 77 },
+    counter: { x1: 66, x2: 92, y: 62 },
+    spawn: { y1: 90, y2: 94 },
     clink_reach: 10,
 };
 
@@ -73,6 +76,10 @@ const COUNTER_H = 13;
 const TABLE_H = 9;
 const BENCH_H = 4;
 const BENCH_D = 3;
+// What the furniture keeps off the edges of its obstacle, art px: half a walker's body (characters.js: a 12 px head
+// and its outline) at the sides, a gap in front and behind.
+const WALKER_HALF = 7;
+const FOOT_GAP = 1;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
@@ -215,7 +222,10 @@ function geometry(layout, artW, artH, opts = {}) {
     let counter = null;
     let owl = null;
     if (rects.length) {
-        const r = rects[0];
+        // A walker's half off each end of the counter that has floor beside it.
+        const r = { ...rects[0] };
+        if (r.x1 > Math.min(a1.x, a2.x)) r.x1 += WALKER_HALF;
+        if (r.x2 < Math.max(a1.x, a2.x)) r.x2 -= WALKER_HALF;
         const depth = clamp(r.y2 - r.y1, 6, 12);
         const back = r.y2 - COUNTER_H - depth;
         counter = { ...r, depth, back, face: r.y2 - COUNTER_H + 2 };
@@ -245,16 +255,30 @@ function geometry(layout, artW, artH, opts = {}) {
     };
 }
 
-/** A table ellipse → footprints (front line = y where the walkers sort) of the table and its benches. */
+/**
+ * A table ellipse → footprints (front line = y where the walkers sort) of the table and its benches. The router keeps
+ * the walkers' feet out of the ellipse, so the floor under the table and its benches, widened by half a walker at each
+ * end, stays inside it and no body overlaps the furniture. Of the depths that fit — the largest slab no deeper than
+ * half its length and not much longer than its benches.
+ */
 function tableParts(t) {
+    // The even floor width the ellipse leaves for the furniture `dy` from its centre, less a walker's half each end.
+    const room = (dy) => 2 * Math.floor(t.rx * Math.sqrt(Math.max(0, 1 - ((dy + FOOT_GAP + 0.5) / t.ry) ** 2)) - WALKER_HALF);
     const benches = t.ry >= 8;
-    const tw = Math.max(14, Math.round(t.rx * 2 * 0.84));
-    const td = benches ? Math.max(5, Math.round(2 * t.ry - 2 * (BENCH_D + 1) - 2)) : Math.max(4, Math.round(t.ry * 1.6));
+    let best = null;
+    for (let td = benches ? 5 : 4; td < 2 * t.ry; td++) {
+        const bw = benches ? Math.min(room(td / 2) - 6, room(td / 2 + 1 + BENCH_D)) : 0;
+        // The slab overhangs its benches by at most 6 px at each end.
+        const tw = benches ? Math.min(room(td / 2), bw + 12) : room(td / 2);
+        if (tw < 14 || td > tw / 2 || (benches && bw < 10)) continue;
+        if (!best || tw * td > best.tw * best.td) best = { tw, td, bw };
+    }
+    // An ellipse too small for any of them: the smallest table, sticking out of it.
+    const { tw, td, bw } = best ?? { tw: 14, td: benches ? 5 : 4, bw: 10 };
     const x1 = Math.round(t.cx - tw / 2);
     const front = Math.round(t.cy + td / 2);
     const parts = { x1, w: tw, front, back: front - td, depth: td, benches: [] };
     if (benches) {
-        const bw = Math.max(10, tw - 6);
         const bx = Math.round(t.cx - bw / 2);
         parts.benches.push({ x1: bx, w: bw, front: front - td - 1 }, { x1: bx, w: bw, front: front + 1 + BENCH_D });
     }
@@ -918,6 +942,22 @@ export function barProps(layout, artW, artH, opts = {}) {
     return out;
 }
 
+/** The floor under the furniture standing on the walkers' floor: [{kind, x1, y1, x2, y2}], see the module doc. */
+export function barFootprints(layout, artW, artH, opts = {}) {
+    const g = geometry(layout, artW, artH, opts);
+    const out = [];
+    for (const t of g.tables) {
+        const p = tableParts(t);
+        out.push({ kind: 'table', x1: p.x1, y1: p.back, x2: p.x1 + p.w, y2: p.front });
+        for (const b of p.benches) out.push({ kind: 'bench', x1: b.x1, y1: b.front - BENCH_D, x2: b.x1 + b.w, y2: b.front });
+    }
+    for (const r of g.rects.slice(1)) {
+        for (const b of barrelSpots(r)) out.push({ kind: 'barrel', x1: b.x - 5, y1: b.y - 4, x2: b.x + 6, y2: b.y });
+    }
+    if (g.counter) out.push({ kind: 'counter', x1: g.counter.x1, y1: g.counter.y2 - g.counter.depth, x2: g.counter.x2, y2: g.counter.y2 });
+    return out;
+}
+
 function propOf(kind, pix, ox, oy, x, y, color, extra = {}) {
     return { kind, canvas: pix.canvas(color), x, y, anchor: { x: x - ox, y: y - oy }, ...extra };
 }
@@ -1021,10 +1061,15 @@ function barrelProp(cx, foot, w, h, color, kind = 'barrel') {
     return propOf(kind, p, ox, oy, cx, foot, color);
 }
 
-function barrelStack(r, color) {
+// The feet of a barrel stack in a rectangle, kept off its sides like the tables so walkers round it don't overlap them.
+function barrelSpots(r) {
     const out = [];
-    for (let x = r.x1 + 7; x <= r.x2 - 6; x += 12) out.push(barrelProp(x, r.y2, 11, 14, color));
+    for (let x = r.x1 + WALKER_HALF + 6; x <= r.x2 - WALKER_HALF - 5; x += 12) out.push({ x, y: r.y2 - FOOT_GAP });
     return out;
+}
+
+function barrelStack(r, color) {
+    return barrelSpots(r).map((b) => barrelProp(b.x, b.y, 11, 14, color));
 }
 
 // Barrels against the back wall where nothing else stands: the corner by the left wall, and between the hearth and

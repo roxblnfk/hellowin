@@ -73,7 +73,7 @@
 | `pixel/finale-stage.js` | постановка шагов финала в сцене: таймлайн `T` (реэкспорт из `finale-timeline.js`), FrankenPHP и силуэт на круге, столб, дым, молнии, RoadRunner, пузыри RoadRunner и FrankenPHP; правила `nightOf` / `lightsOut` / `ritualOf` / `rumbleAt` для `scene.js` |
 | `pixel/clink.js` | чоканье в проклятом мире: автоматические группы по путям фигурок и серверному времени (`clinksOf`, `createClinks`), чоканье по клику из события `clink` (`clinkOf`, `CLINK_STALE_MS`), общий таймлайн `CLINK` |
 | `pixel/bubble.js` | пиксельные пузыри реплик в экранном разрешении (`createBubbles`: `say` каждый кадр, `sweep`) — FrankenPHP, RoadRunner, тосты |
-| `pixel/bar.js` | арт бара по `walk.bar`: фон зала `paintBar` (стены, очаг, декор, пол), мебель для сортировки с фигурками `barProps` (столы, лавки, бочки, стойка с бочонком и краном; свеча стола слоем `glow`), огни `barLights` (очаг, факелы, люстра — кадры мерцания, `BAR_FLICKER_MS`), место совы `barOwlSpot`, кружки `mugSlots` и `BAR_MUG`, прямоугольник стойки `counterBox`, `bakeBar` / `beerLayer` — пиво, хранящее цвет; `DEFAULT_BAR_LAYOUT` до конфига; лист — `public/dev/bar.html` |
+| `pixel/bar.js` | арт бара по `walk.bar`: фон зала `paintBar` (стены, очаг, декор, пол), мебель для сортировки с фигурками `barProps` (столы, лавки, бочки, стойка с бочонком и краном; свеча стола слоем `glow`), огни `barLights` (очаг, факелы, люстра — кадры мерцания, `BAR_FLICKER_MS`), место совы `barOwlSpot`, кружки `mugSlots` и `BAR_MUG`, прямоугольник стойки `counterBox`, пол под мебелью `barFootprints` (проверка `?boxes`), `bakeBar` / `beerLayer` — пиво, хранящее цвет; `DEFAULT_BAR_LAYOUT` — копия `walk.bar` для листа; лист — `public/dev/bar.html` |
 | `pixel/scene.js` | PixiJS-приложение: раскладка, слои, анимации; API ниже |
 
 `scene.js` и `join.js` (оба тянут `characters.js`) `app.js` грузит динамически: если они не загрузились, тыквы
@@ -655,7 +655,12 @@ client, clink)` в `client.js`.
 `halo(…, 'warm')`, 0,35), мебель `barProps` в `groundLayer` по линии опоры вместе с фигурками (свеча стола — слой
 `glow`). Координаты — `walk.bar` из `#app[data-bar-layout]` (без него — `BAR_LAYOUT` в `layout.js`, копия конфига) в
 процентах экрана **без** `spreadX`: фигурки в баре (`walkerArt`, `groundAt`) тоже без растяжки, клик в любую точку зала
-— `move` (сервер приводит на пол). Свет — `firelight` (свет листа `public/dev/bar.html`); фигурки и сова
+— `move` (сервер приводит на пол). Сервер водит фигурки по точке ног в обход препятствий, поэтому стол со скамьями и стойка
+рисуются внутри своего препятствия с запасом в полфигурки (`WALKER_HALF` по бокам, 1 арт-px спереди и сзади): стол
+подбирается под эллипс в арт-px текущего экрана, у стойки сужается край, рядом с которым есть пол; бочки по
+прямоугольникам после первого — тоже с отступом. Препятствия `walk.bar` задаёт фронтенд (ключи раскладки в
+`app/config/hellowin.php`, копии — `BAR_LAYOUT` и `DEFAULT_BAR_LAYOUT`); проверка — `public/dev/bar.html?boxes`: красный
+контур пола под мебелью с запасом лежит внутри зелёного препятствия. Свет — `firelight` (свет листа `public/dev/bar.html`); фигурки и сова
 перекрашены им, пиво — `keepHue`. Кнопки тыкв, костра и круга в баре скрыты (`body[data-bar]`, `visibility`), клик по
 ним не отправляется (`client.clickable`). Летунов в баре нет (сервер их не запускает). Без canvas — фон-заглушка и
 DOM-кнопки (стойка, «Выпить»).

@@ -39,14 +39,14 @@ export const isBar = (scene) => scene === SCENE.bar;
  * and how near two walkers stand for `clink.auto`.
  */
 export const BAR_LAYOUT = {
-    area: { x1: 3, y1: 50, x2: 97, y2: 97 },
+    area: { x1: 3, y1: 50, x2: 94, y2: 97 },
     obstacles: [
-        { x1: 64, y1: 46, x2: 100, y2: 60 },
-        { cx: 22, cy: 64, rx: 10, ry: 4.5 },
-        { cx: 44, cy: 78, rx: 10, ry: 4.5 },
-        { cx: 76, cy: 80, rx: 10, ry: 4.5 },
+        { x1: 62.5, y1: 46, x2: 95, y2: 60 },
+        { cx: 22, cy: 64, rx: 13, ry: 7 },
+        { cx: 44, cy: 78, rx: 13, ry: 7 },
+        { cx: 76, cy: 80, rx: 13, ry: 7 },
     ],
-    counter: { x1: 66, x2: 95, y: 62 },
+    counter: { x1: 66, x2: 92, y: 62 },
     spawn: { y1: 90, y2: 94 },
     clink_reach: 10,
 };
