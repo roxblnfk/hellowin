@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Application\Config;
 
 use App\Application\Config\HellowinConfig;
+use App\Domain\Bar\Perch;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
 use App\Domain\RateLimit\TokenBucket;
@@ -238,6 +239,32 @@ final class HellowinConfigTest
         Assert::same($layout->clinkReach, 9.0);
     }
 
+    public function barPerchesComeFromTheConfig(): void
+    {
+        $config = new HellowinConfig(['walk' => ['bar' => self::bar(['perches' => [
+            ['x1' => 3, 'x2' => 97, 'y' => 8, 'name' => 'beam'],
+            ['x1' => 25, 'x2' => 25, 'y' => 33.5, 'name' => 'shield-1'],
+        ]])]]);
+
+        $layout = $config->getBarLayout();
+
+        Assert::equals($layout?->perches, [new Perch(3, 97, 8, 'beam'), new Perch(25, 25, 33.5, 'shield-1')]);
+        Assert::same($layout->toArray()['perches'][1], ['x1' => 25.0, 'x2' => 25.0, 'y' => 33.5, 'name' => 'shield-1']);
+        Assert::same((new HellowinConfig(['walk' => ['bar' => self::bar()]]))->getBarLayout()?->perches, []);
+    }
+
+    #[DataSet([[['x1' => 5, 'x2' => 4, 'y' => 8, 'name' => 'beam']]], 'x1 past x2')]
+    #[DataSet([[['x1' => 3, 'x2' => 4, 'y' => '8', 'name' => 'beam']]], 'y not a number')]
+    #[DataSet([[['x1' => 3, 'x2' => 4, 'y' => 8]]], 'no name')]
+    #[DataSet([[['x1' => 3, 'x2' => 4, 'y' => 8, 'name' => 'a'], ['x1' => 5, 'x2' => 6, 'y' => 9, 'name' => 'a']]], 'same name twice')]
+    #[DataSet(['beam'], 'not a list')]
+    public function rejectsInvalidPerches(mixed $perches): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk.bar.perches');
+
+        (new HellowinConfig(['walk' => ['bar' => self::bar(['perches' => $perches])]]))->getBarLayout();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
@@ -381,5 +408,19 @@ final class HellowinConfigTest
             ->withMessageContaining('"hellowin.rpc_rate.click" (env HELLOWIN_RPC_RATE_CLICK) must be "<per second>,<burst>"');
 
         (new HellowinConfig(['rpc_rate' => ['click' => $value]]))->getRpcRates();
+    }
+
+    /**
+     * A valid `walk.bar` with the given keys replaced.
+     */
+    private static function bar(array $with = []): array
+    {
+        return [
+            'area' => ['x1' => 0, 'y1' => 50, 'x2' => 100, 'y2' => 100],
+            'obstacles' => [['x1' => 60, 'y1' => 40, 'x2' => 100, 'y2' => 60]],
+            'counter' => ['x1' => 62, 'x2' => 98, 'y' => 62],
+            'spawn' => ['y1' => 90, 'y2' => 95],
+            ...$with,
+        ];
     }
 }

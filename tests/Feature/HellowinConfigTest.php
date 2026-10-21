@@ -53,6 +53,18 @@ final class HellowinConfigTest extends TestCase
         Assert::count($layout->zone->obstacles, 4);
     }
 
+    public function shippedPerchesAreDistinctSurfacesOnScreen(): void
+    {
+        $perches = $this->getContainer()->get(HellowinConfig::class)->getBarLayout()?->perches ?? [];
+
+        Assert::notBlank($perches);
+        foreach ($perches as $perch) {
+            Assert::numeric($perch->x1)->between(0, 100);
+            Assert::numeric($perch->x2)->between(0, 100);
+            Assert::numeric($perch->y)->between(0, 100);
+        }
+    }
+
     public function shippedBushesAreOnTheGround(): void
     {
         $depths = \count($this->getContainer()->get(FlyerConfig::class)->getDepths());

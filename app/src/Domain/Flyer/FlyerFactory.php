@@ -28,7 +28,7 @@ use Random\Randomizer;
  * ({@see FIREFLY_AMP}, {@see FIREFLY_WAVES}) and bring their own points instead of the depth's.
  *
  * Flies are the flyers of the bar: at the middle depth they come in from a point over its floor or over its side wall,
- * land a few times on the table tops and the counter, a different one each time, and go out the same way. The server
+ * land a few times on the table tops, the counter and the perches of the layout, a different one each time, and go out the same way. The server
  * fixes only the landings and the timing — a leg between points and a sit at each; the loops between are the
  * frontend's. They bring their own points.
  *
@@ -411,7 +411,7 @@ final readonly class FlyerFactory
      * Where a fly lands, each as x and y ranges: the top of every table (an elliptic obstacle) — about its middle
      * across, half its half-depth above its centre; and the counter top, where the mugs stand — along the place at the
      * counter, in the upper half of the counter rectangle (the first rectangular obstacle), or a band above the place
-     * at the counter when the layout has no rectangle.
+     * at the counter when the layout has no rectangle; and every perch of the layout along its line.
      *
      * @return non-empty-list<array{array{float, float}, array{float, float}}>
      */
@@ -432,6 +432,10 @@ final readonly class FlyerFactory
         $surfaces[] = $box === null
             ? [[$x1, $x2], [$line - 10.0, $line - 4.0]]
             : [[\max($x1, $box->x1), \min($x2, $box->x2)], [$box->y1, ($box->y1 + $box->y2) / 2.0]];
+
+        foreach ($bar->perches as $perch) {
+            $surfaces[] = [[$perch->x1, $perch->x2], [$perch->y, $perch->y]];
+        }
 
         return $surfaces;
     }

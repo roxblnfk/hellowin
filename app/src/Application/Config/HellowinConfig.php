@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Config;
 
 use App\Domain\Bar\BarLayout;
+use App\Domain\Bar\Perch;
 use App\Domain\Element\Element;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
@@ -91,6 +92,7 @@ final class HellowinConfig extends InjectableConfig
             ],
             [self::float($spawn['y1'] ?? null, 'walk.bar.spawn.y1'), self::float($spawn['y2'] ?? null, 'walk.bar.spawn.y2')],
             self::nonNegative($bar['clink_reach'] ?? 10, 'walk.bar.clink_reach'),
+            self::perches($bar['perches'] ?? []),
         );
     }
 
@@ -558,6 +560,35 @@ final class HellowinConfig extends InjectableConfig
                 . $e->getMessage(),
                 previous: $e,
             );
+        }
+    }
+
+    /**
+     * Where flies land besides the tables and the counter: `[{x1, x2, y, name}]`.
+     *
+     * @return list<Perch>
+     */
+    private static function perches(mixed $perches): array
+    {
+        \is_array($perches) or throw new \InvalidArgumentException('Config "hellowin.walk.bar.perches" must be a list.');
+
+        try {
+            $list = \array_values(\array_map(static function (mixed $spec): Perch {
+                \is_array($spec) or throw new \InvalidArgumentException('Each perch must be {x1, x2, y, name}.');
+
+                return new Perch(
+                    self::float($spec['x1'] ?? null, 'walk.bar.perches.*.x1'),
+                    self::float($spec['x2'] ?? null, 'walk.bar.perches.*.x2'),
+                    self::float($spec['y'] ?? null, 'walk.bar.perches.*.y'),
+                    self::nonEmptyString($spec['name'] ?? null, 'walk.bar.perches.*.name'),
+                );
+            }, $perches));
+            $names = \array_map(static fn(Perch $perch): string => $perch->name, $list);
+            \count(\array_unique($names)) === \count($names) or throw new \InvalidArgumentException('Each perch needs a name of its own.');
+
+            return $list;
+        } catch (\InvalidArgumentException $e) {
+            throw new \InvalidArgumentException('Config "hellowin.walk.bar.perches": ' . $e->getMessage(), previous: $e);
         }
     }
 

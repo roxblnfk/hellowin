@@ -10,7 +10,7 @@ use App\Domain\Walk\WalkZone;
 /**
  * Where characters walk in the bar (docs/spec/protocol.md, «Бар»): the floor minus the tables and the counter, the
  * place in front of the counter where a mug is taken, the band new characters appear in and how close two characters
- * stand to clink by themselves. Percents of the screen, like the lawn.
+ * stand to clink by themselves, and where flies land on the furniture. Percents of the screen, like the lawn.
  */
 final readonly class BarLayout
 {
@@ -18,15 +18,21 @@ final readonly class BarLayout
      * @param array{float, float, float} $counter The place at the counter: from x1 to x2 along the line y.
      * @param array{float, float} $spawnY Top and bottom of the band new characters appear in.
      * @param float $clinkReach Percents of the screen: two characters at most this far apart clink by themselves.
+     * @param list<Perch> $perches Where flies land besides the tables and the counter, each a surface of its own.
      */
     public function __construct(
         public WalkZone $zone,
         public array $counter,
         public array $spawnY,
         public float $clinkReach,
+        public array $perches = [],
     ) {
         $counter[0] <= $counter[1] or throw new \InvalidArgumentException('The place at the counter needs x1 <= x2.');
         $spawnY[0] <= $spawnY[1] or throw new \InvalidArgumentException('The spawn band of the bar needs y1 <= y2.');
+        $names = \array_map(static fn(Perch $perch): string => $perch->name, $perches);
+        \count(\array_unique($names)) === \count($names) or throw new \InvalidArgumentException(
+            'The perches of the bar need unique names: each is a surface of its own.',
+        );
     }
 
     /**
@@ -78,7 +84,7 @@ final readonly class BarLayout
     /**
      * The layout as the config writes it, for the frontend's art.
      *
-     * @return array{area: array{x1: float, y1: float, x2: float, y2: float}, obstacles: list<array<non-empty-string, float>>, counter: array{x1: float, x2: float, y: float}, spawn: array{y1: float, y2: float}, clink_reach: float}
+     * @return array{area: array{x1: float, y1: float, x2: float, y2: float}, obstacles: list<array<non-empty-string, float>>, counter: array{x1: float, x2: float, y: float}, spawn: array{y1: float, y2: float}, clink_reach: float, perches: list<array{x1: float, x2: float, y: float, name: non-empty-string}>}
      */
     public function toArray(): array
     {
@@ -90,6 +96,7 @@ final readonly class BarLayout
             'counter' => ['x1' => $this->counter[0], 'x2' => $this->counter[1], 'y' => $this->counter[2]],
             'spawn' => ['y1' => $this->spawnY[0], 'y2' => $this->spawnY[1]],
             'clink_reach' => $this->clinkReach,
+            'perches' => \array_map(static fn(Perch $perch): array => $perch->toArray(), $this->perches),
         ];
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Flyer;
 
+use App\Domain\Bar\BarLayout;
+use App\Domain\Bar\Perch;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerDepth;
@@ -248,6 +250,34 @@ final class FlyerFactoryTest
         }
         Assert::count($landed, 4);
         Assert::notBlank(\array_filter($flies, static fn(?Flyer $f): bool => $f?->from->x === 0.0 || $f?->from->x === 97.0));
+    }
+
+    public function fliesLandOnThePerchesTooNeverTwiceRunningOnOne(): void
+    {
+        $harness = RitualHarness::barLayout();
+        $bar = new BarLayout($harness->zone, $harness->counter, $harness->spawnY, $harness->clinkReach, [
+            new Perch(3, 97, 8, 'beam'),
+            new Perch(25, 25, 33, 'shield-1'),
+        ]);
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(5)), [['fly']], bar: $bar, flyStops: [3, 3]);
+
+        $landed = [];
+        for ($i = 0; $i < 200; ++$i) {
+            $previous = null;
+            foreach ($factory->launch(0)?->stops ?? [] as $stop) {
+                $surface = match (true) {
+                    $stop->at->y === 8.0 => 'beam',
+                    $stop->at->y === 33.0 => 'shield-1',
+                    default => 'furniture ' . $stop->at->y,
+                };
+                $surface === 'beam' and Assert::numeric($stop->at->x)->between(3, 97);
+                $surface === 'shield-1' and Assert::same($stop->at->x, 25.0);
+                $surface !== $previous || \str_starts_with($surface, 'furniture') or Assert::fail('lands twice running on ' . $surface);
+                $previous = $surface;
+                $landed[$surface] = true;
+            }
+        }
+        Assert::true(isset($landed['beam'], $landed['shield-1']), 'lands on the perches');
     }
 
     public function fliesNeedTheBar(): never
