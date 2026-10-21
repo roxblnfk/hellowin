@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Bar\BarService;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
@@ -23,10 +24,11 @@ final readonly class ResetService
         private ChannelPublisher $publisher,
         private RitualMetrics $metrics,
         private ?WalkService $walks = null,
+        private ?BarService $bar = null,
     ) {}
 
     /**
-     * A ritual that starts in the bar takes every character back there.
+     * A ritual that starts in the bar takes every character back there with empty hands and fills the counter.
      *
      * @param int|null $fromRound Round to finish; null takes the current one.
      * @return positive-int|null The new round, null when `$fromRound` is already over.
@@ -39,7 +41,12 @@ final readonly class ResetService
             return null;
         }
 
-        $this->publisher->reset($round, $this->walks?->barIn(0) === true ? $this->backToBar() : null);
+        $inBar = $this->walks?->barIn(0) === true;
+        $this->publisher->reset(
+            $round,
+            $inBar ? $this->backToBar() : null,
+            $inBar ? $this->openBar($round) : null,
+        );
         $this->metrics->state($this->store->snapshot());
 
         return $round;
@@ -54,6 +61,18 @@ final readonly class ResetService
     {
         try {
             return $this->walks?->relocate(0);
+        } catch (LockBusyException) {
+            return null;
+        }
+    }
+
+    /**
+     * A busy counter keeps what it had; the owl pours the rest.
+     */
+    private function openBar(int $round): ?array
+    {
+        try {
+            return $this->bar?->open($round);
         } catch (LockBusyException) {
             return null;
         }

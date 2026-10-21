@@ -7,6 +7,7 @@ namespace Tests\Unit\Application\Hellowin;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ElementLockedException;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -42,7 +43,7 @@ final class BarSceneTest
     public function pumpkinCountsOnceTheRoomLeftTheBar(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1, 2]);
-        $ritual->story->nextScene(0, false);
+        $ritual->story->nextScene(0, true);
         $ritual->runJobs();
 
         $ritual->click('pumpkin-1');
@@ -50,27 +51,37 @@ final class BarSceneTest
         Assert::count($ritual->broadcast->ofType('click'), 1);
     }
 
-    public function barIsReadyFromTheStartAndTheModeratorLeavesItWithoutForce(): void
+    public function barWaitsForTheModeratorOrForce(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1, 2]);
 
+        Assert::false($ritual->snapshot->create()['ready']);
+        $refused = null;
+        try {
+            $ritual->story->nextScene(0, false);
+        } catch (StoryRefusedException $e) {
+            $refused = $e->error;
+        }
+        Assert::same($refused, 'not ready');
+
+        $ritual->bar->wave();
         Assert::true($ritual->snapshot->create()['ready']);
         Assert::same($ritual->story->nextScene(0, false), 1);
         $ritual->runJobs();
 
         Assert::same($ritual->store->snapshot()->scene, 1);
         Assert::false($ritual->snapshot->create()['ready']);
-        Assert::blank($ritual->broadcast->ofType('ready'));
-        Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['scene-1']);
+        Assert::same($ritual->broadcast->ofType('ready'), [['type' => 'ready', 'round' => 1, 'scene' => 0]]);
+        Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['bar-intro', 'scene-1']);
     }
 
     public function daySceneStillWaitsForItsPumpkins(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1, 2]);
-        $ritual->story->nextScene(0, false);
+        $ritual->story->nextScene(0, true);
         $ritual->runJobs();
 
-        Expect::exception(\App\Application\Story\StoryRefusedException::class);
+        Expect::exception(StoryRefusedException::class);
 
         $ritual->story->nextScene(1, false);
     }

@@ -81,14 +81,67 @@ final readonly class ChannelPublisher
 
     /**
      * @param list<Walker>|null $walkers Every character, put back into the bar with empty hands.
+     * @param array|null $bar The counter of the bar after the reset, as the snapshot shows it.
      */
-    public function reset(int $round, ?array $walkers = null): void
+    public function reset(int $round, ?array $walkers = null, ?array $bar = null): void
     {
         $item = $this->items->held(0);
         $message = ['type' => 'reset', 'round' => $round, 'item' => $item];
         $walkers === null or $message['walkers'] = self::walkers($walkers, $item);
+        $bar === null or $message['bar'] = $bar;
 
         $this->publish($message);
+    }
+
+    /**
+     * The owl began pouring a mug.
+     *
+     * @param array{since: int, until: int, rumor?: int} $pouring
+     */
+    public function pour(int $round, array $pouring): void
+    {
+        $this->publish(['type' => 'pour', 'round' => $round] + $pouring);
+    }
+
+    /**
+     * The owl put a poured mug on the counter.
+     *
+     * @param int<0, max> $mugs Mugs on the counter now.
+     */
+    public function mugs(int $round, int $mugs): void
+    {
+        $this->publish(['type' => 'mugs', 'round' => $round, 'mugs' => $mugs]);
+    }
+
+    /**
+     * A character reached the counter: with a mug, or there was none left.
+     *
+     * @param non-empty-string $player
+     * @param int<0, max>|null $mugs Mugs left on the counter; null when none was taken.
+     */
+    public function take(int $round, string $player, ?int $mugs): void
+    {
+        $message = ['type' => 'take', 'round' => $round, 'player' => ['id' => $player], 'ok' => $mugs !== null];
+        $mugs === null or $message['mugs'] = $mugs;
+
+        $this->publish($message);
+    }
+
+    /**
+     * @param non-empty-string $player
+     */
+    public function drink(int $round, string $player): void
+    {
+        $this->publish(['type' => 'drink', 'round' => $round, 'player' => ['id' => $player]]);
+    }
+
+    /**
+     * @param int<0, max> $drunk Mugs the room has drunk in the round.
+     * @param positive-int $target Mugs the bar wants drunk before the room leaves.
+     */
+    public function drinks(int $round, int $drunk, int $target): void
+    {
+        $this->publish(['type' => 'drinks', 'round' => $round, 'drunk' => $drunk, 'target' => $target]);
     }
 
     public function flyer(int $round, Flyer $flyer): void

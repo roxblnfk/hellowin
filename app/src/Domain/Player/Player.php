@@ -17,6 +17,7 @@ final readonly class Player
      * @param int<0, max> $flyers Flyers shot down.
      * @param int<0, max> $points Points for the flyers.
      * @param Look|null $look Null until the player picks a character: such a player stays off the lawn.
+     * @param int<0, max> $drinks Mugs drunk in the bar.
      */
     public function __construct(
         public string $id,
@@ -26,6 +27,7 @@ final readonly class Player
         public int $flyers = 0,
         public int $points = 0,
         public ?Look $look = null,
+        public int $drinks = 0,
     ) {}
 
     /**
@@ -45,6 +47,7 @@ final readonly class Player
             self::count($value['flyers'] ?? null),
             self::count($value['points'] ?? null),
             Look::fromArray($value['look'] ?? null),
+            self::count($value['drinks'] ?? null),
         );
     }
 
@@ -54,17 +57,17 @@ final readonly class Player
      */
     public function named(string $name, ?Look $look = null): self
     {
-        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look);
+        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look, $this->drinks);
     }
 
     public function clicked(): self
     {
-        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look);
+        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks);
     }
 
     public function finishedPumpkin(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points, $this->look);
+        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points, $this->look, $this->drinks);
     }
 
     /**
@@ -72,11 +75,16 @@ final readonly class Player
      */
     public function shotFlyer(int $points): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points, $this->look);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points, $this->look, $this->drinks);
+    }
+
+    public function drank(): self
+    {
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks + 1);
     }
 
     /**
-     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>}
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>}
      */
     public function toArray(): array
     {
@@ -88,6 +96,7 @@ final readonly class Player
             'finished' => $this->finished,
             'flyers' => $this->flyers,
             'points' => $this->points,
+            'drinks' => $this->drinks,
         ];
     }
 

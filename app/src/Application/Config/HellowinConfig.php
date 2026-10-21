@@ -36,6 +36,7 @@ final class HellowinConfig extends InjectableConfig
         'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
+        'bar' => ['mugs' => 5, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -235,6 +236,45 @@ final class HellowinConfig extends InjectableConfig
     public function getCircleStages(): int
     {
         return self::positiveInt($this->config['circle_stages'] ?? null, 'circle_stages', 'HELLOWIN_CIRCLE_STAGES');
+    }
+
+    /**
+     * @return positive-int Full mugs the counter of the bar holds at most.
+     */
+    public function getBarMugs(): int
+    {
+        return self::positiveInt($this->bar()['mugs'] ?? null, 'bar.mugs', 'HELLOWIN_BAR_MUGS');
+    }
+
+    /**
+     * @return positive-int Milliseconds the owl pours one mug.
+     */
+    public function getBarPourMs(): int
+    {
+        return self::positiveInt($this->bar()['pour_ms'] ?? null, 'bar.pour_ms', 'HELLOWIN_BAR_POUR_MS');
+    }
+
+    /**
+     * @return positive-int Mugs the room drinks in the bar before it is ready to leave; the moderator moves the goal.
+     */
+    public function getBarDrinks(): int
+    {
+        return self::positiveInt($this->bar()['drinks'] ?? null, 'bar.drinks', 'HELLOWIN_BAR_DRINKS');
+    }
+
+    /**
+     * @return float Probability that the owl mutters a rumour over a pour.
+     */
+    public function getBarRumorChance(): float
+    {
+        /** @var mixed $value */
+        $value = $this->bar()['rumor_chance'] ?? null;
+        \is_string($value) && \is_numeric(\trim($value)) and $value = (float) \trim($value);
+        \is_int($value) and $value = (float) $value;
+
+        return \is_float($value) && $value >= 0.0 && $value <= 1.0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.bar.rumor_chance" (env HELLOWIN_BAR_RUMOR_CHANCE) must be a probability from 0 to 1.');
     }
 
     /**
@@ -592,6 +632,14 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) || \is_float($value)
             ? (float) $value
             : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must be a number.', $key));
+    }
+
+    private function bar(): array
+    {
+        $bar = $this->config['bar'] ?? [];
+        \is_array($bar) or throw new \InvalidArgumentException('Config "hellowin.bar" must be an array.');
+
+        return $bar;
     }
 
     private function walk(): array

@@ -8,7 +8,7 @@ use App\Domain\Element\Element;
 
 /**
  * A scene whose last pumpkin stage is 0 can only be the first one: the bar, where the evening gathers before the
- * ritual. It has no pumpkins to move, takes no clicks on them and is always ready.
+ * ritual. It has no pumpkins to move and takes no clicks on them; it gets ready by its drinks, outside the policy.
  *
  * Pumpkins move stage by stage up to the last stage of the current scene and wait there; then the bonfire does the
  * same by its own threshold and stage maximums, and the scene is ready. A scene that does not take the bonfire past
@@ -89,8 +89,9 @@ final readonly class LockstepPolicy implements RitualPolicy
     #[\Override]
     public function sceneReady(RitualSnapshot $ritual): bool
     {
+        // The bar has no pumpkins: it is ready once the room has drunk its goal or the moderator waves, not here
         if ($this->bar($ritual->scene)) {
-            return true;
+            return false;
         }
         if ($ritual->scene >= $this->finalScene()) {
             return $this->drawing($ritual)

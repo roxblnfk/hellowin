@@ -69,7 +69,7 @@ final class StoryTest
         $reveal = Reveal::of($ritual, new LockstepPolicy(5, [4, 8]), 3, null);
 
         // 24 accepted: 15 went into 3 transitions, 5 + 1 wait for the next ones
-        Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'lastPumpkin' => null]);
+        Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'drinks' => 0, 'lastPumpkin' => null]);
     }
 
     public function burnedClicksFollowTheThresholdOfEachTransition(): void

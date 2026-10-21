@@ -47,7 +47,7 @@ final readonly class StoryService
             return $ritual->scene;
         }
         $ritual->scene < $this->policy->finalScene() or throw new StoryRefusedException('final scene');
-        $force || $ritual->ready() || $this->policy->bar($ritual->scene) or throw new StoryRefusedException('not ready');
+        $force || $ritual->ready() or throw new StoryRefusedException('not ready');
 
         $this->queue->scene($ritual->round, $ritual->scene + 1);
 

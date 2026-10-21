@@ -61,7 +61,7 @@ interface RitualPolicy
 
     /**
      * @return bool Whether the scene is the bar: the evening gathers there before the ritual, it has no pumpkins to
-     *         click and is always ready.
+     *         click; it gets ready once the room has drunk its goal.
      */
     public function bar(int $scene): bool;
 

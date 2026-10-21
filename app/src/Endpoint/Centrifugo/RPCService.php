@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
+use App\Application\Bar\BarRefusedException;
+use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ElementLockedException;
@@ -47,7 +49,7 @@ final readonly class RPCService implements ServiceInterface
     /** Methods with a limit of their own; the rest share `other`. */
     private const RATE_GROUPS = ['click', 'shoot', 'move'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -62,6 +64,7 @@ final readonly class RPCService implements ServiceInterface
         private Clock $clock,
         private RateLimiter $limiter,
         private PlayMetrics $metrics,
+        private ?BarService $bar = null,
     ) {}
 
     #[\Override]
@@ -100,6 +103,10 @@ final readonly class RPCService implements ServiceInterface
             'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
             'zombies' => $this->toggle($request->getData(), $this->story->zombies(...)),
             'thresholds' => ['ok' => true] + $this->story->thresholds($request->getData()['k'] ?? null),
+            'bar.take' => $this->take($player),
+            'drink' => $this->drink($player),
+            'bar.target' => ['ok' => true, 'target' => $this->barService()->moveTarget($request->getData()['delta'] ?? null)],
+            'bar.ready' => $this->barReady(),
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
@@ -153,8 +160,10 @@ final readonly class RPCService implements ServiceInterface
     {
         try {
             return $call();
-        } catch (StoryRefusedException $e) {
+        } catch (StoryRefusedException|BarRefusedException|ClinkRefusedException $e) {
             return self::fail($e->error);
+        } catch (NoCharacterException) {
+            return self::fail('no character');
         } catch (RitualBusyException|LockBusyException) {
             return self::fail('busy');
         } catch (\Throwable $e) {
@@ -313,6 +322,45 @@ final readonly class RPCService implements ServiceInterface
         } catch (NoCharacterException) {
             return self::fail('no character');
         }
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function take(?string $player): array
+    {
+        return $player === null
+            ? self::fail('anonymous')
+            : ['ok' => true, 'walk' => $this->walks->toCounter($player)->toArray()];
+    }
+
+    /**
+     * @param non-empty-string|null $player
+     */
+    private function drink(?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        $this->barService()->drink($player);
+
+        return ['ok' => true];
+    }
+
+    private function barReady(): array
+    {
+        $this->barService()->wave();
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Without the bar service the bar is closed: no scene is the bar then.
+     */
+    private function barService(): BarService
+    {
+        return $this->bar ?? throw new BarRefusedException('not bar');
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Walk;
 
+use App\Application\Bar\BarRefusedException;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Domain\Bar\BarLayout;
@@ -16,6 +17,7 @@ use App\Domain\Player\Look;
 use App\Domain\Player\Player;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\RitualPolicy;
+use App\Domain\Ritual\RitualSnapshot;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Walk\Clink;
 use App\Domain\Walk\Items;
@@ -93,7 +95,7 @@ final readonly class WalkService
             static function (array $walkers) use ($zone, $now): array {
                 foreach ($walkers as $id => $walker) {
                     $at = self::rounded($zone->clamp($walker->walk->positionAt($now)));
-                    $walkers[$id] = $walker->walking(Walk::standing($at, $now));
+                    $walkers[$id] = $walker->walking(Walk::standing($at, $now))->emptyHanded();
                 }
 
                 return [$walkers, \array_values($walkers)];
@@ -128,7 +130,7 @@ final readonly class WalkService
         );
 
         $ritual = $this->ritual->snapshot();
-        $this->publisher->walker($ritual->round, $walker, $this->items->held($ritual->scene, $ritual->story->finale));
+        $this->publisher->walker($ritual->round, $walker, $this->itemOf($walker, $ritual));
 
         return $walker;
     }
@@ -170,8 +172,43 @@ final readonly class WalkService
         [$entered, $walker] = $result;
 
         $ritual = $this->ritual->snapshot();
-        $entered === null or $this->publisher->walker($ritual->round, $entered, $this->items->held($ritual->scene, $ritual->story->finale));
+        $entered === null or $this->publisher->walker($ritual->round, $entered, $this->itemOf($entered, $ritual));
         $this->publisher->move($ritual->round, $walker);
+
+        return $walker->walk;
+    }
+
+    /**
+     * Sends the character to the counter of the bar for a mug: to the point of the place at the counter nearest to it.
+     * Whether a mug is left is settled on arrival ({@see \App\Application\Bar\BarService::takes()}); any new walk calls
+     * this one off.
+     *
+     * @param non-empty-string $id
+     * @throws NoCharacterException The player has no character on the lawn.
+     * @throws BarRefusedException `not bar` or `has beer`.
+     * @throws LockBusyException
+     */
+    public function toCounter(string $id): Walk
+    {
+        $now = $this->clock->now();
+        $walker = $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            function (array $walkers) use ($id, $now): array {
+                $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
+                $bar = $this->bar;
+                $bar !== null && $this->barIn($this->ritual->scene()) or throw new BarRefusedException('not bar');
+                $walker->hasBeer() and throw new BarRefusedException('has beer');
+
+                $from = self::rounded($walker->walk->positionAt($now));
+                $walk = Walk::along($bar->zone->route($from, self::rounded($bar->atCounter($from))), $now, $this->speed);
+                $walker = $walker->taking($walk, $walk->arrivesAt)->seen($now);
+                $walkers[$id] = $walker;
+
+                return [$walkers, $walker];
+            },
+        );
+
+        $this->publisher->move($this->ritual->round(), $walker);
 
         return $walker->walk;
     }
@@ -335,9 +372,8 @@ final readonly class WalkService
 
         if ($entered !== [] || $left !== []) {
             $ritual = $this->ritual->snapshot();
-            $item = $this->items->held($ritual->scene, $ritual->story->finale);
             foreach ($entered as $walker) {
-                $this->publisher->walker($ritual->round, $walker, $item);
+                $this->publisher->walker($ritual->round, $walker, $this->itemOf($walker, $ritual));
             }
             foreach ($left as $id) {
                 $this->publisher->leave($ritual->round, $id);
@@ -416,6 +452,18 @@ final readonly class WalkService
         ));
 
         return new Walker($id, $name, $look, Walk::standing(self::rounded($at), $now), $now);
+    }
+
+    /**
+     * What the character holds: its own mug or nothing in the bar, the item of the scene and finale step elsewhere.
+     *
+     * @return non-empty-string|null
+     */
+    private function itemOf(Walker $walker, RitualSnapshot $ritual): ?string
+    {
+        return $this->policy?->bar($ritual->scene) === true
+            ? $walker->item
+            : $this->items->held($ritual->scene, $ritual->story->finale);
     }
 
     /**

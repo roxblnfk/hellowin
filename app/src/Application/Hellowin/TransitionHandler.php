@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Bar\BarService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\OwlLine;
 use App\Application\Walk\WalkService;
@@ -30,6 +31,7 @@ final readonly class TransitionHandler
         private PlayerService $players,
         private ?WalkService $walks = null,
         private ?LoggerInterface $logger = null,
+        private ?BarService $bar = null,
     ) {}
 
     /**
@@ -116,6 +118,12 @@ final readonly class TransitionHandler
      */
     private function leaveBar(int $toScene): ?array
     {
+        try {
+            $this->bar?->close();
+        } catch (LockBusyException $e) {
+            $this->logger?->warning('The counter of the bar is not cleared: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+        }
+
         try {
             return $this->walks?->relocate($toScene);
         } catch (LockBusyException $e) {

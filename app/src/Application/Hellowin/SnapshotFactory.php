@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Bar\BarService;
 use App\Application\Story\RevealBuilder;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\StartTime;
@@ -28,6 +29,7 @@ use App\Domain\Walk\WalkerStore;
  *     bushes: list<array{id: non-empty-string, x: float, y: float, depth: int<0, max>}>,
  *     elements: list<array{id: non-empty-string, type: non-empty-string, x: float, y: float, size?: 's'|'m'|'l', reachable?: bool, stage: int<0, max>, clicks: int<0, max>, threshold?: positive-int, stageMax?: int<0, max>}>,
  *     walkers: list<array>,
+ *     bar: array{mugs: int<0, max>, pouring: array|null, drunk: int<0, max>, target: positive-int}|null,
  *     ready: bool,
  *     finale: array{step: int, reveal?: array}|null,
  *     paused: bool,
@@ -53,6 +55,7 @@ final readonly class SnapshotFactory
         private Items $items = new Items(),
         private ?RevealBuilder $reveal = null,
         private ?StartTime $startTime = null,
+        private ?BarService $bar = null,
     ) {}
 
     /**
@@ -65,6 +68,7 @@ final readonly class SnapshotFactory
         $walkers = $this->walkers?->all() ?? [];
 
         $item = $this->items->held($ritual->scene, $ritual->story->finale);
+        $inBar = $this->policy->bar($ritual->scene);
         $elements = [];
         foreach ($this->elements->all() as $element) {
             $pumpkin = $ritual->pumpkin($element->id);
@@ -88,10 +92,11 @@ final readonly class SnapshotFactory
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
             'walkers' => \array_values(\array_map(
-                static fn(Walker $walker): array => $walker->toArray($item),
+                static fn(Walker $walker): array => $walker->toArray($inBar ? $walker->item : $item),
                 $walkers,
             )),
-            'ready' => $ritual->ready() || $this->policy->bar($ritual->scene),
+            'bar' => $this->bar?->state($ritual->round, $ritual->scene, $ritual->story),
+            'ready' => $ritual->ready(),
             'finale' => $this->reveal?->finale($ritual),
             'paused' => $ritual->story->paused,
             'k' => $k,

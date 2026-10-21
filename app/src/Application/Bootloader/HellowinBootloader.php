@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Bootloader;
 
+use App\Application\Bar\BarService;
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
 use App\Application\Config\PlayerConfig;
@@ -13,11 +14,13 @@ use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Player\LeaderboardService;
+use App\Application\Player\PlayerService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
 use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
+use App\Domain\Bar\BarStore;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\StartTime;
 use App\Domain\Clock\SystemClock;
@@ -86,6 +89,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 WalkerStore $walkers,
                 RevealBuilder $reveal,
+                BarService $bar,
                 StartTime $startTime,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
@@ -97,6 +101,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getItems(),
                 $reveal,
                 $startTime,
+                $bar,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -117,8 +122,35 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
-            RevealBuilder::class => static fn(ShotTally $shots, PlayerStore $players, RitualPolicy $policy): RevealBuilder
-                => new RevealBuilder($shots, $players, $policy),
+            RevealBuilder::class => static fn(ShotTally $shots, PlayerStore $players, RitualPolicy $policy, BarStore $bar): RevealBuilder
+                => new RevealBuilder($shots, $players, $policy, $bar),
+            BarStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): BarStore => new BarStore($cache->storage($config->getStorage()), new Locks($lock)),
+            BarService::class => static fn(
+                HellowinConfig $config,
+                BarStore $bar,
+                WalkerStore $walkers,
+                RitualStore $ritual,
+                RitualPolicy $policy,
+                ChannelPublisher $publisher,
+                PlayerService $players,
+                Clock $clock,
+            ): BarService => new BarService(
+                $bar,
+                $walkers,
+                $ritual,
+                $policy,
+                $publisher,
+                $players,
+                $clock,
+                $config->getBarMugs(),
+                $config->getBarPourMs(),
+                $config->getBarDrinks(),
+                $config->getBarRumorChance(),
+            ),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -210,6 +242,7 @@ final class HellowinBootloader extends Bootloader
                 FlyerConfig $flyerConfig,
                 LeaderboardService $leaderboard,
                 FlyerService $flyers,
+                BarService $bar,
                 WalkService $walks,
                 LoggerInterface $logger,
             ): Ticker => new Ticker(
@@ -220,6 +253,7 @@ final class HellowinBootloader extends Bootloader
                 $walks,
                 $logger,
                 $flyerConfig->getZombieInterval(),
+                bar: $bar,
             ),
         ];
     }

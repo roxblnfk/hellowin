@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fake;
 
+use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
@@ -21,6 +22,7 @@ use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
 use App\Application\Walk\WalkService;
 use App\Domain\Bar\BarLayout;
+use App\Domain\Bar\BarStore;
 use App\Domain\Clock\StartTime;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -79,6 +81,8 @@ final class RitualHarness
     public readonly RevealBuilder $reveal;
     public readonly StoryService $story;
     public readonly StartTime $startTime;
+    public readonly BarStore $barStore;
+    public readonly BarService $bar;
 
     /**
      * @param positive-int $threshold
@@ -136,8 +140,10 @@ final class RitualHarness
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock));
+        $this->barStore = new BarStore($this->storage, new Locks($this->lock));
+        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)));
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
@@ -186,8 +192,8 @@ final class RitualHarness
             bar: ($stageMax[0] ?? null) === 0 ? self::barLayout() : null,
             policy: $policy,
         );
-        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks);
-        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks);
+        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar);
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);
     }
 

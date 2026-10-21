@@ -122,6 +122,7 @@ final class RPCServiceTest
                 ['id' => 'pumpkin-2', 'type' => 'pumpkin', 'x' => 10.0, 'y' => 20.0, 'size' => 'm', 'reachable' => false, 'stage' => 0, 'clicks' => 2],
             ],
             'walkers' => [],
+            'bar' => ['mugs' => 0, 'pouring' => null, 'drunk' => 0, 'target' => 4],
             'ready' => false,
             'finale' => null,
             'paused' => false,
@@ -168,6 +169,7 @@ final class RPCServiceTest
             'finished' => 0,
             'flyers' => 0,
             'points' => 0,
+            'drinks' => 0,
         ]]);
     }
 
@@ -487,7 +489,7 @@ final class RPCServiceTest
             $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
 
-        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
+        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
         Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal]);
         Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal]);
     }
@@ -706,6 +708,54 @@ final class RPCServiceTest
         Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['other']], $ritual->metrics->calls, true));
     }
 
+    public function barMethodsShareOther(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        $limiter = $this->limiter($ritual, ['other' => new TokenBucket(1.0, 2)]);
+
+        $this->call($ritual, 'bar.take', [], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'drink', [], self::PLAYER, limiter: $limiter);
+
+        Assert::same($this->call($ritual, 'clink.auto', ['walker' => 'bbbbbbbbbbbbbbbb'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+    }
+
+    public function barTakeWalksToTheCounter(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+
+        Assert::same($this->call($ritual, 'bar.take', []), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'bar.take', [], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        $response = $this->call($ritual, 'bar.take', [], self::PLAYER);
+
+        Assert::true($response['ok']);
+        Assert::same(\end($response['walk']['path']), ['x' => 66, 'y' => 62]);
+    }
+
+    public function drinkNeedsAClinkedBeer(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        Assert::same($this->call($ritual, 'drink', []), ['ok' => false, 'error' => 'anonymous']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'drink', [], self::PLAYER), ['ok' => false, 'error' => 'no beer']);
+    }
+
+    public function barConsoleIsTheModeratorsOnly(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => 5]), ['ok' => false, 'error' => 'forbidden']);
+        Assert::same($this->call($ritual, 'bar.ready', []), ['ok' => false, 'error' => 'forbidden']);
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => 5], moderator: true), ['ok' => true, 'target' => 9]);
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => 'x'], moderator: true), ['ok' => false, 'error' => 'invalid delta']);
+        Assert::same($this->call($ritual, 'bar.ready', [], moderator: true), ['ok' => true]);
+        Assert::same($this->call($ritual, 'scene.next', ['scene' => 0], moderator: true), ['ok' => true, 'scene' => 1]);
+        $ritual->runJobs();
+        Assert::same($this->call($ritual, 'bar.ready', [], moderator: true), ['ok' => false, 'error' => 'not bar']);
+    }
+
     public function moderatorIsNeverRateLimited(): void
     {
         $ritual = new RitualHarness();
@@ -765,6 +815,7 @@ final class RPCServiceTest
             $ritual->clock,
             $limiter ?? $this->limiter($ritual, []),
             new PlayMetrics($ritual->metrics, new NullLogger()),
+            $ritual->bar,
         );
         $service->handle(new RPC(
             worker: $this->worker,

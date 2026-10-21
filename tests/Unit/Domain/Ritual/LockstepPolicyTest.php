@@ -63,14 +63,15 @@ final class LockstepPolicyTest
         Assert::same([$policy->stageMax(0), $policy->stageMax(1), $policy->stageMax(2)], [4, 6, 6]);
     }
 
-    public function leadingZeroMakesSceneZeroTheBarThatIsAlwaysReady(): void
+    public function leadingZeroMakesSceneZeroTheBarWithoutPumpkinsToFinish(): void
     {
         $policy = new LockstepPolicy(clicksPerStage: 1, stageMax: [0, 4], bonfireStageMax: [0, 0, 3]);
 
         Assert::true($policy->bar(0));
         Assert::false($policy->bar(1));
         Assert::same($policy->finalScene(), 2);
-        Assert::true($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 0, 9)], bonfire: new Pumpkin('bonfire'))));
+        // The bar gets ready by its drinks, not by the pumpkins
+        Assert::false($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 0, 9)], bonfire: new Pumpkin('bonfire'))));
         Assert::null($policy->pumpkinTransition(new Pumpkin('a', 0, 9), 0));
         Assert::false($policy->centrepieceOpen(Element::TYPE_BONFIRE, self::ritual(0, [new Pumpkin('a')], bonfire: new Pumpkin('bonfire'))));
         Assert::same($policy->pumpkinTransition(new Pumpkin('a', 0, 1), 1), 1);

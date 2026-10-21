@@ -24,7 +24,7 @@ return [
     'moderator_secret' => env('HELLOWIN_MODERATOR_SECRET', ''),
 
     // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene. A leading 0 makes
-    // scene 0 the bar: no pumpkins to click there, always ready
+    // scene 0 the bar: no pumpkins to click there, ready once the room has drunk HELLOWIN_BAR_DRINKS
     'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '0,4,8,11'),
 
     // The bonfire in the middle: clicks per stage (the whole room clicks it, so more than a pumpkin) and its last
@@ -35,6 +35,16 @@ return [
     // The magic circle on the ashes of the final scene: clicks per stage and its last stage, where it is closed
     'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
     'circle_stages' => env('HELLOWIN_CIRCLE_STAGES', 4),
+
+    // The bar of scene 0: at most `mugs` full mugs on the counter, the owl pours one in `pour_ms` milliseconds and
+    // mutters a rumour over every pour with the chance `rumor_chance`; the room leaves for the patch once it has
+    // drunk `drinks` mugs in the round — the moderator moves this goal on the console
+    'bar' => [
+        'mugs' => env('HELLOWIN_BAR_MUGS', 5),
+        'pour_ms' => env('HELLOWIN_BAR_POUR_MS', 2500),
+        'drinks' => env('HELLOWIN_BAR_DRINKS', 30),
+        'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),
+    ],
 
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed

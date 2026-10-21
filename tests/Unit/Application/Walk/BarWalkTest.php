@@ -74,7 +74,7 @@ final class BarWalkTest
         self::place($ritual, self::B, 20, 92);
         $ritual->broadcast->published = [];
 
-        $ritual->story->nextScene(0, false);
+        $ritual->story->nextScene(0, true);
         $ritual->runJobs();
 
         $scene = $ritual->broadcast->ofType('scene')[0];
@@ -98,7 +98,7 @@ final class BarWalkTest
     {
         $ritual = self::bar();
         self::place($ritual, self::A, 20, 92);
-        $ritual->story->nextScene(0, false);
+        $ritual->story->nextScene(0, true);
         $ritual->runJobs();
 
         $ritual->story->nextScene(1, true);
@@ -111,7 +111,7 @@ final class BarWalkTest
     {
         $ritual = self::bar();
         self::place($ritual, self::A, 20, 92);
-        $ritual->story->nextScene(0, false);
+        $ritual->story->nextScene(0, true);
         $ritual->runJobs();
         $ritual->walks->move(self::A, 50, 46);
         $ritual->clock->now += 60_000;

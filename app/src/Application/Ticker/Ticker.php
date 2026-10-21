@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Ticker;
 
+use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Player\LeaderboardService;
 use App\Application\Walk\WalkService;
@@ -39,6 +40,7 @@ final class Ticker
         private readonly LoggerInterface $logger,
         private readonly array $zombieInterval = [4000, 9000],
         private readonly Randomizer $random = new Randomizer(),
+        private readonly ?BarService $bar = null,
     ) {}
 
     /**
@@ -66,6 +68,7 @@ final class Ticker
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));
         $this->safely('clinks', fn() => $this->walks->clinks());
+        $this->safely('bar', fn() => $this->bar?->tick());
 
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;

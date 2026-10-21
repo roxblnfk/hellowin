@@ -26,6 +26,7 @@ final readonly class Reveal
      * @param int<0, max> $jobs Transition jobs that ran.
      * @param int<0, max> $burned Clicks that moved nothing.
      * @param int<0, max> $shot Flyers shot down.
+     * @param int<0, max> $drinks Mugs drunk in the bar.
      * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin Who finished the last element of
      *        the last ready scene.
      */
@@ -35,14 +36,16 @@ final readonly class Reveal
         public int $burned,
         public int $shot,
         public ?array $lastPumpkin,
+        public int $drinks = 0,
     ) {}
 
     /**
      * @param RitualPolicy $policy Clicks a transition of each element takes.
      * @param int<0, max> $shot
+     * @param int<0, max> $drinks
      * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin
      */
-    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin): self
+    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin, int $drinks = 0): self
     {
         $k = $ritual->story->k;
         $elements = \array_map(
@@ -63,11 +66,11 @@ final readonly class Reveal
             $spent += $element->spent + \min($element->clicks, $cost);
         }
 
-        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin);
+        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin, $drinks);
     }
 
     /**
-     * @return array{clicks: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
+     * @return array{clicks: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
      */
     public function toArray(): array
     {
@@ -76,6 +79,7 @@ final readonly class Reveal
             'jobs' => $this->jobs,
             'burned' => $this->burned,
             'shot' => $this->shot,
+            'drinks' => $this->drinks,
             'lastPumpkin' => $this->lastPumpkin,
         ];
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Story;
 
+use App\Domain\Bar\BarStore;
 use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualSnapshot;
@@ -19,6 +20,7 @@ final readonly class RevealBuilder
         private ShotTally $shots,
         private PlayerStore $players,
         private RitualPolicy $policy,
+        private ?BarStore $bar = null,
     ) {}
 
     /**
@@ -41,6 +43,12 @@ final readonly class RevealBuilder
         $id = $ritual->story->lastPumpkin;
         $lastPumpkin = $id === null ? null : ($this->players->find($id)?->ref() ?? ['id' => $id, 'name' => null]);
 
-        return Reveal::of($ritual, $this->policy, $this->shots->count($ritual->round), $lastPumpkin);
+        return Reveal::of(
+            $ritual,
+            $this->policy,
+            $this->shots->count($ritual->round),
+            $lastPumpkin,
+            $this->bar?->drinks($ritual->round) ?? 0,
+        );
     }
 }
