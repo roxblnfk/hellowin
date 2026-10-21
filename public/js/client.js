@@ -829,12 +829,15 @@ const SPACE_TAKERS = 'input, textarea, select, button, [contenteditable]:not([co
 
 /**
  * Whether a keydown is the bar's Space for a drink: plain Space (no modifiers, no auto-repeat), not on a control that
- * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say.
+ * takes Space itself, and no dialog open (the join screen is one). Whether I may drink is the client's to say. The
+ * counter button is no such control: a mouse click on it keeps the focus there, and with beer in hand it has nothing
+ * to do with Space anyway.
  */
 export function isDrinkKey(event, doc = globalThis.document) {
     if (event.code !== 'Space' && event.key !== ' ') return false;
     if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
-    if (event.target?.closest?.(SPACE_TAKERS) || event.target?.isContentEditable) return false;
+    const taker = event.target?.closest?.(SPACE_TAKERS);
+    if ((taker && !taker.matches('[data-bar-counter]')) || event.target?.isContentEditable) return false;
     return !doc?.querySelector?.('dialog[open]');
 }
 

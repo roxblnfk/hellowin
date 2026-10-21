@@ -1391,8 +1391,9 @@ export async function createScene(rootEl, snapshot) {
     // The flames' halos on the floor, like the art sheet (public/dev/bar.html).
     const FLAME_HALO_ALPHA = 0.35;
     const barLayoutOf = () => state.barLayout ?? BAR_LAYOUT;
-    // The counter's state as the client model passes it in, and when the last mug was set down (scene clock).
-    const barState = { mugs: 0, pouring: null, setAt: -1e9 };
+    // The counter's state as the client model passes it in, and when the last mug was set down (scene clock). Taken
+    // from the page's snapshot at once: the client re-reads the state only after a reconnect or a gap.
+    const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9 };
     // What buildBar() laid out, art px: the counter's box, the owl's spot, the mug sprites, the flickering flames.
     let hall = null;
     // Lines only the scene knows: the local «Сначала чокнись…» hint over my own walker.
