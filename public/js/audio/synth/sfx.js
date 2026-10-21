@@ -1,4 +1,4 @@
-import { SVF, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
+import { SVF, Saw, createRender, dbToGain, hashSeed, measure, mtof, panLR, reverb, scale } from './core.js';
 import {
     bell, blip, brass, chip, choir, crackle, heart, impact, kick, murmur, musicbox, noiseSweep, partials, pizz, riser,
     theremin, toll, tom, vox, xylo,
@@ -241,6 +241,35 @@ export const SFX = {
             const m = 64 + r.rnd() * 5;
             theremin(r, out, [[0, m, 0.5], [0.5, m + 7, 0.6], [1.1, m - 2, 0.8]], { amp: 0.3, glide: 0.18, vib: 0.7, vibRate: 4.2, send: 0.8 });
             noiseSweep(r, out, 0, 1.9, { from: 500, to: 900, q: 2, amp: 0.12, attack: 0.4, curve: 1.2, send: 0.6 });
+        },
+    }),
+    // A fly passing by: a buzzing saw near 200 Hz that wobbles in pitch and loudness, rising as it comes and dropping as
+    // it goes (Doppler), soft-filtered so it stays in the background.
+    'fly.buzz': fx({
+        dur: 1.4, variants: 4, voices: 3, level: -14,
+        render(r, out) {
+            const sr = r.sr;
+            const n = Math.round(1.3 * sr);
+            const saw = new Saw(sr, r.rnd());
+            const bp = new SVF(sr).set(1100 + r.rnd() * 500, 1.5);
+            const lp = new SVF(sr).set(2800, 0.6);
+            const f0 = 190 + r.rnd() * 50;
+            const wob = 5 + r.rnd() * 4;
+            const ph = r.rnd() * TAU;
+            let jitter = 0;
+            for (let i = 0; i < n; i++) {
+                const s = i / sr;
+                const k = i / n;
+                jitter += (r.noise() * 0.6 - jitter) * 0.002;
+                const doppler = 1.2 * Math.cos(Math.PI * k);
+                const f = f0 * 2 ** ((doppler + 0.6 * Math.sin(TAU * wob * s + ph) + jitter) / 12);
+                const x = saw.next(f);
+                bp.tick(x);
+                const am = 0.75 + 0.25 * Math.sin(TAU * (wob * 1.7) * s);
+                const e = Math.sin(Math.PI * k) ** 1.5 * am;
+                const v = lp.tick(bp.bp * 1.4 + x * 0.25) * e * 0.5;
+                out.put(i, v, v, 0.1);
+            }
         },
     }),
     'worm.squelch': fx({
