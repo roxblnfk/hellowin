@@ -7,7 +7,7 @@
  * says it by itself; then?: the next part said right after this one, or a list of parts said one after another;
  * rapier?: the part (0 — the first) on which the owl draws its rapier }. A
  * text without a scene key is the day's: a line
- * said in the bar has its own key 0. `{player}` is the player's name from `params.player.name`.
+ * said in the bar has its own key 0. `{player}` is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
 export const LINES = {
@@ -32,7 +32,9 @@ export const LINES = {
     'bonfire-done': { auto: true, text: 'Костёр разжёг {player}! Ух, как пылает.' },
     'circle-done': { auto: true, hoot: true, text: 'Круг замкнул {player}! Земля дрожит…' },
     'witch-down': { auto: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
-    'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!' },
+    'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!', then: 'Чтобы он восстал, нужна версия, которой никогда не было… Бросайте кости! Нужно шесть-шесть-шесть!' },
+    'dice-win': { auto: true, hoot: true, text: '{player} выбросил 6-6-6 с {attempt}-й попытки! PHP 6 всё-таки вышел!' },
+    'dice-owl-win': { auto: true, hoot: true, text: 'Шесть-шесть-шесть! С третьей попытки — как и положено.' },
     'finale-2': { auto: true, hoot: true, text: 'Что это? Что мы… ЧТО ВЫ НАДЕЛАЛИ?' },
     'finale-3': { auto: true, hoot: true, text: 'Походу… ошибочка вышла.', then: 'RoadRunner никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
     'finale-4': { auto: true, hoot: true, text: 'Вот что прошло через RoadRunner за вечер. Каждый ваш клик — через него, а лишние он отбросил, чтобы ни одна тыква не проскочила стадию.', then: 'Видите аптайм? Он не падал ни на секунду. Это мы тут чуть не умерли.' },
@@ -86,7 +88,8 @@ export function lineText(event, scene = 0) {
     const line = LINES[event?.line];
     if (!line) return null;
     const name = event.params?.player?.name;
-    return (line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE);
+    const attempt = Number.isInteger(event.params?.attempt) ? String(event.params.attempt) : '?';
+    return (line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
 }
 
 // Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good.
@@ -99,7 +102,10 @@ const HOLD_MS = 7500;
 const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
 const MAX_HOLD_MS = 36000 + HOLD_MS;
+// The dice's aside lasts about as long as the throw it comes with.
+const ASIDE_MS = 2600;
 const OWL_HEIGHT = 18;
+const AVOID = '.dice:not([hidden]), .word:not([hidden])';
 const GAP = 4;
 const EDGE = 8;
 
@@ -153,7 +159,13 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         // Up and to the right of the owl, the tail reaching down to its head; below it when the sky has no room.
         const left = Math.min(Math.max(EDGE, perch.x - 24), Math.max(EDGE, width - w - EDGE));
         let top = head - GAP * px - h - 24;
-        const below = top < EDGE;
+        // The panels at the top in the middle (the dice, the word form) keep the bubble out: it goes under the owl.
+        const covers = [...root.querySelectorAll(AVOID)].some((panel) => {
+            const r = panel.getBoundingClientRect();
+            const box = root.getBoundingClientRect();
+            return left < r.right - box.left && left + w > r.left - box.left && top < r.bottom - box.top && top + h > r.top - box.top;
+        });
+        const below = top < EDGE || covers;
         if (below) top = perch.y + 4 * px + 24;
         bubble.classList.toggle('owl-bubble--below', below);
         bubble.style.left = `${Math.round(left)}px`;
@@ -231,6 +243,18 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             if (!text || pending || waiting || t < shown.until || t < holdUntil) return;
             const ms = Math.min(RUMOR_MAX_MS, Math.max(RUMOR_MIN_MS, left, 2500 + text.length * 60));
             show({ text, hoot: false, ms, hold: 0 });
+        },
+
+        /**
+         * A short local line of the owl's own (the dice's «Дайте я попробую!», said on the `roll` event, not by the
+         * server): only while the bubble is free — a line still within its hold or one waiting keeps the bubble — and it
+         * holds nothing up. Returns whether it was said.
+         */
+        aside(text) {
+            const t = now();
+            if (!text || pending || waiting || t < holdUntil) return false;
+            show({ text, hoot: false, ms: ASIDE_MS, hold: 0 });
+            return true;
         },
 
         /** Re-anchors the bubble, e.g. after the scene rebuilt for a new size. */

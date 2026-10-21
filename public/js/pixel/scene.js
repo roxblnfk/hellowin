@@ -15,7 +15,8 @@ import { createBubbles } from './bubble.js';
 import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
-import { FX, RR_BAR_HIDE, RUNNER } from './finale.js';
+import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
+import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, isSix } from '../dice.js';
 import { DEATH_MS, GONE_MS, createDeaths } from './deaths.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
@@ -1693,7 +1694,8 @@ export async function createScene(rootEl, snapshot) {
     function runnerSpeech(now) {
         const toast = runnerShown() ? runnerToast(now) : null;
         if (!toast) return;
-        toastSpeech.say('rr', toast.text, runnerHead());
+        // The moderator's meep has the bubble over his head for its moment.
+        if (!meepOf || meepOf.flyer) toastSpeech.say('rr', toast.text, runnerHead());
         if (rrToastSaid === toast.at) return;
         rrToastSaid = toast.at;
         if (now - toast.at < RR_TOAST_FRESH_MS) cue({ type: 'rr-toast', x: (hall.runner.x / layout.artW) * 100 });
@@ -2911,6 +2913,7 @@ export async function createScene(rootEl, snapshot) {
             const half = w.label.width / 2 + 2;
             w.label.position.set(Math.round(clamp(x * layout.cssPx, half, layout.width - half)), Math.round((y - f.anchor.y + frameTop(f.canvas) - 1) * layout.cssPx));
         }
+        animateRolls(now);
         toastBubbles(clinking.groups, now);
     }
 
@@ -3125,9 +3128,10 @@ export async function createScene(rootEl, snapshot) {
     // The toast over the group from CLINK.toast; a toast of two voices puts the line over the first (by click: the walker
     // who came up) and the reply over the second (its target, the pumpkin too), one after the other.
     function toastBubbles(groups, now) {
-        if (!groups.length && !hints.size && !toastSpeech && !runnerShown()) return;
+        if (!groups.length && !hints.size && !toastSpeech && !runnerShown() && !meepOf) return;
         toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
         runnerSpeech(now);
+        meepSpeech();
         for (const [id, hint] of hints) {
             const w = walkers.get(id);
             if (clock >= hint.until || !w?.track) {
@@ -3676,6 +3680,7 @@ export async function createScene(rootEl, snapshot) {
         animateWalkers();
         animateOwl();
         stage.animate(inFinale() ? finale.step : null, sinceStep());
+        publishRunnerZone();
         drawHits();
 
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -3779,7 +3784,137 @@ export async function createScene(rootEl, snapshot) {
             veilFrames = STRIKE_VEIL;
         },
         boss: () => boss,
+        diceWin: () => diceWinAt,
     });
+
+    /*
+     * The dice of finale step 1 (docs/spec/frontend.md, «Кости»): three little dice over whoever rolled — a walker, or
+     * the owl — from the roll's `at` on the server clock: tumbling for ROLL_TUMBLE_MS, then standing on the faces,
+     * blinking out by ROLL_SHOW_MS. Drawn at screen resolution over the name label, like the labels themselves.
+     */
+    const rolls = new Map();
+    // Art px from one die's middle to the next.
+    const DICE_GAP = 8;
+    // When the 6-6-6 was rolled (scene clock): the silhouette's eyes flare.
+    let diceWinAt = -1e9;
+
+    function addRoll(event) {
+        const key = event.owl === true ? 'owl' : event.player?.id;
+        if (!key || !Array.isArray(event.dice) || serverNow() - event.at > ROLL_STALE_MS) return;
+        dropRoll(key);
+        const node = new Container();
+        const sprites = [0, 1, 2].map(() => {
+            const sprite = new Sprite();
+            sprite.anchor.set(0.5, 1);
+            node.addChild(sprite);
+            return sprite;
+        });
+        labelLayer.addChild(node);
+        rolls.set(key, { dice: event.dice, at: event.at, node, sprites, seed: seedOf(key) ^ (event.attempt | 0) });
+    }
+
+    function dropRoll(key) {
+        rolls.get(key)?.node.destroy({ children: true });
+        rolls.delete(key);
+    }
+
+    // Where the little dice stand, CSS px: over the walker's name, or beside the owl on its branch (its «Дайте я
+    // попробую!» takes the room over its head); null — not on screen.
+    function rollHead(key) {
+        if (key === 'owl') return owlGone() ? null : { x: perch.x + 24 * layout.cssPx, y: perch.y - 4 * layout.cssPx };
+        const w = walkers.get(key);
+        if (!w?.label || !w.sprite) return null;
+        return { x: w.label.x, y: w.label.y - w.label.height - 2 };
+    }
+
+    function animateRolls(now) {
+        const px = layout.cssPx;
+        for (const [key, r] of rolls) {
+            const t = now - r.at;
+            if (t >= ROLL_SHOW_MS) {
+                dropRoll(key);
+                continue;
+            }
+            const head = rollHead(key);
+            // Blinks out instead of fading, like the particles.
+            r.node.visible = Boolean(head) && t >= 0 && (t < ROLL_SHOW_MS - ROLL_BLINK_MS || Math.floor(t / 100) % 2 === 0);
+            if (!r.node.visible) continue;
+            const win = isSix(r.dice);
+            r.sprites.forEach((sprite, i) => {
+                let def;
+                let hop = 0;
+                if (t < ROLL_TUMBLE_MS && !reduced) {
+                    const k = Math.floor(t / 70) + i;
+                    def = k % 2 ? DICE.tumble[(k >> 1) % 2] : DICE.faces[1 + (mix(r.seed + i, k) % 6)];
+                    hop = -Math.round(2 * Math.abs(Math.sin((t / ROLL_TUMBLE_MS) * Math.PI * 2 + i)));
+                } else {
+                    def = (win ? DICE.win : DICE.faces)[r.dice[i]] ?? DICE.faces[1];
+                }
+                sprite.texture = defTexture(def);
+                sprite.scale.set(px);
+                sprite.position.set(Math.round((i - 1) * DICE_GAP * px), Math.round(hop * px));
+            });
+            const half = (DICE_GAP + 4) * px;
+            r.node.position.set(Math.round(clamp(head.x, half, layout.width - half)), Math.round(head.y));
+        }
+    }
+
+    /*
+     * The moderator's «Мип-мип!» (docs/spec/frontend.md, «Пульт модератора»): over a runner on the horizon (`flyer`) or
+     * over RoadRunner of the scene — behind the bar's counter, or the finale's (finale-stage.js draws him with his
+     * `meep` frame). Whoever is not on screen says nothing.
+     */
+    const MEEP_MS = 1600;
+    let meepOf = null;
+
+    // RoadRunner a meep is for: { x } in art px and the point over his head, `finale` — the finale stage's; or null.
+    function runnerSpot(flyer) {
+        if (flyer) {
+            const f = flyers.get(flyer);
+            if (!f || f.kind !== 'roadrunner' || f.shotAt !== null || !f.art) return null;
+            return { x: f.pos.x, head: { x: f.pos.x, y: f.pos.y - f.art.def.anchor.y - 1 } };
+        }
+        if (runnerShown()) return { x: hall.runner.x, head: runnerHead() };
+        const r = inFinale() ? stage.runner() : null;
+        return r ? { x: r.x, finale: true } : null;
+    }
+
+    function meepSpeech() {
+        if (!meepOf) return;
+        const spot = clock < meepOf.until ? runnerSpot(meepOf.flyer) : null;
+        if (!spot?.head) {
+            meepOf = null;
+            return;
+        }
+        toastSpeech.say('meep', 'Мип-мип!', spot.head);
+    }
+
+    // The moderator's hit zone over RoadRunner of the finale (`[data-rr-meep]`): his sprite box in CSS px, at least
+    // RR_ZONE_MIN wide and tall (the far speck is a few art px); `#app[data-rr-shown]` while he is on screen.
+    const RR_ZONE_MIN = 28;
+    let rrZone = '';
+    function publishRunnerZone() {
+        const r = inFinale() ? stage.runner() : null;
+        let zone = '';
+        if (r) {
+            const px = layout.cssPx;
+            const { def } = r;
+            const w = Math.max(RR_ZONE_MIN, def.w * px);
+            const h = Math.max(RR_ZONE_MIN, def.h * px);
+            const left = (r.x - (r.flip ? def.w - def.anchor.x : def.anchor.x) + def.w / 2) * px - w / 2;
+            const top = (r.y - def.anchor.y + def.h / 2) * px - h / 2;
+            zone = [left, top, w, h].map((v) => `${Math.round(v)}px`).join(' ');
+        }
+        if (zone === rrZone) return;
+        rrZone = zone;
+        rootEl.toggleAttribute('data-rr-shown', zone !== '');
+        if (!zone) return;
+        const [x, y, w, h] = zone.split(' ');
+        rootEl.style.setProperty('--rr-meep-x', x);
+        rootEl.style.setProperty('--rr-meep-y', y);
+        rootEl.style.setProperty('--rr-meep-w', w);
+        rootEl.style.setProperty('--rr-meep-h', h);
+    }
 
     /** Takes the finale's step and the circle's state as they are, without animating into them. */
     function settleFinale(step, ready) {
@@ -3870,6 +4005,9 @@ export async function createScene(rootEl, snapshot) {
             };
             Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9, roadrunner: next.bar?.roadrunner === true });
             hints.clear();
+            for (const key of [...rolls.keys()]) dropRoll(key);
+            meepOf = null;
+            diceWinAt = -1e9;
             settleFinale(state.scene >= state.sceneStages ? next.finale?.step ?? null : null, next.ready);
             // Walkers outlive rounds (players.md, «На поле»): the snapshot's list replaces ours as a whole.
             if (next.walkers) {
@@ -4058,6 +4196,39 @@ export async function createScene(rootEl, snapshot) {
         /** Channel event `clink`: the pair turns to each other, strikes, raises the glasses; older than 3 s is not played. */
         clink(event) {
             addClink(event);
+        },
+
+        /** The kind of flyer `id` (`roadrunner`, `duck`…), or null: the moderator's click on a runner is a meep. */
+        flyerKind(id) {
+            return flyers.get(id)?.kind ?? null;
+        },
+
+        /** Channel event `roll`: three little dice over the walker `player` (or the owl) for ~2 s from `at`. */
+        roll(event) {
+            addRoll(event);
+        },
+
+        /** The 6-6-6 of finale step 1 has just been rolled: the silhouette's eyes flare. */
+        diceWin() {
+            diceWinAt = clock;
+        },
+
+        /**
+         * Channel event `meep`: «Мип-мип!» over the runner `flyer` on the horizon, or (null) over RoadRunner of the scene.
+         * Returns his x in percent of the width, or null when he is not on screen (and nothing is drawn).
+         */
+        meep(flyer = null) {
+            const spot = runnerSpot(flyer);
+            if (!spot) return null;
+            if (spot.finale) stage.meep();
+            else meepOf = { flyer, until: clock + MEEP_MS };
+            return (spot.x / layout.artW) * 100;
+        },
+
+        /** Where RoadRunner of a meep is, percent of the width (null — not on screen): the pan of his voice. */
+        runnerAt(flyer = null) {
+            const spot = runnerSpot(flyer);
+            return spot ? (spot.x / layout.artW) * 100 : null;
         },
 
         /**

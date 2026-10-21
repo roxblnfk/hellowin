@@ -9,7 +9,11 @@ const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
 const NOTE_MS = 3000;
 const DONE_MS = 900;
-// The finale's steps (docs/spec/scenario.md, «Рапира»): the cursed world's goal at 5, the boss at 6, the dawn at 7.
+// The finale's steps (docs/spec/scenario.md, «Кости 6-6-6», «Рапира»): the dice at 1, the cursed world's goal at 5, the
+// boss at 6, the dawn at 7.
+const DICE_STEP = 1;
+// The owl's third roll is the 6-6-6 (scenario.md, «Кости 6-6-6»).
+const OWL_ROLLS = 3;
 const CURSED_STEP = 5;
 const BOSS_STEP = 6;
 const LAST_STEP = 7;
@@ -135,6 +139,12 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     bossGroup.append(bossInfo);
     bossGroup.hidden = true;
 
+    // The dice of step 1: the moderator's way out — the owl rolls, and its third roll is the 6-6-6.
+    const diceGroup = group('Кости');
+    const owlDice = button(diceGroup, { 'data-console-dice': '', 'data-action': 'dice-owl', title: 'Третий бросок совы — 6-6-6' }, 'Сова бросает');
+    owlDice.addEventListener('click', () => send(owlDice, 'dice.owl', {}, { done: true }));
+    diceGroup.hidden = true;
+
     const owl = group('Сова');
     for (const [id, line] of Object.entries(LINES)) {
         if (line.button) button(owl, { 'data-owl-line': id, title: line.text, ...(line.bar ? { 'data-owl-bar': '' } : {}) }, line.button);
@@ -242,6 +252,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
         // Step 1 waits for the closed circle, step 6 for the cursed world's goals: going without them asks first, like
         // an unready scene. Step 7 comes by itself when the boss falls, so pressing it always forces.
         const question = current === 0 && !model.ready ? 'Круг не замкнут. Точно?'
+            : current === DICE_STEP && !model.ready ? 'Нет 6-6-6. Точно?'
             : current === CURSED_STEP && !model.ready ? 'Цели не выполнены. Точно?'
             : current === BOSS_STEP ? 'Босс жив. Точно?'
             : null;
@@ -321,7 +332,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             nudge.disabled = model.ready;
             setLabel(next, dawn ? 'В бар' : model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
             step.hidden = !final || dawn;
-            step.toggleAttribute('data-ready', final && (current === 0 || current === CURSED_STEP) && model.ready);
+            step.toggleAttribute('data-ready', final && (current === 0 || current === DICE_STEP || current === CURSED_STEP) && model.ready);
+            diceGroup.hidden = !(final && current === DICE_STEP && model.dice?.on === true);
+            setLabel(owlDice, `Сова бросает (${Math.min(OWL_ROLLS, model.owlRolls ?? 0)}/${OWL_ROLLS})`);
             setLabel(step, `Шаг финала ${current + 1}`);
             cursedGroup.hidden = !(final && current === CURSED_STEP);
             const cursed = model.cursed;
@@ -346,8 +359,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
 
             const finaleName = current >= LAST_STEP ? 'рассвет' : current === BOSS_STEP ? 'рапира' : current === CURSED_STEP ? 'проклятый мир' : `финал · шаг ${current}`;
             const parts = [final ? finaleName : isBar(model.scene) ? 'бар' : `сцена ${model.scene}`];
-            // In the final scene readiness waits for the moderator only at step 0 (the circle) and step 5 (the goals).
-            if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === CURSED_STEP)) parts.push('готова');
+            // In the final scene readiness waits for the moderator only at step 0 (the circle), step 1 (the 6-6-6) and
+            // step 5 (the goals).
+            if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === DICE_STEP || current === CURSED_STEP)) parts.push('готова');
             if (model.paused) parts.push('пауза');
             if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');

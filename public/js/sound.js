@@ -7,6 +7,7 @@ import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
+import { ROLL_LAND_MS, ROLL_TUMBLE_MS, isSix } from './dice.js';
 // A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
 import * as FLYER_ART from './pixel/flyers.js';
 
@@ -51,6 +52,9 @@ const LATE_S = 0.25;
 const POUR_FRESH_MS = 400;
 // A walk in through the bar's door heard later than this after it began (a reload, a held-back event) stays silent.
 const DOOR_FRESH_MS = 400;
+// A roll or a meep heard later than this after its `at` stays silent, like a flyer.
+const ROLL_FRESH_MS = 1500;
+const MEEP_FRESH_MS = 1500;
 // The bar's level: no pumpkins to make progress with.
 const BAR_INTENSITY = 0.2;
 const BROKEN_INTENSITY = 0.1;
@@ -88,8 +92,11 @@ export function deathOf(id) {
  * @param {() => boolean} [options.owlGone]  whether the owl has flown away (its lines are then FrankenPHP's)
  * @param {(fn: Function, ms: number) => number} [options.later]  setTimeout
  * @param {Document|null} [options.doc]  for the visibility of the tab; null — always visible
+ * @param {() => number|null} [options.owlX]  where the owl sits, percent of the width (the pan of its rolls)
+ * @param {(flyer: string|null) => number|null} [options.runnerAt]  x of RoadRunner of a `meep` in percent, null when
+ *   he is not on screen (scene.runnerAt)
  */
-export function createSound(audio, { serverNow, now = () => performance.now(), owlGone = () => false, later = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), doc = globalThis.document ?? null }) {
+export function createSound(audio, { serverNow, now = () => performance.now(), owlGone = () => false, later = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), doc = globalThis.document ?? null, owlX = () => null, runnerAt = () => null }) {
     const flyers = new Map();
     let shownAt = -1e9;
     let steps = [];
@@ -312,6 +319,25 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         },
         boss(model) {
             music(model);
+        },
+        // The dice of finale step 1: the throw, the landing (mine lands big at the top, a little later), the toll of 6-6-6.
+        roll(model, event) {
+            const late = serverNow() - event.at;
+            if (!(late < ROLL_FRESH_MS)) return;
+            const id = event.player?.id ?? null;
+            const mine = id !== null && id === model.me;
+            const options = { pan: panOf(event.owl === true ? owlX() : walkerX(model, id)), volume: mine ? 1 : OTHERS_VOLUME };
+            play('dice.roll', options);
+            // Mine starts as its event arrives, the little dice over the others at the event's `at`.
+            const land = mine ? ROLL_LAND_MS / 1000 : Math.max(0, (ROLL_TUMBLE_MS - late) / 1000);
+            play('dice.land', { ...options, delay: land });
+            if (isSix(event.dice)) play('dice.666', { delay: land });
+        },
+        // The moderator's click on RoadRunner: his «мип-мип», wherever he stands on screen; silent when he is not there.
+        meep(model, event) {
+            if (!(serverNow() - event.at < MEEP_FRESH_MS)) return;
+            const x = runnerAt(event.flyer ?? null);
+            if (x !== null && x !== undefined) play('rr.meep', { pan: panOf(x) });
         },
         drink(model, event) {
             const id = event.player?.id;

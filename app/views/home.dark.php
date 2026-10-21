@@ -25,7 +25,8 @@
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
           data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}"
           data-cursed="{{ json_encode($cursed ?? null) }}"
-          data-boss="{{ json_encode($boss ?? null) }}">
+          data-boss="{{ json_encode($boss ?? null) }}"
+          data-dice="{{ json_encode($dice ?? null) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
@@ -80,6 +81,14 @@
         </form>
         <p class="word-zombie" data-word-zombie role="status" hidden>Ты зомби-воркер. Жди, пока расколдуют</p>
 
+        <!-- The dice of finale step 1 (docs/spec/frontend.md, «Кости»): the call or the winner, my roll drawn big, «Бросить». -->
+        <section class="dice" data-dice hidden aria-label="Кости">
+            <p class="dice__note" data-dice-note role="status"></p>
+            <div class="dice__faces" data-dice-faces hidden><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span></div>
+            <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
+        </section>
+        <!-- The moderator's hit zone over RoadRunner of the finale: a click makes him meep. -->
+        <button type="button" class="rr-meep" data-rr-meep hidden aria-label="RoadRunner: мип-мип" title="Мип-мип"></button>
         <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
 
         <footer class="hud">

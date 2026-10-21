@@ -1,4 +1,5 @@
 import { FLYERS } from './flyers.js';
+import { PIPS } from '../dice.js';
 
 /**
  * The finale (scenario.md, «Финал»): FrankenPHP, the bird-like silhouette it rises as, RoadRunner running in from the
@@ -402,6 +403,19 @@ function silhouetteOf(g, reveal, { rim = true, eye = true } = {}) {
     return out;
 }
 
+/** The silhouette with both eyes flaring red: the eye whites burn white-hot, a ring of red light around them. */
+function silhouetteEyes(g) {
+    const out = silhouetteOf(g, 0);
+    const eye = (x, y) => g[y]?.[x] === 'E';
+    for (let y = 0; y < FH; y++) {
+        for (let x = 0; x < FW; x++) {
+            if (eye(x, y)) out[y][x] = 'Q';
+            else if (g[y][x] !== '.' && (eye(x - 1, y) || eye(x + 1, y) || eye(x, y - 1) || eye(x, y + 1))) out[y][x] = 'R';
+        }
+    }
+    return out;
+}
+
 // The bird-like pose: trunk out like a beak, ears folded behind the head, bolts and fringe swept up into a crest.
 const BIRD = { trunk: 1, ears: 0, bolts: 1, crest: 1, tail: 1, spark: -1 };
 
@@ -459,6 +473,8 @@ export const SILHOUETTE = {
     anchor: { ...FRANKEN_ANCHOR },
     idle: birdIdle.map((g) => toSprite(silhouetteOf(g, 0), FRANKEN_LEGEND, FRANKEN_ANCHOR)),
     rise: [0.25, 0.5, 0.75, 1].map((t) => risen(silhouetteOf(birdIdle[0], 0), t, FRANKEN_LEGEND)),
+    // The 6-6-6 of finale step 1: the idle frames with both eyes flaring.
+    eyes: birdIdle.map((g) => toSprite(silhouetteEyes(g), { ...FRANKEN_LEGEND, Q: 'columnCore' }, FRANKEN_ANCHOR)),
     reveal: [0.66, 0.33, 0].map((k, i) => toSprite(
         silhouetteOf(frankenGrid({ trunk: k, ears: 1 - k, bolts: k, crest: k, tail: k, spark: i === 2 ? 1 : -1 }), [0.15, 0.5, 0.85][i], { rim: i < 2, eye: i < 1 }),
         FRANKEN_LEGEND,
@@ -1131,3 +1147,35 @@ export const FINALE_EMISSIVE = [
     'frankenGlowCore', 'frankenGlowHot', 'frankenGlow', 'frankenGlowDark', 'frankenGlowDeep',
     'lightningCore', 'lightning', 'lightningEdge', 'columnCore',
 ];
+
+// ---------------------------------------------------------------------------------------------------------------
+// The dice of finale step 1 (scenario.md, «Кости 6-6-6»): the little ones over a walker who rolled.
+
+const DICE_LEGEND = { O: 'outline', W: 'cream', P: 'outline', h: 'grayLight' };
+// A 6-6-6 flares red: the body crimson, the pips cream.
+const DICE_WIN_LEGEND = { O: 'outline', W: 'crimson', P: 'cream', h: 'crimsonDark' };
+
+// A pip grid of 3×3 with a pixel of the face around it: on the night's dark ground the outline melts away, and the
+// face has to read as a light square with dark pips.
+function dieFace(face, legend) {
+    const g = ['.OOOOO.', 'OWWWWWO', 'OWWWWWO', 'OWWWWWO', 'OWWWWWO', 'OWWWWWO', '.OOOOO.'].map((r) => [...r]);
+    for (const [x, y] of PIPS[face]) g[y + 2][x + 2] = 'P';
+    return toSprite(g, legend, { x: 3, y: 6 });
+}
+
+// Mid-tumble: turned on a corner, then on an edge with the top face in shade.
+const DICE_TUMBLE = [
+    ['...O...', '..OWO..', '.OWWWO.', 'OWWPWWO', '.OWWWO.', '..OWO..', '...O...'],
+    ['.OOOOO.', 'OhhhhhO', 'OOOOOOO', 'OWWWWWO', 'OWPWPWO', 'OWWWWWO', '.OOOOO.'],
+];
+
+/**
+ * Three d6 over a walker's head: 7×7 each, anchor at the bottom middle. faces[n] / win[n] — face n (1–6), plain and
+ * flared red for a 6-6-6; tumble / tumbleWin — 2 frames of a die turning over (swap them every ~70 ms).
+ */
+export const DICE = {
+    faces: Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, dieFace(n, DICE_LEGEND)])),
+    win: Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, dieFace(n, DICE_WIN_LEGEND)])),
+    tumble: DICE_TUMBLE.map((rows) => toSprite(rows.map((r) => [...r]), DICE_LEGEND, { x: 3, y: 6 })),
+    tumbleWin: DICE_TUMBLE.map((rows) => toSprite(rows.map((r) => [...r]), DICE_WIN_LEGEND, { x: 3, y: 6 })),
+};

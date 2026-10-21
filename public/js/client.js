@@ -2,6 +2,7 @@
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
+import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf } from './dice.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
@@ -14,6 +15,11 @@ const RAPIER_STEP = 6;
 const DAWN_STEP = 7;
 // From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
 const RUNNER_STEP = 3;
+// The finale step the hall rolls the dice on (scenario.md, «Кости 6-6-6»).
+const DICE_STEP = 1;
+// A `meep` older than this by its `at` is not drawn (docs/spec/frontend.md, «Пульт модератора», «Мип-мип»).
+const MEEP_STALE_MS = 1500;
+const OWL_TRY = 'Дайте я попробую!';
 // The HUD's connection line; through the evening the other side seems to answer.
 const STATUS = { connecting: 'подключение…', connected: 'связь с потусторонним: есть', disconnected: 'нет связи' };
 
@@ -126,6 +132,7 @@ export function readSnapshot(root) {
         zombies: flag(root.dataset.zombies),
         cursed: cursedOf(parseJson(root.dataset.cursed, null)),
         boss: bossOf(parseJson(root.dataset.boss, null)),
+        dice: diceOf(parseJson(root.dataset.dice, null)),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => {
             const element = {
                 id: el.dataset.element,
@@ -154,11 +161,12 @@ export function readSnapshot(root) {
  * @param {{update: Function}|null} [options.reveal]  reveal panel of reveal.js
  * @param {(model: object) => void} [options.onChange]  after every applied event or snapshot (the console repaints)
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
+ * @param {((attempt: number) => Promise<object|undefined>)|null} [options.roll]  RPC `roll {attempt}`, resolving with the reply
  */
-export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null }) {
     // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
-    // the server decides (protocol.md, RPC `drink`).
-    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false };
+    // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice seen in this round.
+    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false, owlRolls: 0 };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     const bonfireOf = () => model.elements.find((e) => e.type === 'bonfire') ?? null;
@@ -187,6 +195,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const step = () => (model.scene >= model.sceneStages ? model.finale?.step ?? null : null);
     // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
     let wordClosed = false;
+    // My dice (docs/spec/frontend.md, «Кости»): the attempts of RPC `roll`, my roll drawn big, the attempt whose event
+    // has come (a reply without one is a repeat).
+    const roller = createRoller((attempt) => (roll ? roll(attempt) : Promise.resolve(null)));
+    const reduced = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    const dicePanel = createDicePanel(root, { now, reduced });
+    let seenAttempt = 0;
+    let diceLoop = false;
 
     function paintElement(element) {
         const el = button(element.id);
@@ -248,8 +263,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (progress) progress.hidden = isBar(model.scene) || step() === CURSED_STEP;
         const ready = hud('ready');
         // In the final scene `ready` stays on through the finale; it waits for the moderator at step 0 (the closed
-        // circle) and at step 5 (the cursed world's goals met).
-        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && step() !== 0 && step() !== CURSED_STEP);
+        // circle), at step 1 (the 6-6-6 rolled) and at step 5 (the cursed world's goals met).
+        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && step() !== 0 && step() !== DICE_STEP && step() !== CURSED_STEP);
     }
 
     function sceneName() {
@@ -302,7 +317,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         const runner = root.querySelector('[data-roadrunner]');
         if (runner) {
             runner.hidden = !(bar && model.bar.roadrunner);
-            runner.setAttribute('aria-disabled', String(!clinksRoadrunner()));
+            runner.setAttribute('aria-disabled', String(!clinksRoadrunner() && !meepsRoadrunner()));
         }
         const drink = root.querySelector('[data-drink]');
         // Alone on the field a player may drink without a clink (the server checks the same walkers).
@@ -361,6 +376,44 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (zombie) zombie.hidden = !zombified();
     }
 
+    // The dice at the top (docs/spec/frontend.md, «Кости»): the call or the winner, «Бросить», my roll drawn big.
+    function paintDice() {
+        const on = step() === DICE_STEP && model.dice?.on === true;
+        document.body.toggleAttribute('data-dice', on);
+        root.dataset.dice = JSON.stringify(model.dice);
+        const panel = root.querySelector('[data-dice]');
+        if (panel) panel.hidden = !(step() === DICE_STEP && (on || Boolean(model.dice?.winner)));
+        const note = root.querySelector('[data-dice-note]');
+        if (note) note.textContent = diceNote(model.dice) ?? '';
+        const button = root.querySelector('[data-dice-roll]');
+        if (button) {
+            button.hidden = !on;
+            button.setAttribute('aria-disabled', String(!rolls()));
+        }
+    }
+
+    // My dice move on the animation frames until they have landed and dimmed; the button comes back as they land.
+    function animateDice() {
+        const moving = dicePanel.frame();
+        paintDice();
+        if (!moving || typeof globalThis.requestAnimationFrame !== 'function') {
+            diceLoop = false;
+            return;
+        }
+        globalThis.requestAnimationFrame(animateDice);
+    }
+    function startDiceLoop() {
+        if (diceLoop) return;
+        diceLoop = true;
+        animateDice();
+    }
+
+    // The moderator's hit zone over RoadRunner of the finale (shown by the scene only while he is on screen).
+    function paintMeep() {
+        const zone = root.querySelector('[data-rr-meep]');
+        if (zone) zone.hidden = !(model.moderator && (step() ?? -1) >= RUNNER_STEP);
+    }
+
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
@@ -375,10 +428,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintHud();
         paintBar();
         paintRapier();
+        paintDice();
+        paintMeep();
     }
 
     function load(snapshot) {
         takeTime(snapshot.now);
+        // Another round: my attempts start from 1 again, the owl has not rolled yet.
+        if (snapshot.round !== model.round) forgetDice();
         Object.assign(model, {
             round: snapshot.round,
             scene: snapshot.scene,
@@ -397,6 +454,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             zombies: Boolean(snapshot.zombies),
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
+            dice: diceOf(snapshot.dice),
         });
         stageMaxByScene.set(model.scene, model.stageMax);
         // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
@@ -419,6 +477,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     // The scene plays the finale's step; `ready` at step 0 is the closed circle, the cue for the ritual pose.
     function paintFinale() {
         scene?.setFinale({ step: model.scene >= model.sceneStages ? model.finale?.step ?? null : null, ready: model.ready });
+    }
+
+    function forgetDice() {
+        roller.forget();
+        dicePanel.clear();
+        seenAttempt = 0;
+        model.owlRolls = 0;
     }
 
     function snapshotOf() {
@@ -580,7 +645,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.scene = event.scene;
             model.stageMax = event.stageMax;
             model.ready = false;
-            if (model.scene < model.sceneStages) model.finale = null;
+            if (model.scene < model.sceneStages) {
+                model.finale = null;
+                model.dice = null;
+            }
             stageMaxByScene.set(model.scene, model.stageMax);
             const bonfire = bonfireOf();
             if (bonfire && event.bonfireStageMax !== undefined) {
@@ -611,8 +679,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         finale(event) {
             model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
-            // Into step 5 the closed circle's readiness is gone: from here only the cursed world's goals give it.
-            if (event.step === CURSED_STEP) model.ready = false;
+            // Into step 5 the closed circle's readiness is gone: from here only the cursed world's goals give it. Step 1
+            // likewise waits for the first 6-6-6 (the dice come on with their own event).
+            if (event.step === CURSED_STEP || event.step === DICE_STEP) model.ready = false;
+            if (event.step === DICE_STEP) model.owlRolls = 0;
+            if (event.step < DICE_STEP) model.dice = null;
             // The dawn lifts every zombie and fells FrankenPHP, whether his health ran out or the moderator forced it.
             const lifted = event.step >= DAWN_STEP ? model.walkers.filter((w) => w.zombie) : [];
             lifted.forEach((w) => delete w.zombie);
@@ -630,6 +701,43 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             handOut(event);
             paintBar();
             paintRapier();
+            paintDice();
+            paintMeep();
+        },
+
+        // The dice come on with step 1 and go off with the first 6-6-6 (`winner`) or a forced step 2; the silhouette's
+        // eyes flare at the win.
+        dice(event) {
+            const had = Boolean(model.dice?.winner);
+            model.dice = diceOf(event);
+            if (model.dice?.winner && !had) scene?.diceWin?.();
+            paintDice();
+            paintHud();
+        },
+
+        // A new roll: little dice over the roller (or the owl, who asks to have a go first); mine also big at the top.
+        roll(event) {
+            const dice = facesOf(event.dice);
+            if (!dice || !Number.isInteger(event.attempt)) return;
+            const fresh = !(now() + offset - event.at > ROLL_STALE_MS);
+            if (event.owl === true) {
+                model.owlRolls = Math.max(model.owlRolls, event.attempt);
+                if (fresh) owl?.aside?.(OWL_TRY);
+            }
+            scene?.roll?.(event);
+            if (model.me !== null && event.player?.id === model.me) {
+                seenAttempt = Math.max(seenAttempt, event.attempt);
+                if (fresh) dicePanel.start(dice, event.attempt);
+                else dicePanel.settle(dice);
+                startDiceLoop();
+            }
+            paintDice();
+        },
+
+        // The moderator's click on RoadRunner: a «Мип-мип!» over him, if he is on screen; no state.
+        meep(event) {
+            if (now() + offset - event.at > MEEP_STALE_MS) return;
+            scene?.meep?.(event.flyer ?? null);
         },
 
         // The goal of step 5: mugs drunk and zombies slain against their targets (readiness itself comes as `ready`).
@@ -727,6 +835,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.clinked = false;
             model.cursed = null;
             model.boss = null;
+            model.dice = null;
+            forgetDice();
             wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.
             model.bar = barOf(event.bar ? { target: model.bar.target, ...event.bar } : null);
@@ -790,6 +900,17 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     /** Whether a click on RoadRunner behind the counter is RPC `clink {roadrunner: true}`: he stands there, beer in my hand. */
     function clinksRoadrunner() {
         return inBar() && model.bar.roadrunner && canWalk() && holdsBeer();
+    }
+    /** Whether the moderator's click on RoadRunner behind the counter is RPC `meep {}` instead of a clink. */
+    function meepsRoadrunner() {
+        return inBar() && model.bar.roadrunner && model.moderator;
+    }
+    /**
+     * Whether «Бросить» or Space sends RPC `roll`: step 1 with the dice on, my walker on the field and no zombie, and my
+     * last roll has landed (nor is one on its way).
+     */
+    function rolls() {
+        return step() === DICE_STEP && model.dice?.on === true && canWalk() && !dicePanel.rolling() && !roller.pending;
     }
     /** Whether Space or «Выпить» sends RPC `drink`: in the bar or the cursed world with beer in hand — the server says. */
     function drinks() {
@@ -865,6 +986,55 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
 
         clinksRoadrunner,
+
+        meepsRoadrunner,
+
+        /** Whether a click on a flyer is the moderator's RPC `meep {flyer}`: a runner on the horizon (players shoot it). */
+        meepsFlyer(kind) {
+            return model.moderator && kind === 'roadrunner';
+        },
+
+        rolls,
+
+        /**
+         * Rolls my dice once (RPC `roll` with the next attempt; `bad attempt` resyncs and rolls again). Nothing is drawn
+         * until my `roll` event; a reply with no event after REPEAT_WAIT_MS was a repeat, and shows its dice landed.
+         */
+        async roll() {
+            if (!rolls()) return null;
+            const sent = roller.roll();
+            paintDice();
+            let reply = null;
+            try {
+                reply = await sent;
+            } catch (error) {
+                console.warn('roll rpc failed', error);
+            }
+            paintDice();
+            if (reply?.ok === false) console.warn('roll rejected', reply.error);
+            const dice = reply?.ok ? facesOf(reply.dice) : null;
+            if (dice && seenAttempt < reply.attempt) {
+                setTimeout(() => {
+                    if (seenAttempt >= reply.attempt) return;
+                    seenAttempt = reply.attempt;
+                    dicePanel.settle(dice);
+                    paintDice();
+                }, REPEAT_WAIT_MS);
+            }
+            return reply;
+        },
+
+        /** Repaints my dice for the current time: the lab's frozen clock has no animation frames. */
+        frame() {
+            dicePanel.frame();
+            paintDice();
+        },
+
+        /** Forgets my attempts and my roll on screen, as a new round does; the lab's replay of a frozen run needs it. */
+        forgetDice() {
+            forgetDice();
+            paintDice();
+        },
 
         /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and empty hands. */
         takesBeer() {
@@ -958,6 +1128,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         /** Whether this connection is the moderator's (RPC `me`, `moderator`); it decides whether the console shows. */
         setModerator(on) {
             model.moderator = Boolean(on);
+            paintBar();
+            paintMeep();
             onChange(model);
         },
 
@@ -985,7 +1157,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-word], [data-word-zombie]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture
@@ -1077,8 +1249,9 @@ export function isDrinkKey(event, doc = globalThis.document) {
  * @param {() => void} actions.take  sends RPC `bar.take`
  * @param {() => void} actions.drink  sends RPC `drink`
  * @param {() => void} [actions.clink]  sends RPC `clink {roadrunner: true}`
+ * @param {() => void} [actions.meep]  sends the moderator's RPC `meep {}`
  */
-export function bindBar(root, client, { take, drink, clink = null }, doc = globalThis.document) {
+export function bindBar(root, client, { take, drink, clink = null, meep = null }, doc = globalThis.document) {
     root.querySelector('[data-bar-counter]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1088,7 +1261,8 @@ export function bindBar(root, client, { take, drink, clink = null }, doc = globa
     root.querySelector('[data-roadrunner]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (clink && client.clinksRoadrunner?.()) clink();
+        if (meep && client.meepsRoadrunner?.()) meep();
+        else if (clink && client.clinksRoadrunner?.()) clink();
         else if (client.takesBeer()) take();
     });
     root.querySelector('[data-drink]')?.addEventListener('click', () => {
@@ -1098,6 +1272,43 @@ export function bindBar(root, client, { take, drink, clink = null }, doc = globa
         if (!isDrinkKey(event, doc) || !client.drinks()) return;
         event.preventDefault();
         drink();
+    });
+}
+
+/**
+ * Whether a keydown is Space for a roll of the dice: the same rules as isDrinkKey (plain Space, not on a control that
+ * takes it, no dialog open). At finale step 1 Space is the roll alone: nothing there drinks.
+ */
+export function isRollKey(event, doc = globalThis.document) {
+    return isDrinkKey(event, doc);
+}
+
+/**
+ * The dice of finale step 1 (docs/spec/frontend.md, «Кости»): «Бросить» or Space rolls when `client.rolls()`, else
+ * nothing goes out. The dice themselves come back as the `roll` event.
+ *
+ * @param {{rolls: () => boolean, roll: () => Promise<unknown>}} client
+ */
+export function bindDice(root, client, doc = globalThis.document) {
+    root.querySelector('[data-dice-roll]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (client.rolls()) client.roll();
+    });
+    doc.addEventListener('keydown', (event) => {
+        if (!isRollKey(event, doc) || !client.rolls()) return;
+        event.preventDefault();
+        client.roll();
+    });
+}
+
+/**
+ * The moderator's hit zone over RoadRunner of the finale: RPC `meep {}`; the bubble comes back as the `meep` event.
+ */
+export function bindMeep(root, meep) {
+    root.querySelector('[data-rr-meep]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        meep();
     });
 }
 

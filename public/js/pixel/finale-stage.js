@@ -16,6 +16,10 @@ import { T } from './finale-timeline.js';
 
 export { T };
 
+// The moderator's «Мип-мип!» over RoadRunner, ms; the silhouette's eyes flaring at the 6-6-6, flickering at first.
+const MEEP_MS = 1600;
+const EYES_MS = 2400;
+const EYES_FLICKER_MS = 600;
 // RoadRunner's evening run along the horizon in the cursed world: a run of RUN_MS in every slot of LOOP_MS.
 const LOOP_MS = 15000;
 const RUN_MS = 6500;
@@ -202,7 +206,8 @@ export const ritualOf = (step, ready, t) => (step === 0 && ready) || step === 1 
  * @param {object} env  scene internals: layers (ground, light, far, fx, labels), layout(), lighting(), centre() — the
  *   circle's foot in art px, clock(), serverNow(), reduced(), defTexture(def, lit), flyerArt(def, hazy), depthKey(x, y),
  *   strike() — a lightning strike begins (the scene flashes its veil), cue(cue) — a moment the sound plays, boss() —
- *   the boss of step 6 as the scene keeps it: { hp, max, downAt, hitAt, woke } (scene clock) or null
+ *   the boss of step 6 as the scene keeps it: { hp, max, downAt, hitAt, woke } (scene clock) or null, diceWin() — when
+ *   the 6-6-6 of step 1 was rolled (scene clock; -1e9 — not seen)
  */
 export function createFinaleStage(env) {
     // Sprites on the ground are made again with groundLayer on every rebuild; the rest live as long as the scene.
@@ -215,6 +220,9 @@ export function createFinaleStage(env) {
     env.far.addChild(runnerFar);
     let lastStrike = -1;
     let lastPhrase = null;
+    // The moderator's «Мип-мип!» (scene clock), and RoadRunner as the last frame drew him (null — not on screen).
+    let meepAt = -1e9;
+    let shownRunner = null;
 
     function build() {
         const make = (layer, { add = false, alpha = 1 } = {}) => {
@@ -263,10 +271,14 @@ export function createFinaleStage(env) {
     }
 
     function figureOf(step, t, clock, phrase) {
-        const idle = env.reduced() ? SILHOUETTE.idle[0] : SILHOUETTE.idle[Math.floor(clock / 500) % 2];
+        const breath = env.reduced() ? 0 : Math.floor(clock / 500) % 2;
+        const idle = SILHOUETTE.idle[breath];
         if (step === 1) {
             if (t < T.rise) return null;
             if (t < T.rise + 4 * T.riseFrame) return SILHOUETTE.rise[Math.floor((t - T.rise) / T.riseFrame)];
+            // The 6-6-6: the eyes flare, flickering at first, then burn for a while.
+            const won = clock - (env.diceWin?.() ?? -1e9);
+            if (won >= 0 && won < EYES_MS && (won >= EYES_FLICKER_MS || Math.floor(won / 100) % 2 === 0)) return SILHOUETTE.eyes[breath];
             return idle;
         }
         if (step === 2) {
@@ -301,9 +313,10 @@ export function createFinaleStage(env) {
             const x = lerp(edge.x, front.x, k);
             const y = lerp(edge.y, front.y, k);
             if (k < 0.1) return { far: true, def: RUNNER.far[Math.floor(clock / 100) % 4], x, y, flip };
-            const set = RUNNER[sizeOf(k)];
+            const size = sizeOf(k);
+            const set = RUNNER[size];
             const def = pose === 'run' ? set.run[Math.floor(clock / 70) % 4] : set[pose];
-            return { far: false, def, x, y, flip };
+            return { far: false, def, x, y, flip, size, pose };
         };
         // Heading down-left toward the front spot it faces left (mirrored); the stop turns it to the centre, also left.
         if (step === 3) {
@@ -344,6 +357,7 @@ export function createFinaleStage(env) {
     /** One frame of `step` (null outside the finale) at `t` ms into it. */
     function animate(step, t) {
         hideAll();
+        shownRunner = null;
         if (!g || step === null || step < 1) {
             lastStrike = -1;
             sweepBubbles();
@@ -442,7 +456,12 @@ export function createFinaleStage(env) {
         }
 
         const r = runnerOf(step, t, clock, now);
+        // The moderator's meep: the standing RoadRunner opens his beak; running, he only says it.
+        const meeping = clock - meepAt >= 0 && clock - meepAt < MEEP_MS;
+        if (r && meeping && !r.far && r.pose === 'stop') r.def = RUNNER[r.size].meep;
+        shownRunner = r;
         if (r) {
+            if (meeping && r.far) bubble('runner', 'Мип-мип!', { x: r.x, y: r.y - r.def.h - 1 });
             if (r.far) {
                 const art = env.flyerArt(r.def, true);
                 runnerFar.visible = true;
@@ -453,7 +472,7 @@ export function createFinaleStage(env) {
             } else {
                 place(g.runner, r.def, r.x, r.y, env.defTexture(r.def, lit, runnerBake), env.depthKey(r.x, r.y));
                 g.runner.scale.x = r.flip ? -1 : 1;
-                if (r.meep) bubble('runner', 'Мип-мип!', { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
+                if (r.meep || meeping) bubble('runner', 'Мип-мип!', { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
             }
         }
         sweepBubbles();
@@ -490,5 +509,15 @@ export function createFinaleStage(env) {
         if (g) for (const sprite of [g.figure, g.glasses, g.halo, g.wisp]) sprite.visible = false;
     }
 
-    return { build, animate, hideFigure };
+    /** The moderator's «Мип-мип!» over RoadRunner, if he is on screen; returns whether he is. */
+    function meep() {
+        if (!shownRunner) return false;
+        meepAt = env.clock();
+        return true;
+    }
+
+    /** RoadRunner as the last frame drew him: { far, def, x, y, flip } in art px, or null when he is not on screen. */
+    const runner = () => shownRunner;
+
+    return { build, animate, hideFigure, meep, runner };
 }

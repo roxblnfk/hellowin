@@ -1,4 +1,4 @@
-import { bindBar, bindClinking, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
+import { bindBar, bindClinking, bindDice, bindMeep, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 import { createOwl } from './owl.js';
 import { refusal } from './toasts.js';
@@ -81,7 +81,16 @@ async function startSound(modules, scene, serverNow) {
         audio.unlockOn(document);
         bindSoundControls(root, audio);
         bindUiClicks(root, audio);
-        return createSound(audio, { serverNow, owlGone: () => Boolean(scene?.owlGone?.()) });
+        return createSound(audio, {
+            serverNow,
+            owlGone: () => Boolean(scene?.owlGone?.()),
+            // The owl's rolls sound where it sits, a meep where RoadRunner stands (silent when he is off screen).
+            owlX: () => {
+                const perch = scene?.perch?.();
+                return perch && root.clientWidth ? (perch.x / root.clientWidth) * 100 : null;
+            },
+            runnerAt: (flyer) => scene?.runnerAt?.(flyer) ?? null,
+        });
     } catch (error) {
         console.warn('sound failed to start', error);
         return null;
@@ -133,6 +142,8 @@ async function main() {
         reveal,
         sound,
         onChange: (model) => moderatorConsole?.update(model),
+        // The dice of finale step 1: the reply only carries the attempt; the dice are drawn from the `roll` event.
+        roll: (attempt) => centrifuge.rpc('roll', { attempt }).then(({ data }) => data),
     });
     client.start();
 
@@ -195,12 +206,22 @@ async function main() {
         else click(id);
     });
 
-    // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back.
-    bindShooting(root, scene, (flyer) => centrifuge.rpc('shoot', { flyer })
-        .then(({ data }) => {
-            if (data?.ok === false) console.warn('shot rejected', data.error);
-        })
-        .catch((error) => console.warn('shoot rpc failed', error)));
+    // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back. The moderator's click on a
+    // runner on the horizon makes him meep instead (the players still shoot at him and miss).
+    bindShooting(root, scene, (flyer) => {
+        if (client.meepsFlyer(scene?.flyerKind?.(flyer))) {
+            rpc('meep', { flyer });
+            return;
+        }
+        centrifuge.rpc('shoot', { flyer })
+            .then(({ data }) => {
+                if (data?.ok === false) console.warn('shot rejected', data.error);
+            })
+            .catch((error) => console.warn('shoot rpc failed', error));
+    });
+    // RoadRunner of the finale (step 3+) meeps on the moderator's click; the dice roll by «Бросить» or Space.
+    bindMeep(root, () => rpc('meep'));
+    bindDice(root, client);
     // After the shots: a press on a flyer stays a shot even over a walker; a zombie player at step 6 is cured.
     bindClinking(root, scene, client, clink, (target) => rpc('cure', target));
     // The rapier (docs/spec/frontend.md, «Рапира»): the word form and the blow at FrankenPHP.
@@ -213,6 +234,7 @@ async function main() {
     bindBar(root, client, {
         take: () => rpc('bar.take'),
         clink: () => clink({ roadrunner: true }),
+        meep: () => rpc('meep'),
         drink: () => rpc('drink').then((data) => {
             if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),

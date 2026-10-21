@@ -16,9 +16,10 @@ const CARDS = [
     ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили за вечер', 'последнюю — первый дошедший до стойки'],
     ['slain', ['зомби-воркера', 'зомби-воркера', 'зомби-воркеров'], 'упокоили', 'каждого — первый успевший, под локом'],
     ['damage', ['урона', 'урона', 'урона'], 'FrankenPHP нанесли рапирами', 'весь зал бьёт в один элемент под одним локом'],
+    ['rolls', ['попытку', 'попытки', 'попыток'], 'выбросить PHP 6', 'повтор попытки не перебросит: кости — HMAC её ключа'],
 ];
-// The rapier's numbers: their cards show only once there is something to count.
-const SKIP_ZERO = new Set(['slain', 'damage']);
+// The rapier's and the dice's numbers: their cards show only once there is something to count.
+const SKIP_ZERO = new Set(['slain', 'damage', 'rolls']);
 
 function plural(n, [one, few, many]) {
     const tens = n % 100;

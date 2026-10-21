@@ -1540,3 +1540,154 @@ body:not([data-final]) .circle,
         top: var(--boss-y, 200px);
     }
 }
+
+/*
+ * The dice of finale step 1 at the top in the middle (docs/spec/frontend.md, «Кости»): the call to roll or the
+ * winner, my own roll drawn big — three dice of inline-SVG pixels (dice.js), bouncing by whole art pixels (--dy, a
+ * twelfth of a die) — and «Бросить».
+ */
+.dice {
+    --die: 48px;
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    z-index: 1003;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    max-width: min(440px, calc(100% - 32px));
+    padding: 8px 14px 10px;
+    font: 700 14px/1.3 var(--pixel-font);
+    color: var(--cream);
+    text-align: center;
+    background: var(--outline);
+    box-shadow: 0 0 0 2px var(--gold), 0 0 0 4px var(--outline), 0 4px 0 2px var(--outline);
+    transform: translateX(-50%);
+}
+
+.dice[hidden],
+.dice__faces[hidden],
+.dice__roll[hidden] {
+    display: none;
+}
+
+.dice__note {
+    margin: 0;
+    color: var(--gold);
+    letter-spacing: 0.04em;
+}
+
+.dice__faces {
+    display: flex;
+    gap: calc(var(--die) / 4);
+    padding-top: calc(var(--die) / 2);
+}
+
+.dice__face {
+    display: block;
+    width: var(--die);
+    height: var(--die);
+    transform: translateY(calc(var(--dy, 0) * var(--die) / 12));
+}
+
+.dice__face svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.dice__faces[data-dice-dim] .dice__face {
+    opacity: 0.55;
+    transition: opacity 0.4s steps(3);
+}
+
+/* 6-6-6: the dice shake by whole pixels while they flare red. */
+.dice__faces[data-dice-win] .dice__face {
+    animation: dice-shake 0.24s steps(1) infinite;
+}
+
+.dice__faces[data-dice-win] .dice__face:nth-child(2) {
+    animation-delay: -0.08s;
+}
+
+.dice__faces[data-dice-win] .dice__face:nth-child(3) {
+    animation-delay: -0.16s;
+}
+
+@keyframes dice-shake {
+    0% { transform: translate(-2px, 0); }
+    25% { transform: translate(2px, -2px); }
+    50% { transform: translate(0, 2px); }
+    75% { transform: translate(2px, 0); }
+}
+
+.dice__roll {
+    padding: 6px 18px;
+    border: 0;
+    font: inherit;
+    color: var(--outline);
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--soil-dark), 0 4px 0 0 var(--soil-dark);
+    cursor: pointer;
+}
+
+.dice__roll:hover {
+    background: var(--cream);
+}
+
+.dice__roll[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.dice__roll[aria-disabled="true"]:hover {
+    background: var(--gold);
+}
+
+.dice__roll:focus-visible {
+    outline: 2px dashed var(--gold);
+    outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dice__faces[data-dice-win] .dice__face {
+        animation: none;
+    }
+}
+
+/* A phone: under the corner controls and the folded console, like the word form. */
+@container patch (max-width: 600px) {
+    .dice {
+        --die: 40px;
+        top: 60px;
+        font-size: 13px;
+    }
+}
+
+/*
+ * The moderator's hit zone over RoadRunner of the finale (--rr-meep-*, from the scene): shown only while he is on
+ * screen (#app[data-rr-shown]) and the client lets it (the moderator, finale step 3+).
+ */
+.rr-meep {
+    position: absolute;
+    left: var(--rr-meep-x, 0);
+    top: var(--rr-meep-y, 0);
+    z-index: 640;
+    display: none;
+    width: var(--rr-meep-w, 0);
+    height: var(--rr-meep-h, 0);
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#app[data-rr-shown] .rr-meep:not([hidden]) {
+    display: block;
+}
+
+.rr-meep:focus-visible {
+    outline: calc(var(--px, 2px) * 1) dashed var(--gold);
+    outline-offset: calc(var(--px, 2px) * 2);
+}
