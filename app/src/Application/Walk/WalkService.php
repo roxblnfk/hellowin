@@ -200,7 +200,13 @@ final readonly class WalkService
                 $walker->hasBeer() and throw new BarRefusedException('has beer');
 
                 $from = self::rounded($walker->walk->positionAt($now));
-                $walk = Walk::along($bar->zone->route($from, self::rounded($bar->atCounter($from))), $now, $this->speed);
+                $taken = [];
+                foreach ($walkers as $other) {
+                    $spot = $other->id === $id ? null : $bar->counterSpot($other->walk->path[\count($other->walk->path) - 1]);
+                    $spot === null or $taken[] = $spot;
+                }
+                $to = self::rounded($bar->atCounter($from, $taken, $this->clinkGap));
+                $walk = Walk::along($bar->zone->route($from, $to), $now, $this->speed);
                 $walker = $walker->taking($walk, $walk->arrivesAt)->seen($now);
                 $walkers[$id] = $walker;
 

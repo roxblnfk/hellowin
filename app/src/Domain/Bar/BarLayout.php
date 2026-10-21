@@ -30,13 +30,49 @@ final readonly class BarLayout
     }
 
     /**
-     * The point of the place at the counter nearest to the character, brought onto the floor.
+     * The point of the place at the counter nearest to the character that is at least `$gap` from every other
+     * character there or on its way there, brought onto the floor; with the counter full — just the nearest one, so
+     * two characters do not stand on each other while there is room.
+     *
+     * @param list<float> $taken Where along the counter the others stand or are heading.
+     * @param float $gap About the width of a character, percents of the screen; 0 takes the nearest point.
      */
-    public function atCounter(Point $from): Point
+    public function atCounter(Point $from, array $taken = [], float $gap = 0.0): Point
+    {
+        [$x1, $x2, $y] = $this->counter;
+        $nearest = \min(\max($from->x, $x1), $x2);
+
+        // Places along the counter a gap apart, outwards from the nearest one; the first free one is the nearest free
+        $free = null;
+        if ($gap > 0.0) {
+            for ($k = 0.0; $free === null && ($nearest - $k * $gap >= $x1 - 1e-6 || $nearest + $k * $gap <= $x2 + 1e-6); $k += 1.0) {
+                foreach ([$nearest - $k * $gap, $nearest + $k * $gap] as $x) {
+                    if ($x < $x1 - 1e-6 || $x > $x2 + 1e-6) {
+                        continue;
+                    }
+                    $clear = true;
+                    foreach ($taken as $other) {
+                        \abs($other - $x) < $gap - 1e-6 and $clear = false;
+                    }
+                    if ($clear) {
+                        $free = $x;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $this->zone->clamp(new Point($free ?? $nearest, $y));
+    }
+
+    /**
+     * Where along the counter a character stands or is heading, if its walk ends at the counter.
+     */
+    public function counterSpot(Point $end): ?float
     {
         [$x1, $x2, $y] = $this->counter;
 
-        return $this->zone->clamp(new Point(\min(\max($from->x, $x1), $x2), $y));
+        return \abs($end->y - $y) < 0.5 && $end->x >= $x1 - 0.5 && $end->x <= $x2 + 0.5 ? $end->x : null;
     }
 
     /**

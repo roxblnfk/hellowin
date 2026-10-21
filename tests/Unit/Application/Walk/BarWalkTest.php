@@ -145,6 +145,31 @@ final class BarWalkTest
         Assert::count($layout->toArray()['obstacles'], 4);
     }
 
+    public function counterPlaceKeepsAGapFromTheOthers(): void
+    {
+        $layout = RitualHarness::barLayout();
+
+        Assert::equals($layout->atCounter(new Point(10, 90), [66.0], 4.0), new Point(70, 62));
+        Assert::equals($layout->atCounter(new Point(80, 90), [80.0, 77.0], 4.0), new Point(84, 62));
+        // A full counter: the nearest point as before
+        Assert::equals($layout->atCounter(new Point(10, 90), \range(66.0, 92.0, 2.0), 4.0), new Point(66, 62));
+        Assert::same($layout->counterSpot(new Point(70, 62)), 70.0);
+        Assert::null($layout->counterSpot(new Point(70, 80)));
+    }
+
+    public function twoFromOneSideStandApartAtTheCounter(): void
+    {
+        $ritual = self::bar();
+        self::place($ritual, self::A, 10, 92);
+        self::place($ritual, self::B, 12, 92);
+
+        $first = $ritual->walks->toCounter(self::A);
+        $second = $ritual->walks->toCounter(self::B);
+
+        Assert::equals($first->path[\count($first->path) - 1], new Point(66, 62));
+        Assert::equals($second->path[\count($second->path) - 1], new Point(70, 62));
+    }
+
     public function zoneOfTheBarIsNotTheLawn(): void
     {
         Assert::false(RitualHarness::barLayout()->zone->contains(new Point(22, 64)));
