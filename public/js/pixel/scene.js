@@ -707,6 +707,9 @@ export async function createScene(rootEl, snapshot) {
     const OWL_H = OWL.idle[0].h;
     // FrankenPHP's head above the circle's centre, in art pixels: where his own phrase bubbles hang (finale-stage.js).
     const FRANKEN_HEAD = 84;
+    // Room for his own phrase bubble over the head (up to three lines, bubble.js), in CSS pixels: the owl's lines after it
+    // has gone hang above it, not over it.
+    const FRANKEN_SPEECH_CSS = 84;
     // The owl does not leave before this long into step 5: the farewell line may still wait for the bubble (owl.js).
     const OWL_STAY_MS = 3000;
     let owlFlight = { mode: 'perched', at: 0, leave: false };
@@ -3554,11 +3557,11 @@ export async function createScene(rootEl, snapshot) {
          * pixel) to measure the 18-art-px owl up from it; follows resizes.
          */
         perch() {
-            // Once the owl has flown away, its lines (the moderator's free text) hang over FrankenPHP's head; the
-            // bubble measures the owl's height up from the point, so it goes that much below the head.
+            // Once the owl has flown away, its lines (the moderator's free text) hang over FrankenPHP's head, above the
+            // room his own phrases take; the bubble measures the owl's height up from the point, so that is added back.
             if (owlGone()) {
                 const c = centre();
-                return { x: c.x * layout.cssPx, y: (c.y - FRANKEN_HEAD + OWL_H) * layout.cssPx, px: layout.cssPx };
+                return { x: c.x * layout.cssPx, y: (c.y - FRANKEN_HEAD + OWL_H) * layout.cssPx - FRANKEN_SPEECH_CSS, px: layout.cssPx };
             }
             return { ...perch, px: layout.cssPx };
         },
