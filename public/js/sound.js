@@ -3,7 +3,7 @@
 
 import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
 import { T } from './pixel/finale-timeline.js';
-import { NEXT_TRACK, trackOf } from './audio/engine.js';
+import { trackOf } from './audio/engine.js';
 import { SCENE, isBar } from './layout.js';
 
 const FLYER_SOUNDS = {
@@ -36,8 +36,6 @@ const LATE_S = 0.25;
 const POUR_FRESH_MS = 400;
 // The bar's level: no pumpkins to make progress with.
 const BAR_INTENSITY = 0.2;
-// An engine that knows the bar's track numbers its scenes with the bar as 0; an older one starts with the day at 0.
-const ENGINE_KNOWS_BAR = 'bar' in NEXT_TRACK;
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 /** Stereo position of a point x in percent of the width. */
@@ -81,10 +79,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     const play = (name, options) => (quiet() ? null : audio.play(name, options));
 
     const finalScene = (model) => model.scene >= model.sceneStages;
-    // Until the engine has the bar's own track the bar plays the day's.
-    const music = (model) => audio.setMusic(ENGINE_KNOWS_BAR
-        ? trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale })
-        : trackOf({ scene: Math.max(0, model.scene - 1), sceneStages: model.sceneStages - 1, finale: model.finale }));
+    const music = (model) => audio.setMusic(trackOf({ scene: model.scene, sceneStages: model.sceneStages, finale: model.finale }));
     const walkerX = (model, id) => lastPoint(model.walkers.find((w) => w.id === id)?.walk)?.x;
     const volumeOf = (model, ...ids) => (model.me !== null && ids.includes(model.me) ? 1 : OTHERS_VOLUME);
 
