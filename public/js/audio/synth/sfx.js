@@ -349,12 +349,14 @@ export const SFX = {
             bell(r, out, 0.02, 88 + Math.floor(r.rnd() * 3) * 2, { amp: 0.15, decay: 5, dur: 0.8 });
         },
     }),
-    // Beer: a short burp and bubbles flying at the target.
+    // Beer: bubbles flying at the target — a soft pop, a stream of bubbles at many pitches, the foam fizzing.
     'shot.beer': fx({
-        dur: 0.8, variants: 4, voices: 3, level: -12,
+        dur: 0.8, variants: 4, voices: 3, level: -19,
         render(r, out) {
-            vox(r, out, 0, 0.22 + r.rnd() * 0.1, 40 + r.rnd() * 5, { vowel: 'o', to: 'a', duty: 0.2, glide: -2, drive: 5, amp: 0.6, breath: 0.4 });
-            bubbles(r, out, 0.15, 6, { spread: 0.35, amp: 0.25 });
+            thump(r, out, 0, { f0: 380, f1: 240, dur: 0.05, amp: 0.35 });
+            bubbles(r, out, 0.02, 10, { spread: 0.35, low: 400, high: 1400, amp: 0.3 });
+            bubbles(r, out, 0.08, 8, { spread: 0.4, low: 1200, high: 2600, amp: 0.18 });
+            noiseSweep(r, out, 0.03, 0.6, { from: 5000, to: 7000, q: 0.8, amp: 0.06, mode: 'hp', attack: 0.05, curve: 1.2, grain: 300 });
         },
     }),
     'shot.redflame': fx({
