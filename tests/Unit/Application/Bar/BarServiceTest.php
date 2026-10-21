@@ -176,13 +176,26 @@ final class BarServiceTest
     public function unclinkedMugIsNotDrunk(): void
     {
         $ritual = self::bar();
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::B)), 'no character');
         self::place($ritual, self::A, 20, 92);
+        self::place($ritual, self::B, 70, 92);
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'no beer');
         self::give($ritual, self::A);
 
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'not clinked');
         Assert::blank($ritual->broadcast->ofType('drink'));
-        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::B)), 'no character');
+    }
+
+    public function playerAloneOnTheFloorDrinksWithoutClinking(): void
+    {
+        $ritual = self::bar();
+        self::place($ritual, self::A, 20, 92);
+        self::give($ritual, self::A);
+
+        $ritual->bar->drink(self::A);
+
+        Assert::null($ritual->walkerStore->all()[self::A]->item);
+        Assert::same(array_column($ritual->broadcast->ofType('drinks'), 'drunk'), [1]);
     }
 
     public function clinkedMugIsDrunkAndCountsForThePlayerAndTheRoom(): void

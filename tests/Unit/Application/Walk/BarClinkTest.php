@@ -137,6 +137,7 @@ final class BarClinkTest
     {
         $ritual = self::bar();
         self::place($ritual, self::A, 20, 92);
+        self::place($ritual, self::B, 70, 92);
         self::give($ritual, self::A, clinked: true);
         $ritual->bar->drink(self::A);
         self::give($ritual, self::A);

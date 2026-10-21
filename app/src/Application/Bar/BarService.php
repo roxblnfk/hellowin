@@ -160,7 +160,8 @@ final readonly class BarService
 
     /**
      * Drinks the clinked mug in hand: the hands are empty again, the player and the room count one more mug, and the
-     * bar is ready once the room has drunk its goal.
+     * bar is ready once the room has drunk its goal. A player alone on the floor has no one to clink with and drinks
+     * the mug as it is.
      *
      * @param non-empty-string $id
      * @throws NoCharacterException
@@ -176,7 +177,7 @@ final readonly class BarService
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $this->policy->bar($this->ritual->scene()) or throw new BarRefusedException('not bar');
                 $walker->hasBeer() or throw new BarRefusedException('no beer');
-                $walker->clinked or throw new BarRefusedException('not clinked');
+                $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
                 $walkers[$id] = $walker->emptyHanded();
 
                 return [$walkers, null];

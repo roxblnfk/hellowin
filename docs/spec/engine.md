@@ -241,8 +241,8 @@
   вызвавшего и партнёра пиво, расстояние между их позициями сейчас не больше `walk.bar.clink_reach` — `clinked: true`
   только вызвавшему, без событий: автоматическое чоканье рисует каждый браузер сам, и сервер не даёт одному браузеру
   засчитать его за другого.
-- **«Выпить»** (`drink`, `BarService::drink`): под локом `walkers` — фигурка, бар, `beer` (`no beer`), `clinked`
-  (`not clinked`) → руки пустые; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
+- **«Выпить»** (`drink`, `BarService::drink`): под локом `walkers` — фигурка, бар, `beer` (`no beer`), `clinked` —
+  или фигурка на поле одна, по тем же `walkers`, что видит клиент (`not clinked`) → руки пустые; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
   (под локом `bar`; счёт другого раунда читается как 0 — сброс его не трогает), события `drink` и `drinks`.
 - **Цель и готовность.** Цель — `barTarget` в сюжете `hellowin:story` (рядом с `k`, переживает сброс; `null` —
   `HELLOWIN_BAR_DRINKS`). `bar.target {delta}` меняет её под локом `scene` (не ниже 1; вернувшаяся к env — снова
