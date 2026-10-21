@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Walk\WalkService;
+use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\Walker;
 
 /**
  * Starts the ritual over in a new round.
@@ -19,9 +22,12 @@ final readonly class ResetService
         private RitualStore $store,
         private ChannelPublisher $publisher,
         private RitualMetrics $metrics,
+        private ?WalkService $walks = null,
     ) {}
 
     /**
+     * A ritual that starts in the bar takes every character back there.
+     *
      * @param int|null $fromRound Round to finish; null takes the current one.
      * @return positive-int|null The new round, null when `$fromRound` is already over.
      * @throws RitualBusyException
@@ -33,9 +39,23 @@ final readonly class ResetService
             return null;
         }
 
-        $this->publisher->reset($round);
+        $this->publisher->reset($round, $this->walks?->barIn(0) === true ? $this->backToBar() : null);
         $this->metrics->state($this->store->snapshot());
 
         return $round;
+    }
+
+    /**
+     * The round has started over already: a busy lawn leaves the characters where they stood.
+     *
+     * @return list<Walker>|null
+     */
+    private function backToBar(): ?array
+    {
+        try {
+            return $this->walks?->relocate(0);
+        } catch (LockBusyException) {
+            return null;
+        }
     }
 }

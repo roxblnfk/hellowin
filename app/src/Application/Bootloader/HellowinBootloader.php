@@ -136,6 +136,7 @@ final class HellowinBootloader extends Bootloader
                 PlayMetrics $metrics,
                 Clock $clock,
                 ElementRegistry $elements,
+                RitualPolicy $policy,
             ): WalkService => new WalkService(
                 $walkers,
                 $config->getWalkZone(),
@@ -153,6 +154,8 @@ final class HellowinBootloader extends Bootloader
                 $config->getClinkGap(),
                 $config->getClinkDuration(),
                 $config->getWalkReach(),
+                bar: $config->getBarLayout(),
+                policy: $policy,
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,

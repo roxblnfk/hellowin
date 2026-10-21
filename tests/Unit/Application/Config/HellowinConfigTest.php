@@ -8,6 +8,8 @@ use App\Application\Config\HellowinConfig;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
 use App\Domain\RateLimit\TokenBucket;
+use App\Domain\Walk\Box;
+use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\WalkZone;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -215,7 +217,42 @@ final class HellowinConfigTest
             'patch' => ['cx' => 50, 'cy' => 60, 'rx' => 30, 'ry' => 20.5],
         ]]);
 
-        Assert::equals($config->getWalkZone(), new WalkZone(1, 2, 99, 98, 50, 60, 30, 20.5));
+        Assert::equals($config->getWalkZone(), WalkZone::lawn(1, 2, 99, 98, 50, 60, 30, 20.5));
+    }
+
+    public function barLayoutTellsTablesFromTheCounter(): void
+    {
+        $config = new HellowinConfig(['walk' => ['bar' => [
+            'area' => ['x1' => 0, 'y1' => 50, 'x2' => 100, 'y2' => 100],
+            'obstacles' => [['x1' => 60, 'y1' => 40, 'x2' => 100, 'y2' => 60], ['cx' => 20, 'cy' => 70, 'rx' => 8, 'ry' => 4]],
+            'counter' => ['x1' => 62, 'x2' => 98, 'y' => 62],
+            'spawn' => ['y1' => 90, 'y2' => 95],
+            'clink_reach' => 9,
+        ]]]);
+
+        $layout = $config->getBarLayout();
+
+        Assert::equals($layout?->zone, new WalkZone(0, 50, 100, 100, new Box(60, 40, 100, 60), new Ellipse(20, 70, 8, 4)));
+        Assert::same($layout->counter, [62.0, 98.0, 62.0]);
+        Assert::same($layout->spawnY, [90.0, 95.0]);
+        Assert::same($layout->clinkReach, 9.0);
+    }
+
+    public function withoutABarLayoutTheBarIsTheLawn(): void
+    {
+        Assert::null((new HellowinConfig())->getBarLayout());
+    }
+
+    public function obstacleOfNeitherShapeIsAConfigError(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk.bar.obstacles');
+
+        (new HellowinConfig(['walk' => ['bar' => [
+            'area' => ['x1' => 0, 'y1' => 50, 'x2' => 100, 'y2' => 100],
+            'obstacles' => [['x' => 1]],
+            'counter' => ['x1' => 62, 'x2' => 98, 'y' => 62],
+            'spawn' => ['y1' => 90, 'y2' => 95],
+        ]]]))->getBarLayout();
     }
 
     #[DataSet([' 7.5 ', 7.5], 'env string')]

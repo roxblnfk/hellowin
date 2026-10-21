@@ -6,10 +6,14 @@ namespace App\Application\Hellowin;
 
 use App\Application\Player\PlayerService;
 use App\Application\Story\OwlLine;
+use App\Application\Walk\WalkService;
 use App\Domain\Element\Element;
+use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Walk\Walker;
+use Psr\Log\LoggerInterface;
 
 /**
  * Applies queued transitions. The store applies one only while the state is a step behind it in the
@@ -24,6 +28,8 @@ final readonly class TransitionHandler
         private ChannelPublisher $publisher,
         private RitualMetrics $metrics,
         private PlayerService $players,
+        private ?WalkService $walks = null,
+        private ?LoggerInterface $logger = null,
     ) {}
 
     /**
@@ -73,6 +79,8 @@ final readonly class TransitionHandler
     }
 
     /**
+     * Leaving the bar takes the room to the patch: every character is put on the lawn, and the event carries them all.
+     *
      * @return bool Whether the scene moved.
      * @throws RitualBusyException
      */
@@ -83,6 +91,7 @@ final readonly class TransitionHandler
             return false;
         }
 
+        $walkers = $this->walks?->barIn($toScene - 1) === true ? $this->leaveBar($toScene) : null;
         $this->publisher->scene(
             $round,
             $toScene,
@@ -90,11 +99,28 @@ final readonly class TransitionHandler
             $this->policy->stageMax($toScene, Element::TYPE_BONFIRE),
             $this->policy->stageMax($toScene, Element::TYPE_CIRCLE),
             $final ? 0 : null,
+            $walkers,
         );
         $final and $this->publisher->finale($round, $toScene, 0);
         $this->publisher->owl($round, OwlLine::scene($toScene));
         $this->metrics->sceneMoved($toScene);
 
         return true;
+    }
+
+    /**
+     * The scene has moved already: a busy lawn costs the new places of the characters, not the scene. Clients then
+     * keep them where they stood until they walk.
+     *
+     * @return list<Walker>|null
+     */
+    private function leaveBar(int $toScene): ?array
+    {
+        try {
+            return $this->walks?->relocate($toScene);
+        } catch (LockBusyException $e) {
+            $this->logger?->warning('Characters are not moved out of the bar: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+            return null;
+        }
     }
 }

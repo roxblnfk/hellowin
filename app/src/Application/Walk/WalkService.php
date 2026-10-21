@@ -6,6 +6,7 @@ namespace App\Application\Walk;
 
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
+use App\Domain\Bar\BarLayout;
 use App\Domain\Clock\Clock;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -14,6 +15,7 @@ use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\Look;
 use App\Domain\Player\Player;
 use App\Domain\Player\PlayerStore;
+use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Walk\Clink;
 use App\Domain\Walk\Items;
@@ -40,6 +42,9 @@ final readonly class WalkService
      * @param float $clinkGap Percents of the screen between two characters that clink.
      * @param positive-int $clinkDuration Milliseconds a clink plays; a new clink of the same player is refused meanwhile.
      * @param float $clinkReach Percents of the screen: how far from a pumpkin a character may stand to clink with it.
+     * @param BarLayout|null $bar Where characters walk in the bar; without it, or without the policy, they walk the
+     *        lawn there too.
+     * @param RitualPolicy|null $policy Tells the bar from the other scenes.
      */
     public function __construct(
         private WalkerStore $store,
@@ -59,7 +64,42 @@ final readonly class WalkService
         private int $clinkDuration,
         private float $clinkReach,
         private Randomizer $random = new Randomizer(),
+        private ?BarLayout $bar = null,
+        private ?RitualPolicy $policy = null,
     ) {}
+
+    /**
+     * @return bool Whether characters walk the bar in the scene.
+     */
+    public function barIn(int $scene): bool
+    {
+        return $this->bar !== null && $this->policy?->bar($scene) === true;
+    }
+
+    /**
+     * Puts every character standing at the point of the scene's zone nearest to where it is: the room moved to another
+     * location, so nobody walks there. Walks to a clink are called off.
+     *
+     * @return list<Walker>
+     * @throws LockBusyException
+     */
+    public function relocate(int $scene): array
+    {
+        $now = $this->clock->now();
+        $zone = $this->zoneIn($scene);
+
+        return $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            static function (array $walkers) use ($zone, $now): array {
+                foreach ($walkers as $id => $walker) {
+                    $at = self::rounded($zone->clamp($walker->walk->positionAt($now)));
+                    $walkers[$id] = $walker->walking(Walk::standing($at, $now));
+                }
+
+                return [$walkers, \array_values($walkers)];
+            },
+        );
+    }
 
     /**
      * Puts the player's character on the lawn, or dresses the one already there in the player's name and look.
@@ -80,7 +120,7 @@ final readonly class WalkService
             function (array $walkers) use ($player, $look, $now): array {
                 $walker = isset($walkers[$player->id])
                     ? $walkers[$player->id]->dressed($player->name, $look)->seen($now)
-                    : $this->spawn($player->id, $player->name, $look, $now);
+                    : $this->spawn($player->id, $player->name, $look, $now, $this->ritual->scene());
                 $walkers[$player->id] = $walker;
 
                 return [$walkers, $walker];
@@ -109,16 +149,19 @@ final readonly class WalkService
         }
 
         $now = $this->clock->now();
-        $target = self::rounded($this->zone->clamp(new Point($x, $y)));
 
+        // The scene is read under the lawn lock: a move never lands in the location the room has just left
         $result = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            function (array $walkers) use ($player, $look, $now, $target): array {
-                $entered = isset($walkers[$player->id]) ? null : $this->spawn($player->id, $player->name, $look, $now);
+            function (array $walkers) use ($player, $look, $now, $x, $y): array {
+                $scene = $this->ritual->scene();
+                $zone = $this->zoneIn($scene);
+                $entered = isset($walkers[$player->id]) ? null : $this->spawn($player->id, $player->name, $look, $now, $scene);
                 $walker = $entered ?? $walkers[$player->id];
 
+                $target = self::rounded($zone->clamp(new Point($x, $y)));
                 $from = self::rounded($walker->walk->positionAt($now));
-                $walker = $walker->walking(Walk::along($this->zone->route($from, $target), $now, $this->speed))->seen($now);
+                $walker = $walker->walking(Walk::along($zone->route($from, $target), $now, $this->speed))->seen($now);
                 $walkers[$player->id] = $walker;
 
                 return [$walkers, [$entered, $walker]];
@@ -268,6 +311,7 @@ final readonly class WalkService
         $result = $this->store->update(
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($online, $newcomers, $now): array {
+                $scene = $newcomers === [] ? 0 : $this->ritual->scene();
                 $entered = [];
                 $left = [];
                 foreach ($walkers as $walker) {
@@ -280,7 +324,7 @@ final readonly class WalkService
                 }
                 foreach ($newcomers as [$player, $look]) {
                     if (!isset($walkers[$player->id])) {
-                        $walkers[$player->id] = $entered[] = $this->spawn($player->id, $player->name, $look, $now);
+                        $walkers[$player->id] = $entered[] = $this->spawn($player->id, $player->name, $look, $now, $scene);
                     }
                 }
 
@@ -344,8 +388,8 @@ final readonly class WalkService
     {
         $at = new Point($pumpkin->x, $pumpkin->y);
         $side = match (true) {
-            $pumpkin->x > $this->zone->cx => 1,
-            $pumpkin->x < $this->zone->cx => -1,
+            $pumpkin->x > $this->zone->patch()->cx => 1,
+            $pumpkin->x < $this->zone->patch()->cx => -1,
             default => (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1,
         };
         $beside = $this->zone->nearestBeside($at, $side, $this->clinkGap);
@@ -361,13 +405,24 @@ final readonly class WalkService
      * @param non-empty-string $id
      * @param non-empty-string|null $name
      */
-    private function spawn(string $id, ?string $name, Look $look, int $now): Walker
+    private function spawn(string $id, ?string $name, Look $look, int $now, int $scene): Walker
     {
-        $at = $this->zone->clamp(new Point(
-            $this->random->getFloat($this->zone->x1, $this->zone->x2),
-            $this->random->getFloat($this->spawnY[0], $this->spawnY[1]),
+        [$zone, $spawnY] = $this->bar !== null && $this->barIn($scene)
+            ? [$this->bar->zone, $this->bar->spawnY]
+            : [$this->zone, $this->spawnY];
+        $at = $zone->clamp(new Point(
+            $this->random->getFloat($zone->x1, $zone->x2),
+            $this->random->getFloat($spawnY[0], $spawnY[1]),
         ));
 
         return new Walker($id, $name, $look, Walk::standing(self::rounded($at), $now), $now);
+    }
+
+    /**
+     * The bar's floor in the bar, the lawn elsewhere.
+     */
+    private function zoneIn(int $scene): WalkZone
+    {
+        return $this->bar !== null && $this->barIn($scene) ? $this->bar->zone : $this->zone;
     }
 }

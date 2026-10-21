@@ -125,7 +125,7 @@ final class FlyerFactoryTest
 
     public function wormsCrawlOverTheLawnAtTheMiddleDepth(): void
     {
-        $lawn = new WalkZone(3, 44, 97, 97, 50, 63, 31, 25);
+        $lawn = WalkZone::lawn(3, 44, 97, 97, 50, 63, 31, 25);
         $depths = \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS);
         $factory = new FlyerFactory($depths, [new Bush('bush-left', new Point(4, 86), 2)], 1.0, 1.0, new Randomizer(new Mt19937(7)), [['duck'], ['worm']], lawn: $lawn);
 
@@ -283,7 +283,7 @@ final class FlyerFactoryTest
 
     private static function lawn(): WalkZone
     {
-        return new WalkZone(3, 44, 97, 97, 50, 63, 31, 25);
+        return WalkZone::lawn(3, 44, 97, 97, 50, 63, 31, 25);
     }
 
     /**

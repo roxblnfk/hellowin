@@ -329,7 +329,7 @@ final readonly class FlyerFactory
         // Along the bottom of the lawn, under the patch
         $y = \round($lawn->y2 - 2.0, 1);
 
-        return [new Point(\round($lawn->cx - 20.0, 1), $y), new Point(\round($lawn->cx - 5.0, 1), $y)];
+        return [new Point(\round($lawn->patch()->cx - 20.0, 1), $y), new Point(\round($lawn->patch()->cx - 5.0, 1), $y)];
     }
 
     private function wobble(): Wobble

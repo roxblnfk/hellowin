@@ -65,7 +65,9 @@ final readonly class ZombieFactory
             }
         }
 
-        return $this->ray(\M_PI / 2.0) ?? [new Point($this->zone->cx, $this->zone->cy + $this->zone->ry), new Point($this->zone->cx, $this->zone->y2)];
+        $patch = $this->zone->patch();
+
+        return $this->ray(\M_PI / 2.0) ?? [new Point($patch->cx, $patch->cy + $patch->ry), new Point($patch->cx, $this->zone->y2)];
     }
 
     /**
@@ -73,23 +75,24 @@ final readonly class ZombieFactory
      */
     private function ray(float $angle): ?array
     {
-        $dx = $this->zone->rx * \cos($angle);
-        $dy = $this->zone->ry * \sin($angle);
+        $patch = $this->zone->patch();
+        $dx = $patch->rx * \cos($angle);
+        $dy = $patch->ry * \sin($angle);
 
         // The ray is c + t·d: t = 1 on the patch edge, the exit is the nearest side of the rectangle ahead
         $exit = \INF;
-        $dx > 0.0 and $exit = \min($exit, ($this->zone->x2 - $this->zone->cx) / $dx);
-        $dx < 0.0 and $exit = \min($exit, ($this->zone->x1 - $this->zone->cx) / $dx);
-        $dy > 0.0 and $exit = \min($exit, ($this->zone->y2 - $this->zone->cy) / $dy);
-        $dy < 0.0 and $exit = \min($exit, ($this->zone->y1 - $this->zone->cy) / $dy);
+        $dx > 0.0 and $exit = \min($exit, ($this->zone->x2 - $patch->cx) / $dx);
+        $dx < 0.0 and $exit = \min($exit, ($this->zone->x1 - $patch->cx) / $dx);
+        $dy > 0.0 and $exit = \min($exit, ($this->zone->y2 - $patch->cy) / $dy);
+        $dy < 0.0 and $exit = \min($exit, ($this->zone->y1 - $patch->cy) / $dy);
 
         if ($exit <= 1.0 || $exit === \INF) {
             return null;
         }
 
         return [
-            new Point(\round($this->zone->cx + $dx, 2), \round($this->zone->cy + $dy, 2)),
-            new Point(\round($this->zone->cx + $dx * $exit, 2), \round($this->zone->cy + $dy * $exit, 2)),
+            new Point(\round($patch->cx + $dx, 2), \round($patch->cy + $dy, 2)),
+            new Point(\round($patch->cx + $dx * $exit, 2), \round($patch->cy + $dy * $exit, 2)),
         ];
     }
 }

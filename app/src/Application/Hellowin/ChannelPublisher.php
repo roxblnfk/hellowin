@@ -53,6 +53,7 @@ final readonly class ChannelPublisher
      * Carries the item every character holds in the new scene and the last stages of the centrepieces in it.
      *
      * @param int|null $finale The finale step the new scene starts at: 0 for the final scene, null before it.
+     * @param list<Walker>|null $walkers Every character, put into the new location: the room has left the bar.
      */
     public function scene(
         int $round,
@@ -61,21 +62,33 @@ final readonly class ChannelPublisher
         int $bonfireStageMax = 0,
         int $circleStageMax = 0,
         ?int $finale = null,
+        ?array $walkers = null,
     ): void {
-        $this->publish([
+        $item = $this->items->held($scene, $finale);
+        $message = [
             'type' => 'scene',
             'round' => $round,
             'scene' => $scene,
             'stageMax' => $stageMax,
             'bonfireStageMax' => $bonfireStageMax,
             'circleStageMax' => $circleStageMax,
-            'item' => $this->items->held($scene, $finale),
-        ]);
+            'item' => $item,
+        ];
+        $walkers === null or $message['walkers'] = self::walkers($walkers, $item);
+
+        $this->publish($message);
     }
 
-    public function reset(int $round): void
+    /**
+     * @param list<Walker>|null $walkers Every character, put back into the bar with empty hands.
+     */
+    public function reset(int $round, ?array $walkers = null): void
     {
-        $this->publish(['type' => 'reset', 'round' => $round, 'item' => $this->items->held(0)]);
+        $item = $this->items->held(0);
+        $message = ['type' => 'reset', 'round' => $round, 'item' => $item];
+        $walkers === null or $message['walkers'] = self::walkers($walkers, $item);
+
+        $this->publish($message);
     }
 
     public function flyer(int $round, Flyer $flyer): void
@@ -201,6 +214,16 @@ final readonly class ChannelPublisher
     public function zombies(int $round, bool $on): void
     {
         $this->publish(['type' => 'zombies', 'round' => $round, 'on' => $on]);
+    }
+
+    /**
+     * @param list<Walker> $walkers
+     * @param non-empty-string|null $item
+     * @return list<array>
+     */
+    private static function walkers(array $walkers, ?string $item): array
+    {
+        return \array_map(static fn(Walker $walker): array => $walker->toArray($item), $walkers);
     }
 
     /**

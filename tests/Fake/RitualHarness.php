@@ -20,6 +20,7 @@ use App\Application\Player\PlayerService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
 use App\Application\Walk\WalkService;
+use App\Domain\Bar\BarLayout;
 use App\Domain\Clock\StartTime;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -35,6 +36,8 @@ use App\Domain\Player\PlayerStore;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\ShotTally;
+use App\Domain\Walk\Box;
+use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\WalkerStore;
 use App\Domain\Walk\WalkZone;
@@ -129,8 +132,6 @@ final class RitualHarness
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $this->clicks = new ClickHandler($elements, $this->store, $policy, $queue, $metrics, $publisher, $this->players);
-        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players);
-        $this->reset = new ResetService($this->store, $publisher, $metrics);
         $this->clock = new FrozenClock();
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
@@ -182,7 +183,11 @@ final class RitualHarness
             3200,
             10.0,
             new Randomizer(new Mt19937(7)),
+            bar: ($stageMax[0] ?? null) === 0 ? self::barLayout() : null,
+            policy: $policy,
         );
+        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks);
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks);
     }
 
@@ -191,7 +196,29 @@ final class RitualHarness
      */
     public static function walkZone(): WalkZone
     {
-        return new WalkZone(3, 44, 97, 97, 50, 63, 31, 25);
+        return WalkZone::lawn(3, 44, 97, 97, 50, 63, 31, 25);
+    }
+
+    /**
+     * The bar of app/config/hellowin.php: the floor, the counter at the back on the right, three tables.
+     */
+    public static function barLayout(): BarLayout
+    {
+        return new BarLayout(
+            new WalkZone(
+                3,
+                50,
+                97,
+                97,
+                new Box(64, 46, 100, 60),
+                new Ellipse(22, 64, 10, 4.5),
+                new Ellipse(44, 78, 10, 4.5),
+                new Ellipse(76, 80, 10, 4.5),
+            ),
+            [66.0, 95.0, 62.0],
+            [90.0, 94.0],
+            10.0,
+        );
     }
 
     public function click(string $pumpkin, int $times = 1, ?string $player = null): void

@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Application\Config;
 
+use App\Domain\Bar\BarLayout;
 use App\Domain\Element\Element;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
 use App\Domain\RateLimit\TokenBucket;
+use App\Domain\Walk\Box;
+use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
+use App\Domain\Walk\Obstacle;
 use App\Domain\Walk\WalkZone;
 use Spiral\Core\InjectableConfig;
 
@@ -49,6 +53,45 @@ final class HellowinConfig extends InjectableConfig
             'clink_duration' => 3200,
         ],
     ];
+
+    /**
+     * The bar of scene 0: its floor, tables and counter.
+     *
+     * @return BarLayout|null Null when the config has no `walk.bar`: characters walk the lawn there too.
+     */
+    public function getBarLayout(): ?BarLayout
+    {
+        $bar = $this->walk()['bar'] ?? null;
+        if ($bar === null) {
+            return null;
+        }
+        \is_array($bar) or throw new \InvalidArgumentException('Config "hellowin.walk.bar" must be an array.');
+
+        $area = $bar['area'] ?? null;
+        $counter = $bar['counter'] ?? null;
+        $spawn = $bar['spawn'] ?? null;
+        $obstacles = $bar['obstacles'] ?? [];
+        \is_array($area) && \is_array($counter) && \is_array($spawn) && \is_array($obstacles) or throw new \InvalidArgumentException(
+            'Config "hellowin.walk.bar" must have "area" {x1, y1, x2, y2}, "obstacles" [...], "counter" {x1, x2, y} and "spawn" {y1, y2}.',
+        );
+
+        return new BarLayout(
+            new WalkZone(
+                self::float($area['x1'] ?? null, 'walk.bar.area.x1'),
+                self::float($area['y1'] ?? null, 'walk.bar.area.y1'),
+                self::float($area['x2'] ?? null, 'walk.bar.area.x2'),
+                self::float($area['y2'] ?? null, 'walk.bar.area.y2'),
+                ...\array_map(self::obstacle(...), \array_values($obstacles)),
+            ),
+            [
+                self::float($counter['x1'] ?? null, 'walk.bar.counter.x1'),
+                self::float($counter['x2'] ?? null, 'walk.bar.counter.x2'),
+                self::float($counter['y'] ?? null, 'walk.bar.counter.y'),
+            ],
+            [self::float($spawn['y1'] ?? null, 'walk.bar.spawn.y1'), self::float($spawn['y2'] ?? null, 'walk.bar.spawn.y2')],
+            self::nonNegative($bar['clink_reach'] ?? 10, 'walk.bar.clink_reach'),
+        );
+    }
 
     /**
      * @return non-empty-string
@@ -332,7 +375,7 @@ final class HellowinConfig extends InjectableConfig
             'Config "hellowin.walk" must have "area" {x1, y1, x2, y2} and "patch" {cx, cy, rx, ry}.',
         );
 
-        return new WalkZone(
+        return WalkZone::lawn(
             self::float($area['x1'] ?? null, 'walk.area.x1'),
             self::float($area['y1'] ?? null, 'walk.area.y1'),
             self::float($area['x2'] ?? null, 'walk.area.x2'),
@@ -445,6 +488,36 @@ final class HellowinConfig extends InjectableConfig
         return $value >= 0.0
             ? $value
             : throw new \InvalidArgumentException(\sprintf('Config "hellowin.%s" must not be negative.', $key));
+    }
+
+    /**
+     * A table `{cx, cy, rx, ry}` or the counter `{x1, y1, x2, y2}`.
+     */
+    private static function obstacle(mixed $spec): Obstacle
+    {
+        \is_array($spec) or throw new \InvalidArgumentException('Each obstacle of "hellowin.walk.bar.obstacles" must be an array.');
+
+        try {
+            return isset($spec['cx'])
+                ? new Ellipse(
+                    self::float($spec['cx'], 'walk.bar.obstacles.*.cx'),
+                    self::float($spec['cy'] ?? null, 'walk.bar.obstacles.*.cy'),
+                    self::float($spec['rx'] ?? null, 'walk.bar.obstacles.*.rx'),
+                    self::float($spec['ry'] ?? null, 'walk.bar.obstacles.*.ry'),
+                )
+                : new Box(
+                    self::float($spec['x1'] ?? null, 'walk.bar.obstacles.*.x1'),
+                    self::float($spec['y1'] ?? null, 'walk.bar.obstacles.*.y1'),
+                    self::float($spec['x2'] ?? null, 'walk.bar.obstacles.*.x2'),
+                    self::float($spec['y2'] ?? null, 'walk.bar.obstacles.*.y2'),
+                );
+        } catch (\InvalidArgumentException $e) {
+            throw new \InvalidArgumentException(
+                'Config "hellowin.walk.bar.obstacles" lists ellipses {cx, cy, rx, ry} and rectangles {x1, y1, x2, y2}: '
+                . $e->getMessage(),
+                previous: $e,
+            );
+        }
     }
 
     private static function isItem(mixed $item): bool

@@ -117,5 +117,22 @@ return [
         'reach' => 10,
         'clink_gap' => 4,
         'clink_duration' => 3200,
+
+        // The bar of scene 0 (docs/spec/protocol.md, «Бар»): the floor minus the obstacles — tables are ellipses
+        // {cx, cy, rx, ry}, the counter a rectangle {x1, y1, x2, y2}; a mug is taken standing on the line `counter`,
+        // new characters appear in the band `spawn`, and two characters at most `clink_reach` apart clink by
+        // themselves. The frontend draws the bar over these numbers
+        'bar' => [
+            'area' => ['x1' => 3, 'y1' => 50, 'x2' => 97, 'y2' => 97],
+            'obstacles' => [
+                ['x1' => 64, 'y1' => 46, 'x2' => 100, 'y2' => 60],
+                ['cx' => 22, 'cy' => 64, 'rx' => 10, 'ry' => 4.5],
+                ['cx' => 44, 'cy' => 78, 'rx' => 10, 'ry' => 4.5],
+                ['cx' => 76, 'cy' => 80, 'rx' => 10, 'ry' => 4.5],
+            ],
+            'counter' => ['x1' => 66, 'x2' => 95, 'y' => 62],
+            'spawn' => ['y1' => 90, 'y2' => 94],
+            'clink_reach' => 10,
+        ],
     ],
 ];

@@ -25,7 +25,7 @@ final class ZombieFactoryTest
         for ($i = 0; $i < 200; ++$i) {
             $zombie = $factory->launch(1_000);
 
-            $onPatch = \hypot(($zombie->from->x - $zone->cx) / $zone->rx, ($zombie->from->y - $zone->cy) / $zone->ry);
+            $onPatch = \hypot(($zombie->from->x - $zone->patch()->cx) / $zone->patch()->rx, ($zombie->from->y - $zone->patch()->cy) / $zone->patch()->ry);
             Assert::true(\abs($onPatch - 1.0) < 0.01, 'starts on the patch edge');
             Assert::true($zombie->from->y >= $zone->y1, 'starts inside the lawn');
             Assert::true(

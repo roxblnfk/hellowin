@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
 use App\Domain\Flyer\FlyerDepth;
+use App\Domain\Flyer\Point;
 use Spiral\Testing\Attribute\Env;
 use Testo\Assert;
 use Testo\Expect;
@@ -36,6 +37,20 @@ final class HellowinConfigTest extends TestCase
         }
 
         Assert::same($reachable, ['pumpkin-3', 'pumpkin-5', 'pumpkin-7', 'pumpkin-9', 'pumpkin-10', 'pumpkin-11', 'pumpkin-13', 'pumpkin-15', 'pumpkin-17']);
+    }
+
+    public function shippedBarHasRoomAtTheCounterAndInTheSpawnBand(): void
+    {
+        $layout = $this->getContainer()->get(HellowinConfig::class)->getBarLayout();
+
+        Assert::notNull($layout);
+        [$x1, $x2, $y] = $layout->counter;
+        for ($x = $x1; $x <= $x2; $x += 1.0) {
+            Assert::true($layout->zone->contains(new Point($x, $y)), \sprintf('(%.1f, %.1f) at the counter is off the floor', $x, $y));
+        }
+        Assert::numeric($layout->spawnY[0])->greaterThanOrEqual($layout->zone->y1);
+        Assert::numeric($layout->spawnY[1])->lessThanOrEqual($layout->zone->y2);
+        Assert::count($layout->zone->obstacles, 4);
     }
 
     public function shippedBushesAreOnTheGround(): void

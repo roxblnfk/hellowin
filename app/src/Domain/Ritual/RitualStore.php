@@ -237,6 +237,16 @@ final readonly class RitualStore
     }
 
     /**
+     * Current scene without taking locks: one read, for those who only need to know where the room is.
+     *
+     * @return int<0, max>
+     */
+    public function scene(): int
+    {
+        return $this->readScene();
+    }
+
+    /**
      * Current story without taking locks, for the console switches outside the ritual.
      */
     public function story(): Story

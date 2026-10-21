@@ -25,6 +25,8 @@ final readonly class HomeController
         return $this->views->render('home', $this->snapshot->create() + [
             'centrifugoUrl' => ServiceUrl::resolve($this->config->getCentrifugoUrl(), $request->getUri(), websocket: true),
             'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
+            // The floor, tables and counter of the bar: config, not state, so the snapshot does not carry it
+            'barLayout' => $this->config->getBarLayout()?->toArray(),
         ]);
     }
 
