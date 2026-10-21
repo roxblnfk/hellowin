@@ -897,8 +897,8 @@ const CLOAKS = {
 const ITEM_LEGEND = {
     w: 'white', c: 'cream', y: 'pumpkinShine', Y: 'pumpkinLight', g: 'grayLight', a: 'gray', k: 'barkDark',
     b: 'bark', B: 'barkLight', h: 'hay', H: 'hayDark', L: 'hayLight', s: 'stemLight',
-    // The magic book: glowing green lines on cream pages in a violet binding.
-    e: 'eyeGreen', E: 'eerieHot', v: 'violetDark',
+    // The magic book: green lines on cream pages in a violet binding with a dark spine.
+    e: 'eyeGreen', E: 'eerieHot', v: 'violetDark', V: 'violet', m: 'eerieMid',
 };
 
 // From the side the broom leans forward, so the stick clears the face.
@@ -936,11 +936,17 @@ const ITEM_DEFS = {
         front: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
         side: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
     },
-    // An open spell book held up in front, its lines glowing green, two motes rising off the pages.
+    // An open spell book held up by its spine: the violet cover round the edges and below, the dark spine down the
+    // middle, two cream pages with green lines of text. From the side it turns three quarters to the camera, the near
+    // page wider.
     book: {
         label: 'Магическая книга',
-        front: { rows: ['.E...E.', '.cc.cc.', 'ceeveEc', 'cEevcec', 'ceeveec', 'vvvvvvv'], grip: [3, 5], fx: [3, 1] },
-        side: { rows: ['.E..', 'vcc.', 'veE.', 'vee.', 'vce.', 'vvvv'], grip: [1, 5], fx: [2, 1] },
+        front: {
+            rows: ['.ccc.ccc.', 'VmmmvmmeV', 'VcccvcccV', 'VmmcvmmmV', 'VcccvcccV', 'VmmmvmccV', 'VVVVvVVVV'],
+            grip: [4, 6],
+            fx: [4, 0],
+        },
+        side: { rows: ['.ccc.c.', 'VcmmvmV', 'VcccvcV', 'VcmevcV', 'VcccvcV', 'VcmmvmV', 'VVVVvVV'], grip: [-1, 3], fx: [4, 0] },
     },
     // Items have no frames of their own, so the flame is static: a white-hot core in a lopsided tongue of fire over
     // a rag wrapping, so it reads as a flame and not as a lollipop. Gripped low, the flame clears the head.

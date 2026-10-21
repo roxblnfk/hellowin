@@ -366,7 +366,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             }
             paintElement(element);
             paintHud();
-            scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: element.threshold ?? model.threshold });
+            scene?.click(element.id, { stage: element.stage, clicks: element.clicks, threshold: element.threshold ?? model.threshold, player: event.player ?? null });
         },
 
         // Flyers live a few seconds and are not part of the snapshot: they are only passed on to the scene.

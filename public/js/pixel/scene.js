@@ -2180,6 +2180,16 @@ export async function createScene(rootEl, snapshot) {
     const BOLT_MS = 260;
     const BOOK_FLASH = halo(6, 5, 'green');
     const BUBBLES = [80, 150, 230, 320, 420, 540];
+    // Clicks on pumpkins, the bonfire and the circle are shots too (docs/spec/frontend.md, «Выстрел по клику»), and they
+    // come often: a walker re-fires at most every CLICK_REFIRE_MS, a click in between only turns it to its target and
+    // holds the aim for CLICK_HOLD_MS more; the whole scene fires at most CLICK_SHOT_CAP click shots per CLICK_WINDOW_MS,
+    // past that a click shows the aim and the flash without anything flying. A click shot smokes and burps less.
+    const CLICK_REFIRE_MS = 420;
+    const CLICK_HOLD_MS = 500;
+    const CLICK_WINDOW_MS = 500;
+    const CLICK_SHOT_CAP = 10;
+    const CLICK_PUFFS = [[110, false], [170, false], [430, true]];
+    const CLICK_BUBBLES = [80, 200, 340];
     // A held candle: its flicker frame changes on FLAME_MS slots (mostly the steady one), the ground light and the halo
     // round the flame breathe with it. Its trail: an ember every EMBER_MS walking, every EMBER_IDLE_MS standing, at
     // most EMBER_CAP alive per walker.
@@ -2416,6 +2426,7 @@ export async function createScene(rootEl, snapshot) {
             w.drawn = s.at;
             const at = walkerArt(s.at);
             const clink = clinking.of.get(w.id);
+            w.clinking = Boolean(clink);
             let view;
             let lean = 0;
             if (s.moving) {
@@ -2838,7 +2849,7 @@ export async function createScene(rootEl, snapshot) {
                 redSpark(from, to, len);
             }
         } else if (item === 'beer') {
-            const bubbles = reduced ? BUBBLES.slice(0, 1) : BUBBLES;
+            const bubbles = reduced ? BUBBLES.slice(0, 1) : w.shoot.click ? CLICK_BUBBLES : BUBBLES;
             while (w.shoot.fired < bubbles.length && t >= bubbles[w.shoot.fired]) {
                 w.shoot.fired++;
                 bubble(from, to, len);
@@ -3021,7 +3032,7 @@ export async function createScene(rootEl, snapshot) {
                 }
             }
         }
-        const puffs = reduced ? PUFFS.slice(0, 1) : PUFFS;
+        const puffs = reduced ? PUFFS.slice(0, 1) : w.shoot.click ? CLICK_PUFFS : PUFFS;
         while ((w.shoot.puffs ?? 0) < puffs.length && t >= puffs[w.shoot.puffs ?? 0][0]) {
             const [, raised] = puffs[w.shoot.puffs ?? 0];
             w.shoot.puffs = (w.shoot.puffs ?? 0) + 1;
@@ -3073,6 +3084,51 @@ export async function createScene(rootEl, snapshot) {
         const item = w.item ?? null;
         const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
         w.shoot = { dir, flip, item, target: f ? { ...f.pos } : null, at: clock, until, sparked: false, puffs: 0, fired: 0 };
+    }
+
+    // Click shots fired lately over the whole scene (their clock), for CLICK_SHOT_CAP.
+    const clickShots = [];
+
+    /*
+     * A walker whose player clicked a pumpkin, the bonfire or the circle shoots it with what it holds, like a flyer
+     * (docs/spec/frontend.md, «Выстрел по клику»): only from the channel's `click` with a player, never in the bar, not
+     * while walking, drinking, shrugging or clinking. Thinned: within CLICK_REFIRE_MS of its last shot a walker only
+     * turns to the new target and holds the aim; past the scene's cap the aim shows without anything flying.
+     */
+    function walkerClickShot(id, target) {
+        if (!id || !target || isBar(state.scene)) return;
+        const w = walkers.get(id);
+        if (!w?.sprite || w.clinking || w.drinkUntil > clock || w.shrugUntil > clock) return;
+        const s = walkAt(w.track, clock);
+        if (s.moving) return;
+        const me = walkerArt(s.at);
+        const dx = target.x - me.x;
+        const dy = target.y - me.y;
+        const [dir, flip] = Math.abs(dx) >= Math.abs(dy) * 0.8 ? ['side', dx < 0] : dy > 0 ? ['front', false] : ['back', false];
+        const shooting = w.shoot && clock < w.shoot.until;
+        if (shooting && clock - w.shoot.at < CLICK_REFIRE_MS) {
+            Object.assign(w.shoot, { dir, flip, target, until: Math.max(w.shoot.until, clock + CLICK_HOLD_MS) });
+            return;
+        }
+        while (clickShots.length && clickShots[0] <= clock - CLICK_WINDOW_MS) clickShots.shift();
+        const quiet = clickShots.length >= CLICK_SHOT_CAP;
+        if (!quiet) clickShots.push(clock);
+        const item = w.item ?? null;
+        const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
+        // A quiet shot has everything already fired: the pose and the flash, no projectile, sparks or smoke.
+        w.shoot = quiet
+            ? { dir, flip, item, target, at: clock, until, click: true, sparked: true, puffs: Infinity, fired: Infinity }
+            : { dir, flip, item, target, at: clock, until, click: true, sparked: false, puffs: 0, fired: 0 };
+    }
+
+    // Where a click on an element is aimed, in art px: a pumpkin's middle, the bonfire's heap, the circle on the pit.
+    function clickTarget(id) {
+        if (bonfire && (id === bonfire.id || onPit(id))) {
+            const top = bonfire.ash ? bonfire.home.y : bonfire.home.y - 6 - Math.min(24, bonfire.stage * 3);
+            return { x: bonfire.home.x, y: top };
+        }
+        const p = pumpkins.get(id);
+        return p?.art ? emitPoint(p, 'aim') : null;
     }
 
     /** Config coordinates of a screen point on the ground (inverse patch spread); null over the sky. */
@@ -3317,7 +3373,8 @@ export async function createScene(rootEl, snapshot) {
             rebuild();
         },
 
-        click(id, { stage, clicks, threshold }) {
+        click(id, { stage, clicks, threshold, player = null }) {
+            walkerClickShot(player?.id, clickTarget(id));
             const p = pumpkins.get(id);
             if (onPit(id)) {
                 if (reduced) return;

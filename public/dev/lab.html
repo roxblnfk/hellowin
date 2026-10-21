@@ -83,6 +83,10 @@
   ?bar=1 stands beer-holding bots in pairs by the tables (?bar=1&walkers=8&epoch=18000&freeze=5100 — the strike, 6400 —
   toasts to PHP); ?bardemo=1 plays a scripted evening (two mugs, a slow pour, the farthest bot shrugs, two clink and
   drink). With ?me=1: the counter takes a mug, Space or «Выпить» drinks.
+  Click shots (docs/spec/frontend.md, «Выстрел по клику»): a click event carries its clicker like the server's — your
+  click your character when it is on the field, a random or automatic click a random bot, or nobody with the share
+  ?anon=0..1 (default 0.25); a standing clicker shoots the element with what it holds. ?still=1 keeps the bots where
+  they stand (no wandering, frozen bots do not set off), so ?auto=1&still=1&walkers=8 shows a crowd shooting.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
@@ -479,7 +483,15 @@
         deliver({ type: 'owl', line: 'scene-ready' });
     }
 
-    function engineClick(id) {
+    // Who a random or automatic click comes from: a random bot, or nobody for the ?anon share of clicks.
+    const anonShare = params.has('anon') ? Number(params.get('anon')) : 0.25;
+    const randomClicker = () => {
+        const bots = wanderers();
+        return !bots.length || Math.random() < anonShare ? null : playerOf(bots[Math.floor(Math.random() * bots.length)]);
+    };
+    const myClicker = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? null);
+
+    function engineClick(id, by = null) {
         const p = engine.elements.find((e) => e.id === id);
         const isBonfire = p.type === 'bonfire';
         const isCircle = p.type === 'circle';
@@ -494,10 +506,10 @@
         stats.clicks++;
         if (moving && p.stage < max && p.clicks < threshold) p.clicks++;
         else stats.burned++;
-        deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage });
+        deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage, ...(by ? { player: by } : {}) });
         if (p.clicks >= threshold && p.stage < max && !pending.has(id)) {
             pending.add(id);
-            const player = someone();
+            const player = by ?? someone();
             later(() => {
                 pending.delete(id);
                 p.stage++;
@@ -1162,7 +1174,7 @@
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
         open: params.get('ui') !== '0' ? undefined : false,
         call: engineCall,
-        clickAll: () => engine.elements.forEach((e, i) => later(() => client.clickable(e.id) && engineClick(e.id), i * 30)),
+        clickAll: () => engine.elements.forEach((e, i) => later(() => client.clickable(e.id) && engineClick(e.id, randomClicker()), i * 30)),
     });
     client = createClient(root, scene, {
         requestState: async () => engineSnapshot(),
@@ -1184,7 +1196,8 @@
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
     if (params.get('join') === '1') join.open();
     root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
-    if (!simulated && !clinkStart && !clickClinkStart && !barPairs && !barDemo) wanderers().forEach((w) => wander(w.id));
+    const still = params.get('still') === '1';
+    if (!simulated && !clinkStart && !clickClinkStart && !barPairs && !barDemo && !still) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
     window.lab = { client, engine, scene };
     if (startStage > 4) engineJump(startStage);
@@ -1207,9 +1220,9 @@
         const el = event.target.closest('[data-element]');
         if (!el) return;
         if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
-        else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element);
+        else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element, myClicker());
     });
-    root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId()));
+    root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId(), randomClicker()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
     // Your shots are yours when your character is on the field: a witch then gets the owl's `witch-down`.
     bindShooting(root, scene, (id) => engineShoot(id, engine.walkers.find((w) => w.id === ME) ?? null));
@@ -1275,7 +1288,7 @@
             clearInterval(auto);
             auto = 0;
         } else {
-            auto = setInterval(() => engineClick(randomId()), 70);
+            auto = setInterval(() => engineClick(randomId(), randomClicker()), 70);
         }
         autoButton.setAttribute('aria-pressed', String(Boolean(auto)));
     };
@@ -1311,7 +1324,7 @@
         const wormShotAt = Math.round((Number.parseInt(params.get('wshot') ?? '-1', 10)) / 16) * 16;
         for (simTime = 0; simTime < freeze; simTime += 16) {
             if (params.get('auto') === '1' && simTime >= nextClick) {
-                engineClick(randomId());
+                engineClick(randomId(), randomClicker());
                 nextClick += 70;
             }
             if (simTime === resetAt) engineReset();
@@ -1339,7 +1352,7 @@
                 tickBar();
                 if (barDemo) barDemoSteps();
             }
-            if (simTime === 0 && !finaleStart && !barPairs && !barDemo) {
+            if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !still) {
                 const random = seeded(99);
                 // The ?shooter=1 walker stays put: a walker on the way does not stop to shoot.
                 wanderers().filter((w, i) => !(i === 0 && params.get('shooter') === '1')).forEach((w) => engineMove(w.id, randomTarget(random)));
