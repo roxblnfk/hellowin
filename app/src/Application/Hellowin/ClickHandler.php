@@ -33,7 +33,7 @@ final readonly class ClickHandler
      *
      * @param non-empty-string|null $player Public id of the clicking player, null for an anonymous connection.
      * @throws UnknownElementException
-     * @throws ElementLockedException A click on a closed centrepiece: not counted, not published.
+     * @throws ElementLockedException A click on a closed centrepiece or on a pumpkin in the bar: not counted, not published.
      * @throws RitualBusyException
      */
     public function click(string $elementId, ?string $player = null): ClickOutcome
@@ -43,12 +43,16 @@ final readonly class ClickHandler
         $type = $element->type;
 
         // A centrepiece reads the whole ritual under its own lock, so a reset cannot slip between the check and the count
+        // A pumpkin only checks the scene: there are no pumpkins to click in the bar
         $accepts = null;
+        $acceptsIn = null;
         if ($element->centrepiece()) {
             $centrepiece = $element->type;
             $accepts = fn(RitualSnapshot $ritual): bool => $this->policy->centrepieceOpen($centrepiece, $ritual);
+        } else {
+            $acceptsIn = fn(int $scene): bool => !$this->policy->bar($scene);
         }
-        $outcome = $this->store->click($element->id, $accepts)
+        $outcome = $this->store->click($element->id, $accepts, $acceptsIn)
             ?? throw new ElementLockedException(\sprintf('The %s "%s" takes no clicks now.', $type, $element->id));
         $this->metrics->click($element);
         $stats = $this->players->clicked($player);

@@ -91,7 +91,7 @@ final readonly class SnapshotFactory
                 static fn(Walker $walker): array => $walker->toArray($item),
                 $walkers,
             )),
-            'ready' => $ritual->ready(),
+            'ready' => $ritual->ready() || $this->policy->bar($ritual->scene),
             'finale' => $this->reveal?->finale($ritual),
             'paused' => $ritual->story->paused,
             'k' => $k,

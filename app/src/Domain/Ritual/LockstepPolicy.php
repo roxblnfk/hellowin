@@ -7,6 +7,9 @@ namespace App\Domain\Ritual;
 use App\Domain\Element\Element;
 
 /**
+ * A scene whose last pumpkin stage is 0 can only be the first one: the bar, where the evening gathers before the
+ * ritual. It has no pumpkins to move, takes no clicks on them and is always ready.
+ *
  * Pumpkins move stage by stage up to the last stage of the current scene and wait there; then the bonfire does the
  * same by its own threshold and stage maximums, and the scene is ready. A scene that does not take the bonfire past
  * its stage is ready with the pumpkins alone. In the final scene the pumpkins stay; the circle is drawn by its own
@@ -14,7 +17,7 @@ use App\Domain\Element\Element;
  */
 final readonly class LockstepPolicy implements RitualPolicy
 {
-    /** @var non-empty-list<positive-int> */
+    /** @var non-empty-list<int<0, max>> */
     private array $stageMax;
 
     /** @var non-empty-list<int<0, max>> */
@@ -23,7 +26,8 @@ final readonly class LockstepPolicy implements RitualPolicy
     /**
      * @param positive-int $clicksPerStage Clicks a pumpkin needs to move at k = 1.
      * @param list<int> $stageMax The last pumpkin stage of each scene before the final
-     *        one, strictly increasing; its length is the number of the final scene.
+     *        one, strictly increasing; its length is the number of the final scene. Only the first may be 0: scene 0
+     *        is the bar then.
      * @param positive-int $bonfireClicksPerStage Clicks the bonfire needs to move at k = 1.
      * @param list<int> $bonfireStageMax The last bonfire stage of each scene, never decreasing; scenes past the list
      *        keep its last value. Empty leaves the bonfire at stage 0 everywhere.
@@ -38,9 +42,9 @@ final readonly class LockstepPolicy implements RitualPolicy
         private int $circleClicksPerStage = 1,
         private int $circleStages = 1,
     ) {
-        $previous = 0;
+        $previous = -1;
         foreach ($stageMax as $stage) {
-            $stage > $previous or throw new \InvalidArgumentException('Stage maximums must be a strictly increasing list of positive integers.');
+            $stage > $previous or throw new \InvalidArgumentException('Stage maximums must be a strictly increasing list of integers from 0.');
             $previous = $stage;
         }
         $stageMax === [] and throw new \InvalidArgumentException('Stage maximums must not be empty.');
@@ -51,7 +55,7 @@ final readonly class LockstepPolicy implements RitualPolicy
             $previous = $stage;
         }
 
-        /** @var non-empty-list<positive-int> $stageMax */
+        /** @var non-empty-list<int<0, max>> $stageMax */
         $this->stageMax = $stageMax;
         /** @var list<int<0, max>> $bonfireStageMax */
         $this->bonfireStageMax = $bonfireStageMax === [] ? [0] : $bonfireStageMax;
@@ -85,6 +89,9 @@ final readonly class LockstepPolicy implements RitualPolicy
     #[\Override]
     public function sceneReady(RitualSnapshot $ritual): bool
     {
+        if ($this->bar($ritual->scene)) {
+            return true;
+        }
         if ($ritual->scene >= $this->finalScene()) {
             return $this->drawing($ritual)
                 && $ritual->circle !== null
@@ -121,6 +128,12 @@ final readonly class LockstepPolicy implements RitualPolicy
         };
 
         return \max(1, (int) \round((float) $base * $k));
+    }
+
+    #[\Override]
+    public function bar(int $scene): bool
+    {
+        return $scene === 0 && $this->stageMax[0] === 0;
     }
 
     #[\Override]

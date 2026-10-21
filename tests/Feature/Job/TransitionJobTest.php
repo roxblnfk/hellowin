@@ -93,7 +93,7 @@ final class TransitionJobTest extends TestCase
         $this->consume(TransitionScene::class, $payload);
 
         Assert::same($this->stored('hellowin:scene'), 1);
-        Assert::same($this->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 3, 'bonfireStageMax' => 4, 'circleStageMax' => 0, 'item' => 'candle']]);
+        Assert::same($this->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 3, 'bonfireStageMax' => 0, 'circleStageMax' => 0, 'item' => 'pistol']]);
     }
 
     #[BeforeTest]

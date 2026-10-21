@@ -60,6 +60,12 @@ interface RitualPolicy
     public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0): int;
 
     /**
+     * @return bool Whether the scene is the bar: the evening gathers there before the ritual, it has no pumpkins to
+     *         click and is always ready.
+     */
+    public function bar(int $scene): bool;
+
+    /**
      * @return positive-int The scene where the pumpkins stop moving and the finale begins.
      */
     public function finalScene(): int;

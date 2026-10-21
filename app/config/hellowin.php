@@ -23,13 +23,14 @@ return [
     // A connection passing this secret is the moderator and drives the story from the console; empty turns it off
     'moderator_secret' => env('HELLOWIN_MODERATOR_SECRET', ''),
 
-    // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene
-    'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '4,8,11'),
+    // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene. A leading 0 makes
+    // scene 0 the bar: no pumpkins to click there, always ready
+    'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '0,4,8,11'),
 
     // The bonfire in the middle: clicks per stage (the whole room clicks it, so more than a pumpkin) and its last
     // stage by scene, cumulative like the pumpkins'; 0 in a scene leaves it out there
     'bonfire_clicks_per_stage' => env('HELLOWIN_BONFIRE_CLICKS_PER_STAGE', 20),
-    'bonfire_stage_max' => env('HELLOWIN_BONFIRE_STAGE_MAX', '0,4,7'),
+    'bonfire_stage_max' => env('HELLOWIN_BONFIRE_STAGE_MAX', '0,0,4,7'),
 
     // The magic circle on the ashes of the final scene: clicks per stage and its last stage, where it is closed
     'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
@@ -86,8 +87,9 @@ return [
     // The horizon line in percents of the viewport, from the top
     'horizon' => 38,
 
-    // What every character holds, by scene number; null is empty hands. The frontend draws an item by its id
-    'items' => ['pistol', 'candle', 'book', 'red-flame'],
+    // What every character holds, by scene number; null is empty hands. The frontend draws an item by its id. In the
+    // bar every character holds its own: a beer or nothing
+    'items' => [null, 'pistol', 'candle', 'book', 'red-flame'],
 
     // In the finale: the item every character holds from a step on, until a later step gives another; null is empty
     // hands, a step left out keeps what the previous one gave. The circle is drawn with a red flame, the cursed world

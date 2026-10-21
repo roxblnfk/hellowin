@@ -56,12 +56,13 @@ final class HellowinConfigTest
         Assert::same($config->getModeratorSecret(), $expected);
     }
 
-    public function sceneStageMaxDefaultsToThreeScenes(): void
+    public function sceneStageMaxDefaultsToTheBarAndThreeScenes(): void
     {
-        Assert::same((new HellowinConfig())->getSceneStageMax(), [4, 8, 11]);
+        Assert::same((new HellowinConfig())->getSceneStageMax(), [0, 4, 8, 11]);
     }
 
     #[DataSet([' 4, 7 ,9', [4, 7, 9]], 'env string')]
+    #[DataSet(['0,4', [0, 4]], 'bar first')]
     #[DataSet(['3', [3]], 'single scene')]
     #[DataSet([[2, 5], [2, 5]], 'list')]
     public function acceptsAnIncreasingStageMaxList(mixed $value, array $expected): void
@@ -71,7 +72,8 @@ final class HellowinConfigTest
 
     #[DataSet(['4,4'], 'repeated')]
     #[DataSet(['6,4'], 'decreasing')]
-    #[DataSet(['0,4'], 'zero')]
+    #[DataSet(['4,0'], 'zero after the first')]
+    #[DataSet(['-1,4'], 'negative')]
     #[DataSet(['4,,6'], 'gap')]
     #[DataSet(['four'], 'word')]
     #[DataSet([''], 'empty string')]
@@ -139,7 +141,7 @@ final class HellowinConfigTest
     {
         $config = new HellowinConfig();
 
-        Assert::same($config->getBonfireStageMax(), [0, 4, 7]);
+        Assert::same($config->getBonfireStageMax(), [0, 0, 4, 7]);
         Assert::same($config->getBonfireClicksPerStage(), 20);
         Assert::same((new HellowinConfig(['bonfire_stage_max' => ' 0, 0 ,3']))->getBonfireStageMax(), [0, 0, 3]);
         Assert::same((new HellowinConfig(['bonfire_clicks_per_stage' => '40']))->getBonfireClicksPerStage(), 40);

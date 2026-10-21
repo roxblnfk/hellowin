@@ -63,7 +63,7 @@ final class FlyerConfigTest
 
     public function kindsComeByScene(): void
     {
-        Assert::same((new FlyerConfig())->getKinds(), [['duck', 'chicken'], [], ['bat'], ['worm']]);
+        Assert::same((new FlyerConfig())->getKinds(), [[], ['duck', 'chicken'], [], ['bat'], ['worm']]);
         Assert::same((new FlyerConfig(['kinds' => ' duck , duck,bat']))->getKinds(), [['duck', 'bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; bat ']))->getKinds(), [['duck'], ['bat']]);
         Assert::same((new FlyerConfig(['kinds' => 'duck; ;bat']))->getKinds(), [['duck'], [], ['bat']]);
@@ -112,7 +112,7 @@ final class FlyerConfigTest
     {
         $config = new FlyerConfig();
 
-        Assert::same($config->getRare(), ['roadrunner', null, null, null]);
+        Assert::same($config->getRare(), [null, 'roadrunner', null, null, null]);
         Assert::same($config->getRareChance(), 0.08);
         Assert::same($config->getRarePoints(), 10);
         Assert::same((new FlyerConfig(['rare' => '']))->getRare(), [null]);

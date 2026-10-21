@@ -511,6 +511,7 @@
             <ul>
                 <li>Сцены нумеруются от 0 до финальной N — это длина списка <code>HELLOWIN_SCENE_STAGE_MAX</code>.</li>
                 <li>У сцены s потолок стадий <code>stageMax(s)</code> — элемент номер s того же списка, накопительно; у финала — тот же, что у сцены перед ним.</li>
+                <li>Если список начинается с 0, сцена 0 — <strong>бар</strong>: тыкв там нет (клик по ним — <code>locked</code>), сцена готова всегда (<code>RitualPolicy::bar()</code>), и модератор выводит всех на грядку, когда зал собрался. Подробно — <a href="#bar">«Бар»</a>.</li>
                 <li>Тыква переходит в <code>stage + 1</code> после <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов, пока <code>stage &lt; stageMax(scene)</code>; переход обнуляет <code>clicks</code>.</li>
                 <li>Когда <strong>все</strong> тыквы дошли до <code>stageMax</code>, сцена <strong>готова</strong>, но сама не переключается: событие <code>ready</code>, сова говорит «всё готово», и сцена ждёт модератора. Следующую включает кнопка пульта «Следующая сцена» (RPC <code>scene.next</code>); если зал застрял, модератор может переключить и неготовую сцену (<code>force</code>). Подробно — <a href="#scene-transition">«Переход сцены»</a>.</li>
                 <li>В финальной сцене тыквы не переходят, клики только рассылаются. Модератор ведёт шаги финала, а после разоблачения начинается бесконечный «проклятый мир».</li>
@@ -683,7 +684,7 @@
 
             <h3>Раунд и сброс</h3>
             <p>
-                Сброс начинает ритуал заново: сцена 0, у всех тыкв <code>stage 0</code> и <code>clicks 0</code>,
+                Сброс начинает ритуал заново: сцена 0 (бар), у всех тыкв <code>stage 0</code> и <code>clicks 0</code>,
                 <code>round + 1</code>, сюжет заново (кроме паузы) и событие <code>reset</code> всем. Делает это
                 <code>ResetService::reset(?int $fromRound)</code>, его вызывают кнопка «Заново» на пульте модератора
                 (RPC <code>reset {round}</code> — раунд, который модератор видит) и консольная команда
@@ -948,7 +949,7 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                     ровно один раз. Сама сцена остаётся прежней.
                 </li>
                 <li>
-                    <strong>Готовность с костром.</strong> Со сцены 1 готовых тыкв мало: в центре грядки ещё костёр, один элемент на
+                    <strong>Готовность с костром.</strong> Со сцены 2 готовых тыкв мало: в центре грядки ещё костёр, один элемент на
                     весь зал. Пока тыквы сцены не готовы, клик по нему отвечает <code>locked</code> и никуда не идёт;
                     последняя тыква вместо готовности открывает костёр (отметка в сюжете под тем же локом
                     <code>scene</code>, реплика <code>bonfire-open</code>). Дальше все бьют в один лок
@@ -977,7 +978,7 @@ final class TransitionPumpkin extends JobHandler</code></pre>
             </ol>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1100 1000" style="min-width: 792px" role="img" aria-label="Переход сцены. Фаза 1: два jobs-воркера одновременно добивают последние тыквы, оба видят, что сцена готова; markReady под локом scene отмечает готовность у первого и отказывает второму; первый публикует событие ready и реплики совы. Фаза 2: модератор дважды вызывает RPC scene.next; Centrifugo добавляет meta подключения, StoryService проверяет роль и готовность и оба раза ставит TransitionScene с ключом 1:scene:1. Первый воркер записывает маркер в Valkey и переключает сцену под локом scene, второй получает отказ и подтверждает задачу. Модератор и все клиенты получают одно событие scene.">
+<svg class="diagram__svg" viewBox="0 0 1100 1000" style="min-width: 792px" role="img" aria-label="Переход сцены. Фаза 1: два jobs-воркера одновременно добивают последние тыквы, оба видят, что сцена готова; markReady под локом scene отмечает готовность у первого и отказывает второму; первый публикует событие ready и реплики совы. Фаза 2: модератор дважды вызывает RPC scene.next; Centrifugo добавляет meta подключения, StoryService проверяет роль и готовность и оба раза ставит TransitionScene с ключом 1:scene:2. Первый воркер записывает маркер в Valkey и переключает сцену под локом scene, второй получает отказ и подтверждает задачу. Модератор и все клиенты получают одно событие scene.">
 <defs><marker id="i-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="i-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="d-crit" x="590" y="178" width="10" height="30" rx="2"/>
 <rect class="d-crit" x="710" y="238" width="10" height="30" rx="2"/>
@@ -996,11 +997,11 @@ final class TransitionPumpkin extends JobHandler</code></pre>
 <path class="d-e " d="M715 132 L739 132 L739 144 L717 144" marker-end="url(#i-ln)"/>
 <text class="d-l" x="745" y="141" text-anchor="start">и эта тоже: sceneReady(): да</text>
 <path class="d-e " d="M597 178 L973 178" marker-end="url(#i-ln)"/>
-<text class="d-l" x="785" y="172" text-anchor="middle">markReady(round, 0): lock scene</text>
+<text class="d-l" x="785" y="172" text-anchor="middle">markReady(round, 1): lock scene</text>
 <path class="d-e d-e--ret" d="M973 208 L597 208" marker-end="url(#i-ln)"/>
-<text class="d-l" x="785" y="202" text-anchor="middle">не отмечена → story.ready = 0 → true</text>
+<text class="d-l" x="785" y="202" text-anchor="middle">не отмечена → story.ready = 1 → true</text>
 <path class="d-e " d="M717 238 L973 238" marker-end="url(#i-ln)"/>
-<text class="d-l" x="845" y="232" text-anchor="middle">markReady(round, 0)</text>
+<text class="d-l" x="845" y="232" text-anchor="middle">markReady(round, 1)</text>
 <path class="d-e d-e--ret" d="M973 268 L717 268" marker-end="url(#i-ln)"/>
 <text class="d-l" x="845" y="262" text-anchor="middle">уже отмечена → false</text>
 <path class="d-e d-e--acc" d="M593 298 L217 298" marker-end="url(#i-acc)"/>
@@ -1011,20 +1012,20 @@ final class TransitionPumpkin extends JobHandler</code></pre>
 <text class="d-l" x="90" y="359" text-anchor="start">кнопка «Следующая сцена» ждёт нажатия</text>
 <text class="d-h d-phase" x="14" y="392" text-anchor="start">2. Переход: модератор нажал кнопку дважды</text>
 <path class="d-e " d="M62 420 L213 420" marker-end="url(#i-ln)"/>
-<text class="d-l" x="137" y="414" text-anchor="middle">scene.next {scene: 0}</text>
+<text class="d-l" x="137" y="414" text-anchor="middle">scene.next {scene: 1}</text>
 <path class="d-e " d="M62 450 L213 450" marker-end="url(#i-ln)"/>
 <text class="d-l" x="137" y="444" text-anchor="middle">то же ещё раз</text>
 <path class="d-e d-e--acc" d="M217 480 L343 480" marker-end="url(#i-acc)"/>
 <text class="d-l" x="280" y="474" text-anchor="middle">RPC proxy ×2</text>
 <text class="d-s" x="280" y="496" text-anchor="middle">+ meta подключения</text>
 <path class="d-e " d="M345 512 L369 512 L369 524 L347 524" marker-end="url(#i-ln)"/>
-<text class="d-l" x="375" y="521" text-anchor="start">роль из meta · сцена 0 готова → TransitionScene, оба раза</text>
+<text class="d-l" x="375" y="521" text-anchor="start">роль из meta · сцена 1 готова → TransitionScene, оба раза</text>
 <path class="d-e " d="M347 550 L468 550" marker-end="url(#i-ln)"/>
-<text class="d-l" x="407" y="544" text-anchor="middle">key 1:scene:1 ×2</text>
+<text class="d-l" x="407" y="544" text-anchor="middle">key 1:scene:2 ×2</text>
 <path class="d-e d-e--ret" d="M343 580 L217 580" marker-end="url(#i-ln)"/>
-<text class="d-l" x="280" y="574" text-anchor="middle">{ok, scene: 1}</text>
+<text class="d-l" x="280" y="574" text-anchor="middle">{ok, scene: 2}</text>
 <path class="d-e d-e--ret" d="M213 610 L62 610" marker-end="url(#i-ln)"/>
-<text class="d-l" x="137" y="604" text-anchor="middle">{ok, scene: 1} ×2</text>
+<text class="d-l" x="137" y="604" text-anchor="middle">{ok, scene: 2} ×2</text>
 <path class="d-e " d="M472 640 L593 640" marker-end="url(#i-ln)"/>
 <text class="d-l" x="532" y="634" text-anchor="middle">задача 1</text>
 <path class="d-e " d="M472 670 L713 670" marker-end="url(#i-ln)"/>
@@ -1038,15 +1039,15 @@ final class TransitionPumpkin extends JobHandler</code></pre>
 <path class="d-e d-e--ret" d="M838 790 L717 790" marker-end="url(#i-ln)"/>
 <text class="d-l" x="777" y="784" text-anchor="middle">nil → дубль, ACK</text>
 <path class="d-e " d="M597 820 L973 820" marker-end="url(#i-ln)"/>
-<text class="d-l" x="785" y="814" text-anchor="middle">lock scene · round текущий и scene == 0?</text>
+<text class="d-l" x="785" y="814" text-anchor="middle">lock scene · round текущий и scene == 1?</text>
 <path class="d-e " d="M597 850 L973 850" marker-end="url(#i-ln)"/>
-<text class="d-l" x="785" y="844" text-anchor="middle">scene = 1, ready снят</text>
+<text class="d-l" x="785" y="844" text-anchor="middle">scene = 2, ready снят</text>
 <path class="d-e " d="M597 880 L973 880" marker-end="url(#i-ln)"/>
 <text class="d-l" x="785" y="874" text-anchor="middle">lock.Release</text>
 <path class="d-e d-e--acc" d="M593 910 L217 910" marker-end="url(#i-acc)"/>
-<text class="d-l" x="405" y="904" text-anchor="middle">publish scene {stageMax, item} · owl scene-1</text>
+<text class="d-l" x="405" y="904" text-anchor="middle">publish scene {stageMax, item} · owl scene-2</text>
 <path class="d-e d-e--acc" d="M213 940 L62 940" marker-end="url(#i-acc)"/>
-<text class="d-l" x="137" y="934" text-anchor="middle">scene: 1</text>
+<text class="d-l" x="137" y="934" text-anchor="middle">scene: 2</text>
 <rect class="d-note d-note--ok" x="30" y="958" width="1040" height="24" rx="4"/>
 <text class="d-n" x="550" y="975" text-anchor="middle">две тыквы и два нажатия — одна отметка ready и один переход: лок scene и ключ {round}:scene:{toScene}</text>
 <rect class="d-box g-edge" x="4" y="16" width="112" height="44" rx="6"/>

@@ -26,9 +26,9 @@ final class HellowinConfig extends InjectableConfig
         'grafana_url' => ':3000/',
         'clicks_per_stage' => 5,
         'moderator_secret' => '',
-        'scene_stage_max' => '4,8,11',
+        'scene_stage_max' => '0,4,8,11',
         'bonfire_clicks_per_stage' => 20,
-        'bonfire_stage_max' => '0,4,7',
+        'bonfire_stage_max' => '0,0,4,7',
         'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
         'valkey_dsn' => 'tcp://valkey:6379',
@@ -96,11 +96,12 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * The last pumpkin stage of every scene where pumpkins move, cumulative: `[4, 8, 11]` takes pumpkins to stage 4
-     * in scene 0, to 8 in scene 1, to 11 in scene 2; scene 3 is the final one. A comma-separated string is accepted
-     * too: env variables arrive as strings.
+     * The last pumpkin stage of every scene before the final one, cumulative: `[0, 4, 8, 11]` — the bar (scene 0) has
+     * no pumpkins to move, they reach stage 4 in scene 1, 8 in scene 2, 11 in scene 3; scene 4 is the final one. Only
+     * the first value may be 0, and only then scene 0 is the bar. A comma-separated string is accepted too: env
+     * variables arrive as strings.
      *
-     * @return non-empty-list<positive-int> Strictly increasing.
+     * @return non-empty-list<int<0, max>> Strictly increasing.
      */
     public function getSceneStageMax(): array
     {
@@ -109,7 +110,7 @@ final class HellowinConfig extends InjectableConfig
 
         $error = static fn(): \InvalidArgumentException => new \InvalidArgumentException(\sprintf(
             'Config "hellowin.scene_stage_max" (env HELLOWIN_SCENE_STAGE_MAX) must be a strictly increasing list of '
-            . 'positive integers, like "4,6,8"; got %s.',
+            . 'integers from 0, like "0,4,8,11"; got %s.',
             \is_array($value) ? (string) \json_encode($value, \JSON_UNESCAPED_UNICODE) : \get_debug_type($value),
         ));
 
@@ -118,11 +119,11 @@ final class HellowinConfig extends InjectableConfig
         $list = [];
         foreach ($value as $stage) {
             \is_string($stage) && \preg_match('/^\d+$/', $stage) === 1 and $stage = (int) $stage;
-            \is_int($stage) && $stage > ($list === [] ? 0 : $list[\count($list) - 1]) or throw $error();
+            \is_int($stage) && $stage > ($list === [] ? -1 : $list[\count($list) - 1]) or throw $error();
             $list[] = $stage;
         }
 
-        /** @var non-empty-list<positive-int> $list */
+        /** @var non-empty-list<int<0, max>> $list */
         return $list;
     }
 
@@ -141,8 +142,9 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * The last bonfire stage of every scene, cumulative like {@see getSceneStageMax()}: `[0, 4, 7]` leaves the bonfire
-     * out in scene 0 and takes it to stage 4 in scene 1, to 7 in scene 2. Scenes past the list keep its last value.
+     * The last bonfire stage of every scene, cumulative like {@see getSceneStageMax()}: `[0, 0, 4, 7]` leaves the
+     * bonfire out in the bar and scene 1 and takes it to stage 4 in scene 2, to 7 in scene 3. Scenes past the list keep
+     * its last value.
      *
      * @return non-empty-list<int<0, max>> Never decreasing.
      */
@@ -153,7 +155,7 @@ final class HellowinConfig extends InjectableConfig
 
         $error = static fn(): \InvalidArgumentException => new \InvalidArgumentException(\sprintf(
             'Config "hellowin.bonfire_stage_max" (env HELLOWIN_BONFIRE_STAGE_MAX) must be a non-decreasing list of '
-            . 'integers from 0, like "0,4,7"; got %s.',
+            . 'integers from 0, like "0,0,4,7"; got %s.',
             \is_array($value) ? (string) \json_encode($value, \JSON_UNESCAPED_UNICODE) : \get_debug_type($value),
         ));
 

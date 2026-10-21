@@ -79,7 +79,7 @@ final class RitualHarness
 
     /**
      * @param positive-int $threshold
-     * @param non-empty-list<positive-int> $stageMax
+     * @param non-empty-list<int<0, max>> $stageMax A leading 0 makes scene 0 the bar.
      * @param list<non-empty-string> $pumpkins
      * @param list<int>|null $bonfire Last bonfire stage by scene; null leaves the patch without a bonfire.
      * @param positive-int $bonfireThreshold

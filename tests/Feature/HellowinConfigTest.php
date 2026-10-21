@@ -55,8 +55,8 @@ final class HellowinConfigTest extends TestCase
         $items = $this->getContainer()->get(HellowinConfig::class)->getItems();
 
         Assert::same(
-            [$items->held(3), $items->held(3, 0), $items->held(3, 1), $items->held(3, 4), $items->held(3, 5)],
-            ['red-flame', 'red-flame', null, null, 'beer'],
+            [$items->held(0), $items->held(1), $items->held(4), $items->held(4, 0), $items->held(4, 1), $items->held(4, 4), $items->held(4, 5)],
+            [null, 'pistol', 'red-flame', 'red-flame', null, null, 'beer'],
         );
     }
 

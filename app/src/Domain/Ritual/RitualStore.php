@@ -66,15 +66,20 @@ final readonly class RitualStore
      *
      * @param \Closure(RitualSnapshot): bool|null $accepts Decides on the whole ritual, read under the element lock,
      *        whether the click counts at all.
-     * @return ClickOutcome|null Null when `$accepts` refused the click: nothing is written.
+     * @param \Closure(int<0, max>): bool|null $acceptsIn Decides by the scene alone, read under the element lock: a
+     *        pumpkin click pays one read for it rather than the whole ritual.
+     * @return ClickOutcome|null Null when `$accepts` or `$acceptsIn` refused the click: nothing is written.
      * @throws RitualBusyException
      */
-    public function click(string $id, ?\Closure $accepts = null): ?ClickOutcome
+    public function click(string $id, ?\Closure $accepts = null, ?\Closure $acceptsIn = null): ?ClickOutcome
     {
         $id = $this->known($id);
 
-        return $this->locked([$this->lockOf($id)], function () use ($id, $accepts): ?ClickOutcome {
+        return $this->locked([$this->lockOf($id)], function () use ($id, $accepts, $acceptsIn): ?ClickOutcome {
             if ($accepts !== null && !$accepts($this->snapshot())) {
+                return null;
+            }
+            if ($acceptsIn !== null && !$acceptsIn($this->readScene())) {
                 return null;
             }
 

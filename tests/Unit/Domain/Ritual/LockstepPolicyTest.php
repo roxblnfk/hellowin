@@ -63,6 +63,24 @@ final class LockstepPolicyTest
         Assert::same([$policy->stageMax(0), $policy->stageMax(1), $policy->stageMax(2)], [4, 6, 6]);
     }
 
+    public function leadingZeroMakesSceneZeroTheBarThatIsAlwaysReady(): void
+    {
+        $policy = new LockstepPolicy(clicksPerStage: 1, stageMax: [0, 4], bonfireStageMax: [0, 0, 3]);
+
+        Assert::true($policy->bar(0));
+        Assert::false($policy->bar(1));
+        Assert::same($policy->finalScene(), 2);
+        Assert::true($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 0, 9)], bonfire: new Pumpkin('bonfire'))));
+        Assert::null($policy->pumpkinTransition(new Pumpkin('a', 0, 9), 0));
+        Assert::false($policy->centrepieceOpen(Element::TYPE_BONFIRE, self::ritual(0, [new Pumpkin('a')], bonfire: new Pumpkin('bonfire'))));
+        Assert::same($policy->pumpkinTransition(new Pumpkin('a', 0, 1), 1), 1);
+    }
+
+    public function withoutALeadingZeroThereIsNoBar(): void
+    {
+        Assert::false((new LockstepPolicy(5, [4, 6]))->bar(0));
+    }
+
     public function sceneWithoutPumpkinsStays(): void
     {
         Assert::false((new LockstepPolicy(5, [4]))->sceneReady(self::ritual(0, [])));
@@ -70,7 +88,8 @@ final class LockstepPolicyTest
 
     #[DataSet([[]], 'empty')]
     #[DataSet([[4, 4]], 'not increasing')]
-    #[DataSet([[0, 2]], 'zero')]
+    #[DataSet([[2, 0]], 'zero after the first')]
+    #[DataSet([[-1, 2]], 'negative')]
     public function rejectsInvalidStageMax(array $stageMax): never
     {
         Expect::exception(\InvalidArgumentException::class);
