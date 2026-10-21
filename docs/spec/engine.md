@@ -8,7 +8,8 @@
 стадии, `locked` вне шага финала 0, готовность финальной сцены, `not ready` и `force` у шага финала 1), червяки
 (`worm`) финальной сцены — наземные цели по лужайке, аптайм RoadRunner (`startedAt`) и разбегание фигурок на шаге
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
-порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»).
+порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
+— сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»).
 
 ## Классы
 
@@ -32,6 +33,8 @@
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
 | Фигурки: вид, путь, зона, KV, чоканье | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `Clink`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `clink`, `register`, тикер) |
 | Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo) |
+| Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
+| Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 
 ## Периодический процесс (тикер)
@@ -62,6 +65,7 @@
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс; первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Запуск зомби | случайно раз в `HELLOWIN_ZOMBIE_INTERVAL` мс, своё расписание; только в проклятом мире (`finale` = 5), при включённых зомби и без паузы | `ZombieFactory` → как летун: ключ + индекс → событие `flyer` (`kind: zombie`) → `hellowin_flyers_launched_total{depth}` |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
+| Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая кружка с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
@@ -130,7 +134,8 @@
 
 Правила — [`players.md`](players.md), «Персонаж», «На поле»; события и RPC — [`protocol.md`](protocol.md).
 
-- **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt, clink?, clinkedAt?}`, меняется под RR-локом `walkers`.
+- **Хранение**: один ключ `hellowin:walkers` — игрок → `{name, look, walk, seenAt, clink?, clinkedAt?, item?, clinked?,
+  takeAt?}` (`item`, `clinked`, `takeAt` — бар, см. «Бар»), меняется под RR-локом `walkers`.
   Один ключ — снимок читает фигурки одним запросом; сброс раунда его не трогает, позиции переживают сброс. `name` и
   `look` копируются из записи игрока при выходе на поле и повторном `register`.
 - **Выход на поле**: `register` с `look` (или повторный `register` игрока, у которого `look` уже есть) — фигурка
@@ -172,7 +177,8 @@
 - **Предмет в руке** — `items` в `app/config/hellowin.php`, по номеру сцены (`null` — пустые руки, за концом списка —
   тоже `null`); в финале — `finale_items` там же, по шагу: запись действует со своего шага до следующей записи, шаги
   до первой записи оставляют предмет сцены (сейчас `[5 => 'beer']`). Считает `Domain/Walk/Items::held(scene, finale)`.
-  `item` фигурки не хранится: в снимке и событии `walker` это предмет текущей сцены и шага финала. При смене сцены
+  Вне бара `item` фигурки не хранится: в снимке и событии `walker` это предмет текущей сцены и шага финала; в баре —
+  свой у каждой, из записи фигурки (`beer` или пустые руки, см. «Бар»). При смене сцены
   или шага `walker` не рассылаются: событие `scene` или `finale` несёт новый `item`, и клиент меняет предмет у всех
   фигурок сразу.
 - Сбой опроса presence (Centrifugo недоступен) — ошибка в лог, фигурки не трогаются: недоступный presence не значит,
@@ -201,6 +207,51 @@
   же игрока — `busy`, не очередь: так проще и объяснимо, а игрок просто кликает ещё раз. `move` не ограничен.
   `walk.reach`, `walk.clink_gap`, `walk.clink_duration` — раскладка в `app/config/hellowin.php`, не env, как `area`.
 
+## Бар
+
+Правила — [`scenario.md`](scenario.md), «Сцена 0 — «Бар»»; сообщения — [`protocol.md`](protocol.md), «Бар».
+
+- **Где бар.** `RitualPolicy::bar(scene)` — сцена 0, если первый элемент `HELLOWIN_SCENE_STAGE_MAX` равен 0. Тыквы в
+  баре `locked` (`ClickHandler` проверяет сцену под локом тыквы — одно чтение `hellowin:scene`), костёр и круг закрыты
+  политикой, летунов нет (пустые первые наборы env). Геометрия — `walk.bar` (`BarLayout`): `WalkService` выбирает
+  зону бара или лужайки по сцене, прочитанной под локом `walkers`; новые фигурки в баре — в полосе `walk.bar.spawn`.
+- **Стойка** — ключ `hellowin:bar` `{mugs, pouring: {since, until, rumor?} | null, emptyAt?}` под RR-локом `bar`
+  (`Domain/Bar/BarStore`). **Розлив по одной** ведёт тикер (`BarService::pour`, каждый тик): без лока читает стойку и,
+  только если пора (налитая кружка с наступившим `until` или `pouring = null` при `mugs < HELLOWIN_BAR_MUGS`), берёт
+  лок, снова проверяет, что сцена — бар, ставит кружку (`mugs + 1`, событие `mugs`) и начинает следующую
+  (`pouring = {since: now, until: now + HELLOWIN_BAR_POUR_MS}`, событие `pour`; с вероятностью
+  `HELLOWIN_BAR_RUMOR_CHANCE` — `rumor`, случайное 0…2³¹−1). Состояние в Valkey и серверное время: перезапуск воркеров
+  или тикера продолжает ту же кружку, а все зрители видят одну фазу пены. Вне бара тикер не наливает.
+- **«Взять»** (`bar.take`, `WalkService::toCounter`): под локом `walkers` — фигурка на поле (`no character`), сцена —
+  бар (`not bar`), в руке не пиво (`has beer`); путь к ближайшей точке отрезка `walk.bar.counter` и **ожидающее
+  «взять»** `takeAt` = прибытие в записи фигурки (событие — обычный `move`). Любой новый путь (`move`, `clink`, новый
+  `bar.take`) запись затирает. **По прибытии** — тикер (`BarService::takes`, каждый тик): без лока ищет наступившие
+  `takeAt`; есть — лок `walkers`, внутри него лок `bar` (порядок всегда такой), и для каждой дошедшей фигурки: сцена —
+  бар и на стойке есть кружка → `mugs − 1`, у фигурки `item: beer`, `clinked: false` (событие `take` с `ok: true` и
+  оставшимися `mugs`); кружки нет → `take` с `ok: false` и реплика `bar-empty`, если с прошлой прошло не меньше 20 с
+  (`emptyAt` в записи стойки). Запись снимается в любом случае; если на стойке появилось место — сразу `pour`. Это и
+  есть **«последнюю кружку забирает первый»**: проверка и списание — один шаг под локом `bar`, как «сбит ли летун» у
+  выстрела; второй дошедший видит уже пустую стойку. Почему ожидание в записи и тикер — как у чоканья по клику: запись
+  переживает перезапуски, тикер уже крутится раз в 200 мс.
+- **Чоканье в баре** (`WalkService::clink`, `clinks`): как в проклятом мире, но только `{walker}`, у обоих `beer`
+  (`no beer` — у себя, `no target` — у цели), зона бара; по прибытии пиво должно быть у обоих — тогда событие `clink` и
+  `clinked: true` у **обоих**. **`clink.auto {walker}`** (`WalkService::clinkAuto`): под локом `walkers` — в баре, у
+  вызвавшего и партнёра пиво, расстояние между их позициями сейчас не больше `walk.bar.clink_reach` — `clinked: true`
+  только вызвавшему, без событий: автоматическое чоканье рисует каждый браузер сам, и сервер не даёт одному браузеру
+  засчитать его за другого.
+- **«Выпить»** (`drink`, `BarService::drink`): под локом `walkers` — фигурка, бар, `beer` (`no beer`), `clinked`
+  (`not clinked`) → руки пустые; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
+  (под локом `bar`; счёт другого раунда читается как 0 — сброс его не трогает), события `drink` и `drinks`.
+- **Цель и готовность.** Цель — `barTarget` в сюжете `hellowin:story` (рядом с `k`, переживает сброс; `null` —
+  `HELLOWIN_BAR_DRINKS`). `bar.target {delta}` меняет её под локом `scene` (не ниже 1; вернувшаяся к env — снова
+  `null`), событие `drinks`. Бар готов, когда `drunk ≥ target` (после `drink` или понижения цели) или по `bar.ready`:
+  `RitualStore::markReady(round, 0)` под локом `scene` — один раз за раунд, событие `ready` и реплика `bar-intro`.
+  `scene.next` из бара без готовности — `not ready` (или `force`), как в других сценах.
+- **Выход из бара и сброс.** `TransitionHandler::scene` (0 → 1): стойка пустеет (`{mugs: 0, pouring: null}`), фигурки
+  переставляются на лужайку с пустыми руками (`relocate`, см. «Фигурки на поле»), `walkers` — в событии `scene`.
+  `ResetService` (сброс ведёт в бар): фигурки — на пол бара с пустыми руками, стойка полная (`HELLOWIN_BAR_MUGS`,
+  `pouring: null`), событие `reset` несёт `walkers` и `bar`.
+
 ## Модератор
 
 - **Роль.** `ConnectService` сравнивает `moderatorSecret` из `data` подключения с `HELLOWIN_MODERATOR_SECRET`
@@ -215,7 +266,7 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k}` (`Domain/Story/Story`;
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k, barTarget}` (`Domain/Story/Story`;
   `k` — множитель порогов, вне 0,1–10 или нет поля — читается как 1;
   `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
@@ -253,7 +304,8 @@
   и записями: их `accepted` — в `clicks`, стадии — в `jobs`, сгоревшие — в `burned`; клики
   `locked` не принимаются и не считаются нигде. Сбитые летуны — ключ `hellowin:shot`
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
-  читается как 0, так что сброс его не трогает. `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
+  читается как 0, так что сброс его не трогает. Выпитые в баре — `hellowin:drinks` так же (`drinks`, см. «Бар»).
+  `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
   (тыквы, костра или круга); анонимная задача отметки прежнего игрока не стирает;
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
 
@@ -361,6 +413,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 | Что | Где | Через |
 |---|---|---|
+| Бар: стойка `hellowin:bar`, выпитые за раунд `hellowin:drinks` | Valkey | тот же storage `hellowin` |
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
@@ -368,7 +421,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Летуны: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `walkers`, `bar`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -440,7 +493,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_RPC_RATE_CLICK` | `20,40` | лимит `click` на игрока: `<в секунду>,<burst>` token bucket; 0 — без лимита |
 | `HELLOWIN_RPC_RATE_SHOOT` | `20,40` | то же для `shoot` |
 | `HELLOWIN_RPC_RATE_MOVE` | `10,20` | то же для `move` |
-| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `time`, `me`, `register`, `clink`…) |
+| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`…) |
 | `CENTRIFUGO_WS_URL` | `:8000/connection/websocket` | URL WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL или путь — как есть |
 | `GRAFANA_URL` | `:3000/` | ссылка на дашборд со страниц, в тех же формах |
 | `CENTRIFUGO_GRPC_API` | `centrifugo:10000` | gRPC API Centrifugo для публикации |
