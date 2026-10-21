@@ -6,6 +6,7 @@ namespace Tests\Unit\Domain\Flyer;
 
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\Point;
+use App\Domain\Flyer\Stop;
 use App\Domain\Flyer\Wobble;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -14,6 +15,7 @@ use Testo\Test;
 #[Test]
 #[Covers(Flyer::class)]
 #[Covers(Wobble::class)]
+#[Covers(Stop::class)]
 final class FlyerTest
 {
     public function eventCarriesLaunchAndExpiryTime(): void
@@ -40,12 +42,13 @@ final class FlyerTest
         Assert::equals(Flyer::fromArray($flyer->toArray()), $flyer);
     }
 
-    public function perchGoesIntoTheEventOnlyWhenTheFlyerLands(): void
+    public function stopsGoIntoTheEventOnlyWhenTheFlyerLands(): void
     {
-        $fly = new Flyer('f-00000003', 1, new Point(20, 70), new Point(50, 90), new Point(80, 55), null, 2_500, 1, 10_000, 'fly', new Wobble(4.0, 8.0), true);
+        $stops = [new Stop(new Point(22, 60.5), 900), new Stop(new Point(80.5, 50), 1_200)];
+        $fly = new Flyer('f-00000003', 1, new Point(20, 70), new Point(97, 90), null, null, 4_800, 1, 10_000, 'fly', stops: $stops);
 
-        Assert::true($fly->toEvent()['perch']);
-        Assert::false(\array_key_exists('perch', self::flyer()->toEvent()));
+        Assert::same($fly->toEvent()['stops'], [['x' => 22.0, 'y' => 60.5, 'sit' => 900], ['x' => 80.5, 'y' => 50.0, 'sit' => 1_200]]);
+        Assert::false(\array_key_exists('stops', self::flyer()->toEvent()));
         Assert::equals(Flyer::fromArray($fly->toArray()), $fly);
     }
 

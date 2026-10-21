@@ -169,7 +169,7 @@ final class TickerTest
         $flies = $ritual->broadcast->ofType('flyer');
         Assert::count($flies, 2);
         Assert::same(\array_unique(\array_column($flies, 'kind')), ['fly']);
-        Assert::same([$flies[0]['depth'] ?? null, $flies[0]['duration'] ?? null], [1, 2500]);
+        Assert::same([$flies[0]['depth'] ?? null, \count($flies[0]['stops'] ?? []) >= 2, isset($flies[0]['wobble'])], [1, true, false]);
         $ritual->clock->now = 4_100;
         Assert::same($ritual->flyers->shoot($flies[1]['flyer'], 'aaaaaaaaaaaaaaaa'), 1);
         Assert::null($ritual->flyers->shoot($flies[1]['flyer'], 'bbbbbbbbbbbbbbbb'));

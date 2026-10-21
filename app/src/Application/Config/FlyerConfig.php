@@ -25,7 +25,9 @@ final class FlyerConfig extends InjectableConfig
         'kinds' => 'fly;duck,chicken;;bat;worm',
         'kinds_cursed' => 'worm,bat,firefly',
         'firefly_points' => 1,
-        'fly_duration' => 2500,
+        'fly_stops' => '2-3',
+        'fly_sit' => '900-1600',
+        'fly_leg' => 900,
         'fly_points' => 1,
         'rare' => ';roadrunner;;;',
         'rare_chance' => 0.08,
@@ -151,11 +153,31 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Milliseconds of a fly's flight over the bar.
+     * How many times a fly lands, picked at random in the range; `"2"` is a fixed number.
+     *
+     * @return array{positive-int, positive-int}
      */
-    public function getFlyDuration(): int
+    public function getFlyStops(): array
     {
-        return self::positiveInt($this->config['fly_duration'] ?? null, 'fly_duration', 'HELLOWIN_FLYER_FLY_DURATION');
+        return self::range($this->config['fly_stops'] ?? null, 'fly_stops', 'HELLOWIN_FLYER_FLY_STOPS', 'landings like "2-3" or "2"');
+    }
+
+    /**
+     * Milliseconds a fly sits at each landing, picked at random in the range like {@see getInterval()}.
+     *
+     * @return array{positive-int, positive-int}
+     */
+    public function getFlySit(): array
+    {
+        return self::range($this->config['fly_sit'] ?? null, 'fly_sit', 'HELLOWIN_FLYER_FLY_SIT');
+    }
+
+    /**
+     * @return positive-int Milliseconds of a fly's flight from one point to the next.
+     */
+    public function getFlyLeg(): int
+    {
+        return self::positiveInt($this->config['fly_leg'] ?? null, 'fly_leg', 'HELLOWIN_FLYER_FLY_LEG');
     }
 
     /**
@@ -204,10 +226,14 @@ final class FlyerConfig extends InjectableConfig
     /**
      * @return array{positive-int, positive-int}
      */
-    private static function range(mixed $value, string $key, string $env): array
-    {
+    private static function range(
+        mixed $value,
+        string $key,
+        string $env,
+        string $expected = 'milliseconds like "3000-8000" or "5000"',
+    ): array {
         \is_int($value) and $value = (string) $value;
-        $error = self::invalid($key, $env, 'milliseconds like "3000-8000" or "5000"', $value);
+        $error = self::invalid($key, $env, $expected, $value);
 
         if (!\is_string($value) || \preg_match('/^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/', $value, $match) !== 1) {
             throw $error;

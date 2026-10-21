@@ -197,34 +197,57 @@ final class FlyerFactoryTest
         Assert::same($factory->launch(0)?->depth, 0);
     }
 
-    public function fliesDartAboutTheBarAndSometimesLandOnTheCounter(): void
+    public function fliesLandOnTheTablesAndTheCounterBetweenTheirWayInAndOut(): void
     {
         $bar = RitualHarness::barLayout();
         $depths = \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS);
-        $factory = new FlyerFactory($depths, [new Bush('bush-left', new Point(4, 86), 2)], 1.0, 1.0, new Randomizer(new Mt19937(7)), [['fly'], ['duck']], bar: $bar, flyDuration: 2500, flyPoints: 3);
+        $factory = new FlyerFactory(
+            $depths,
+            [new Bush('bush-left', new Point(4, 86), 2)],
+            1.0,
+            1.0,
+            new Randomizer(new Mt19937(7)),
+            [['fly'], ['duck']],
+            bar: $bar,
+            flyStops: [2, 3],
+            flySit: [900, 1600],
+            flyLeg: 900,
+            flyPoints: 3,
+        );
+        // Table tops of the harness bar (x range, y) and the counter top
+        $tables = [[[15.5, 28.5], 60.5], [[37.5, 50.5], 74.5], [[69.5, 82.5], 76.5]];
 
         $flies = \array_map(static fn(int $_): ?Flyer => $factory->launch(0), \range(1, 200));
+        $landed = [];
         foreach ($flies as $fly) {
             Assert::notNull($fly);
-            Assert::same([$fly->kind, $fly->depth, $fly->duration, $fly->points, $fly->bush], ['fly', 1, 2500, 3, null]);
-            // Over the floor of the bar, tables or not, never at the screen edge
-            foreach ([$fly->from, $fly->to] as $end) {
-                Assert::numeric($end->x)->between(6, 91);
-                Assert::numeric($end->y)->between(53, 94);
+            Assert::same([$fly->kind, $fly->depth, $fly->points, $fly->bush, $fly->via, $fly->wobble], ['fly', 1, 3, null, null, null]);
+            Assert::numeric(\count($fly->stops))->between(2, 3);
+            $sits = 0;
+            $previous = null;
+            foreach ($fly->stops as $stop) {
+                Assert::numeric($stop->sit)->between(900, 1600);
+                $sits += $stop->sit;
+                $surface = $stop->at->y <= 53.0 ? 'counter' : null;
+                foreach ($tables as $i => [[$x1, $x2], $top]) {
+                    $stop->at->y === $top && $stop->at->x >= $x1 && $stop->at->x <= $x2 and $surface = $i;
+                }
+                $surface === 'counter' and Assert::true($stop->at->x >= 66 && $stop->at->x <= 92 && $stop->at->y >= 46, \json_encode($stop->toArray()));
+                Assert::notNull($surface, \json_encode($stop->toArray()));
+                Assert::notSame($surface, $previous, 'lands somewhere else each time');
+                $previous = $surface;
+                $landed[$surface] = true;
             }
-            Assert::numeric(\hypot($fly->to->x - $fly->from->x, $fly->to->y - $fly->from->y))->greaterThanOrEqual(15);
-            Assert::numeric($fly->wobble?->amp)->between(3, 6);
-            Assert::numeric($fly->wobble?->waves)->between(6, 10);
-            if ($fly->perch) {
-                Assert::numeric($fly->via?->x)->between(66, 92);
-                Assert::numeric($fly->via?->y)->between(52, 58);
-            } else {
-                Assert::null($fly->via);
+            Assert::same($fly->duration, 900 * (\count($fly->stops) + 1) + $sits);
+            // In and out over the floor, or behind its side walls
+            foreach ([$fly->from, $fly->to] as $end) {
+                Assert::true(\in_array($end->x, [0.0, 97.0], true) || ($end->x >= 6 && $end->x <= 91), \json_encode($end));
+                Assert::numeric($end->y)->between(53, 94);
             }
             Assert::equals(Flyer::fromArray($fly->toArray()), $fly);
         }
-        $perched = \count(\array_filter($flies, static fn(?Flyer $f): bool => $f?->perch === true));
-        Assert::numeric($perched)->between(30, 90);
+        Assert::count($landed, 4);
+        Assert::notBlank(\array_filter($flies, static fn(?Flyer $f): bool => $f?->from->x === 0.0 || $f?->from->x === 97.0));
     }
 
     public function fliesNeedTheBar(): never

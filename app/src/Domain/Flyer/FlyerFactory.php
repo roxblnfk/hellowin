@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Flyer;
 
 use App\Domain\Bar\BarLayout;
+use App\Domain\Walk\Box;
+use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\WalkZone;
 use Random\Randomizer;
 
@@ -25,9 +27,10 @@ use Random\Randomizer;
  * Fireflies fly like the others but only at the middle and near depths ({@see FIREFLY_DEPTHS}), wobble sluggishly
  * ({@see FIREFLY_AMP}, {@see FIREFLY_WAVES}) and bring their own points instead of the depth's.
  *
- * Flies are the flyers of the bar: at the middle depth from one point over its floor to another, over the tables
- * and never out of the room, wobbling hard and often; with {@see FLY_PERCH_CHANCE} through a point over the counter,
- * where the fly lands for a while (`perch`). They bring their own points and fly their own duration.
+ * Flies are the flyers of the bar: at the middle depth they come in from a point over its floor or over its side wall,
+ * land a few times on the table tops and the counter, a different one each time, and go out the same way. The server
+ * fixes only the landings and the timing — a leg between points and a sit at each; the loops between are the
+ * frontend's. They bring their own points.
  *
  * Kinds come by scene; the cursed world has a set of its own instead of its scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
  * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
@@ -64,26 +67,14 @@ final readonly class FlyerFactory
     /** Attempts to find a crawl that stays on the lawn before falling back to one along its bottom. */
     private const WORM_ATTEMPTS = 20;
 
-    /** Probability that a fly lands on the counter on its way. */
-    private const FLY_PERCH_CHANCE = 0.3;
+    /** Probability that a fly comes in or goes out over the side of the room rather than from a point over its floor. */
+    private const FLY_EDGE_CHANCE = 0.5;
 
-    /** How far inside the floor of the bar a fly's ends stay, percents of the screen: its wobble keeps in the room. */
+    /** How far inside the floor of the bar a fly's own ends stay, or beyond its side wall its ends out are, percents. */
     private const FLY_INSET = 3.0;
 
-    /** Shortest flight of a fly, percents of the screen: a dart across the room rather than a hover in place. */
-    private const FLY_MIN_LENGTH = 15.0;
-
-    /** Attempts to find ends at least {@see FLY_MIN_LENGTH} apart before taking the last ones drawn. */
-    private const FLY_ATTEMPTS = 20;
-
-    /** Range of the height above the counter line where a fly lands: on the counter top and the mugs on it. */
-    private const FLY_PERCH_RISE = [4.0, 10.0];
-
-    /** Range of a fly's swing across its path, percents of the screen. */
-    private const FLY_AMP = [3.0, 6.0];
-
-    /** Range of a fly's full swings over its flight: many, so it jitters rather than loops. */
-    private const FLY_WAVES = [6.0, 10.0];
+    /** Share of a table's half-width a fly lands within, either side of its middle: on the top, not its rim. */
+    private const FLY_TABLE_SPREAD = 0.5;
 
     /** @var non-empty-list<FlyerDepth> */
     private array $depths;
@@ -107,7 +98,9 @@ final readonly class FlyerFactory
      *        launches no flyers there but the rare one of the scene.
      * @param positive-int $fireflyPoints Points for a firefly at any depth.
      * @param BarLayout|null $bar Where flies fly; needed only when a set has flies.
-     * @param positive-int $flyDuration Milliseconds of a fly's flight.
+     * @param array{positive-int, positive-int} $flyStops How many times a fly lands, min and max.
+     * @param array{positive-int, positive-int} $flySit Milliseconds a fly sits at a landing, min and max.
+     * @param positive-int $flyLeg Milliseconds of a fly's flight from one point to the next.
      * @param positive-int $flyPoints Points for a fly.
      */
     public function __construct(
@@ -125,7 +118,9 @@ final readonly class FlyerFactory
         private array $cursed = [],
         private int $fireflyPoints = 1,
         private ?BarLayout $bar = null,
-        private int $flyDuration = 2500,
+        private array $flyStops = [2, 3],
+        private array $flySit = [900, 1600],
+        private int $flyLeg = 900,
         private int $flyPoints = 1,
     ) {
         $all = \array_merge($cursed, ...$kinds);
@@ -377,41 +372,82 @@ final readonly class FlyerFactory
     private function fly(string $id, int $now): Flyer
     {
         $bar = $this->bar ?? throw new \LogicException('Flies need the bar.');
-        $floor = $bar->zone;
-        $x = [$floor->x1 + self::FLY_INSET, $floor->x2 - self::FLY_INSET];
-        $y = [$floor->y1 + self::FLY_INSET, $floor->y2 - self::FLY_INSET];
+        $surfaces = $this->surfaces($bar);
 
-        $from = $to = new Point(0, 0);
-        for ($i = 0; $i < self::FLY_ATTEMPTS; ++$i) {
-            $from = new Point($this->float(...$x), $this->float(...$y));
-            $to = new Point($this->float(...$x), $this->float(...$y));
-            if (\hypot($to->x - $from->x, $to->y - $from->y) >= self::FLY_MIN_LENGTH) {
-                break;
-            }
+        $stops = [];
+        $last = null;
+        $count = $this->random->getInt(...$this->flyStops);
+        for ($i = 0; $i < $count; ++$i) {
+            $pick = $this->random->getInt(0, \count($surfaces) - 1);
+            // Never the same surface twice running: a fly that lands where it took off from seems to stay put
+            $pick === $last && \count($surfaces) > 1 and $pick = ($pick + 1) % \count($surfaces);
+            $last = $pick;
+            [$x, $y] = $surfaces[$pick];
+            /** @var positive-int $sit */
+            $sit = $this->random->getInt(...$this->flySit);
+            $stops[] = new Stop(new Point($this->float(...$x), $this->float(...$y)), $sit);
         }
 
-        $perch = $this->chance(self::FLY_PERCH_CHANCE);
-        [$x1, $x2, $counter] = $bar->counter;
-        $via = $perch
-            ? new Point($this->float($x1, $x2), \max($floor->y1, \round($counter - $this->float(...self::FLY_PERCH_RISE), 1)))
-            : null;
+        $sits = \array_sum(\array_map(static fn(Stop $stop): int => $stop->sit, $stops));
         /** @var int<0, max> $depth */
         $depth = \min(1, \count($this->depths) - 1);
 
         return new Flyer(
             id: $id,
             depth: $depth,
-            from: $from,
-            to: $to,
-            via: $via,
+            from: $this->flyEnd($bar),
+            to: $this->flyEnd($bar),
+            via: null,
             bush: null,
-            duration: $this->flyDuration,
+            duration: \max(1, $this->flyLeg * ($count + 1) + $sits),
             points: $this->flyPoints,
             launchedAt: $now,
             kind: Flyer::KIND_FLY,
-            wobble: new Wobble($this->float(...self::FLY_AMP), $this->float(...self::FLY_WAVES)),
-            perch: $perch,
+            stops: $stops,
         );
+    }
+
+    /**
+     * Where a fly lands, each as x and y ranges: the top of every table (an elliptic obstacle) — about its middle
+     * across, half its half-depth above its centre; and the counter top, where the mugs stand — along the place at the
+     * counter, in the upper half of the counter rectangle (the first rectangular obstacle), or a band above the place
+     * at the counter when the layout has no rectangle.
+     *
+     * @return non-empty-list<array{array{float, float}, array{float, float}}>
+     */
+    private function surfaces(BarLayout $bar): array
+    {
+        $surfaces = [];
+        $box = null;
+        foreach ($bar->zone->obstacles as $obstacle) {
+            if ($obstacle instanceof Ellipse) {
+                $half = $obstacle->rx * self::FLY_TABLE_SPREAD;
+                $top = $obstacle->cy - $obstacle->ry / 2.0;
+                $surfaces[] = [[$obstacle->cx - $half, $obstacle->cx + $half], [$top, $top]];
+            }
+            $box ??= $obstacle instanceof Box ? $obstacle : null;
+        }
+
+        [$x1, $x2, $line] = $bar->counter;
+        $surfaces[] = $box === null
+            ? [[$x1, $x2], [$line - 10.0, $line - 4.0]]
+            : [[\max($x1, $box->x1), \min($x2, $box->x2)], [$box->y1, ($box->y1 + $box->y2) / 2.0]];
+
+        return $surfaces;
+    }
+
+    /**
+     * Where a fly comes in from or goes out to: a point over the floor of the bar, or behind its left or right wall.
+     */
+    private function flyEnd(BarLayout $bar): Point
+    {
+        $floor = $bar->zone;
+        $y = $this->float($floor->y1 + self::FLY_INSET, $floor->y2 - self::FLY_INSET);
+        if ($this->chance(self::FLY_EDGE_CHANCE)) {
+            return new Point($this->chance(0.5) ? $floor->x1 - self::FLY_INSET : $floor->x2 + self::FLY_INSET, $y);
+        }
+
+        return new Point($this->float($floor->x1 + self::FLY_INSET, $floor->x2 - self::FLY_INSET), $y);
     }
 
     private function wobble(): Wobble
@@ -426,6 +462,7 @@ final readonly class FlyerFactory
 
     private function float(float $min, float $max): float
     {
-        return \round($this->random->getFloat($min, $max), 1);
+        // A range of one value — the line of a table top: getFloat() rejects it
+        return \round($max > $min ? $this->random->getFloat($min, $max) : $min, 1);
     }
 }

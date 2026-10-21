@@ -31,8 +31,11 @@ return [
     'kinds_cursed' => env('HELLOWIN_FLYER_KINDS_CURSED', 'worm,bat,firefly'),
     'firefly_points' => env('HELLOWIN_FLYER_FIREFLY_POINTS', 1),
 
-    // Flies of the bar (walk.bar in hellowin.php): milliseconds from point to point over its floor and points for one
-    'fly_duration' => env('HELLOWIN_FLYER_FLY_DURATION', 2500),
+    // Flies of the bar (walk.bar in hellowin.php): how many times one lands on the tables and the counter, milliseconds
+    // it sits there (both ranges or fixed), milliseconds from one point to the next, points for one
+    'fly_stops' => env('HELLOWIN_FLYER_FLY_STOPS', '2-3'),
+    'fly_sit' => env('HELLOWIN_FLYER_FLY_SIT', '900-1600'),
+    'fly_leg' => env('HELLOWIN_FLYER_FLY_LEG', 900),
     'fly_points' => env('HELLOWIN_FLYER_FLY_POINTS', 1),
 
     // The rare flyer of each scene (empty — none), how often a launch is it, and its points. The roadrunner runs along

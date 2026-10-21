@@ -108,14 +108,29 @@ final class FlyerConfigTest
         (new FlyerConfig(['firefly_points' => 0]))->getFireflyPoints();
     }
 
-    public function fliesHaveTheirOwnDurationAndPoints(): never
+    public function fliesHaveTheirOwnLandingsTimingAndPoints(): void
     {
-        Assert::same([(new FlyerConfig())->getFlyDuration(), (new FlyerConfig())->getFlyPoints()], [2500, 1]);
-        Assert::same((new FlyerConfig(['fly_duration' => '1800', 'fly_points' => '2']))->getFlyDuration(), 1800);
-        Assert::same((new FlyerConfig(['fly_points' => '2']))->getFlyPoints(), 2);
+        $defaults = new FlyerConfig();
+        Assert::same(
+            [$defaults->getFlyStops(), $defaults->getFlySit(), $defaults->getFlyLeg(), $defaults->getFlyPoints()],
+            [[2, 3], [900, 1600], 900, 1],
+        );
+        $set = new FlyerConfig(['fly_stops' => '4', 'fly_sit' => '500-700', 'fly_leg' => '600', 'fly_points' => '2']);
+        Assert::same([$set->getFlyStops(), $set->getFlySit(), $set->getFlyLeg(), $set->getFlyPoints()], [[4, 4], [500, 700], 600, 2]);
+    }
 
-        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_FLYER_FLY_DURATION');
-        (new FlyerConfig(['fly_duration' => 0]))->getFlyDuration();
+    #[DataSet(['fly_stops', '3-2', 'HELLOWIN_FLYER_FLY_STOPS'], 'stops backwards')]
+    #[DataSet(['fly_stops', '0', 'HELLOWIN_FLYER_FLY_STOPS'], 'no stops')]
+    #[DataSet(['fly_sit', 'long', 'HELLOWIN_FLYER_FLY_SIT'], 'sit garbage')]
+    #[DataSet(['fly_leg', 0, 'HELLOWIN_FLYER_FLY_LEG'], 'zero leg')]
+    public function flyTimingRejectsGarbage(string $key, mixed $value, string $env): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
+
+        $config = new FlyerConfig([$key => $value]);
+        $config->getFlyStops();
+        $config->getFlySit();
+        $config->getFlyLeg();
     }
 
     public function flyPointsArePositive(): never
