@@ -18,12 +18,14 @@
     (свет, по умолчанию firelight), <code>?t=мс</code> (стоп-кадр пламени и розлива), <code>?zoom=N</code> (масштаб
     кадров, по умолчанию 5), <code>?sheet</code> (только кадры, без залов; <code>?sheet=owl</code> — только сова и позы), <code>?mugs=N</code> (кружек на стойке в зале, по умолчанию 3), <code>?boxes</code> —
     контуры препятствий (зелёные), места у стойки и пол под мебелью с полуфигуркой по бокам (красный: должен лежать
-    внутри препятствия), <code>?layout=JSON</code> — раскладка вместо копии конфига (например, <code>walk.bar</code> из
+    внутри препятствия), места посадки мух (жёлтые линии: должны лежать на верхнем крае своей вещи) и порог двери с путём входа
+    (голубые), <code>?door=0…3</code> — кадр двери (0 закрыта, 3 распахнута), <code>?sizes=1920x1080,390x844</code> — только
+    залы этих размеров, <code>?layout=JSON</code> — раскладка вместо копии конфига (например, <code>walk.bar</code> из
     <code>#app[data-bar-layout]</code> живого стенда).</p>
 <div id="out"></div>
 <script type="module">
     import {
-        DEFAULT_BAR_LAYOUT, BAR_FLICKER_MS, BAR_MUG, bakeBar, barFootprints, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar,
+        DEFAULT_BAR_LAYOUT, BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barFootprints, barLights, barOwlSpot, barProps, counterBox, mugSlots, paintBar,
     } from '../js/pixel/bar.js';
     import { OWL_BAR, pourFrame } from '../js/pixel/owl.js';
     import { characterFrame, POSES } from '../js/pixel/characters.js';
@@ -38,6 +40,8 @@
     const boxes = params.has('boxes');
     const out = document.getElementById('out');
     const layout = params.has('layout') ? JSON.parse(params.get('layout')) : DEFAULT_BAR_LAYOUT;
+    const doorFrame = Math.max(0, Math.min(DOOR_OPEN, Number(params.get('door')) || 0));
+    const sizes = params.get('sizes')?.split(',').map((s) => s.split('x').map(Number)).filter(([w, h]) => w > 0 && h > 0) ?? null;
 
     function heading(text) {
         const h = document.createElement('h2');
@@ -105,6 +109,8 @@
         c.height = artH;
         const ctx = c.getContext('2d');
         paintBar(ctx, artW, artH, layout, { lighting: lit });
+        const door = barDoor(layout, artW, artH, { lighting: lit });
+        if (door) ctx.drawImage(door.frames[doorFrame], door.x, door.y);
         const flick = (l) => Math.floor(t / BAR_FLICKER_MS + l.phase) % l.frames.length;
         for (const l of barLights(layout, artW, artH)) {
             if (l.halo && lit !== 'day') {
@@ -176,6 +182,20 @@
                 ctx.strokeStyle = '#ff0';
                 ctx.strokeRect(box.x1, box.top, box.x2 - box.x1, box.y - box.top);
             }
+            // The perches: a fly's feet stand on row round(y), so the line runs along the top of that row.
+            ctx.fillStyle = '#ff0';
+            for (const p of layout.perches ?? []) {
+                const [x1, y] = P(p.x1, p.y);
+                const [x2] = P(p.x2, p.y);
+                ctx.fillRect(Math.round(x1) - (x1 === x2 ? 2 : 0), Math.round(y), Math.max(1, Math.round(x2) - Math.round(x1)) + (x1 === x2 ? 4 : 0), 1);
+            }
+            if (layout.door) {
+                ctx.fillStyle = '#0ff';
+                const [dx, dy] = P(layout.door.x, layout.door.y);
+                ctx.fillRect(Math.round(dx) - 1, Math.round(dy) - 1, 3, 3);
+                const [, iy] = P(layout.door.x, layout.door.y + (layout.door_in ?? 6));
+                ctx.fillRect(Math.round(dx), Math.round(dy), 1, Math.round(iy - dy));
+            }
         }
         return { canvas: c, scale };
     }
@@ -190,7 +210,9 @@
         out.append(box);
         halls.push({ w, h, lit, canvas: hl.canvas });
     }
-    if (!params.has('sheet')) {
+    if (sizes) {
+        for (const [w, h] of sizes) addHall(w, h, lighting, 'Зал');
+    } else if (!params.has('sheet')) {
         addHall(1280, 800, lighting, 'Зал');
         addHall(390, 844, lighting, 'Телефон');
         if (lighting !== 'day') addHall(1280, 800, 'day', 'Без света');

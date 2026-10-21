@@ -35,8 +35,9 @@ export const isBar = (scene) => scene === SCENE.bar;
 /**
  * The bar's geometry when the markup has none (`#app[data-bar-layout]`, `walk.bar` of app/config/hellowin.php;
  * protocol.md, «Бар»), in percents of the screen without the patch spread: the floor, the obstacles (the counter a
- * rectangle, the tables ellipses), the strip in front of the counter where a mug is taken, where newcomers appear,
- * and how near two walkers stand for `clink.auto`.
+ * rectangle, the tables ellipses), the strip in front of the counter where a mug is taken, where characters put back
+ * on the floor appear, the entrance door's threshold and how far a newcomer walks in from it, how near two walkers
+ * stand for `clink.auto`, and the perches where flies land (each drawn exactly there by pixel/bar.js).
  */
 export const BAR_LAYOUT = {
     area: { x1: 3, y1: 50, x2: 94, y2: 97 },
@@ -48,11 +49,34 @@ export const BAR_LAYOUT = {
     ],
     counter: { x1: 66, x2: 92, y: 62 },
     spawn: { y1: 90, y2: 94 },
+    door: { x: 12, y: 50 },
+    door_in: 6,
+    perches: [
+        { x1: 3, x2: 97, y: 8, name: 'beam' },
+        { x1: 9, x2: 15, y: 30, name: 'lintel' },
+        { x1: 45, x2: 55, y: 36, name: 'mantel' },
+        { x1: 67, x2: 91, y: 26, name: 'shelf-top' },
+        { x1: 67, x2: 91, y: 33, name: 'shelf' },
+        { x1: 25, x2: 25, y: 33, name: 'shield-1' },
+        { x1: 36, x2: 36, y: 33, name: 'shield-2' },
+        { x1: 31, x2: 31, y: 20, name: 'shield-3' },
+        { x1: 61, x2: 61, y: 20, name: 'shield-4' },
+        { x1: 18, x2: 22, y: 45, name: 'barrels' },
+    ],
     clink_reach: 10,
 };
 
 /** The counter of a bar layout: its first rectangle obstacle. */
 export const barCounterOf = (layout) => layout?.obstacles?.find((o) => Number.isFinite(o.x1)) ?? null;
+
+/**
+ * Whether a walk comes in through the bar's door: its path starts on the threshold `door` (within half a percent), as
+ * the server sends a newcomer's walk (protocol.md, `walker`). False without a door.
+ */
+export const fromDoor = (walk, door) => {
+    const p = walk?.path?.[0];
+    return Boolean(p && door && Math.hypot(p.x - door.x, p.y - door.y) <= 0.5);
+};
 
 /** The stage from which a pumpkin floats over its place (the last stage of the spell). */
 export const FLOAT_STAGE = 11;

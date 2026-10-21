@@ -1,3 +1,4 @@
+import { BAR_LAYOUT } from '../layout.js';
 import { PALETTE } from './palette.js';
 import { EMISSIVE, LIGHTINGS, keepHueColor, litColor } from './night.js';
 import { BAR_HIDE, OWL_BAR } from './owl.js';
@@ -10,9 +11,13 @@ import { paintFlames } from './sprites.js';
  *
  * Everything works in art pixels of a canvas artW × artH and takes the server's `walk.bar` layout in screen percents:
  *   { area: {x1, y1, x2, y2}, obstacles: [{cx, cy, rx, ry} (a table) | {x1, y1, x2, y2} (the counter)],
- *     counter: {x1, x2, y}, spawn: {y1, y2}, clink_reach }
- * Only `area` and `obstacles` shape the art: the floor starts a little above area.y1, every ellipse becomes a table
- * with benches, the first rectangle becomes the counter (later rectangles — barrel stacks).
+ *     counter: {x1, x2, y}, spawn: {y1, y2}, door?: {x, y}, door_in?, perches?: [{x1, x2, y, name}], clink_reach }
+ * `area`, `obstacles`, `door` and `perches` shape the art: the floor starts a little above area.y1, every ellipse
+ * becomes a table with benches, the first rectangle becomes the counter (later rectangles — barrel stacks). The door
+ * stands on the back wall over `door.x`; every perch is a surface flies land on, drawn with its top on the perch's
+ * y (docs/spec/frontend.md, «Места посадки»): `beam`, `lintel`, `mantel`, `shelf-top`, `shelf`, `shield-N`,
+ * `barrels`. A missing perch leaves its thing where the wall's bays put it. Free decor (banners, torches, chandeliers,
+ * extra shields) keeps off the door and the perch things.
  *
  * Common options `opts`:
  *   lighting — a night.js lighting name ('day' by default; an unknown name falls back to 'day'): every colour goes
@@ -45,6 +50,10 @@ import { paintFlames } from './sprites.js';
  *                                                BAR_MUG's anchor there and draw the mugs right after the counter.
  *   counterBox(layout, artW, artH, opts)         → {x1, x2, top, y} — the drawn counter (top = the keg's top, y = the
  *                                                front foot line), for the DOM button over it; null without one.
+ *   barDoor(layout, artW, artH, opts)            → {x, y, frames} — the door's leaf and what the open doorway shows,
+ *                                                frames[0] shut … frames[DOOR_OPEN] wide open; draw a frame's top left
+ *                                                at (x, y) over the background and under the walkers; null without
+ *                                                `door`. The frame, lintel and threshold are in paintBar.
  *   BAR_MUG                                      the full counter mug sprite (sprites.js format, 9 × 8, anchor on
  *                                                the bottom centre), the walkers' beer colours plus a handle.
  *   bakeBar(sprite, lighting)                    a canvas of a sprite in a lighting with its beer and foam kept
@@ -53,19 +62,8 @@ import { paintFlames } from './sprites.js';
  *   DEFAULT_BAR_LAYOUT                           the lab's copy of walk.bar (app/config/hellowin.php).
  */
 
-/** The lab's hall: a copy of walk.bar in app/config/hellowin.php (and of BAR_LAYOUT in layout.js), screen percents. */
-export const DEFAULT_BAR_LAYOUT = {
-    area: { x1: 3, y1: 50, x2: 94, y2: 97 },
-    obstacles: [
-        { x1: 62.5, y1: 46, x2: 95, y2: 60 },
-        { cx: 22, cy: 64, rx: 13, ry: 7 },
-        { cx: 44, cy: 78, rx: 13, ry: 7 },
-        { cx: 76, cy: 80, rx: 13, ry: 7 },
-    ],
-    counter: { x1: 66, x2: 92, y: 62 },
-    spawn: { y1: 90, y2: 94 },
-    clink_reach: 10,
-};
+/** The lab's hall: BAR_LAYOUT of layout.js, the copy of walk.bar in app/config/hellowin.php, screen percents. */
+export const DEFAULT_BAR_LAYOUT = BAR_LAYOUT;
 
 /** Flicker step of every flame in the bar, ms. */
 export const BAR_FLICKER_MS = 130;
@@ -238,22 +236,133 @@ function geometry(layout, artW, artH, opts = {}) {
     const n = Math.max(3, 2 * Math.round((artW / 150 - 1) / 2) + 1);
     const posts = Array.from({ length: n + 1 }, (_, k) => Math.round((k * artW) / n));
     const bays = posts.slice(0, -1).map((x, k) => ({ x1: x, x2: posts[k + 1], cx: (x + posts[k + 1]) / 2 }));
-    const roof = Math.max(8, Math.round(floorTop * 0.16));
+    const bayAt = (x) => bays.find((b) => x >= b.x1 && x < b.x2) ?? bays[bays.length - 1];
+    // Perches in art px, rounded the way the scene rounds a sitting fly: its feet stand on row y.
+    const perches = new Map();
+    for (const p of L.perches ?? []) {
+        const a = pt(p.x1, p.y);
+        const b = pt(p.x2, p.y);
+        perches.set(p.name, { x1: Math.round(Math.min(a.x, b.x)), x2: Math.round(Math.max(a.x, b.x)), y: Math.round(a.y) });
+    }
+    const beam = perches.get('beam');
+    const roof = beam ? clamp(beam.y, 0, floorTop - 40) : Math.max(8, Math.round(floorTop * 0.16));
     // A bay is the counter's when the counter covers a third of it: one the counter only clips stays free for the hearth.
     const hasCounter = (b) => counter && Math.min(counter.x2, b.x2) - Math.max(counter.x1, b.x1) > (b.x2 - b.x1) / 3;
-    const free = bays.filter((b) => !hasCounter(b));
-    const hearthBay = (free.length ? free : bays).reduce((best, b) => (Math.abs(b.cx - artW / 2) < Math.abs(best.cx - artW / 2) ? b : best));
-    const hearthW = Math.round(Math.min(hearthBay.x2 - hearthBay.x1 - 22, clamp(artW * 0.15, 40, 60)));
-    const hearthH = Math.round(clamp((floorTop - roof) * 0.48, 34, 54));
-    const hearth = { cx: Math.round(hearthBay.cx), w: hearthW, h: hearthH, top: floorTop - hearthH, bay: hearthBay };
-    hearth.ow = Math.round(hearthW * 0.56) | 1;
-    hearth.oh = Math.round(hearthH * 0.56);
-    hearth.mantel = floorTop - hearth.oh - 7;
+    const shields = [...perches.entries()]
+        .filter(([name]) => /^shield-\d+$/.test(name))
+        .map(([name, p]) => ({ cx: Math.round((p.x1 + p.x2) / 2), cy: p.y + SHIELD_R, kind: Number(name.slice(7)) }));
+    const hearth = hearthOf(perches.get('mantel'), floorTop, roof, bays, hasCounter, bayAt, artW, shields);
+    const door = L.door ? doorOf(pt(L.door.x, L.door.y), perches.get('lintel'), floorTop, roof, artW, shields) : null;
+    const shelfTop = perches.get('shelf-top');
+    const shelf = perches.get('shelf');
+    const shelves = counter && (shelfTop || shelf)
+        ? [shelf, shelfTop].filter(Boolean).map((p) => ({ x1: p.x1 + 2, x2: p.x2 - 2, y: p.y }))
+        : null;
+    const barrels = barrelsOf(perches.get('barrels'), floorTop);
+    // The sign over the counter hangs clear of the top shelf's bottles.
+    const signY = counter && Math.min(floorTop - 62, ...(shelves ?? []).map((s) => s.y - 21));
+    const sign = counter && signY > roof + 8 ? { cx: (counter.x1 + counter.x2) / 2, y: signY } : null;
+    // What free decor keeps off: the door with its lintel, the perch shields, barrels and shelves, the hearth.
+    const taken = [];
+    if (door) taken.push({ x1: door.lx1, y1: door.top, x2: door.lx2, y2: floorTop });
+    for (const s of shields) taken.push({ x1: s.cx - SHIELD_R, y1: s.cy - SHIELD_R, x2: s.cx + SHIELD_R, y2: s.cy + SHIELD_R });
+    for (const b of barrels) taken.push({ x1: b.x - (b.w >> 1) - 1, y1: b.foot - b.h - 1, x2: b.x + (b.w >> 1) + 1, y2: b.foot });
+    for (const s of shelves ?? []) taken.push({ x1: s.x1 - 3, y1: s.y - 8, x2: s.x2 + 3, y2: s.y + 5 });
+    if (sign) taken.push({ x1: sign.cx - 12, y1: sign.y - 1, x2: sign.cx + 12, y2: sign.y + 11 });
+    taken.push({ x1: hearth.cx - (hearth.w >> 1) - 5, y1: hearth.top, x2: hearth.cx + (hearth.w >> 1) + 5, y2: floorTop });
+    const blocked = (r, m = 2) => taken.some((t) => r.x1 < t.x2 + m && r.x2 > t.x1 - m && r.y1 < t.y2 + m && r.y2 > t.y1 - m);
     return {
-        artW, artH, floorTop, roof, posts, bays, tables, rects, counter, owl, hearth, hasCounter,
+        artW, artH, floorTop, roof, posts, bays, tables, rects, counter, owl, hearth, hasCounter, door, shields, shelves,
+        barrels, sign, perches, taken, blocked,
         area: { x1: Math.round(Math.min(a1.x, a2.x)), y1: Math.round(a1.y), x2: Math.round(Math.max(a1.x, a2.x)), y2: Math.round(a2.y) },
         seed: opts.seed ?? 7,
     };
+}
+
+const SHIELD_R = 8;
+
+/**
+ * The hearth: centred on the `mantel` perch, its mantel's top row on the perch's y and the mantel covering the perch's
+ * x1..x2, the opening under the mantel down to the floor; without the perch — in the free bay nearest the middle.
+ */
+function hearthOf(mantel, floorTop, roof, bays, hasCounter, bayAt, artW, shields) {
+    let h;
+    if (mantel) {
+        // The mantel beam's outline row is my − 1, so a fly on the perch stands on it; the opening ends 7 rows lower.
+        const my = mantel.y + 1;
+        const oh = Math.max(10, floorTop - my - 7);
+        const height = Math.max(floorTop - my + 8, Math.round(oh / 0.56));
+        const cx = Math.round((mantel.x1 + mantel.x2) / 2);
+        // The mantel overhangs the body by 4 px each side; on a narrow screen the body keeps off the shields beside it.
+        let room = Infinity;
+        for (const s of shields) if (s.cy + SHIELD_R > my) room = Math.min(room, 2 * (Math.abs(s.cx - cx) - SHIELD_R - 6));
+        const w = Math.max(mantel.x2 - mantel.x1 - 7, Math.min(Math.round(oh * 1.4), room), 26);
+        h = { cx, w, h: height, top: Math.max(roof + 8, floorTop - height), bay: bayAt(cx), oh, mantel: my };
+        h.ow = Math.min(Math.round(w * 0.56), 2 * oh - 4) | 1;
+        return h;
+    }
+    const free = bays.filter((b) => !hasCounter(b));
+    const bay = (free.length ? free : bays).reduce((best, b) => (Math.abs(b.cx - artW / 2) < Math.abs(best.cx - artW / 2) ? b : best));
+    const w = Math.round(Math.min(bay.x2 - bay.x1 - 22, clamp(artW * 0.15, 40, 60)));
+    const height = Math.round(clamp((floorTop - roof) * 0.48, 34, 54));
+    h = { cx: Math.round(bay.cx), w, h: height, top: floorTop - height, bay };
+    h.ow = Math.round(w * 0.56) | 1;
+    h.oh = Math.round(height * 0.56);
+    h.mantel = floorTop - h.oh - 7;
+    return h;
+}
+
+// Rows of the lintel beam over the door, and the jambs' width.
+const LINTEL_H = 5;
+const JAMB_W = 3;
+/** Shut, three frames opening, wide open: the frame index of the open door in barDoor's frames. */
+export const DOOR_OPEN = 3;
+
+/**
+ * The door over the threshold point `at` (art px): the opening centred on its x from the lintel down to the wall's
+ * foot, the lintel's top row on the `lintel` perch and wide enough to cover its x1..x2; without the perch, a little
+ * over half the wall high.
+ */
+function doorOf(at, lintel, floorTop, roof, artW, shields) {
+    const top = clamp(lintel ? lintel.y : Math.round(floorTop - (floorTop - roof) * 0.55), roof + 8, floorTop - 20);
+    const oy1 = top + LINTEL_H;
+    const oy2 = floorTop - 1;
+    const cx = Math.round(at.x);
+    const span = lintel ? lintel.x2 - lintel.x1 : 0;
+    // As wide as two thirds of its height on a wide screen; on a narrow one it stays on screen and off the shields
+    // hung beside it, and grows tall rather than wide.
+    let room = Math.min(cx, artW - cx) - JAMB_W - 2;
+    for (const s of shields) {
+        if (s.cy + SHIELD_R < top || s.cy - SHIELD_R > oy2) continue;
+        room = Math.min(room, Math.abs(s.cx - cx) - SHIELD_R - JAMB_W - 4);
+    }
+    const half = Math.max(7, Math.min(room, Math.round(Math.max(span - 2 * JAMB_W - 6, (oy2 - oy1) * 0.66) / 2)));
+    const ox1 = cx - half;
+    const ox2 = cx + half;
+    const oh = oy2 - oy1 + 1;
+    return {
+        cx, top, ox1, ox2, oy1, oy2,
+        // The leaf hangs on the side nearer its end wall, so it swings open against that wall.
+        hingeLeft: cx < artW / 2,
+        straps: [oy1 + Math.round(oh * 0.18), oy1 + Math.round(oh * 0.74)],
+        lx1: Math.min(ox1 - JAMB_W - 3, lintel?.x1 ?? Infinity),
+        lx2: Math.max(ox2 + JAMB_W + 3, lintel?.x2 ?? -Infinity),
+    };
+}
+
+/**
+ * Barrels standing against the wall under the `barrels` perch: their lids' top row on its y, side by side across its
+ * x1..x2, tall enough to stand on the floor by the wall.
+ */
+function barrelsOf(perch, floorTop) {
+    if (!perch) return [];
+    const span = perch.x2 - perch.x1;
+    const n = Math.max(1, Math.round((span + 4) / 13));
+    const w = clamp(Math.round((span + 4) / n) - 1, 10, 16);
+    const h = clamp(floorTop + 6 - perch.y - 1, 11, 22);
+    const mid = (perch.x1 + perch.x2) / 2;
+    // barrelPix rings the w × h body with an outline: its top row is the lid's outline, one above the body.
+    return Array.from({ length: n }, (_, i) => ({ x: Math.round(mid + (i - (n - 1) / 2) * (w + 1)), foot: perch.y + h + 1, w, h }));
 }
 
 /**
@@ -303,21 +412,39 @@ function lightAt(lights, x, y) {
     return Math.min(1, v);
 }
 
-// Torches hang on the visible inner posts; the hearth's bay gets one each side when its posts are off screen.
+// The box a torch takes on the wall: its sconce and the flame over it.
+const torchBox = (t) => ({ x1: t.x - 3, y1: t.y - 11, x2: t.x + 4, y2: t.y + 7 });
+
+// Torches hang on the visible inner posts (on the other side of a post when the first is taken), one each side of the
+// door; the hearth's bay gets one each side when its posts are off screen.
 function torchSpots(g) {
     const y = g.floorTop - 36;
-    const spots = g.posts.filter((x) => x > 8 && x < g.artW - 8).map((x) => ({ x: x + 4, y, post: true }));
+    const spots = [];
+    const add = (...xs) => {
+        const x = xs.find((v) => v > 4 && v < g.artW - 5 && !g.blocked(torchBox({ x: Math.round(v), y })) && !spots.some((s) => Math.abs(s.x - v) < 12));
+        if (x !== undefined) spots.push({ x: Math.round(x), y });
+    };
+    for (const p of g.posts) if (p > 8 && p < g.artW - 8) add(p + 4, p - 5);
+    if (g.door) {
+        const dy = Math.round((g.door.oy1 + g.door.oy2) / 2) - 4;
+        for (const x of [g.door.lx1 - 5, g.door.lx2 + 4]) {
+            const t = { x, y: dy };
+            if (x > 4 && x < g.artW - 5 && !g.blocked(torchBox(t), 0) && !spots.some((s) => Math.abs(s.x - x) < 12 && Math.abs(s.y - dy) < 20)) spots.push(t);
+        }
+    }
     if (!spots.some((s) => Math.abs(s.x - g.hearth.cx) < g.hearth.bay.x2 - g.hearth.bay.x1)) {
-        spots.push({ x: g.hearth.cx - g.hearth.w / 2 - 10, y, post: false }, { x: g.hearth.cx + g.hearth.w / 2 + 10, y, post: false });
+        add(g.hearth.cx - g.hearth.w / 2 - 12);
+        add(g.hearth.cx + g.hearth.w / 2 + 12);
     }
     return spots;
 }
 
-// Chandeliers hang in the bays with neither the hearth nor the counter.
+// Chandeliers hang in the bays with neither the hearth nor the counter, where they hit no perch thing or door.
 function chandeliers(g) {
     return g.bays
         .filter((b) => b !== g.hearth.bay && !g.hasCounter(b) && b.x2 - b.x1 > 60)
-        .map((b) => ({ x: Math.round(b.cx), y: g.roof + 6 + Math.round((g.floorTop - g.roof) * 0.3), top: g.roof + 6 }));
+        .map((b) => ({ x: Math.round(b.cx), y: g.roof + 6 + Math.round((g.floorTop - g.roof) * 0.3), top: g.roof + 6 }))
+        .filter((c) => !g.blocked({ x1: c.x - 14, y1: c.y - 8, x2: c.x + 14, y2: c.y + 3 }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -337,6 +464,7 @@ export function paintBar(ctx, artW, artH, layout, opts = {}) {
     paintPosts(px, g, L);
     paintBeam(px, g, L);
     paintHearth(px, g, L);
+    paintDoorway(px, g, L);
     paintDecor(px, g, L, rand);
     paintShadows(px, g);
 
@@ -581,6 +709,48 @@ function paintHearth(px, g, L) {
     antler.k.forEach((k, i) => { if (k) px.k[i] = k; });
 }
 
+// The doorway without its leaf (barDoor draws that): heavy jambs, the lintel beam carved with a zigzag, its top row on
+// the `lintel` perch, the hinge knuckles, a dark opening and a stone threshold on the floor.
+function paintDoorway(px, g, L) {
+    const d = g.door;
+    if (!d) return;
+    px.rect(d.ox1, d.oy1, d.ox2, d.oy2, 'outline');
+    const jamb = [0.08, 0.6, 0.46, 0.3];
+    for (let y = d.oy1; y <= d.oy2; y++) {
+        for (let i = 0; i <= JAMB_W; i++) {
+            const notch = (y - d.oy1) % 7 === 3 && i > 0 && i < JAMB_W ? -0.16 : 0;
+            const l = d.ox1 - JAMB_W - 1 + i;
+            const r = d.ox2 + JAMB_W + 1 - i;
+            px.set(l, y, i === 0 ? 'outline' : shade(TIMBER, jamb[i] + notch + L(l, y) * 0.3, l, y));
+            px.set(r, y, i === 0 ? 'outline' : shade(TIMBER, jamb[JAMB_W + 1 - i] + notch + L(r, y) * 0.3, r, y));
+        }
+    }
+    const beam = [0.08, 0.66, 0.56, 0.42, 0.08];
+    for (let r = 0; r < LINTEL_H; r++) {
+        const y = d.top + r;
+        for (let x = d.lx1; x <= d.lx2; x++) {
+            const edge = r === 0 || r === LINTEL_H - 1 || x === d.lx1 || x === d.lx2;
+            // Zigzag carving along the middle row, skipping the ends.
+            const carve = r === 2 && x > d.lx1 + 2 && x < d.lx2 - 2 && (x + (x >> 1)) % 3 === 0;
+            px.set(x, y, edge ? 'outline' : carve ? 'timberDeep' : shade(TIMBER, beam[r] + L(x, y) * 0.3, x, y));
+        }
+    }
+    // Iron knuckles on the hinge jamb, one per strap of the leaf.
+    const hx = d.hingeLeft ? d.ox1 - 1 : d.ox2 + 1;
+    for (const sy of d.straps) {
+        px.set(hx, sy, 'ironLight');
+        px.set(hx, sy + 1, 'iron');
+        px.set(hx, sy + 2, 'outline');
+    }
+    // The threshold stone, on the floor in front of the opening.
+    for (let y = g.floorTop; y <= g.floorTop + 2; y++) {
+        for (let x = d.ox1 - JAMB_W - 1; x <= d.ox2 + JAMB_W + 1; x++) {
+            const edge = y === g.floorTop + 2 || x === d.ox1 - JAMB_W - 1 || x === d.ox2 + JAMB_W + 1;
+            px.set(x, y, edge ? 'outline' : shade(STONE, 0.5 + (y === g.floorTop ? 0.12 : 0) + hash(x >> 2, 1, 33) * 0.15 + L(x, y) * 0.3, x, y));
+        }
+    }
+}
+
 function stampOutlined(px, x0, y0, rows, legend) {
     const w = Math.max(...rows.map((r) => r.length));
     const p = new Pix(w + 2, rows.length + 2);
@@ -666,10 +836,9 @@ function paintSign(px, cx, y, L) {
 function paintShelves(px, g, L) {
     const c = g.counter;
     if (!c) return;
-    const x1 = c.x1 + 3;
-    const x2 = c.x2 - 3;
-    const levels = [g.floorTop - 30, g.floorTop - 44];
-    levels.forEach((y, li) => {
+    // The perches' shelves, or two over the counter.
+    const shelves = g.shelves ?? [g.floorTop - 30, g.floorTop - 44].map((y) => ({ x1: c.x1 + 3, x2: c.x2 - 3, y }));
+    shelves.forEach(({ x1, x2, y }, li) => {
         for (let x = x1 - 2; x <= x2 + 2; x++) {
             px.set(x, y, shade(TIMBER, 0.64 + L(x, y) * 0.3, x, y));
             px.set(x, y + 1, shade(TIMBER, 0.36 + L(x, y) * 0.3, x, y + 1));
@@ -702,7 +871,7 @@ function paintShelves(px, g, L) {
             i++;
         }
     });
-    paintSign(px, (c.x1 + c.x2) / 2, g.floorTop - 62, L);
+    if (g.sign) paintSign(px, g.sign.cx, g.sign.y, L);
     // A big barrel stands against the wall at the counter's far end, its foot hidden by the counter.
     const bx = c.x2 - 10;
     paintStandingBarrel(px, bx, g.floorTop + 4, 14, 19, L);
@@ -808,26 +977,32 @@ function paintDecor(px, g, L, rand) {
     const chand = chandeliers(g);
     const torches = torchSpots(g);
     for (const t of torches) paintTorchSconce(px, t);
-    // Shields along the eye band of every free bay, banners higher up; garlands of tiny pumpkins under the beam.
+    // Free decor keeps off the door and the perch things (g.blocked) and off what it has hung already.
+    const hung = [...torches.map(torchBox), ...chand.map((c) => ({ x1: c.x - 14, y1: c.top, x2: c.x + 14, y2: c.y + 2 }))];
+    const free = (r, m = 2) => !g.blocked(r, m) && !hung.some((t) => r.x1 < t.x2 + m && r.x2 > t.x1 - m && r.y1 < t.y2 + m && r.y2 > t.y1 - m);
+    const hang = (r, m) => free(r, m) && hung.push(r);
+    const shieldBox = (x, y) => ({ x1: x - SHIELD_R, y1: y - SHIELD_R, x2: x + SHIELD_R, y2: y + SHIELD_R });
+    // The perches' shields first: they stand where the config puts them, whatever else is there.
+    for (const s of g.shields) paintShield(px, s.cx, s.cy, SHIELD_R, s.kind, L);
+    // More shields along the eye band of every free bay, banners higher up; garlands of tiny pumpkins under the beam.
     let kind = Math.floor(rand() * SHIELDS.length);
     const band = g.floorTop - 25;
     for (const b of g.bays) {
         if (g.hasCounter(b)) continue;
         const hearth = b === g.hearth.bay;
-        const blocked = (x) => torches.some((t) => Math.abs(t.x - x) < 12)
-            || (hearth && Math.abs(x - g.hearth.cx) < g.hearth.w / 2 + 12)
-            || (g.counter && x > g.counter.x1 - 12 && x < g.counter.x2 + 12);
         for (let x = b.x1 + 16; x <= b.x2 - 16; x += 24) {
-            if (blocked(x)) continue;
-            paintShield(px, x, band + ((x / 24) % 2 ? -3 : 0), 8, kind++, L);
+            const y = band + ((x / 24) % 2 ? -3 : 0);
+            if (g.counter && x > g.counter.x1 - 12 && x < g.counter.x2 + 12) continue;
+            if (hang(shieldBox(x, y), 4)) paintShield(px, x, y, SHIELD_R, kind++, L);
         }
         const upper = { y1: g.roof + 18, y2: band - 16 };
         if (!hearth && upper.y2 - upper.y1 > 20) {
             const hasChand = chand.some((c) => c.x > b.x1 && c.x < b.x2);
             const xs = hasChand ? [b.cx - 34, b.cx + 34] : [b.cx - 20, b.cx + 20];
+            const h = Math.min(48, upper.y2 - upper.y1);
             xs.forEach((x, i) => {
                 if (x < 8 || x > g.artW - 8) return;
-                paintBanner(px, Math.round(x), upper.y1, Math.min(48, upper.y2 - upper.y1), i ? 'shieldBlue' : 'crimson', L);
+                if (hang({ x1: x - 7, y1: upper.y1 - 1, x2: x + 7, y2: upper.y1 + h })) paintBanner(px, Math.round(x), upper.y1, h, i ? 'shieldBlue' : 'crimson', L);
             });
         }
         if (hearth && upper.y2 - upper.y1 > 24) {
@@ -835,7 +1010,7 @@ function paintDecor(px, g, L, rand) {
             const dx = Math.round(g.hearth.w * 0.3) + 13;
             const y = Math.round((upper.y1 + upper.y2) / 2);
             [g.hearth.cx - dx, g.hearth.cx + dx].forEach((x) => {
-                if (x > b.x1 + 10 && x < b.x2 - 10) paintShield(px, x, y, 8, kind++, L);
+                if (x > b.x1 + 10 && x < b.x2 - 10 && hang(shieldBox(x, y), 4)) paintShield(px, x, y, SHIELD_R, kind++, L);
             });
         }
         if (!hearth) paintGarland(px, b, g);
@@ -843,10 +1018,12 @@ function paintDecor(px, g, L, rand) {
     // Over the counter's sign, on a tall wall: banners too.
     for (const b of g.bays.filter((bay) => g.hasCounter(bay))) {
         const y1 = g.roof + 18;
-        const y2 = g.floorTop - 68;
+        const y2 = (g.sign?.y ?? g.floorTop - 62) - 6;
         if (y2 - y1 <= 30) continue;
+        const h = Math.min(48, y2 - y1);
         [b.cx - 20, b.cx + 20].forEach((x, i) => {
-            if (x >= 8 && x <= g.artW - 8) paintBanner(px, Math.round(x), y1, Math.min(48, y2 - y1), i ? 'shieldGreen' : 'crimson', L);
+            if (x < 8 || x > g.artW - 8) return;
+            if (hang({ x1: x - 7, y1: y1 - 1, x2: x + 7, y2: y1 + h })) paintBanner(px, Math.round(x), y1, h, i ? 'shieldGreen' : 'crimson', L);
         });
     }
     for (const c of chand) paintChandelier(px, c);
@@ -1073,18 +1250,20 @@ function barrelStack(r, color) {
     return barrelSpots(r).map((b) => barrelProp(b.x, b.y, 11, 14, color));
 }
 
-// Barrels against the back wall where nothing else stands: the corner by the left wall, and between the hearth and
-// the counter when there is room.
+// Barrels against the back wall: the perch's ones where the config puts them; else the corner by the left wall; and
+// between the hearth and the counter when there is room.
 function wallBarrels(g, color) {
+    const out = g.barrels.map((b) => barrelProp(b.x, b.foot, b.w, b.h, color));
     const foot = g.floorTop + 6;
-    if (foot > g.area.y1 + 2) return [];
-    const out = [];
+    if (foot > g.area.y1 + 2) return out;
     const taken = [[g.hearth.cx - g.hearth.w / 2 - 6, g.hearth.cx + g.hearth.w / 2 + 6]];
     if (g.counter) taken.push([g.counter.x1 - 4, g.counter.x2 + 4]);
+    if (g.door) taken.push([g.door.lx1, g.door.lx2]);
+    for (const b of g.barrels) taken.push([b.x - (b.w >> 1) - 2, b.x + (b.w >> 1) + 2]);
     for (const p of torchSpots(g)) taken.push([p.x - 3, p.x + 3]);
     const freeAt = (x1, x2) => x1 > 2 && x2 < g.artW - 2 && !taken.some(([a, b]) => x1 < b && x2 > a);
     const left = Math.max(4, g.area.x1 - 4);
-    if (freeAt(left, left + 26)) {
+    if (!g.barrels.length && freeAt(left, left + 26)) {
         out.push(barrelProp(left + 7, foot, 12, 15, color), barrelProp(left + 20, foot + 1, 12, 15, color));
         taken.push([left, left + 26]);
     }
@@ -1264,6 +1443,105 @@ export function counterBox(layout, artW, artH, opts = {}) {
     const c = g.counter;
     if (!c) return null;
     return { x1: c.x1, x2: Math.max(c.x2, c.keg.x2), top: c.keg.y1 - 6, y: c.y2 };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The door's leaf.
+
+// The night street seen through the doorway: outside the hall's light, so these keys are baked as they are.
+const STREET_KEYS = new Set(['nightTop', 'nightHigh', 'nightMid', 'nightLow', 'moonLight', 'moonShade']);
+// How far the leaf has swung in, degrees, per frame: shut … wide open (DOOR_OPEN).
+const DOOR_ANGLES = [0, 45, 66, 80];
+// The forged scroll at a strap's end, offsets from the strap's last pixel (its upper row at dy 0).
+const SCROLL = [[1, 0], [2, -1], [2, -2], [1, -3], [0, -3], [-1, -2], [0, -1.5], [1, 1], [2, 2], [2, 3], [1, 4], [0, 4], [-1, 3], [0, 2.5]];
+
+/** A pixel of the shut leaf, lw × lh: planks with dark seams, two iron straps ending in scrolls, a ring handle. */
+function leafKey(lx, ly, lw, lh, straps) {
+    if (lx <= 0 || ly <= 0 || lx >= lw - 1 || ly >= lh - 1) return 'outline';
+    const reach = Math.round(lw * 0.72);
+    for (const s of straps) {
+        if (ly >= s && ly <= s + 1 && lx <= reach) return lx % 5 === 2 && ly === s ? 'grayLight' : ly === s ? 'ironLight' : 'iron';
+        if (ly === s + 2 && lx <= reach) return 'outline';
+        if (SCROLL.some(([dx, dy]) => lx === reach + dx && ly === s + Math.round(dy))) return 'iron';
+    }
+    const ring = Math.hypot(lx - (lw - 5), ly - Math.round(lh * 0.5));
+    if (ring >= 1.5 && ring < 2.6) return 'iron';
+    if (ring < 0.8) return 'ironLight';
+    const c = lx % 5;
+    if (c === 0) return 'timberDeep';
+    return flat(TIMBER, 0.44 + (c === 1 ? 0.12 : c === 4 ? -0.1 : 0) - (hash(lx >> 2, ly >> 3, 61) > 0.8 ? 0.1 : 0));
+}
+
+/** The door's frames: {x, y, frames}, see the module doc; null without a door. */
+export function barDoor(layout, artW, artH, opts = {}) {
+    const g = geometry(layout, artW, artH, opts);
+    const d = g.door;
+    if (!d) return null;
+    const lit = litKey(lightingOf(opts));
+    const color = (key) => (STREET_KEYS.has(key) ? raw(key) : lit(key));
+    const ow = d.ox2 - d.ox1 + 1;
+    const oh = d.oy2 - d.oy1 + 1;
+    const straps = d.straps.map((s) => s - d.oy1);
+    // The region: the opening and the jambs, down onto the floor as far as the leaf and the moonlight reach.
+    const pad = JAMB_W + 6;
+    const x0 = d.ox1 - pad;
+    const y0 = d.oy1;
+    const w = ow + 2 * pad;
+    const h = oh + Math.round(ow * 0.6) + 14;
+    const frames = DOOR_ANGLES.map((deg, k) => {
+        const p = new Pix(w, h);
+        const a = (deg * Math.PI) / 180;
+        // Frames are drawn hinged on the left and mirrored for a right hinge, so the street is laid out from the left.
+        const sx = (x) => (d.hingeLeft ? x : 2 * d.cx - x) - x0;
+        if (k > 0) {
+            // The street: a starry sky, a dark fence at the horizon, the ground brightening toward the moonlit doorstep.
+            const horizon = Math.round(oh * 0.6);
+            for (let y = 0; y < oh; y++) {
+                for (let x = 0; x < ow; x++) {
+                    const X = d.ox1 + x;
+                    let key;
+                    if (y < horizon) {
+                        key = shade(['nightTop', 'nightHigh', 'nightMid', 'nightLow'], y / horizon, X, y);
+                        if (hash(x, y, 71) > 0.97) key = 'moonLight';
+                        if (y >= horizon - 3 && (x % 4 !== 1 || y === horizon - 2)) key = 'outline';
+                    } else {
+                        const t = (y - horizon) / Math.max(1, oh - horizon);
+                        key = dither(X, y) < 0.15 + t * 0.35 ? 'nightLow' : dither(X, y) < 0.7 ? 'nightHigh' : 'outline';
+                        if (y >= oh - 2 && dither(X, y) < 0.3) key = 'moonShade';
+                    }
+                    p.set(sx(X), y, key);
+                }
+            }
+            // Moonlight through the doorway onto the floor, widening and fading away from the threshold.
+            const reach = Math.round(3 + 5 * Math.sin(a));
+            for (let r = 0; r < reach; r++) {
+                const y = g.floorTop + r;
+                const spread = Math.round(r * 0.5);
+                for (let X = d.ox1 - spread; X <= d.ox2 + spread; X++) {
+                    if (dither(X, y) < (1 - r / reach) * 0.22 * Math.sin(a)) p.set(sx(X), y - y0, 'moonShade');
+                }
+            }
+        }
+        // The leaf: its free edge swings in toward the viewer — narrower, lower and taller as it opens.
+        const fx = d.ox1 + Math.max(1, Math.round((ow - 1) * Math.cos(a)));
+        const s = Math.round(ow * Math.sin(a) * 0.5);
+        const dim = Math.sin(a) * 0.12;
+        for (let X = d.ox1; X <= fx; X++) {
+            const u = (X - d.ox1) / (fx - d.ox1);
+            const top = d.oy1 + Math.round(u * s * 0.3);
+            const bottom = d.oy2 + Math.round(u * s);
+            for (let Y = top; Y <= bottom; Y++) {
+                const v = (Y - top) / Math.max(1, bottom - top);
+                let key = leafKey(Math.round(u * (ow - 1)), Math.round(v * (oh - 1)), ow, oh, straps);
+                if (dim && key.startsWith('timber') && dither(X, Y) < dim * 4) key = 'timberDeep';
+                p.set(sx(X), Y - y0, key);
+            }
+            // The leaf's thickness shows along its free edge once it turns.
+            if (k > 0 && X === fx) for (let Y = top; Y <= bottom; Y++) p.set(sx(X + 1), Y - y0, Y === top || Y === bottom ? 'outline' : 'timberDark');
+        }
+        return p.canvas(color);
+    });
+    return { x: x0, y: y0, frames };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
