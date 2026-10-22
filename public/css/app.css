@@ -621,6 +621,8 @@ body:not([data-final]) .circle,
     color: var(--cream);
     background: var(--outline);
     box-shadow: 0 0 0 2px var(--soil), 0 0 0 4px var(--outline), 0 4px 0 2px var(--outline);
+    /* Its own compositor layer: over the constantly redrawn canvas, a console that shrank left a stale dark patch. */
+    will-change: transform;
 }
 
 .console--closed {
