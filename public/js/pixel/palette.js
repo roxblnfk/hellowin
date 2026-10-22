@@ -231,4 +231,14 @@ export const PALETTE = {
     dawnGlow: 0xffe2a4,
     dawnSun: 0xfff3c2,
     dawnSunRim: 0xffcf72,
+    // The bodybuilder: a sun-tanned skin ramp, warmer and darker than `skin`, for a bare torso lit from the top left,
+    // and the khaki of his army trousers.
+    tanLight: 0xe6a46a,
+    tan: 0xc07a46,
+    tanShade: 0x86482c,
+    khakiLight: 0xa8a462,
+    khaki: 0x7c7c44,
+    khakiDark: 0x50542e,
+    // Black eyes: a step under the outline, so the eye reads as black against it; the glint carries the shape.
+    eyeBlack: 0x140c12,
 };

@@ -74,6 +74,10 @@ const DARK = {
     gopherTan: 'gopherTanShade',
     robotLight: 'robot',
     robot: 'robotDark',
+    tanLight: 'tan',
+    tan: 'tanShade',
+    khakiLight: 'khaki',
+    khaki: 'khakiDark',
 };
 const dark = (key) => DARK[key] ?? key;
 
@@ -342,7 +346,8 @@ function rig(dir, pose, frame) {
 // Optional: headPaint(g, x0, y0, dir, ears) paints over the head under the face (ears — no hat on), whiskers(r)
 // returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back), snout(r)
 // returns a finished layer laid over the face, zombie maps the skin's other tones for a zombie player (zombieKeys),
-// bigHand rings the hands one pixel bigger.
+// bigHand rings the hands one pixel bigger, brawn bulges the upper arms and the thighs a pixel outward and caps the
+// shoulders.
 
 const pick = (s, i) => PICK[s[i]] ?? null;
 const PICK = {
@@ -509,16 +514,17 @@ function gopherHead(g, x0, y0, dir, ears) {
     if (ears) stamp(g, x0, y0 - 1, GOPHER_EARS[dir], { F: 'gopher' });
 }
 
-// Its face over the face slot: the big white eyes with black pupils, set wide apart at the top of the head, the beige
-// muzzle with the dark nose between them and the two buck teeth under it. From the side the muzzle sticks out ahead.
+// Its face over the face slot: the big white eyes set wide apart at the top of the head, their pupils in the eye colour
+// with a dark dot like the faces' eyes, the beige muzzle with the dark nose between them and the two buck teeth under
+// it. From the side the muzzle sticks out ahead.
 const GOPHER_FACE = {
     front: {
         at: [0, 2],
         rows: [
             '.WWW....WWW.',
             'WWWWW..WWWWW',
-            'WWKKW..WKKWW',
-            'WWKKW..WKKWW',
+            'WWEEW..WEEWW',
+            'WWEKW..WEKWW',
             '.WWWtnntWWW.',
             '...tttttt...',
             '....tttt....',
@@ -531,8 +537,8 @@ const GOPHER_FACE = {
         rows: [
             '..WWW....',
             '.WWWWW...',
-            '.WWWKK...',
-            '.WWWKK...',
+            '.WWWEE...',
+            '.WWWEK...',
             '..WWWttnn',
             '....ttttt',
             '.....tttt',
@@ -542,14 +548,14 @@ const GOPHER_FACE = {
     },
 };
 
-const gopherFace = (r) => faceLayer(r, GOPHER_FACE, { W: 'white', K: 'crowDark', t: 'gopherTan', n: 'barkDark', w: 'white', g: 'grayLight' });
+const gopherFace = (r) => faceLayer(r, GOPHER_FACE, { W: 'white', E: 'eye', K: 'outline', t: 'gopherTan', n: 'barkDark', w: 'white', g: 'grayLight' });
 
 // The tin robot. Its head is a square plate, not the round head box: headPaint repaints it whole — the enamel lit
 // from the top left, rust only at the back, a short neck — with the round brass speakers on both sides and the two
 // antennae with red knobs (bare-headed only: a hat sits where they stand). The far antenna rises by the ear.
 const ROBOT_LEGEND = {
     l: 'robotLight', m: 'robot', M: 'robotDark', r: 'copper', R: 'pumpkinDeep', h: 'hay', H: 'hayDark', c: 'comb',
-    C: 'crimson', L: 'eyeRed', a: 'gray', g: 'grayLight', e: 'cream', W: 'white', K: 'outline',
+    C: 'crimson', L: 'eye', a: 'gray', g: 'grayLight', e: 'cream', W: 'white', K: 'outline',
 };
 const ROBOT_HEAD = {
     front: [
@@ -623,8 +629,8 @@ function robotHead(g, x0, y0, dir, bare) {
     });
 }
 
-// Its face plate over the face slot, which it hides: round brass rims with red lenses (always red, the eye slot does
-// not tint them), a rivet for a nose and a grille of square teeth in a thin brass frame.
+// Its face plate over the face slot, which it hides: round brass rims with lenses in the eye colour, a rivet for a nose
+// and a grille of square teeth in a thin brass frame.
 const ROBOT_FACE = {
     front: {
         at: [0, 1],
@@ -666,6 +672,31 @@ const ROBOT_TORSO = {
     front: robotPattern({ [-11]: 'llllllllll', [-10]: 'lmmmmmmmrm', [-9]: 'lmmeecemmm', [-8]: 'lmmeeeemmm', [-7]: 'lmmcmmcmmm', [-6]: 'MgMMMMMMgM' }),
     side: robotPattern({ [-11]: 'lllllll', [-10]: 'lmmmmmm', [-9]: 'lmmmmme', [-8]: 'lmrmmme', [-7]: 'lmmmmmc', [-6]: 'MMMMMMM' }),
     back: robotPattern({ [-11]: 'llllllllll', [-10]: 'lgmmmmmmgm', [-9]: 'lmMMMMMMmm', [-8]: 'lmmmmmmrmm', [-7]: 'lmMMMMMMRm', [-6]: 'MgMMMMMMgM' }),
+};
+
+// The bodybuilder's red headband over the forehead, knotted at the back, with the knot's two tails fluttering behind
+// (bare-headed only, like the cat's ears; a hat sits over the band). c — highlight, C — the band, d — the knot.
+const BANDANA_LEGEND = { c: 'comb', C: 'crimson', d: 'crimsonDark' };
+const BANDANA = {
+    front: { band: ['cccccccccccC', 'CCCCCCCCCCCd'], tails: [12, 3, ['d.', 'Cd', '.C']] },
+    side: { band: ['ddcccccccccc', 'ddCCCCCCCCCC'], tails: [-3, 3, ['.Cd', 'C.C', 'C.C']] },
+    back: { band: ['cccccddccccC', 'CCCCCddCCCCd'], tails: [4, 4, ['.dd.', 'C..C', 'C..C', 'C...']] },
+};
+
+function bandana(g, x0, y0, dir, bare) {
+    const { band, tails } = BANDANA[dir];
+    stamp(g, x0, y0 + 2, band, BANDANA_LEGEND);
+    if (bare) stamp(g, x0 + tails[0], y0 + tails[1], tails[2], BANDANA_LEGEND);
+}
+
+// His torso, rows keyed by local y: L — the lit muscle, t — the tan, S — the shade under the pecs and between the abs,
+// K — the khaki waistband of the trousers.
+const MUSCLE_LEGEND = { L: 'tanLight', t: 'tan', S: 'tanShade', K: 'khakiDark' };
+const musclePattern = (map) => (i, y) => MUSCLE_LEGEND[map[y]?.[i]] ?? 'tan';
+const MUSCLE_TORSO = {
+    front: musclePattern({ [-10]: 'tLLLttLLLt', [-9]: 'LLLLttLLLL', [-8]: 'tSSSttSSSt', [-7]: 'tttLttLttt', [-6]: 'KKKKKKKKKK' }),
+    side: musclePattern({ [-11]: 'ttLLLLt', [-10]: 'tLLLLLL', [-9]: 'ttSSSSS', [-8]: 'tttLLSt', [-7]: 'tttLSLt', [-6]: 'KKKKKKK' }),
+    back: musclePattern({ [-11]: 'tLLLttLLLt', [-10]: 'LLLtSStLLL', [-9]: 'tLLtSStLLt', [-8]: 'ttLtSStLtt', [-7]: 'tttLttLttt', [-6]: 'KKKKKKKKKK' }),
 };
 
 const BODIES = {
@@ -844,7 +875,7 @@ const BODIES = {
         zombie: { elephantLight: 'hazeLight' },
     },
     // The Go gopher: a pudgy cyan blob whose eyes, muzzle and buck teeth carry the shape, so they stay on under every
-    // face (the face slot shows only round them); its pupils stay black whatever the eye colour.
+    // face (the face slot shows only round them); its pupils take the eye colour.
     gopher: {
         label: 'Go-гофер',
         skin: 'gopher',
@@ -856,8 +887,6 @@ const BODIES = {
         hand: 'gopherTan',
         headPaint: gopherHead,
         snout: gopherFace,
-        // A zombie gopher's pupils go blank like everyone's eyes.
-        zombie: { crowDark: 'ghost' },
     },
     // A priest in a floor-length black cassock (the crow ramp, a step above the outline) with a white clerical collar
     // and a golden pectoral cross on a chain; the hem hides the legs, only the shoes step out from under it.
@@ -902,8 +931,26 @@ const BODIES = {
         bigHand: true,
         headPaint: robotHead,
         snout: robotFace,
-        // A zombie robot's red lenses go blank like everyone's eyes.
-        zombie: { robotLight: 'hazeLight', eyeRed: 'ghost' },
+        zombie: { robotLight: 'hazeLight' },
+    },
+    // A Rambo-style bodybuilder: a bare sun-tanned torso with pecs and abs, bulging arms and thighs (brawn), khaki army
+    // trousers with darker blotches, black shaggy hair under the red headband.
+    bodybuilder: {
+        label: 'Качок',
+        skin: 'tan',
+        torso: (i, y, dir) => MUSCLE_TORSO[dir](i, y),
+        sleeve: (i, n) => (i < n * 0.6 ? 'tanLight' : 'tan'),
+        leg: (i, yy, y) => ((i * 2 + y * 3 + 40) % 5 === 0 ? 'khakiDark' : 'khaki'),
+        shoe: 'barkDark',
+        brawn: true,
+        hair: (c, r, dir, inHead) => {
+            if (dir === 'front') return (inHead && r <= 1) || ((c === -1 || c === 0 || c === 11 || c === 12) && r >= 3 && r <= 7 && (inHead || r <= 6));
+            if (dir === 'side') return (inHead && (r <= 1 || (c <= 3 && r <= 7))) || (c === -1 && r >= 3 && r <= 8);
+            return (inHead && r <= 8) || ((c === -1 || c === 12) && r >= 3 && r <= 8);
+        },
+        hairColor: 'barkDark',
+        headPaint: bandana,
+        zombie: { tanLight: 'zombie' },
     },
 };
 
@@ -947,6 +994,14 @@ const FACES = {
         label: 'Циклоп',
         front: ['', '', '', '', '....KKKK....', '....EEEE....', '....EKKE....', '.....EE.....', '............', '....KKKK....'],
         side: ['', '', '', '', '........KKK.', '.........EE.', '.........EK.', '.........E..', '............', '..........KK'],
+    },
+    // A pirate's patch over one eye with its strap across the forehead and round the back of the head, the other eye
+    // as usual, a crooked grin. From the side the patch covers the eye in view.
+    eyepatch: {
+        label: 'Повязка на глаз',
+        front: ['', '', '.KK.........', '...KK.......', '.....KKKKKK.', '..EE...KKKKK', '..EK...KKKK.', '........KK..', '.........K..', '....KKKK....'],
+        side: ['', '', 'KKK.........', '...KKK......', '......KKKK..', '.......KKKK.', '.......KKKK.', '........KK..', '...........K', '.........KK.'],
+        back: ['', '', '..........KK', '.......KKK..', '...KKKK.....', 'KKK.........'],
     },
 };
 
@@ -1004,6 +1059,42 @@ const HORNS = {
         '....rccC....',
     ],
 };
+
+// The pirate's tricorn: a black crown in a brim turned up into three corners, the brim's edge in gold, a small white
+// skull on the front. From the front and the back two corners point up at the sides and the third dips at the middle.
+const TRICORN = {
+    front: [
+        '.....bkkkkk.....',
+        'Y...bkkwwwkk...Y',
+        'kY..bkwKwKwk..Yk',
+        'kkY.bkkwwwkk.Ykk',
+        '.kkYYkkkkkkYYkk.',
+        '..kkkYYYYYYkkk..',
+        '....kkkkkkkk....',
+    ],
+    side: [
+        '....bkkkkk....',
+        'Y..bkkkkkkk...',
+        'kY.bkkkkkkk..Y',
+        'kkYbkkkkkkk.Yk',
+        '.kkYYkkkkkkYkk',
+        '..kkkYYYYYYkk.',
+        '...kkkkkkkkk..',
+    ],
+    back: [
+        '.....kkkkkb.....',
+        'Y...kkkkkkkb...Y',
+        'kY..kkkkkkkb..Yk',
+        'kkY.kkkkkkkb.Ykk',
+        '.kkYYkkkkkkYYkk.',
+        '..kkkYYYYYYkkk..',
+        '....kkkkkkkk....',
+    ],
+};
+
+function tricorn(g, x0, y0, dir) {
+    stamp(g, x0 - (dir === 'side' ? 1 : 2), y0 - 5, TRICORN[dir], HAT_LEGEND);
+}
 
 // Cultist hood: a pointed cowl; the face shows through the opening, the outline rings it like a shadow.
 function hoodPainter(g, x0, y0, dir) {
@@ -1128,6 +1219,7 @@ const HATS = {
             : stamp(g, x0, y0 - 4, HORNS.front, HAT_LEGEND)),
     },
     'cat-ears': { label: 'Ушки', paint: catEarsHat },
+    tricorn: { label: 'Треуголка', paint: tricorn },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1557,6 +1649,13 @@ function drawLegs(body, r) {
                 if (leg.far || (!side && i === 2 && leg.hip > -1)) key = dark(key);
                 put(g, x + i, y, key);
             }
+            // Brawn: the thigh bulges a pixel over the top two rows, outward from the front and the back, forward
+            // from the side.
+            if (body.brawn && y < LEG_TOP + 2 && y < bottom) {
+                const outer = side || leg.hip > -1 ? 3 : -1;
+                const key = body.leg(outer < 0 ? 0 : 2, y - LEG_TOP, y);
+                put(g, x + outer, y, leg.far || outer > 0 ? dark(key) : key);
+            }
             if (side && y === bottom) {
                 for (let k = 0; k < (body.toe ?? 1); k++) put(g, x + 3 + k, y - (k > 0 ? 1 : 0), leg.far ? dark(body.shoe) : body.shoe);
             }
@@ -1597,6 +1696,7 @@ function drawArm(g, body, arm) {
         const key = body.sleeve(i, n, dx);
         return arm.far || dx === 1 ? dark(key) : key;
     };
+    if (body.brawn) brawnArm(g, body, arm);
     if (arm.elbow) {
         const n1 = Math.max(Math.abs(arm.elbow[0] - arm.sh[0]), Math.abs(arm.elbow[1] - arm.sh[1]));
         stroke(g, arm.sh, arm.elbow, (i, n, dx) => sleeve(i, n1 + 3, dx));
@@ -1617,6 +1717,33 @@ function drawArm(g, body, arm) {
 }
 
 const BIG_HAND = [[0, -1], [1, -1], [-1, 0], [2, 0], [-1, 1], [2, 1], [0, 2], [1, 2]];
+
+/**
+ * Brawn under the sleeve: the deltoid caps the shoulder and the biceps bulges a pixel off the upper arm, outward from
+ * the front and the back, forward from the side; lit on the left, shaded on the right.
+ */
+function brawnArm(g, body, arm) {
+    const [sx, sy] = arm.sh;
+    const out = sx <= -4 ? -1 : 1;
+    const col = out < 0 ? -1 : 2;
+    const tone = (key) => {
+        const k = out < 0 ? key : dark(key);
+        return arm.far ? dark(k) : k;
+    };
+    const upper = body.sleeve(0, 4, 0);
+    const to = arm.elbow ?? arm.hand;
+    const n = Math.max(Math.abs(to[0] - sx), Math.abs(to[1] - sy));
+    const reach = arm.elbow ? n : Math.ceil(n * 0.5);
+    for (let i = 0; i <= reach; i++) {
+        const t = n ? i / n : 0;
+        const bx = Math.round(sx + (to[0] - sx) * t);
+        const by = Math.round(sy + (to[1] - sy) * t);
+        put(g, bx + col, by, tone(upper));
+        put(g, bx + col, by + 1, tone(upper));
+    }
+    put(g, sx, sy - 1, arm.far ? dark(upper) : upper);
+    put(g, sx + 1, sy - 1, tone(upper));
+}
 
 function drawHead(body, face, r, ears) {
     const g = blank();
@@ -1795,7 +1922,36 @@ const EYES = [
     { id: 'blue', label: 'Синие', key: 'eyeBlue' },
     { id: 'violet', label: 'Фиолетовые', key: 'eyeViolet' },
     { id: 'white', label: 'Светящиеся', key: 'white' },
+    // Black eyes would melt into the outline round them: a white glint in each carries them, and the ritual's palm
+    // lights, which take the eye colour, glow a pale ghostly blue instead of black.
+    { id: 'black', label: 'Чёрные', key: 'eyeBlack', glint: true, palm: 'ghostShade' },
 ];
+
+/**
+ * Puts the glint in the top-left pixel of every eye of three pixels or more (4-connected `eye` pixels); one-pixel
+ * eyes, like the skull's, stay as they are.
+ */
+function withGlint(grid) {
+    const out = grid.slice();
+    const seen = new Uint8Array(grid.length);
+    grid.forEach((k, start) => {
+        if (k !== 'eye' || seen[start]) return;
+        const cells = [start];
+        seen[start] = 1;
+        for (let n = 0; n < cells.length; n++) {
+            const i = cells[n];
+            const x = i % W;
+            [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W].forEach((j) => {
+                if (j >= 0 && j < grid.length && !seen[j] && grid[j] === 'eye') {
+                    seen[j] = 1;
+                    cells.push(j);
+                }
+            });
+        }
+        if (cells.length >= 3) out[start] = 'eyeGlint';
+    });
+    return out;
+}
 
 const entries = (defs) => Object.entries(defs).map(([id, def]) => ({ id, label: def.label }));
 
@@ -1930,11 +2086,14 @@ export function characterFrame(look, { dir, pose, frame = 0, item = null, zombie
     if (cached) return cached;
 
     const composed = compose(full, d, p, f, it);
+    const eyes = EYES.find((e) => e.id === full.eyes);
     // A zombie's eyes are dead white, whatever their colour was.
-    const eye = zombie ? PALETTE.ghost : PALETTE[EYES.find((e) => e.id === full.eyes).key];
-    const palm = { fxPalm: eye, fxPalmCore: mixWhite(eye, 0.6) };
+    const eye = zombie ? PALETTE.ghost : PALETTE[eyes.key];
+    if (eyes.glint && !zombie) composed.out = withGlint(composed.out);
+    const light = zombie || !eyes.palm ? eye : PALETTE[eyes.palm];
+    const palm = { fxPalm: light, fxPalmCore: mixWhite(light, 0.6) };
     const skin = zombie ? zombieKeys(BODIES[full.body]) : {};
-    const colorOf = (k) => (k === 'eye' ? eye : palm[k] ?? FX_COLORS[k] ?? PALETTE[skin[k] ?? k]);
+    const colorOf = (k) => (k === 'eye' ? eye : k === 'eyeGlint' ? PALETTE.white : palm[k] ?? FX_COLORS[k] ?? PALETTE[skin[k] ?? k]);
     const result = { canvas: paintGrid(composed.out, colorOf), anchor: { x: AX, y: AY } };
     const toCanvas = ([x, y]) => [AX + x, AY + y];
     if (composed.glow) result.glow = paintGrid(composed.glow, colorOf);

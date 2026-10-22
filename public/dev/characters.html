@@ -129,9 +129,14 @@
         cell(() => ({ look: { ...base, cloak: p.id }, dir, pose }), `${dir} ${pose}`))), p.id]));
     section('face', 'Лица (спереди и сбоку) на разных телах', CATALOG.face.map((p) => [p.label, CATALOG.body.flatMap((b) => ['front', 'side'].map((dir) =>
         cell(() => ({ look: { ...base, body: b.id, hat: 'none', face: p.id }, dir, pose: 'idle' }), `${b.id} ${dir}`))), p.id]));
-    section('eyes', 'Цвет глаз', [[null, CATALOG.eyes.flatMap((e) => ['smile', 'skull', 'cyclops'].map((face) =>
-        cell(() => ({ look: { ...base, hat: 'none', face, eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${face}`)))]]);
-    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat', 'elephant', 'gopher', 'priest', 'robot'].flatMap((body) => DIRS.map((dir) =>
+    section('eyes', 'Цвет глаз', [
+        [null, CATALOG.eyes.flatMap((e) => ['smile', 'skull', 'cyclops', 'eyepatch'].map((face) =>
+            cell(() => ({ look: { ...base, hat: 'none', face, eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${face}`)))],
+        // The gopher's pupils and the robot's lenses take the eye colour too.
+        [null, CATALOG.eyes.flatMap((e) => ['gopher', 'robot', 'cat'].map((body) =>
+            cell(() => ({ look: { ...base, body, hat: 'none', eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${body}`))), 'bodies'],
+    ]);
+    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat', 'elephant', 'gopher', 'priest', 'robot', 'bodybuilder'].flatMap((body) => DIRS.map((dir) =>
         cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
     section('item', 'Предметы: idle / walk / fidget по направлениям', ITEMS.map((it) => [it.label, DIRS.flatMap((dir) => ['idle', 'walk', 'fidget'].map((pose) =>
         cell(() => ({ look: base, dir, pose, item: it.id }), `${dir} ${pose}`))), it.id]));
