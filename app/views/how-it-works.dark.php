@@ -18,8 +18,8 @@
             <h1>Как это работает</h1>
             <p class="how__lead">
                 RoadRunner «умер», и посетители воскрешают его ритуалом на тыквенной грядке. Ритуал идёт сценами. В
-                каждой сцене тыквы проходят несколько стадий: тыква переходит в следующую, когда по ней набрали
-                <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов, и останавливается на последней стадии сцены — её задаёт
+                каждой сцене тыквы проходят несколько стадий: тыква переходит в следующую, когда по ней набрали порог кликов
+                (он растёт с числом игроков на поле — <a href="#limits">«Лимиты»</a>), и останавливается на последней стадии сцены — её задаёт
                 список <code>HELLOWIN_SCENE_STAGE_MAX</code>. Когда все тыквы дошли до неё, сцена готова, а следующую
                 включает модератор — он же сова-рассказчик. В финале сова раскрывает реальные числа вечера. Один проход
                 ритуала — раунд; сброс начинает следующий. Игроки ходят фигурками по лужайке и сбивают летунов. Все
@@ -246,10 +246,10 @@
             <ul>
                 <li><code>round</code>, <code>scene</code> — текущий раунд и сцена;</li>
                 <li><code>sceneStages</code> — номер финальной сцены (длина <code>HELLOWIN_SCENE_STAGE_MAX</code>), <code>stageMax</code> — последняя стадия тыквы в текущей сцене;</li>
-                <li><code>threshold</code> — <code>HELLOWIN_CLICKS_PER_STAGE</code>;</li>
+                <li><code>threshold</code> — порог тыквы, лимит <code>pumpkin</code> (<a href="#limits">«Лимиты»</a>); <code>limits</code> — лимиты текущей сцены с числом игроков <code>players</code> и множителем <code>k</code>;</li>
                 <li><code>elements</code> — тыквы: <code>id</code>, <code>type</code>, <code>x</code>, <code>y</code>, <code>size</code>, <code>stage</code> и <code>clicks</code> с момента перехода в текущую стадию; <code>bushes</code> — кусты, из которых взлетают летуны;</li>
                 <li><code>walkers</code> — фигурки игроков на поле с их путями;</li>
-                <li>сюжет: <code>ready</code> — сцена готова и ждёт модератора, <code>finale</code> — шаг финала (с шага разоблачения — и <code>reveal</code>), <code>paused</code>, <code>zombies</code> — переключатели пульта;</li>
+                <li>сюжет: <code>ready</code> — сцена готова и ждёт модератора, <code>finale</code> — шаг финала (с шага разоблачения — и <code>reveal</code>), <code>paused</code> — пауза пульта;</li>
                 <li><code>now</code> — серверное время в мс: по нему клиент считает смещение своих часов для летунов и фигурок.</li>
             </ul>
             <p>
@@ -379,7 +379,7 @@
                 <li><code>RitualStore::click()</code> под локом <code>pumpkin:{id}</code> увеличивает <code>clicks</code> тыквы в KV (и <code>accepted</code> — принятые клики раунда, для разоблачения в финале) и тут же, под тем же локом, читает раунд и сцену. Лок только на эту тыкву: клики по разным тыквам друг друга не ждут.</li>
                 <li><code>PlayerService</code> под локом <code>player:{id}</code> добавляет клик в статистику игрока — <code>user</code> подключения; анонимный клик статистику пропускает. Сбой статистики пишется в лог и клик не ломает.</li>
                 <li><code>ChannelPublisher</code> публикует в канал <code>{{ $channel }}</code> событие <code>click</code> (с <code>player</code>, если клик не анонимный) — всем подписчикам сразу.</li>
-                <li><code>LockstepPolicy::pumpkinTransition()</code> решает, пора ли тыкве дальше: <code>clicks</code> не меньше <code>HELLOWIN_CLICKS_PER_STAGE</code> и стадия ниже <code>stageMax</code> текущей сцены. Если да, <code>TransitionQueue</code> ставит в очередь задачу <code>TransitionPumpkin</code>, а <code>hellowin_transition_jobs_pushed_total{kind="pumpkin"}</code> растёт на 1.</li>
+                <li><code>LockstepPolicy::pumpkinTransition()</code> решает, пора ли тыкве дальше: <code>clicks</code> не меньше порога тыквы (лимит <code>pumpkin</code>) и стадия ниже <code>stageMax</code> текущей сцены. Если да, <code>TransitionQueue</code> ставит в очередь задачу <code>TransitionPumpkin</code>, а <code>hellowin_transition_jobs_pushed_total{kind="pumpkin"}</code> растёт на 1.</li>
                 <li>Ответ RPC — всегда данные: <code>{ok: true}</code> или <code>{ok: false, error: 'unknown element' | 'busy' | 'internal error'}</code>; <code>busy</code> — лок тыквы не удалось взять за 5 секунд.</li>
             </ol>
             <p class="callout">
@@ -513,7 +513,7 @@
                 <li>Сцены нумеруются от 0 до финальной N — это длина списка <code>HELLOWIN_SCENE_STAGE_MAX</code>.</li>
                 <li>У сцены s потолок стадий <code>stageMax(s)</code> — элемент номер s того же списка, накопительно; у финала — тот же, что у сцены перед ним.</li>
                 <li>Если список начинается с 0, сцена 0 — <strong>бар</strong>: тыкв там нет (клик по ним — <code>locked</code>, <code>RitualPolicy::bar()</code>), сцена готова, когда зал выпил цель бара или модератор дал отмашку, — и он выводит всех на грядку. Подробно — <a href="#bar">«Бар»</a>.</li>
-                <li>Тыква переходит в <code>stage + 1</code> после <code>HELLOWIN_CLICKS_PER_STAGE</code> кликов, пока <code>stage &lt; stageMax(scene)</code>; переход обнуляет <code>clicks</code>.</li>
+                <li>Тыква переходит в <code>stage + 1</code>, набрав порог кликов — лимит <code>pumpkin</code> (<a href="#limits">«Лимиты»</a>), — пока <code>stage &lt; stageMax(scene)</code>; переход обнуляет <code>clicks</code>.</li>
                 <li>Когда <strong>все</strong> тыквы дошли до <code>stageMax</code>, сцена <strong>готова</strong>, но сама не переключается: событие <code>ready</code>, сова говорит «всё готово», и сцена ждёт модератора. Следующую включает кнопка пульта «Следующая сцена» (RPC <code>scene.next</code>); если зал застрял, модератор может переключить и неготовую сцену (<code>force</code>). Подробно — <a href="#scene-transition">«Переход сцены»</a>.</li>
                 <li>В финальной сцене тыквы не переходят, клики только рассылаются. Модератор ведёт шаги финала, а после разоблачения начинается бесконечный «проклятый мир».</li>
             </ul>
@@ -557,7 +557,7 @@
 <text class="d-s" x="885" y="135" text-anchor="middle">клики только рассылаются</text>
 <text class="d-s" x="690" y="175" text-anchor="middle">тыквы идут к stageMax(s)</text>
 <text class="d-s" x="690" y="190" text-anchor="middle">и ждут остальных</text>
-<text class="d-s" x="275" y="282" text-anchor="middle">стадия +1 = HELLOWIN_CLICKS_PER_STAGE кликов</text>
+<text class="d-s" x="275" y="282" text-anchor="middle">стадия +1 = порог кликов (лимит pumpkin)</text>
 <text class="d-m" x="275" y="297" text-anchor="middle">→ TransitionPumpkin</text>
 <text class="d-s" x="485" y="282" text-anchor="middle">все на stageMax(0) → ready, ждём</text>
 <text class="d-m" x="485" y="297" text-anchor="middle">scene.next → TransitionScene</text>
@@ -568,7 +568,7 @@
                 </div>
                 <figcaption>Оранжевая ступенька — потолок стадий <code>stageMax(s)</code>; кружки — тыквы.</figcaption>
             </figure>
-            <p>Сейчас порог — {{ $clicksPerStage }} кликов на каждую стадию, так проходит тыква внутри сцены:</p>
+            <p>Игрок один на поле, множитель — 1: порог — {{ $clicksPerStage }} кликов на каждую стадию, так проходит тыква внутри сцены:</p>
             <ol class="stages" start="0">
                 <li class="stages__item"><b>0</b>старт раунда</li>
                 <li class="stages__item"><b>1</b>с {{ $clicksPerStage }} кликов</li>
@@ -576,6 +576,42 @@
                 <li class="stages__item"><b>…</b>по {{ $clicksPerStage }}</li>
                 <li class="stages__item"><b>stageMax</b>ждёт остальных</li>
             </ol>
+
+            <h3 id="limits">Лимиты: база, игроки, множитель</h3>
+            <p>
+                Порог тыквы — не одно число на все случаи: один игрок прокликает его за минуту, а сорок — за секунду.
+                Поэтому все числа ритуала — клики на стадию тыквы, костра и круга, цель бара, обе цели проклятого мира,
+                здоровье FrankenPHP — считаются одной формулой от числа игроков на поле:
+            </p>
+            <p><code>лимит = max(1, ⌈k × (BASE + PER_PLAYER × (n − 1))⌉) + надбавка</code></p>
+            <ul>
+                <li><strong>BASE</strong> и <strong>PER_PLAYER</strong> — env элемента <code>HELLOWIN_&lt;X&gt;_BASE</code> и
+                    <code>HELLOWIN_&lt;X&gt;_PER_PLAYER</code>, X — <code>PUMPKIN</code>, <code>BONFIRE</code>,
+                    <code>CIRCLE</code>, <code>BAR</code>, <code>CURSED_DRINKS</code>, <code>CURSED_ZOMBIES</code>,
+                    <code>BOSS_HP</code>: сколько нужно одному и сколько прибавляет каждый следующий. Число стадий формула
+                    не трогает — только клики на стадию.</li>
+                <li><strong>n</strong> — фигурки на поле, не меньше одной. <code>LimitsService</code> считает их тикером раз в
+                    секунду и принимает новое n, когда оно продержалось <code>LimitsService::DEBOUNCE</code>: зашёл и вышел —
+                    лимиты не дёргаются.</li>
+                <li><strong>k</strong> — множитель модератора (RPC <code>thresholds</code>), один на все лимиты: подогнать
+                    ритуал под зал на ходу.</li>
+                <li><strong>Надбавка</strong> — ручная, с пульта: цель бара, цели проклятого мира, здоровье босса. Живёт до
+                    конца раунда; у кликовых порогов её нет.</li>
+            </ul>
+            <p>
+                Изменился любой из входов — <code>LimitsService::settle</code> сравнивает лимиты текущей сцены с последними
+                сказанными и, если они разошлись, публикует событие <code>limits {players, k, burst, limits}</code>:
+                браузеры обновляют пороги, пульт показывает получившиеся числа. Лимит, упавший ниже накопленного,
+                прогресс не отнимает: сервер сам ставит переход стадии (тот же идемпотентный <code>TransitionPumpkin</code>,
+                что и после клика) или готовность бара и проклятого мира, не дожидаясь клика. У FrankenPHP сохраняется урон:
+                <code>hp = max(1, max − урон)</code>.
+            </p>
+            <p>
+                Тем же числом игроков растёт волна летунов, которую модератор запускает кнопкой «Пуск летунов» (RPC
+                <code>flyers.burst</code>): <code>min(HELLOWIN_FLYER_BURST_MAX, ⌈HELLOWIN_FLYER_BURST_BASE +
+                HELLOWIN_FLYER_BURST_PER_PLAYER × (n − 1)⌉)</code> летунов текущего набора разом, не чаще
+                <code>HELLOWIN_FLYER_BURST_COOLDOWN_MS</code>.
+            </p>
 
             <h3>Зачем лок на тыкву</h3>
             <p>
@@ -997,8 +1033,8 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                     весь зал. Пока тыквы сцены не готовы, клик по нему отвечает <code>locked</code> и никуда не идёт;
                     последняя тыква вместо готовности открывает костёр (отметка в сюжете под тем же локом
                     <code>scene</code>, реплика <code>bonfire-open</code>). Дальше все бьют в один лок
-                    <code>bonfire</code> — отсюда ответы <code>busy</code> — и после порога
-                    <code>HELLOWIN_BONFIRE_CLICKS_PER_STAGE</code> ставят горсть дублей одной задачи
+                    <code>bonfire</code> — отсюда ответы <code>busy</code> — и после порога костра
+                    (лимит <code>bonfire</code>) ставят горсть дублей одной задачи
                     <code>TransitionPumpkin</code> с ключом <code>{round}:bonfire:{toStage}</code>; выполняется одна,
                     это видно по <code>kind="bonfire"</code> в метриках. Сцену делает готовой переход костра на его
                     последнюю стадию сцены (<code>HELLOWIN_BONFIRE_STAGE_MAX</code>) — тот же
@@ -1253,9 +1289,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
             </p>
             <p>
                 <code>RPCService</code> читает роль из meta и на методы пульта (<code>scene.next</code>,
-                <code>finale.step</code>, <code>owl.say</code>, <code>flyer.special</code>, <code>pause</code>,
-                <code>zombies</code>, <code>thresholds</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
-                <code>thresholds {k}</code> умножает все пороги кликов на <code>k</code> — подогнать ритуал под зал на ходу;
+                <code>finale.step</code>, <code>owl.say</code>, <code>flyer.special</code>, <code>flyers.burst</code>, <code>pause</code>,
+                <code>thresholds</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
+                <code>thresholds {k}</code> умножает все лимиты на <code>k</code> (<a href="#limits">«Лимиты»</a>) — подогнать ритуал под зал на ходу;
                 <code>k</code> лежит в сюжете и, как пауза, переживает сброс.
                 Роль — не в <code>user</code>: модератор может быть и игроком со своим секретом, а <code>user</code> — это
                 публичный id игрока в событиях и presence. Каждый метод пульта безопасно повторить:
@@ -1442,7 +1478,7 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
             <p>
                 Летунов запускает тикер: случайно раз в <code>HELLOWIN_FLYER_INTERVAL</code> мс, вид — из набора
                 текущей сцены <code>HELLOWIN_FLYER_KINDS</code>, изредка редкий (<code>HELLOWIN_FLYER_RARE</code>), ещё
-                модератор может выпустить особого кнопкой. Траекторию сервер присылает готовой: событие
+                модератор может выпустить особого кнопкой или целую волну («Пуск летунов», <a href="#limits">«Лимиты»</a>). Траекторию сервер присылает готовой: событие
                 <code>flyer</code> с точками, глубиной, очками и временем <code>launchedAt</code> / <code>expiresAt</code>,
                 а в KV — ключ <code>hellowin:flyer:{id}</code> с TTL и индекс летящих. Зомби проклятого мира — те же
                 летуны (<code>kind: zombie</code>, свой интервал <code>HELLOWIN_ZOMBIE_INTERVAL</code>), только идут по

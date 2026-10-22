@@ -95,6 +95,20 @@ export function bossOf(boss) {
     return { hp, max: Math.max(hp, count(boss.max)) };
 }
 
+// The keys a `limits` event may carry (protocol.md, «Лимиты и баланс»); only the current context's come.
+const LIMIT_KEYS = ['pumpkin', 'bonfire', 'circle', 'bar', 'drinks', 'zombies', 'boss'];
+
+/** `limits` of a snapshot or an event — {players, k, burst, limits} — or null. */
+export function limitsOf(limits) {
+    if (!limits || typeof limits !== 'object' || !Number.isFinite(limits.k)) return null;
+    const of = limits.limits && typeof limits.limits === 'object' ? limits.limits : {};
+    const known = Object.fromEntries(LIMIT_KEYS.filter((key) => Number.isInteger(of[key]) && of[key] > 0).map((key) => [key, of[key]]));
+    return { players: count(limits.players, 1), k: limits.k, burst: limits.burst === true, limits: known };
+}
+
+/** How many times the owl has rolled this round (`dice.owl` of the snapshot, 0–3). */
+const owlRollsOf = (dice) => count(dice?.owl);
+
 /** The two meters of step 5: «Выпито 7 из 20» and «Зомби 3 из 20», each with how full it is, 0–1. */
 export function goalsOf(cursed) {
     const meter = (label, n, target) => ({ n, target, text: `${label} ${n} из ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
@@ -141,10 +155,11 @@ export function readSnapshot(root) {
         ready: flag(root.dataset.ready),
         finale: parseFinale(root.dataset.finale),
         paused: flag(root.dataset.paused),
-        zombies: flag(root.dataset.zombies),
+        limits: limitsOf(parseJson(root.dataset.limits, null)),
         cursed: cursedOf(parseJson(root.dataset.cursed, null)),
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
+        owlRolls: owlRollsOf(parseJson(root.dataset.dice, null)),
         dawn: dawnOf(parseJson(root.dataset.dawn, null)),
         // The wandering zombies alive (protocol.md, «Бродячие зомби»): `flyer` events with `wander`, steps 5–6 only.
         flyers: parseList(root.dataset.flyers),
@@ -181,8 +196,9 @@ export function readSnapshot(root) {
  */
 export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {} }) {
     // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
-    // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice seen in this round.
-    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false, owlRolls: 0 };
+    // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice this round, from the
+    // snapshot and the `roll` events.
+    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     const bonfireOf = () => model.elements.find((e) => e.type === 'bonfire') ?? null;
@@ -309,7 +325,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (model.finale) body.dataset.finaleStep = model.finale.step;
         else delete body.dataset.finaleStep;
         body.toggleAttribute('data-paused', model.paused);
-        body.toggleAttribute('data-zombies', model.zombies);
         reveal?.update(model.finale, uptime());
         paintStatus();
         paintHud();
@@ -483,6 +498,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         root.dataset.threshold = model.threshold;
         root.dataset.k = model.k;
         root.dataset.online = model.online;
+        root.dataset.limits = JSON.stringify(model.limits);
         paintElements();
         paintHud();
         paintBar();
@@ -512,7 +528,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             ready: Boolean(snapshot.ready),
             finale: snapshot.finale ?? null,
             paused: Boolean(snapshot.paused),
-            zombies: Boolean(snapshot.zombies),
+            limits: limitsOf(snapshot.limits) ?? model.limits,
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
@@ -520,6 +536,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             flyers: Array.isArray(snapshot.flyers) ? snapshot.flyers : [],
         });
         stageMaxByScene.set(model.scene, model.stageMax);
+        // The owl's rolls survive a reload in the snapshot (`dice.owl`): the console offers the right attempt.
+        model.owlRolls = Math.max(model.owlRolls, owlRollsOf(snapshot.dice));
         // A snapshot does not say whether my beer was clinked: a beer still in hand keeps what the client saw.
         if (!holdsBeer()) model.clinked = false;
         const known = new Map(model.elements.map((e) => [e.id, e]));
@@ -897,17 +915,18 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintStory();
         },
 
-        zombies(event) {
-            model.zombies = Boolean(event.on);
-            paintStory();
-        },
-
-        // The moderator's multiplier: every threshold at once, already multiplied by the server (the client does
-        // not know the base values). A pumpkin with enough clicks turns ready at once.
-        thresholds(event) {
-            model.k = Number(event.k);
+        // The limits of the current context, counted by the server (protocol.md, «Лимиты и баланс»: the multiplier, the
+        // figures on the floor, the moderator's additions); the client does not know the formula's numbers. The
+        // clicking ones go to the elements — a pumpkin with enough clicks turns ready at once; the bar's, the cursed
+        // world's and the boss's come with their own events too, here only for the console.
+        limits(event) {
+            const limits = limitsOf(event);
+            if (!limits) return;
+            model.limits = limits;
+            model.k = limits.k;
             root.dataset.k = model.k;
-            const { pumpkin, bonfire, circle } = event.thresholds ?? {};
+            root.dataset.limits = JSON.stringify(limits);
+            const { pumpkin, bonfire, circle } = limits.limits;
             if (pumpkin !== undefined) {
                 model.threshold = pumpkin;
                 root.dataset.threshold = pumpkin;
@@ -930,7 +949,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             // A reset leads into the bar: no pumpkin stages, ready again only once the hall has drunk its goal.
             model.scene = SCENE.bar;
             model.finale = null;
-            model.zombies = false;
             model.clinked = false;
             model.cursed = null;
             model.boss = null;

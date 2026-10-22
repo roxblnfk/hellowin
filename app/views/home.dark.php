@@ -23,7 +23,7 @@
           data-ready="{{ ($ready ?? false) ? 1 : 0 }}"
           data-finale="{{ json_encode($finale ?? null) }}"
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
-          data-zombies="{{ ($zombies ?? false) ? 1 : 0 }}"
+          data-limits="{{ json_encode($limits ?? null) }}"
           data-cursed="{{ json_encode($cursed ?? null) }}"
           data-boss="{{ json_encode($boss ?? null) }}"
           data-dice="{{ json_encode($dice ?? null) }}"

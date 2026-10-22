@@ -439,9 +439,6 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         move: walk,
         clink,
         walker,
-        zombies(model, event) {
-            if (event.on === true) play('zombie.groan');
-        },
     };
 
     return {

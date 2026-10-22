@@ -51,7 +51,7 @@
   Items in the final scene follow `finale_items`: the red flame at step 0, empty hands on steps 1–4, beer from step 5.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
-  step N (a fake `reveal` from step 4), ?paused=1 / ?zombies=1 start with the switch on, ?owl=<line id> or
+  step N (a fake `reveal` from step 4), ?paused=1 starts with the pause on, ?owl=<line id> or
   ?say=<text> has the owl speak at the start, ?specials=1 launches a witch, a road-runner and a zombie at the start
   (?zshot=ms shoots the zombie). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS (worms in the final scene, with
   a small wobble; the cursed world flies worms, bats and fireflies); ?worms=1 sends three worms over the lawn at the start
@@ -60,17 +60,17 @@
   start in any scene, seeded (?flyshot=ms has the first walker shoot the first one);
   zombies wander at finale steps 5–6 (protocol.md, «Бродячие зомби»): ?zmin=N at least (HELLOWIN_ZOMBIE_MIN, default
   5), all of them at once on entering step 5 and a new one at once after a death below it, then one every 4–9 s while
-  fewer than max(zmin, ?zper=N × walkers) live (HELLOWIN_ZOMBIE_PER_PLAYER, default 5); the pause stops that, the zombie
-  switch does nothing there; ?wander=N starts with N already wandering (zmin by default at steps 5–6), ?gone=ms sends
+  fewer than max(zmin, ?zper=N × walkers) live (HELLOWIN_ZOMBIE_PER_PLAYER, default 5); the pause stops that;
+  ?wander=N starts with N already wandering (zmin by default at steps 5–6), ?gone=ms sends
   them away at that moment (as the dawn and a reset do), ?wkill=ms shoots the first one; the scene is ready when every pumpkin is done, and
   waits for «Следующая сцена».
   Bonfire (scenes 2–3): locked until every pumpkin of the scene is done (a click on it then answers `locked` and sends
-  nothing), its own threshold ?bclicks=N (default 20, HELLOWIN_BONFIRE_CLICKS_PER_STAGE) and last stages per scene
+  nothing), its own limit `bonfire` (?bclicks=N — a flat N instead of the formula) and last stages per scene
   0,0,4,7 (HELLOWIN_BONFIRE_STAGE_MAX); owl lines last-pumpkin → bonfire-open, then ready → bonfire-done → scene-ready.
   ?bonfire=N starts the bonfire at stage N; ?next=ms presses «Следующая сцена» (forced) at that frozen-clock moment —
   without ?scene out of the bar, with ?scene=1 the sunset fade, with ?scene=3 the explosion.
   Magic circle (docs/spec/scenario.md «Магический круг»): on the bonfire's spot, clickable in the final scene at finale
-  step 0 (the bonfire before it, never both), own threshold ?cclicks=N (default 10) and CIRCLE_STAGES = 4 stages, the
+  step 0 (the bonfire before it, never both), own limit `circle` (?cclicks=N — flat) and CIRCLE_STAGES = 4 stages, the
   last stage in `scene.circleStageMax`; closed → ready, circle-done, scene-ready. ?circle=N starts it at stage N;
   ?nocircle=1 leaves it out.
   Finale (docs/spec/scenario.md «Финал»): step 1 only from the closed circle (`not ready` without it, «Шаг финала 1» on
@@ -79,16 +79,21 @@
   reveal's from step 4). ?finale=N starts settled at step N (bots stand around the circle and do not wander until
   step 2); ?play=ms with ?freeze presses «Шаг финала» (forced) at that frozen-clock moment, so ?finale=1&play=0&freeze=1600
   captures the lightning of step 2 mid-way; ?ritual=1 starts at step 0 with the circle closed.
-  Thresholds (docs/spec/scenario.md «Множитель порогов»): the console's «Пороги» multiply the base values (pumpkins 5,
-  the bonfire ?bclicks, the circle ?cclicks) by k, max(1, round(base × k)), k from 0.1 to 10 kept across a reset;
-  ?k=N starts with that multiplier. `online` is the number of walkers, in the snapshot and in a `leaderboard` event
-  every 5 s (with an empty `top`).
+  Limits (protocol.md, «Лимиты и баланс»): every limit is max(1, ceil(k × (BASE + PER_PLAYER × (n − 1)))) plus the
+  moderator's addition (the bar, the cursed world, the boss; gone with a reset), BASE and PER_PLAYER the defaults of
+  engine.md; n the walkers on the field (at least 1), followed once it has held 3 s, or ?players=N for good; k from the
+  console's «Лимиты» (`thresholds`), from 0.1 to 10, kept across a reset; ?k=N starts with it. The engine sends
+  `limits {players, k, burst, limits}` with the current context's limits whenever they change, and catches up: a
+  pumpkin with clicks enough for a lowered limit goes to its next stage, a bar goal at `drunk` makes the bar ready.
+  «Пуск летунов» (?mod=1, shown while the set has flyers — `burst`) is `flyers.burst`: min(15, ceil(5 + 0.2 × (n − 1)))
+  of the current set at once, `busy` within 3 s of the last wave. `online` is the number of walkers, in the snapshot
+  and in a `leaderboard` event every 5 s (with an empty `top`).
   Scenes are numbered with the bar first (docs/spec/scenario.md): 0 bar, 1 day, 2 sunset, 3 night, 4 the final scene.
   Bar (the default without ?scene): the ticker pours one mug at a time (?mugs=N at the start, default 5; ?pour=ms per
   mug, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
   (a latecomer gets `take ok:false` and `bar-empty`); `drink` needs a clink (`not clinked`), counts `drunk` against the
-  goal ?target=N (default 10; ?drunk=N already drunk) and sends `drinks`; the goal reached or «Отмашка» (`bar.ready`,
-  ?mod=1) makes the bar ready once (`ready`, `bar-intro`); «+5/−5 бокалов» is `bar.target`; clinks by click need beer on
+  goal (the limit `bar`, ?target=N — flat; ?drunk=N already drunk) and sends `drinks`; the goal reached or «Отмашка» (`bar.ready`,
+  ?mod=1) makes the bar ready once (`ready`, `bar-intro`); «+5/−5 бокалов» is `bar.target` (an addition); clinks by click need beer on
   both sides, `clink.auto` is reported by your browser and, for the bots, by the lab. Bots fetch beer, clink and drink.
   ?bar=1 stands beer-holding bots in pairs by the tables (?bar=1&walkers=8&epoch=18000&freeze=5100 — the strike, 6400 —
   toasts to PHP); ?bardemo=1 plays a scripted evening (two mugs, a slow pour, the farthest bot shrugs, two clink and
@@ -100,14 +105,14 @@
   ?anon=0..1 (default 0.25); a standing clicker shoots the element with what it holds. ?still=1 keeps the bots where
   they stand (no wandering, frozen bots do not set off), so ?auto=1&still=1&walkers=8 shows a crowd shooting.
   Rapier (docs/spec/frontend.md, «Рапира»; finale steps 5–7): ?finale=5 — the cursed world's goal: the engine counts
-  mugs drunk and zombies slain against targets of 3 per walker (?goal=N — both targets N; the console's ±5 adds to them),
+  mugs drunk and zombies slain against the limits `drinks` and `zombies` (?goal=N — both flat N; the console's ±5 adds),
   ?cursed=drunk,slain — starting counters; `beer {pumpkin}` hands out a mug at a reachable pumpkin, drinking needs a clink
   unless you are alone; both goals met — `ready` and `cursed-ready`, step 6 only from the console. Bots fetch beer from the
   pumpkins, clink and drink. ?zdeaths=1 — six zombies one after another, one per kind of death, the first walker shoots
   each (?zdeaths=1&freeze=1900 — the first death). ?finale=6 — the owl's rapier and the word form; the lab does not know
   the word: ?word=ok — every answer right, ?word=fail — every answer wrong, by default every second one wrong; bots say the
   word, the wrong ones shamble as zombies (the engine walks them every 2–4 s), other bots cure them. ?boss=hp,max — the
-  boss awake at once; ?strike=1 — bots with a rapier strike FrankenPHP every 600 ms; the last blow says `boss-down` and
+  boss awake at once (his addition makes up max); otherwise he wakes with the limit `boss`; ?strike=1 — bots with a rapier strike FrankenPHP every 600 ms; the last blow says `boss-down` and
   goes to step 7. ?zombified=1 (with ?me=1) — my walker a zombie. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
   chickens more often; «В бар» on the console (?mod=1) is a new round of the evening (`reset` with `again`, `bar-again`).
   RoadRunner behind the counter (`bar.roadrunner`): ?roadrunner=1 opens the bar as «В бар» from the dawn does, with him
@@ -121,7 +126,8 @@
   3rd 6-6-6. With ?me=1 and ?freeze my «Бросить» is pressed at the start: ?finale=1&dice=1&me=1&freeze=900 — the dice
   rolling, 1800 — landed. Meep (?mod=1): a click on a runner on the horizon, on RoadRunner of the finale (step 3+) or
   behind the counter is `meep`; ?meep=ms sends one at that frozen moment (?meepflyer=1 — over the first runner flyer).
-  ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice).
+  ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice);
+  ?owlrolls=N — the owl has rolled N times already (`dice.owl` of the snapshot, as after a reload).
   The dawn's top (docs/spec/frontend.md, «Топ рассвета»): every hit of a player at step 7 counts and sends the whole board
   (`dawn`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
   the field) fire at thicker flyers; ?dawnboard=15 — a board of 15 at once, me 12th (with ?me=1 — my row under the line);
@@ -268,12 +274,26 @@
     // The pumpkins reachable for a clink by click (the `reachable` defaults of app/config/hellowin.php).
     const REACHABLE = new Set([3, 5, 7, 9, 10, 11, 13, 15, 17]);
     const startStage = Math.max(0, Math.min(11, Number.parseInt(params.get('stage') ?? '0', 10) || 0));
-    // The bonfire of app/config/hellowin.php: on the root, its own threshold and last stage per scene.
-    const BONFIRE_CLICKS = Math.max(1, Number.parseInt(params.get('bclicks') ?? '20', 10) || 20);
+    // The bonfire of app/config/hellowin.php: on the root, its own limit and last stage per scene.
     const BONFIRE_STAGE_MAX = [0, 0, 4, 7, 7];
-    // The magic circle of the final scene (HELLOWIN_CIRCLE_CLICKS_PER_STAGE, HELLOWIN_CIRCLE_STAGES; no values yet).
-    const CIRCLE_CLICKS = Math.max(1, Number.parseInt(params.get('cclicks') ?? '10', 10) || 10);
+    // The magic circle of the final scene (HELLOWIN_CIRCLE_STAGES).
     const CIRCLE_STAGES = 4;
+    // The limits of protocol.md, «Лимиты и баланс»: [BASE, PER_PLAYER] — the defaults of engine.md
+    // (HELLOWIN_<X>_BASE / _PER_PLAYER). ?bclicks, ?cclicks, ?target and ?goal make one flat: N at k = 1 whoever plays.
+    const flat = (name) => (params.has(name) ? [Math.max(1, Number.parseInt(params.get(name), 10) || 1), 0] : null);
+    const LIMITS = {
+        pumpkin: [2, 5],
+        bonfire: flat('bclicks') ?? [8, 20],
+        circle: flat('cclicks') ?? [15, 40],
+        bar: flat('target') ?? [5, 1.5],
+        drinks: flat('goal') ?? [5, 4],
+        zombies: flat('goal') ?? [5, 4],
+        boss: [45, 60],
+    };
+    // HELLOWIN_FLYER_BURST_BASE, _PER_PLAYER, _MAX, _COOLDOWN_MS: the moderator's wave of flyers, without k.
+    const BURST = { base: 5, perPlayer: 0.2, max: 15, cooldownMs: 3000 };
+    // The figures on the floor have to hold this long before the limits follow them (the server's debounce).
+    const PLAYERS_HOLD_MS = 3000;
 
     ELEMENTS.forEach(([x, y, size], i) => {
         const b = document.createElement('button');
@@ -300,7 +320,7 @@
         b.dataset.type = 'bonfire';
         b.dataset.stage = '0';
         b.dataset.clicks = '0';
-        b.dataset.threshold = String(BONFIRE_CLICKS);
+        b.dataset.threshold = String(LIMITS.bonfire[0]);
         b.dataset.stageMax = '0';
         b.style.setProperty('--x', '50');
         b.style.setProperty('--y', '63');
@@ -317,7 +337,7 @@
         b.dataset.type = 'circle';
         b.dataset.stage = '0';
         b.dataset.clicks = '0';
-        b.dataset.threshold = String(CIRCLE_CLICKS);
+        b.dataset.threshold = String(LIMITS.circle[0]);
         b.dataset.stageMax = '0';
         b.style.setProperty('--x', '50');
         b.style.setProperty('--y', '63');
@@ -326,16 +346,8 @@
         b.innerHTML = '<span class="element__emoji" aria-hidden="true">⭕</span>';
         root.insertBefore(b, root.querySelector('.hud'));
     }
-    // The base thresholds of app/config/hellowin.php; the moderator's k multiplies all three.
-    const BASE_THRESHOLDS = { pumpkin: Number.parseInt(root.dataset.threshold, 10), bonfire: BONFIRE_CLICKS, circle: CIRCLE_CLICKS };
-    const thresholdsFor = (k) => Object.fromEntries(Object.entries(BASE_THRESHOLDS).map(([type, base]) => [type, Math.max(1, Math.round(base * k))]));
-    {
-        const k = Math.min(10, Math.max(0.1, Number.parseFloat(params.get('k') ?? '1') || 1));
-        const start = thresholdsFor(k);
-        root.dataset.k = String(k);
-        root.dataset.threshold = String(start.pumpkin);
-        root.querySelectorAll('.bonfire, .circle').forEach((b) => { b.dataset.threshold = String(start[b.dataset.type]); });
-    }
+    // The thresholds themselves come from the engine's limits at the start (startState).
+    root.dataset.k = String(Math.min(10, Math.max(0.1, Number.parseFloat(params.get('k') ?? '1') || 1)));
     if (params.has('hits')) root.classList.add('show-hits');
 
     // With ?freeze the lab runs on its own clock: headless screenshots get no animation frames, so time is stepped
@@ -547,12 +559,10 @@
     // The scripted demo pours slowly, so its latecomer finds the counter empty.
     const POUR_MS = Math.max(200, Number.parseInt(params.get('pour') ?? (barDemo ? '8000' : '2500'), 10) || 2500);
     const startMugs = Math.max(0, Math.min(BAR_MUGS, Number.parseInt(params.get('mugs') ?? (barDemo ? '2' : String(BAR_MUGS)), 10)));
-    // HELLOWIN_BAR_DRINKS: the hall's goal, ?target=N (default 10 in the lab); kept across a reset like k.
-    // HELLOWIN_BAR_RUMOR_CHANCE: about every third pour carries a rumour.
-    const BAR_TARGET = Math.max(1, Number.parseInt(params.get('target') ?? '10', 10) || 10);
+    // HELLOWIN_BAR_RUMOR_CHANCE: about every third pour carries a rumour. The hall's goal is the limit `bar` (startState).
     const RUMOR_CHANCE = 1 / 3;
     const startDrunk = Math.max(0, Number.parseInt(params.get('drunk') ?? '0', 10) || 0);
-    engine.bar = { mugs: barStart ? startMugs : 0, pouring: null, drunk: startDrunk, target: BAR_TARGET, roadrunner: rrStart };
+    engine.bar = { mugs: barStart ? startMugs : 0, pouring: null, drunk: startDrunk, target: 1, roadrunner: rrStart };
     // HELLOWIN_SCENE_STAGE_MAX=0,4,8,11 (the bar first); the final scene keeps the last value.
     const SCENE_STAGE_MAX = [0, 4, 8, 11, 11];
     // Stand-in for the `items` of app/config/hellowin.php (what the walkers hold in each scene); an id without art
@@ -565,13 +575,12 @@
     const CURSED_STEP = 5;
     const BOSS_STEP = 6;
     const LAST_STEP = 7;
-    // HELLOWIN_CURSED_PER_PLAYER (the lab's stand-in) and the moderator's additions, which live until a reset.
-    const CURSED_PER_PLAYER = 3;
-    const goalParam = params.has('goal') ? Math.max(1, Number.parseInt(params.get('goal'), 10) || 1) : null;
-    const cursedBonus = { drinks: 0, zombies: 0 };
-    // HELLOWIN_BOSS_HP_BASE and HELLOWIN_BOSS_HP_PER_PLAYER (stand-ins): his health at waking, times k.
-    const BOSS_HP_BASE = 20;
-    const BOSS_HP_PER_PLAYER = 5;
+    // The moderator's additions on top of the formula, which live until a reset (protocol.md, «Лимиты и баланс»).
+    const limitBonus = { bar: 0, drinks: 0, zombies: 0, boss: 0 };
+    // n of the formula: the figures on the floor once they have held (limitsTick), or ?players=N for good.
+    const playersParam = params.has('players') ? Math.max(1, Number.parseInt(params.get('players'), 10) || 1) : null;
+    const fieldCount = () => playersParam ?? Math.max(1, engine.walkers.length);
+    let limitPlayers = 1;
     const moderator = params.get('mod') === '1';
     // The evening's numbers for the reveal, counted like the engine's (protocol.md, «Снимок»).
     const stats = { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, rolls: 0, lastPumpkin: null };
@@ -583,7 +592,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)) });
+    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)), dice: engine.dice && { ...engine.dice, owl: diceState.owl } });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
@@ -628,6 +637,18 @@
         if (moving && p.stage < max && p.clicks < threshold) p.clicks++;
         else stats.burned++;
         deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage, ...(by ? { player: by } : {}) });
+        stageUp(p, by);
+        return { ok: true };
+    }
+
+    // The element's next stage once its clicks reach the threshold — after a click, or when the limit drops below them.
+    function stageUp(p, by = null) {
+        const id = p.id;
+        const isBonfire = p.type === 'bonfire';
+        const isCircle = p.type === 'circle';
+        const own = isBonfire || isCircle;
+        const threshold = own ? p.threshold : engine.threshold;
+        const max = own ? p.stageMax : engine.stageMax;
         if (p.clicks >= threshold && p.stage < max && !pending.has(id)) {
             pending.add(id);
             const player = by ?? someone();
@@ -653,7 +674,6 @@
                 }
             }, 150);
         }
-        return { ok: true };
     }
 
     function engineReset({ again = false } = {}) {
@@ -662,7 +682,6 @@
         engine.stageMax = SCENE_STAGE_MAX[0];
         engine.ready = false;
         engine.finale = null;
-        engine.zombies = false;
         Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, rolls: 0, lastPumpkin: null });
         engine.cursed = null;
         engine.dice = null;
@@ -670,18 +689,18 @@
         dawnScores.clear();
         engine.dawn = null;
         engine.boss = null;
-        Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
+        Object.assign(limitBonus, { bar: 0, drinks: 0, zombies: 0, boss: 0 });
         cursedReadySaid = false;
         engine.elements.forEach((e) => { e.stage = 0; e.clicks = 0; });
         engineBonfire().stageMax = BONFIRE_STAGE_MAX[0];
         if (engineCircle()) engineCircle().stageMax = 0;
         bonfireNeeded = false;
         // Back into the bar: everyone put down on its floor with empty hands, the counter full, nothing drunk yet; the
-        // goal is the room's and stays (protocol.md, `reset`).
+        // goal by the formula, without the moderator's addition.
         engine.ready = false;
         inBarZone = true;
         // RoadRunner comes with the dawn's «В бар» and leaves with the moderator's reset.
-        engine.bar = { mugs: BAR_MUGS, pouring: null, drunk: 0, target: engine.bar.target, roadrunner: again };
+        engine.bar = { mugs: BAR_MUGS, pouring: null, drunk: 0, target: limitOf('bar'), roadrunner: again };
         const now = serverTime();
         engine.walkers.forEach((w) => {
             w.item = null;
@@ -694,6 +713,7 @@
         wanderGone();
         deliver({ type: 'reset', item: null, walkers: structuredClone(engine.walkers.map(publicWalker)), bar: structuredClone(engine.bar), ...(again ? { again: true } : {}) });
         if (again) deliver({ type: 'owl', line: 'bar-again' });
+        settleLimits();
     }
 
     // A walker as the protocol shows it: the server's own flags (a pending take, the clinked mug) stay inside.
@@ -741,6 +761,7 @@
                 deliver({ type: 'finale', ...engine.finale, item: itemOfFinale(0) });
             }
             deliver({ type: 'owl', line: `scene-${to}` });
+            settleLimits();
         }, 150);
         return { ok: true, scene: to };
     }
@@ -783,6 +804,7 @@
             if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
             if (step === 1) diceBegin();
+            settleLimits();
         }
         return { ok: true, step: engine.finale.step };
     }
@@ -812,29 +834,111 @@
         return { ok: true };
     }
 
-    function engineSwitch(name, { on }) {
+    function enginePause({ on }) {
         if (typeof on !== 'boolean') throw new Error('invalid on');
-        if (engine[name] !== on) {
-            engine[name] = on;
-            deliver({ type: name === 'paused' ? 'pause' : 'zombies', on });
-            if (name === 'zombies' && on) deliver({ type: 'owl', line: 'zombies' });
-            if (name === 'paused' && !on) wanderTopUp();
+        if (engine.paused !== on) {
+            engine.paused = on;
+            deliver({ type: 'pause', on });
+            if (!on) wanderTopUp();
         }
         return { ok: true, on };
     }
 
-    // Like the server: the event only when k changes; a pending transition goes ahead whatever the new threshold.
+    // Like the server: `limits` only when k changes something.
     function engineThresholds({ k }) {
         if (typeof k !== 'number' || !(k >= 0.1 && k <= 10)) throw new Error('invalid k');
-        const thresholds = thresholdsFor(k);
-        if (engine.k !== k) {
-            engine.k = k;
-            engine.threshold = thresholds.pumpkin;
-            engineBonfire().threshold = thresholds.bonfire;
-            if (engineCircle()) engineCircle().threshold = thresholds.circle;
-            deliver({ type: 'thresholds', k, thresholds });
+        engine.k = k;
+        const { players, limits } = settleLimits();
+        return { ok: true, k, players, limits };
+    }
+
+    // The limits of protocol.md, «Лимиты и баланс»: the formula of [BASE, PER_PLAYER], k and n, then the addition.
+    const formula = (key) => {
+        const [base, perPlayer] = LIMITS[key];
+        // A hair under: k × (BASE + …) like 1.1 × 10 must not round up past 11.
+        return Math.max(1, Math.ceil((engine.k ?? 1) * (base + perPlayer * (limitPlayers - 1)) - 1e-9));
+    };
+    const limitOf = (key) => Math.max(1, formula(key) + (limitBonus[key] ?? 0));
+    // The current context: the bar's goal in the bar, the pumpkins in scenes 1–3 and the bonfire where it has stages, the
+    // circle at finale step 0, the cursed world's goals at step 5, FrankenPHP's health at step 6 until he falls.
+    function limitKeys() {
+        if (engine.scene === 0) return ['bar'];
+        if (engine.scene < engine.sceneStages) return engineBonfire().stageMax > 0 ? ['pumpkin', 'bonfire'] : ['pumpkin'];
+        const step = engine.finale?.step ?? 0;
+        if (step === 0) return ['circle'];
+        if (step === CURSED_STEP) return ['drinks', 'zombies'];
+        if (step === BOSS_STEP && engine.boss?.hp !== 0) return ['boss'];
+        return [];
+    }
+    const limitsState = () => ({ players: limitPlayers, k: engine.k ?? 1, burst: kindsNow().length > 0, limits: Object.fromEntries(limitKeys().map((key) => [key, limitOf(key)])) });
+
+    // Puts the limits into the engine — thresholds, the bar's goal, the cursed world's targets, the boss's health — with
+    // their own events and the catch-up of progress a lowered limit leaves behind; `limits` when the told ones changed.
+    // `silent` — the start of the lab: the snapshot carries it all.
+    let toldLimits = null;
+    function settleLimits({ silent = false } = {}) {
+        engine.threshold = limitOf('pumpkin');
+        engineBonfire().threshold = limitOf('bonfire');
+        if (engineCircle()) engineCircle().threshold = limitOf('circle');
+        const target = limitOf('bar');
+        if (target !== engine.bar.target) {
+            engine.bar.target = target;
+            if (!silent && engine.scene === 0) {
+                drinksEvent();
+                if (engine.bar.drunk >= engine.bar.target) barReady();
+            }
         }
-        return { ok: true, k, thresholds };
+        if (engine.cursed) {
+            const targets = cursedTargets();
+            if (targets.drinksTarget !== engine.cursed.drinksTarget || targets.zombiesTarget !== engine.cursed.zombiesTarget) {
+                if (silent) Object.assign(engine.cursed, targets);
+                else cursedUpdate();
+            }
+        }
+        const boss = engine.boss;
+        if (boss && boss.hp > 0) {
+            // The damage stays: hp = max(1, max − damage).
+            const max = limitOf('boss');
+            const hp = Math.max(1, max - (boss.max - boss.hp));
+            if (max !== boss.max || hp !== boss.hp) {
+                engine.boss = { hp, max };
+                if (!silent) deliver({ type: 'boss', ...engine.boss });
+            }
+        }
+        const state = limitsState();
+        engine.limits = state;
+        const told = JSON.stringify(state);
+        if (told !== toldLimits) {
+            toldLimits = told;
+            if (!silent) deliver({ type: 'limits', ...structuredClone(state) });
+        }
+        if (!silent && !engine.ready) engine.elements.forEach((p) => stageUp(p));
+        return state;
+    }
+
+    // n follows the figures on the floor once their number has held PLAYERS_HOLD_MS, checked every second.
+    let pendingPlayers = null;
+    function limitsTick() {
+        const n = fieldCount();
+        if (n === limitPlayers) pendingPlayers = null;
+        else if (pendingPlayers?.n !== n) pendingPlayers = { n, since: serverTime() };
+        else if (serverTime() - pendingPlayers.since >= PLAYERS_HOLD_MS) {
+            limitPlayers = n;
+            pendingPlayers = null;
+            settleLimits();
+        }
+        later(limitsTick, 1000);
+    }
+
+    // `flyers.burst`: a wave of the current set at once, without the rare one; the pause does not hold it.
+    let burstAt = -Infinity;
+    function engineBurst() {
+        if (!kindsNow().length) throw new Error('no flyers');
+        if (serverTime() - burstAt < BURST.cooldownMs) throw new Error('busy');
+        burstAt = serverTime();
+        const count = Math.min(BURST.max, Math.ceil(BURST.base + BURST.perPlayer * (fieldCount() - 1) - 1e-9));
+        for (let i = 0; i < count; i++) engineFlyer({ kind: pick(kindsNow()) });
+        return { ok: true, count };
     }
 
     // Console RPCs (protocol.md, «Модератор»): `forbidden` before anything else for a non-moderator.
@@ -847,8 +951,8 @@
             case 'flyer.special':
                 if (data.kind !== 'witch' && data.kind !== 'roadrunner') throw new Error('unknown kind');
                 return { ok: true, flyer: engineFlyer({ kind: data.kind }) };
-            case 'zombies': return engineSwitch('zombies', data);
-            case 'pause': return engineSwitch('paused', data);
+            case 'pause': return enginePause(data);
+            case 'flyers.burst': return engineBurst();
             case 'thresholds': return engineThresholds(data);
             case 'bar.target': return engineBarTarget(data);
             case 'bar.ready': return engineBarReady();
@@ -1008,11 +1112,15 @@
         return launchFlyer(nextId(), 'fly', 1, duration, FLY.points, { from, stops, to });
     }
 
+    // The set of flyers now: the dawn's, the cursed world's (finale step 5 on) or the scene's; the rare one aside.
+    function kindsNow() {
+        const step = engine.scene >= engine.sceneStages ? engine.finale?.step ?? -1 : -1;
+        return step >= LAST_STEP ? DAWN_KINDS : step >= CURSED_STEP ? CURSED_KINDS : KINDS[engine.scene] ?? KINDS[0];
+    }
+
     function engineFlyer({ kind = null, depth = Math.floor(Math.random() * 3), bush = depth === 2 && Math.random() < 0.4, ltr = Math.random() < 0.5 } = {}) {
         const rare = RARE[engine.scene];
-        const cursed = engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= 5;
-        const dawn = engine.scene >= engine.sceneStages && (engine.finale?.step ?? -1) >= LAST_STEP;
-        kind ??= rare && Math.random() < 0.125 ? rare : pick(dawn ? DAWN_KINDS : cursed ? CURSED_KINDS : KINDS[engine.scene] ?? KINDS[0]);
+        kind ??= rare && Math.random() < 0.125 ? rare : pick(kindsNow());
         if (!kind) return null;
         if (kind === 'roadrunner') return engineRoadrunner(ltr);
         if (kind === 'worm') return engineWorm();
@@ -1225,11 +1333,12 @@
         deliver({ type: 'owl', line: 'bar-intro' });
     }
     const drinksEvent = () => deliver({ type: 'drinks', drunk: engine.bar.drunk, target: engine.bar.target });
+    // The moderator's addition on top of the formula, until the round ends; the goal not below 1.
     function engineBarTarget({ delta }) {
         if (!Number.isInteger(delta)) throw new Error('invalid delta');
-        engine.bar.target = Math.max(1, engine.bar.target + delta);
-        drinksEvent();
-        if (engine.bar.drunk >= engine.bar.target) barReady();
+        if (engine.scene !== 0) throw new Error('not bar');
+        limitBonus.bar = Math.max(limitBonus.bar + delta, 1 - formula('bar'));
+        settleLimits();
         return { ok: true, target: engine.bar.target };
     }
     function engineBarReady() {
@@ -1320,13 +1429,10 @@
     // Drinking and automatic clinks: in the bar and in the cursed world while it still has beer (steps 5–6).
     const drinkWorld = () => engine.scene === 0 || (engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step));
 
-    // The cursed world's goal (protocol.md, «Рапира»): targets of CURSED_PER_PLAYER × walkers (or ?goal) plus the
-    // moderator's additions; both met — `ready` and `cursed-ready` once per round.
+    // The cursed world's goal (protocol.md, «Рапира»): the limits `drinks` and `zombies` with the moderator's
+    // additions; both met — `ready` and `cursed-ready` once per round.
     let cursedReadySaid = false;
-    const cursedTargets = () => {
-        const base = goalParam ?? CURSED_PER_PLAYER * Math.max(1, engine.walkers.length);
-        return { drinksTarget: Math.max(1, base + cursedBonus.drinks), zombiesTarget: Math.max(1, base + cursedBonus.zombies) };
-    };
+    const cursedTargets = () => ({ drinksTarget: limitOf('drinks'), zombiesTarget: limitOf('zombies') });
     function cursedUpdate() {
         if (!engine.cursed) return;
         Object.assign(engine.cursed, cursedTargets());
@@ -1342,20 +1448,17 @@
         if (engine.finale?.step !== CURSED_STEP || engine.scene < engine.sceneStages) throw new Error('not cursed');
         if (goal !== 'drinks' && goal !== 'zombies') throw new Error('invalid goal');
         if (!Number.isInteger(delta)) throw new Error('invalid delta');
-        const key = goal === 'drinks' ? 'drinksTarget' : 'zombiesTarget';
-        const before = engine.cursed[key];
         // Not below 1: the addition stops where the target would.
-        const base = cursedTargets()[key] - cursedBonus[goal];
-        cursedBonus[goal] = Math.max(cursedBonus[goal] + delta, 1 - base);
-        if (cursedTargets()[key] !== before) cursedUpdate();
-        return { ok: true, target: engine.cursed[key] };
+        limitBonus[goal] = Math.max(limitBonus[goal] + delta, 1 - formula(goal));
+        settleLimits();
+        return { ok: true, target: engine.cursed[goal === 'drinks' ? 'drinksTarget' : 'zombiesTarget'] };
     }
+    // The addition to his max; the damage stays (settleLimits).
     function engineBossHp({ delta }) {
-        if (!engine.boss || engine.boss.hp <= 0) throw new Error('not now');
         if (!Number.isInteger(delta)) throw new Error('invalid delta');
-        const hp = Math.max(1, engine.boss.hp + delta);
-        engine.boss = { hp, max: Math.max(hp, engine.boss.max + delta) };
-        deliver({ type: 'boss', ...engine.boss });
+        if (!engine.boss || engine.boss.hp <= 0) throw new Error('not now');
+        limitBonus.boss = Math.max(limitBonus.boss + delta, 1 - formula('boss'));
+        settleLimits();
         return { ok: true, ...engine.boss };
     }
 
@@ -1404,7 +1507,7 @@
         else w.zombie = true;
         deliver({ type: 'word', player: playerOf(w), ok: correct });
         if (correct && !engine.boss) {
-            const max = Math.max(1, Math.round((BOSS_HP_BASE + BOSS_HP_PER_PLAYER * Math.max(1, engine.walkers.length)) * (engine.k ?? 1)));
+            const max = limitOf('boss');
             engine.boss = { hp: max, max };
             deliver({ type: 'boss', ...engine.boss });
         }
@@ -1814,11 +1917,14 @@
         Object.assign(engineBonfire(), { stage: engine.scene > 0 ? BONFIRE_STAGE_MAX[engine.scene - 1] : 0, clicks: 0 });
         setBonfireMax();
         engine.walkers.forEach((w) => { w.item = ITEM_BY_SCENE[engine.scene]; });
+        settleLimits({ silent: true });
         client.load(engineSnapshot());
     }
 
-    // ?scene=N / ?ready=1 / ?finale=N / ?paused=1 / ?zombies=1: the state the lab starts from.
+    // ?scene=N / ?ready=1 / ?finale=N / ?paused=1: the state the lab starts from.
     function startState() {
+        limitPlayers = fieldCount();
+        engine.bar.target = limitOf('bar');
         const sceneParam = params.has('finale') ? engine.sceneStages : Number.parseInt(params.get('scene') ?? '', 10);
         if (Number.isInteger(sceneParam)) {
             engine.scene = Math.max(0, Math.min(engine.sceneStages, sceneParam));
@@ -1873,12 +1979,15 @@
             if (params.has('boss')) {
                 const [hp, max] = params.get('boss').split(',').map((n) => Math.max(0, Number.parseInt(n, 10) || 0));
                 engine.boss = { hp: Math.max(1, hp), max: Math.max(1, hp, max) };
+                // The moderator's addition makes up the max asked for.
+                limitBonus.boss = engine.boss.max - formula('boss');
             }
             if (step >= LAST_STEP) engine.boss = { hp: 0, max: engine.boss?.max ?? 90 };
             // ?dice=1 at step 1: the dice on, the step not ready; past it the dice are off.
             if (step === 1 && params.get('dice') === '1') {
                 engine.dice = { on: true };
                 engine.ready = false;
+                diceState.owl = Math.max(0, Math.min(2, Number.parseInt(params.get('owlrolls') ?? '0', 10) || 0));
                 wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + 300 + i * 450));
             } else if (step >= 2) {
                 engine.dice = { on: false };
@@ -1890,9 +1999,7 @@
         }
         dawnSeed();
         engine.paused = params.get('paused') === '1';
-        // The cursed world's zombies come on by themselves (steps 5–6) unless the query says otherwise.
-        const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
-        engine.zombies = params.has('zombies') ? params.get('zombies') === '1' : cursedNow;
+        settleLimits({ silent: true });
         seedWanderers();
     }
 
@@ -2075,6 +2182,7 @@
         setInterval(() => deliver({ type: 'leaderboard', top: [], online: engine.walkers.length }), 5000);
         launchLater();
         later(wanderTick, 4000 + Math.random() * 5000);
+        later(limitsTick, 1000);
         if (goneAt >= 0) later(wanderGone, goneAt);
         later(startEvents, 500);
         tickBar();
@@ -2117,6 +2225,7 @@
     if (params.get('auto') === '1' && !simulated) toggleAuto();
 
     const initial = engineSnapshot();
+    const initialBonus = { ...limitBonus };
     const resetAt = Number.parseInt(params.get('reset') ?? '-1', 10);
     const flyersOn = params.get('flyers') === '1';
     const shotAt = Math.round((Number.parseInt(params.get('shotAt') ?? '896', 10) || 896) / 16) * 16;
@@ -2140,13 +2249,16 @@
         sayBuckets.clear();
         chatMuted.clear();
         chatLog.splice(0, chatLog.length, ...structuredClone(chatSeed));
-        Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
+        Object.assign(limitBonus, initialBonus);
+        toldLimits = JSON.stringify(engine.limits);
+        burstAt = -Infinity;
         flyerSeq = 0;
         deliveredBy = 0;
         simTime = 0;
         walkTrace.length = 0;
         diceForget();
         client.forgetDice();
+        diceState.owl = initial.dice?.owl ?? 0;
         dawnRandom = seeded(1807);
         dawnSeed();
         forcedRoll = rollParam.length === 3 && rollParam.every((n) => n >= 1 && n <= 6) ? rollParam : null;
