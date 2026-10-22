@@ -9,8 +9,8 @@ use App\Domain\Lock\Locks;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * The shooters of the dawn in `hellowin:dawn` — `{round, players}` — changed under the lock `dawn`. The dawn comes once
- * a round, so a record of an earlier round reads as an empty board: neither the step nor a reset needs to clear it.
+ * The shooters of the dawn in `hellowin:dawn` — `{players}` — changed under the lock `dawn`. The board is the whole
+ * evening's: neither a reset nor a new cycle clears it.
  */
 final readonly class DawnStore
 {
@@ -22,12 +22,9 @@ final readonly class DawnStore
         private Locks $locks,
     ) {}
 
-    public function get(int $round): DawnBoard
+    public function get(): DawnBoard
     {
-        /** @var mixed $value */
-        $value = $this->storage->get(self::KEY);
-
-        return DawnBoard::fromArray(\is_array($value) && ($value['round'] ?? null) === $round ? $value : null);
+        return DawnBoard::fromArray($this->storage->get(self::KEY));
     }
 
     /**
@@ -35,11 +32,11 @@ final readonly class DawnStore
      * @return DawnBoard The board after the change.
      * @throws LockBusyException
      */
-    public function update(int $round, \Closure $change): DawnBoard
+    public function update(\Closure $change): DawnBoard
     {
-        return $this->locks->run([self::LOCK], function () use ($round, $change): DawnBoard {
-            $after = $change($this->get($round));
-            $this->storage->set(self::KEY, ['round' => $round] + $after->toArray());
+        return $this->locks->run([self::LOCK], function () use ($change): DawnBoard {
+            $after = $change($this->get());
+            $this->storage->set(self::KEY, $after->toArray());
 
             return $after;
         });

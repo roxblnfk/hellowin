@@ -122,7 +122,7 @@ final readonly class SnapshotFactory
             'cursed' => $this->cursed?->state($ritual->round, $ritual->story, \count($walkers)),
             'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,
             'dice' => $this->dice?->state($ritual->round, $ritual->story),
-            'dawn' => $this->dawn?->state($ritual->round, $ritual->story),
+            'dawn' => $this->dawn?->state($ritual->story),
             'flyers' => $this->flyers?->wanderers($ritual->story) ?? [],
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now

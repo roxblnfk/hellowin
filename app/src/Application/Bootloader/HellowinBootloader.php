@@ -168,7 +168,8 @@ final class HellowinBootloader extends Bootloader
                 DawnStore $store,
                 ChannelPublisher $publisher,
                 Clock $clock,
-            ): DawnService => new DawnService($store, $publisher, $clock, $config->getDawnBoard()),
+                LoggerInterface $logger,
+            ): DawnService => new DawnService($store, $publisher, $clock, $config->getDawnBoard(), $logger),
             DiceStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

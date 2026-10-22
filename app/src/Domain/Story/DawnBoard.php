@@ -7,8 +7,8 @@ namespace App\Domain\Story;
 use App\Domain\Player\PlayerId;
 
 /**
- * The shooters of the dawn (docs/spec/scenario.md, «Топ-10 рассвета»): hits on finale step 7 only, by player, with
- * when the current score was reached — of two equal scores the earlier one ranks higher.
+ * The shooters of the dawn (docs/spec/scenario.md, «Топ-10 рассвета»): flyers each player shot down over the whole
+ * evening, in any scene, with when the current score was reached — of two equal scores the earlier one ranks higher.
  *
  * @psalm-type Row = array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}
  */
@@ -44,14 +44,25 @@ final readonly class DawnBoard
     }
 
     /**
+     * The player's count as their record holds it. The count only grows: a repeated or late hit carrying a count
+     * the board already has changes only the name, and keeps the moment the score was reached.
+     *
      * @param non-empty-string $player
      * @param non-empty-string|null $name
+     * @param int<0, max> $shots Flyers the player has shot down in all.
      * @param int $at Unix time in milliseconds of the hit.
      */
-    public function hit(string $player, ?string $name, int $at): self
+    public function reached(string $player, ?string $name, int $shots, int $at): self
     {
+        $row = $this->players[$player] ?? null;
+        if ($shots < 1 && $row === null) {
+            return $this;
+        }
+
         $players = $this->players;
-        $players[$player] = ['shots' => ($players[$player]['shots'] ?? 0) + 1, 'at' => $at, 'name' => $name];
+        $players[$player] = $row === null || $shots > $row['shots']
+            ? ['shots' => \max(1, $shots), 'at' => $at, 'name' => $name]
+            : ['shots' => $row['shots'], 'at' => $row['at'], 'name' => $name];
 
         return new self($players);
     }

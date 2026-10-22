@@ -6,20 +6,24 @@ namespace Tests\Unit\Application\Story;
 
 use App\Application\Flyer\FlyerService;
 use App\Application\Story\DawnService;
+use App\Application\Story\StoryService;
 use App\Domain\Story\DawnBoard;
+use App\Domain\Story\DawnStore;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Tests\Fake\RitualHarness;
 
 /**
- * The top of the dawn (docs/spec/scenario.md, «Топ-10 рассвета»): hits on finale step 7 ranked live. The harness has
- * scene 1 as the final one and a board of three rows.
+ * The top of the dawn (docs/spec/scenario.md, «Топ-10 рассвета»): flyers shot down over the whole evening, shown live
+ * at dawn. The harness has scene 1 as the final one and a board of three rows.
  */
 #[Test]
 #[Covers(DawnService::class)]
 #[Covers(DawnBoard::class)]
+#[Covers(DawnStore::class)]
 #[Covers(FlyerService::class)]
+#[Covers(StoryService::class)]
 final class DawnBoardTest
 {
     private const ANN = '8a01b2c3d4e5f607';
@@ -77,19 +81,35 @@ final class DawnBoardTest
         Assert::count($board, 3);
         // An id of digits only stays a string id
         Assert::same($board[0]['player'], ['id' => self::DIGITS, 'name' => 'Jack']);
-        Assert::count($ritual->dawnStore->get(1)->players, 4);
+        Assert::count($ritual->dawnStore->get()->players, 4);
     }
 
-    public function onlyHitsAtDawnByPlayersCount(): void
+    public function hitsBeforeTheDawnCountQuietlyAndTheDawnOpensWithThem(): void
     {
         $ritual = new RitualHarness(stageMax: [1], circle: 1);
         $ritual->transitions->scene(1, 1);
         self::hit($ritual, self::JACK);
+        self::hit($ritual, self::JACK);
+        self::hit($ritual, self::ANN);
         Assert::null($ritual->snapshot->create()['dawn']);
+        Assert::blank($ritual->broadcast->ofType('dawn'));
+
         foreach (\range(1, 7) as $step) {
             $ritual->story->finaleStep($step, force: true);
         }
-        Assert::same($ritual->snapshot->create()['dawn'], ['board' => []]);
+
+        $board = [
+            ['player' => ['id' => self::JACK, 'name' => 'Jack'], 'shots' => 2],
+            ['player' => ['id' => self::ANN, 'name' => 'Jack'], 'shots' => 1],
+        ];
+        Assert::same($ritual->broadcast->ofType('dawn'), [['type' => 'dawn', 'round' => 1, 'board' => $board]]);
+        Assert::same($ritual->snapshot->create()['dawn'], ['board' => $board]);
+    }
+
+    public function anonymousHitsDoNotCount(): void
+    {
+        $ritual = self::dawn();
+        $ritual->broadcast->published = [];
 
         self::hit($ritual, null);
 
@@ -97,15 +117,46 @@ final class DawnBoardTest
         Assert::same($ritual->snapshot->create()['dawn'], ['board' => []]);
     }
 
-    public function resetAndANewCycleClearTheBoard(): void
+    public function resetAndANewCycleKeepTheBoard(): void
     {
         $ritual = self::dawn();
         self::hit($ritual, self::JACK);
 
         $ritual->story->nextScene(1, false);
+        self::hit($ritual, self::JACK);
 
         Assert::null($ritual->snapshot->create()['dawn']);
-        Assert::same($ritual->dawnStore->get(2)->board(10), []);
+        Assert::same($ritual->dawnStore->get()->board(10), [['player' => ['id' => self::JACK, 'name' => 'Jack'], 'shots' => 2]]);
+    }
+
+    public function boardTakesTheRecordsCountSoARepeatNeverCountsTwice(): void
+    {
+        $board = (new DawnBoard())
+            ->reached(self::JACK, 'Jack', 3, 10)
+            ->reached(self::ANN, 'Ann', 3, 15)
+            ->reached(self::JACK, 'Jacky', 3, 20)
+            ->reached(self::JACK, null, 2, 30)
+            ->reached(self::JILL, 'Jill', 0, 40);
+
+        Assert::same($board->players, [
+            self::JACK => ['shots' => 3, 'at' => 10, 'name' => null],
+            self::ANN => ['shots' => 3, 'at' => 15, 'name' => 'Ann'],
+        ]);
+        Assert::same($board->reached(self::ANN, 'Ann', 4, 50)->board(1), [['player' => ['id' => self::ANN, 'name' => 'Ann'], 'shots' => 4]]);
+    }
+
+    public function aRecordOfTheRoundBoardReadsAsTheEveningsOne(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->storage->set('hellowin:dawn', ['round' => 3, 'players' => [self::JACK => ['shots' => 2, 'at' => 5, 'name' => 'Jack']]]);
+
+        $board = $ritual->dawnStore->update(static fn(DawnBoard $board): DawnBoard => $board->reached(self::ANN, 'Ann', 1, 6));
+
+        Assert::same($board->board(10), [
+            ['player' => ['id' => self::JACK, 'name' => 'Jack'], 'shots' => 2],
+            ['player' => ['id' => self::ANN, 'name' => 'Ann'], 'shots' => 1],
+        ]);
+        Assert::same($ritual->storage->get('hellowin:dawn'), $board->toArray());
     }
 
     private static function dawn(): RitualHarness

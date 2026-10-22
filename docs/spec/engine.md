@@ -341,11 +341,15 @@
   `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не встают (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
-- **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): попадание игрока
-  (`FlyerService::shoot`, не анонимное) на шаге 7 — сразу после `shot` под RR-локом `dawn` `shots + 1` и `at` в
-  `hellowin:dawn` `{round, players: {id: {shots, at, name}}}`, затем событие `dawn {board}` — весь порядок (`shots` ↓,
-  `at` ↑, `id`), не больше `HELLOWIN_DAWN_BOARD` строк. Сбой счёта пишется в лог: попадание остаётся попаданием. Снимок —
-  `dawn {board}` на шаге 7, иначе `null`. Запись другого раунда — пустая: сброс и новый цикл ничего не чистят.
+- **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): каждое попадание игрока
+  (`FlyerService::shoot`, не анонимное, в любой сцене) — сразу после `shot` под RR-локом `dawn` пишет в `hellowin:dawn`
+  `{players: {id: {shots, at, name}}}` абсолютное `flyers` из записи игрока, которую вернул `PlayerService::shotFlyer`:
+  `shots = max(старое, новое)`, `at` меняется, только когда счёт вырос, `name` — из записи. Повтор и гонка поэтому не
+  считают дважды; запись игрока не обновилась — доска тоже. Доска — на весь вечер: сброс и новый цикл её не чистят
+  (статистику игроков не чистит ничто). Событие `dawn {board}` — весь порядок (`shots` ↓, `at` ↑, `id`), не больше
+  `HELLOWIN_DAWN_BOARD` строк — только на шаге 7: на каждое попадание и один раз на входе в шаг
+  (`StoryService::entered` → `DawnService::begin`, сразу после `finale`). Сбой доски пишется в лог: ни попадание, ни шаг
+  не падают. Снимок — `dawn {board}` на шаге 7, иначе `null`. Старая запись `{round, players}` читается как доска вечера.
 - **RoadRunner в баре** (бриф «RoadRunner в баре»): флаг `roadrunner` в сюжете `hellowin:story` — `RitualStore::reset(round,
   again)` под локами сброса ставит его новым циклом с рассвета и снимает сбросом модератора; переходы сцен его не
   трогают. Он приходит как `bar.roadrunner` в снимке и `reset.bar`; место — `walk.bar.roadrunner` (`BarLayout`, в разметке).
@@ -569,7 +573,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
-| Топ рассвета: `hellowin:dawn` `{round, players}` | Valkey | тот же storage `hellowin` |
+| Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
 | Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |

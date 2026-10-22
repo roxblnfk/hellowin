@@ -187,7 +187,7 @@ final readonly class FlyerService
         $round = $this->ritual->round();
         $shooter = $this->players->shotFlyer($player, $flyer->points);
         $this->publisher->shot($round, $flyer, $shooter);
-        $player === null or $this->dawnHit($round, $this->ritual->story(), $shooter ?? new Player($player));
+        $shooter === null or $this->dawnHit($round, $this->ritual->story(), $shooter);
         $this->metrics->flyerShot($flyer);
         $this->count($round);
         $flyer->kind === Flyer::KIND_ZOMBIE and $this->slain($round);
