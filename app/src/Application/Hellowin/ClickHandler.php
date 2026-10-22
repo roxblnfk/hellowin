@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Player\PlayerService;
+use App\Application\Walk\ActionStop;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Ritual\ClickOutcome;
 use App\Domain\Ritual\RitualBusyException;
@@ -24,6 +25,7 @@ final readonly class ClickHandler
         private ChannelPublisher $publisher,
         private PlayerService $players,
         private Randomizer $randomizer = new Randomizer(),
+        private ?ActionStop $stops = null,
     ) {}
 
     /**
@@ -54,6 +56,7 @@ final readonly class ClickHandler
         }
         $outcome = $this->store->click($element->id, $accepts, $acceptsIn)
             ?? throw new ElementLockedException(\sprintf('The %s "%s" takes no clicks now.', $type, $element->id));
+        $this->stops?->stop($player, ActionStop::CLICK);
         $this->metrics->click($element);
         $stats = $this->players->clicked($player);
 

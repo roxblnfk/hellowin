@@ -8,6 +8,7 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
+use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
 use App\Domain\Bar\Bar;
@@ -168,7 +169,8 @@ final readonly class BarService
     /**
      * Drinks the clinked mug in hand: the hands are empty again, the player and the room count one more mug, and the
      * bar is ready once the room has drunk its goal. A player alone on the floor has no one to clink with and drinks
-     * the mug as it is. The cursed world drinks the same way and counts the mug towards its own goal.
+     * the mug as it is. The cursed world drinks the same way and counts the mug towards its own goal. A walking
+     * character stops where it is to drink.
      *
      * @param non-empty-string $id
      * @throws NoCharacterException
@@ -182,7 +184,7 @@ final readonly class BarService
     public function drink(string $id): void
     {
         $now = $this->clock->now();
-        $inBar = $this->walkers->update(
+        [$inBar, $stopped] = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($id, $now): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
@@ -193,13 +195,16 @@ final readonly class BarService
                 $walker->busyAt($now) and throw new BarRefusedException('busy');
                 $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
                 $walker->mugClinking($now) and throw new BarRefusedException('busy');
-                $walkers[$id] = $walker->drank($now + $this->drinkMs);
+                // Not through ActionStop: the walk is cut in the same write as the sip, under the lock held here
+                $stopped = $walker->stoppedAt($now);
+                $walkers[$id] = ($stopped ?? $walker)->drank($now + $this->drinkMs);
 
-                return [$walkers, $inBar];
+                return [$walkers, [$inBar, $stopped]];
             },
         );
 
         $round = $this->ritual->round();
+        $stopped === null or $this->publisher->move($round, $stopped, ActionStop::DRINK);
         $this->players->drank($id);
         if (!$inBar) {
             $this->publisher->drink($round, $id);

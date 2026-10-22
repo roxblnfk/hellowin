@@ -180,9 +180,12 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * A walk to a clink carries its target, so every client knows the character is going to clink.
+     * A walk to a clink carries its target, so every client knows the character is going to clink; a stop names the
+     * action that stopped it, so every client holds the pose of that action.
+     *
+     * @param non-empty-string|null $stop The action that stopped the character ({@see \App\Application\Walk\ActionStop}).
      */
-    public function move(int $round, Walker $walker): void
+    public function move(int $round, Walker $walker, ?string $stop = null): void
     {
         $message = [
             'type' => 'move',
@@ -191,6 +194,7 @@ final readonly class ChannelPublisher
             'walk' => $walker->walk->toArray(),
         ];
         $walker->clink === null or $message['clink'] = $walker->clink->toTarget();
+        $stop === null or $message['stop'] = $stop;
 
         $this->publish($message);
     }

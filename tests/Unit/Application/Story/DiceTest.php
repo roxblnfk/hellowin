@@ -84,6 +84,25 @@ final class DiceTest
         Assert::same($ritual->diceStore->get(1)->rolls, 1);
     }
 
+    public function newThrowStopsAWalkingCharacterFirstAndARefusedOneDoesNot(): void
+    {
+        $ritual = self::dice();
+        $ritual->walks->move(self::JACK, 80, 90);
+        $ritual->clock->now += 500;
+        $ritual->broadcast->published = [];
+
+        $ritual->dice->roll(self::JACK, 1);
+        $ritual->walks->move(self::JACK, 80, 90);
+        $ritual->clock->now += 500;
+        Assert::same(self::refusal(static fn() => $ritual->dice->roll(self::JACK, 2)), 'busy');
+        $ritual->dice->roll(self::JACK, 1);
+
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['move', 'roll', 'move']);
+        Assert::same($ritual->broadcast->ofType('move')[0]['stop'], 'dice');
+        Assert::false(isset($ritual->broadcast->ofType('move')[1]['stop']));
+        Assert::true($ritual->walkerStore->all()[self::JACK]->walk->arrivesAt > $ritual->clock->now);
+    }
+
     public function attemptOutOfOrderIsRefusedWithTheLastOne(): void
     {
         $ritual = self::dice();
@@ -284,6 +303,10 @@ final class DiceTest
         $ritual->walks->move(self::JILL, 60, 90);
         $ritual->story->finaleStep(1, force: true);
         Assert::same($ritual->store->story()->finale, Story::DICE_STEP);
+        // Both arrive, or the first throw would stop a walking character
+        foreach ($ritual->walkerStore->all() as $walker) {
+            $ritual->clock->now = \max($ritual->clock->now, $walker->walk->arrivesAt);
+        }
 
         return $ritual;
     }

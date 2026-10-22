@@ -33,6 +33,23 @@ final class WalkTest
         Assert::equals($walk->positionAt(60_000), new Point(30, 40));
     }
 
+    public function stopStandsWhereTheWalkIsAtTheMoment(): void
+    {
+        $walk = Walk::along([new Point(0, 0), new Point(30, 0), new Point(30, 40)], 0, 10.0);
+
+        $stopped = $walk->stoppedAt(4_333);
+
+        Assert::same($stopped?->toArray(), ['path' => [['x' => 30.0, 'y' => 13.33]], 'startedAt' => 4_333, 'arrivesAt' => 4_333]);
+    }
+
+    public function walkOverByThenHasNothingToStop(): void
+    {
+        $walk = Walk::along([new Point(0, 0), new Point(30, 0)], 0, 10.0);
+
+        Assert::null($walk->stoppedAt(3_000));
+        Assert::null(Walk::standing(new Point(5, 5), 0)->stoppedAt(0));
+    }
+
     public function walkToTheSamePointIsStanding(): void
     {
         $walk = Walk::along([new Point(5, 5), new Point(5, 5)], 1_000, 10.0);

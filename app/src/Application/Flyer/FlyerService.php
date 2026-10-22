@@ -10,6 +10,7 @@ use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DawnService;
 use App\Application\Story\OwlLine;
+use App\Application\Walk\ActionStop;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
@@ -49,6 +50,7 @@ final readonly class FlyerService
         private ?DawnService $dawn = null,
         private ?ZombieCrowd $crowd = null,
         private ?WalkerStore $walkers = null,
+        private ?ActionStop $stops = null,
     ) {}
 
     /**
@@ -171,7 +173,7 @@ final readonly class FlyerService
     }
 
     /**
-     * The first shot at a flyer in the sky hits it; any other shot misses.
+     * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops.
      *
      * @param non-empty-string|null $player
      * @return int|null Points for a hit, null for a miss.
@@ -180,6 +182,7 @@ final readonly class FlyerService
     public function shoot(string $flyerId, ?string $player): ?int
     {
         $flyer = $this->store->shoot($flyerId, $this->clock->now());
+        $this->stops?->stop($player, ActionStop::SHOOT);
         if ($flyer === null) {
             return null;
         }

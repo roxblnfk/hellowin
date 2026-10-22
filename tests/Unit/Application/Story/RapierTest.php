@@ -370,6 +370,24 @@ final class RapierTest
         Assert::same($snapshot['boss'], ['hp' => 0, 'max' => 1]);
     }
 
+    public function strikeStopsAWalkingCharacterFirstAndARefusedOneDoesNot(): void
+    {
+        $ritual = self::rapier();
+        $ritual->rapier->word(self::JACK, 'rapira');
+        $ritual->walks->move(self::JACK, 80, 90);
+        $ritual->walks->move(self::JILL, 20, 90);
+        $ritual->clock->now += 500;
+        $ritual->broadcast->published = [];
+
+        $ritual->rapier->strike(self::JACK);
+        Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JILL)), 'no rapier');
+
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['move', 'strike']);
+        Assert::same($ritual->broadcast->ofType('move')[0]['player'], ['id' => self::JACK]);
+        Assert::same($ritual->broadcast->ofType('move')[0]['stop'], 'strike');
+        Assert::true($ritual->walkerStore->all()[self::JILL]->walk->arrivesAt > $ritual->clock->now);
+    }
+
     public function dawnWaitsForTheBossUnlessForced(): void
     {
         $ritual = self::rapier();
@@ -461,6 +479,10 @@ final class RapierTest
         self::place($ritual, self::JACK, 20, 90);
         $alone or self::place($ritual, self::JILL, 60, 90);
         self::step($ritual, 5);
+        // The scatter of the finale has everybody running: let them arrive, or the first action would stop them
+        foreach ($ritual->walkerStore->all() as $walker) {
+            $ritual->clock->now = \max($ritual->clock->now, $walker->walk->arrivesAt);
+        }
 
         return $ritual;
     }

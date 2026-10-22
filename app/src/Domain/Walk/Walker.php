@@ -119,6 +119,20 @@ final readonly class Walker
         return $this->with(walk: $walk, clink: null, takeAt: null);
     }
 
+    /**
+     * Stops the character where it is, as its player acts: a stop is a walk of its own, so it cancels the clink or
+     * the mug walked to. A zombie the server walks is never stopped.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return self|null Null when nothing stops: the character stands already, or is a zombie.
+     */
+    public function stoppedAt(int $now): ?self
+    {
+        $walk = $this->zombie() ? null : $this->walk->stoppedAt($now);
+
+        return $walk === null ? null : $this->walking($walk);
+    }
+
     public function clinking(Walk $walk, Clink $clink): self
     {
         return $this->with(walk: $walk, clink: $clink, takeAt: null);

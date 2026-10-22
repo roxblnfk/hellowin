@@ -6,6 +6,7 @@ namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Player\PlayerService;
+use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
 use App\Domain\Clock\Clock;
@@ -44,6 +45,7 @@ final readonly class DiceService
         private ChannelPublisher $publisher,
         private Clock $clock,
         private int $cooldown,
+        private ?ActionStop $stops = null,
     ) {}
 
     /**
@@ -89,7 +91,9 @@ final readonly class DiceService
         });
         [$attempt, $faces, $new, $won] = $thrown;
 
+        // A repeat answers a throw that has stopped the character already
         if ($new) {
+            $this->stops?->stop($id, ActionStop::DICE);
             $player = $this->players->rolled($id) ?? new Player($id, $walker->name);
             $this->publisher->roll($round, $player, $attempt, $faces, $now);
             $won and $this->win($round, ['player' => $player->ref(), 'attempt' => $attempt]);

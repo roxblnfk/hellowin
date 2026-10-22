@@ -22,6 +22,7 @@ use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Ticker\Ticker;
+use App\Application\Walk\ActionStop;
 use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
@@ -192,7 +193,8 @@ final class HellowinBootloader extends Bootloader
                 PlayerService $players,
                 ChannelPublisher $publisher,
                 Clock $clock,
-            ): DiceService => new DiceService($store, $roller, $ritual, $policy, $walkers, $players, $publisher, $clock, $config->getDiceCooldown()),
+                ActionStop $stops,
+            ): DiceService => new DiceService($store, $roller, $ritual, $policy, $walkers, $players, $publisher, $clock, $config->getDiceCooldown(), $stops),
             BossStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -215,6 +217,7 @@ final class HellowinBootloader extends Bootloader
                 ChannelPublisher $publisher,
                 TransitionQueue $queue,
                 Clock $clock,
+                ActionStop $stops,
             ): RapierService => new RapierService(
                 $walkers,
                 $ritual,
@@ -227,6 +230,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getWalkSpeed(),
                 $config->getBossHpBase(),
                 $config->getBossHpPerPlayer(),
+                stops: $stops,
             ),
             BarStore::class => static fn(
                 HellowinConfig $config,

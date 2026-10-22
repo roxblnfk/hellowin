@@ -110,6 +110,23 @@ final readonly class Walk
     }
 
     /**
+     * The walk cut short at the moment: standing where the character is then, the point rounded to hundredths like
+     * every point the server routes.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return self|null Null when the walk is over by then: there is nothing to cut.
+     */
+    public function stoppedAt(int $now): ?self
+    {
+        if ($now >= $this->arrivesAt) {
+            return null;
+        }
+        $at = $this->positionAt($now);
+
+        return self::standing(new Point(\round($at->x, 2), \round($at->y, 2)), $now);
+    }
+
+    /**
      * @return array{path: non-empty-list<array{x: float, y: float}>, startedAt: int, arrivesAt: int}
      */
     public function toArray(): array

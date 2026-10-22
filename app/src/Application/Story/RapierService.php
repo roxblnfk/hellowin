@@ -7,6 +7,7 @@ namespace App\Application\Story;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\PlayerService;
+use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
 use App\Domain\Clock\Clock;
@@ -60,6 +61,7 @@ final readonly class RapierService
         private int $hpBase,
         private int $hpPerPlayer,
         private Randomizer $random = new Randomizer(),
+        private ?ActionStop $stops = null,
     ) {}
 
     /**
@@ -169,6 +171,7 @@ final readonly class RapierService
         );
         $before !== null && !$before->down() && $after !== null or throw new StoryRefusedException('not now');
 
+        $this->stops?->stop($id, ActionStop::STRIKE);
         $player = $this->players->struck($id) ?? self::player($walker);
         $this->publisher->strike($round, $player, $after->hp);
         if ($after->down()) {
