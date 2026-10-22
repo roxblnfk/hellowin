@@ -1696,6 +1696,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                     <tr><td><code>hellowin_flyers_launched_total{depth}</code>, <code>hellowin_flyers_shot_total{depth}</code>, <code>hellowin_flyers_escaped_total{depth}</code></td><td>тикер, RPC <code>shoot</code></td><td>counter: запущенные, сбитые и улетевшие несбитыми летуны (и зомби)</td></tr>
                     <tr><td><code>hellowin_walkers</code></td><td>тикер, раз в секунду</td><td>gauge: фигурки на поле</td></tr>
                     <tr><td><code>hellowin_players</code>, <code>hellowin_players_registered</code></td><td>тикер, счёт игроков <code>PlayerCensus</code></td><td>gauge: известные игроки и игроки с именем</td></tr>
+                    <tr><td><code>hellowin_rpc_calls_total{method, result}</code></td><td>RPCService</td><td>counter: каждый RPC через вебсокет; <code>method</code> — имя метода или <code>unknown</code>, <code>result</code> — <code>ok</code> или код ошибки</td></tr>
+                    <tr><td><code>hellowin_rpc_duration_seconds{method}</code></td><td>RPCService</td><td>histogram: сколько PHP обрабатывал RPC</td></tr>
+                    <tr><td><code>hellowin_rpc_rate_limited_total{group}</code></td><td>RPCService</td><td>counter: вызовы, отклонённые лимитом (<code>rate limited</code>), по группе ведра</td></tr>
                     <tr><td><code>rr_http_request_total</code>, <code>rr_http_request_duration_seconds</code>, <code>rr_http_workers_*</code></td><td>RoadRunner http</td><td>HTTP-запросы, задержка, воркеры</td></tr>
                     <tr><td><code>centrifugo_node_num_clients</code>, <code>centrifugo_transport_messages_sent</code>, <code>centrifugo_proxy_duration_seconds_histogram</code></td><td>Centrifugo</td><td>подключения, отправленные сообщения, задержка proxy-вызовов в RoadRunner</td></tr>
                     </tbody>
