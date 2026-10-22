@@ -92,7 +92,7 @@
         <!-- The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»): at the side on a wide screen, a folded strip
              over the HUD on a phone. -->
         <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
-            <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки рассвета</h2>
+            <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>
             <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
             <ol class="dawn-top__list" id="dawn-top-list" data-dawn-list></ol>
             <p class="dawn-top__empty" data-dawn-empty>Сбивайте уток рапирой!</p>

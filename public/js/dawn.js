@@ -25,14 +25,15 @@ export function dawnOf(dawn) {
 export const nameOf = (name) => (typeof name === 'string' && name.trim()) || 'кто-то';
 
 /**
- * The table's rows: the first `top` of the board, mine marked; `mine` — my own row under the line when I am in the
- * board but below the top (null otherwise). The server's order is the ranking, so the place is the index + 1.
+ * The table's rows: the first `top` of the board, mine marked; when I am in the board but below the top, the first
+ * `top - 1` and `mine` — my own row in the last slot (null otherwise). The server's order is the ranking, so the place
+ * is the index + 1.
  */
 export function dawnRows(board, me, top = DAWN_TOP) {
     const index = me === null || me === undefined ? -1 : board.findIndex((row) => row.player.id === me);
     const rowOf = (row, i) => ({ id: row.player.id, name: nameOf(row.player.name), shots: row.shots, place: i + 1, me: i === index });
-    const rows = board.slice(0, top).map(rowOf);
-    return { rows, mine: index >= top ? rowOf(board[index], index) : null };
+    if (index < top) return { rows: board.slice(0, top).map(rowOf), mine: null };
+    return { rows: board.slice(0, top - 1).map(rowOf), mine: rowOf(board[index], index) };
 }
 
 /** The folded strip of a phone: «#3 · ты · 7 · топ», or a plain call when I am not in the board. */
