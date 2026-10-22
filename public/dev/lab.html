@@ -126,6 +126,11 @@
   (`dawn`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
   the field) fire at thicker flyers; ?dawnboard=15 — a board of 15 at once, me 12th (with ?me=1 — my row under the line);
   ?dawntop=8&freeze=ms — the overtakes of a seeded run at that moment; ?dawnopen=1 — a phone's table unfolded.
+  An action stops the walk (docs/spec/frontend.md, «Действие останавливает ход»): ?walkstop=shoot|click|strike|drink|dice
+  puts my character on the field and walks it left; at ?stopat=ms (default 1600) the `move` with `stop` comes — its
+  point the server's, ?stoplag=ms (default 250) of walking past the one drawn — then the action's own event. ?walkon=ms
+  sends a new move at that moment (inside the pause it cancels the pause). Under ?freeze lab.walkTrace holds my drawn
+  point per frame: ?walkstop=shoot&scene=1&freeze=2000 — the shot where it stopped, 3200 — walking on to the server's.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
@@ -512,7 +517,8 @@
                 : clinkStart || clickClinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
-    if (params.get('me') === '1') {
+    const walkStop = params.get('walkstop');
+    if (params.get('me') === '1' || walkStop) {
         const walk = barStart && BAR.door ? doorWalk(serverTime()) : standing(zoneClamp({ x: 50, y: 93 }), serverTime());
         startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk });
     }
@@ -1630,6 +1636,34 @@
         if (bot) engineClink(bot.id, { roadrunner: true }, params.has('toast') ? Number.parseInt(params.get('toast'), 10) || 0 : null);
     }
 
+    // ?walkstop=<stop>: my walk is cut where the server has it at ?stopat, and the action's event follows the move,
+    // in the server's order.
+    const walkTrace = [];
+    function walkStopSteps() {
+        if (!walkStop) return;
+        const stopAt = Math.max(16, Number.parseInt(params.get('stopat') ?? '1600', 10) || 1600);
+        const lag = Number.parseInt(params.get('stoplag') ?? '250', 10) || 0;
+        const flyer = walkStop === 'shoot' ? engineFlyer({ depth: 1, bush: false }) : null;
+        later(() => engineMove(ME, { x: 8, y: 92 }), 0);
+        later(() => {
+            const w = engine.walkers.find((x) => x.id === ME);
+            const now = serverTime();
+            w.walk = { path: [round1(walkPoint(w.walk, now + lag))], startedAt: now, arrivesAt: now };
+            delete w.clink;
+            deliver({ type: 'move', player: { id: ME }, walk: structuredClone(w.walk), stop: walkStop });
+            const player = playerOf(w);
+            if (walkStop === 'shoot') {
+                if (flyer && live.has(flyer)) engineShoot(flyer, w);
+                else deliver({ type: 'shot', flyer: 'lab-none', points: 0, player });
+            }
+            if (walkStop === 'click') engineClick(enginePumpkins()[0].id, player);
+            if (walkStop === 'strike') deliver({ type: 'strike', player, ...(engine.boss ? { hp: engine.boss.hp } : {}) });
+            if (walkStop === 'drink') deliver({ type: 'drink', player: { id: ME } });
+            if (walkStop === 'dice') deliver({ type: 'roll', player, attempt: 1, dice: [3, 5, 6], at: serverTime() });
+        }, stopAt);
+        if (params.has('walkon')) later(() => engineMove(ME, { x: 90, y: 92 }), Number.parseInt(params.get('walkon'), 10) || 0);
+    }
+
     // ?walkin=N: N bots come into the bar through its door one after another, 1.5 s apart.
     const walkIns = barStart && BAR.door ? Math.max(0, Math.min(8, Number.parseInt(params.get('walkin') ?? '0', 10) || 0)) : 0;
     function walkInSteps() {
@@ -1882,7 +1916,7 @@
     const still = params.get('still') === '1';
     if (!simulated && !clinkStart && !clickClinkStart && !barPairs && !barDemo && !rrClinkStart && !still) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
-    window.lab = { client, engine, scene };
+    window.lab = { client, engine, scene, walkTrace };
     if (startStage > 4) engineJump(startStage);
 
     // Random clicks go where a click counts: an open bonfire, else the pumpkins (like a room would).
@@ -1968,6 +2002,7 @@
         dawnBots();
         if (barDemo) barDemoSteps();
         walkInSteps();
+        walkStopSteps();
         if (rrClinkStart) later(rrClinkSteps, 300);
         // ?bar=1: the paired bots drink once their beer is clinked, then fetch the next one.
         if (barPairs) setInterval(() => wanderers().forEach((w) => engine.scene === 0 && (w.clinked ? engineDrink(w.id) : w.item !== 'beer' && !w.taking && engineTake(w.id))), 4000);
@@ -2020,6 +2055,7 @@
         flyerSeq = 0;
         deliveredBy = 0;
         simTime = 0;
+        walkTrace.length = 0;
         diceForget();
         client.forgetDice();
         dawnRandom = seeded(1807);
@@ -2079,6 +2115,7 @@
                 if (params.get('dice') === '1' && params.get('me') === '1') root.querySelector('[data-dice-roll]')?.click();
                 if (barDemo) barDemoSteps();
                 walkInSteps();
+                walkStopSteps();
                 if (rrClinkStart) rrClinkSteps();
             }
             if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !rrClinkStart && !still) {
@@ -2095,6 +2132,7 @@
             while (queue.length && queue[0].at <= simTime) queue.shift().fn();
             scene?.step(16);
             client.frame();
+            if (walkStop) walkTrace.push({ t: simTime, ...scene?.walkerAt(ME) });
         }
         // DOM animations (the dawn table's slides) run on the wall clock: the frozen frame shows where they end.
         document.getAnimations?.().forEach((a) => {

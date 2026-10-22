@@ -594,7 +594,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             // Heading to a clink by click; a move without the field cancels the one not reached yet.
             if (event.clink) w.clink = event.clink;
             else delete w.clink;
-            scene?.move(w.id, w.walk, w.clink ?? null);
+            // `stop`: an action stopped it; the action's own event follows.
+            scene?.move(w.id, w.walk, w.clink ?? null, event.stop ?? null);
         },
 
         // The walk to it is over; the moment itself is not state, and the scene does not play one that came too late.

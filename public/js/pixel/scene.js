@@ -2742,6 +2742,39 @@ export async function createScene(rootEl, snapshot) {
         w.track = trackFrom({ ...w.drawn }, path.length > 1 ? path.slice(best.i + 1) : path);
     }
 
+    /*
+     * An action stopped the walk (`move` with `stop`, docs/spec/frontend.md, «Действие останавливает ход»): the walker
+     * stands where it is drawn while the action plays — the shot's or the strike's pose, the gulp, the little dice —
+     * then walks on to the server's point like on a new path, unless that is within STOP_NEAR art px.
+     */
+    const STOP_NEAR = 1.5;
+    const stopMs = (stop, item) => ({
+        shoot: item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS,
+        click: item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS,
+        strike: ITEM_SHOT_MS,
+        drink: DRINK_MS,
+        dice: ROLL_SHOW_MS,
+    })[stop] ?? 0;
+
+    function halt(w, walk, stop) {
+        const at = walk?.path?.[0];
+        // Nothing drawn yet or drawn too far off (a long tab sleep): put down like any new walk.
+        if (!w.drawn || !at || Math.hypot(w.drawn.x - at.x, w.drawn.y - at.y) > SNAP_DISTANCE) {
+            retrack(w, walk);
+            return;
+        }
+        w.track = trackFrom({ ...w.drawn }, []);
+        w.halt = { walk, until: clock + stopMs(stop, w.item ?? null) };
+    }
+
+    function walkOn(w) {
+        const { walk } = w.halt;
+        w.halt = null;
+        const a = walkerArt(w.drawn);
+        const b = walkerArt(walk.path[0]);
+        if (Math.hypot(a.x - b.x, a.y - b.y) > STOP_NEAR) retrack(w, walk);
+    }
+
     function walkerLabel(w) {
         const label = new Text({
             text: w.name || '???',
@@ -2805,7 +2838,10 @@ export async function createScene(rootEl, snapshot) {
         // `clink` (heading to a clink by click) comes with the walker or not at all.
         // `zombie` likewise: a cured walker comes without it.
         const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, zombie: data.zombie === true, seed: seedOf(data.id) };
-        if (!old || data.walk !== old.walk) retrack(w, w.walk);
+        if (!old || data.walk !== old.walk) {
+            w.halt = null;
+            retrack(w, w.walk);
+        }
         if (!old) {
             walkers.set(w.id, w);
             addWalkerSprites(w);
@@ -2866,6 +2902,7 @@ export async function createScene(rootEl, snapshot) {
         const clinking = clinksNow(now);
         for (const w of walkers.values()) {
             if (!w.sprite) continue;
+            if (w.halt && clock >= w.halt.until) walkOn(w);
             const s = walkAt(w.track, clock);
             w.drawn = s.at;
             const at = walkerArt(s.at);
@@ -4173,14 +4210,20 @@ export async function createScene(rootEl, snapshot) {
             setWalker(w);
         },
 
-        /** Channel event `move`: the walker follows the new path on the server clock; `clink` — the target it heads to clink with. */
-        move(id, walk, clink = null) {
+        /**
+         * Channel event `move`: the walker follows the new path on the server clock; `clink` — the target it heads to
+         * clink with; `stop` — the action that stopped it (`shoot`, `click`, `strike`, `drink`, `dice`): it stands
+         * where drawn while that plays, then walks on to the path's point.
+         */
+        move(id, walk, clink = null, stop = null) {
             const w = walkers.get(id);
             if (!w) return;
             w.walk = walk;
             w.clink = clink;
             w.shoot = null;
-            retrack(w, walk);
+            w.halt = null;
+            if (typeof stop === 'string') halt(w, walk, stop);
+            else retrack(w, walk);
         },
 
         /**
