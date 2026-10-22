@@ -355,6 +355,20 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * A player said something in the chat.
+     *
+     * @param array{id: non-empty-string, name: non-empty-string|null} $player
+     * @param non-empty-string|null $text Null — a zombie spoke: the page picks a moan of its own.
+     */
+    public function say(int $round, array $player, ?string $text, int $at): void
+    {
+        $message = ['type' => 'say', 'round' => $round, 'player' => $player];
+        $message += $text === null ? ['zombie' => true] : ['text' => $text];
+
+        $this->publish($message + ['at' => $at]);
+    }
+
+    /**
      * The whole ranking of the dawn's shooters after a counted hit.
      *
      * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}> $board

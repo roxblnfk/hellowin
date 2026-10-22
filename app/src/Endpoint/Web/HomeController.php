@@ -27,6 +27,8 @@ final readonly class HomeController
             'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
             // The floor, tables and counter of the bar: config, not state, so the snapshot does not carry it
             'barLayout' => $this->config->getBarLayout()?->toArray(),
+            // The chat field's maxlength: the server refuses a longer message anyway
+            'chatMax' => $this->config->getChatMax(),
         ]);
     }
 

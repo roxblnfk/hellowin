@@ -904,6 +904,70 @@ final class RPCServiceTest
         }
     }
 
+    public function sayAnswersItsErrorsInOrder(): void
+    {
+        $ritual = new RitualHarness();
+        $long = \str_repeat('ы', RitualHarness::CHAT_MAX + 1);
+
+        Assert::same($this->call($ritual, 'say', ['text' => $long]), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'say', ['text' => $long], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'chat.mute', ['player' => self::PLAYER, 'on' => true], moderator: true);
+        Assert::same($this->call($ritual, 'say', ['text' => $long], self::PLAYER), ['ok' => false, 'error' => 'invalid text']);
+        Assert::same($this->call($ritual, 'say', ['text' => ['Boo']], self::PLAYER), ['ok' => false, 'error' => 'invalid text']);
+        Assert::same($this->call($ritual, 'say', ['text' => 'Boo'], self::PLAYER), ['ok' => false, 'error' => 'muted']);
+        Assert::blank($ritual->broadcast->ofType('say'));
+        Assert::blank($this->call($ritual, 'chat.history', [], moderator: true)['messages']);
+    }
+
+    public function playerSaysAndTheModeratorReadsAndMutes(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'say', ['text' => "Boo\n!"], self::PLAYER), ['ok' => true]);
+        Assert::same($this->call($ritual, 'chat.history', [], moderator: true), ['ok' => true, 'messages' => [
+            ['id' => 1, 'player' => ['id' => self::PLAYER, 'name' => 'Jack'], 'text' => 'Boo !', 'at' => $ritual->clock->now],
+        ], 'muted' => []]);
+        Assert::same(
+            $this->call($ritual, 'chat.mute', ['player' => self::PLAYER, 'on' => true], moderator: true),
+            ['ok' => true, 'muted' => [['id' => self::PLAYER, 'name' => 'Jack']]],
+        );
+        Assert::same(
+            $this->call($ritual, 'chat.mute', ['player' => 'bbbbbbbbbbbbbbbb', 'on' => true], moderator: true),
+            ['ok' => false, 'error' => 'no target'],
+        );
+        Assert::same(
+            $this->call($ritual, 'chat.mute', ['player' => self::PLAYER, 'on' => 'yes'], moderator: true),
+            ['ok' => false, 'error' => 'invalid on'],
+        );
+        Assert::count($ritual->broadcast->ofType('say'), 1);
+    }
+
+    #[DataSet(['chat.history'])]
+    #[DataSet(['chat.mute'])]
+    public function chatConsoleIsTheModeratorsOnly(string $method): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, $method, ['player' => self::PLAYER, 'on' => true], self::PLAYER), ['ok' => false, 'error' => 'forbidden']);
+        Assert::same($this->call($ritual, $method, ['player' => self::PLAYER, 'on' => true]), ['ok' => false, 'error' => 'forbidden']);
+        Assert::blank($ritual->chatStore->muted());
+    }
+
+    public function sayTakesATokenOfItsOwnBucket(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['say' => new TokenBucket(1.0, 1), 'other' => new TokenBucket(1.0, 5)]);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'say', ['text' => 'Boo'], self::PLAYER, limiter: $limiter), ['ok' => true]);
+        Assert::same($this->call($ritual, 'say', ['text' => 'Boo'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+        Assert::same($this->call($ritual, 'time', [], self::PLAYER, limiter: $limiter)['ok'], true);
+        Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['say']], $ritual->metrics->calls, true));
+    }
+
     public function unavailableLimiterLetsTheCallThrough(): void
     {
         $ritual = new RitualHarness();
@@ -957,6 +1021,7 @@ final class RPCServiceTest
             $ritual->rapier,
             $ritual->cursed,
             $ritual->dice,
+            $ritual->chat,
         );
         $service->handle(new RPC(
             worker: $this->worker,

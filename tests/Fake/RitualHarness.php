@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Fake;
 
 use App\Application\Bar\BarService;
+use App\Application\Chat\ChatService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
@@ -29,6 +30,7 @@ use App\Application\Walk\ActionStop;
 use App\Application\Walk\WalkService;
 use App\Domain\Bar\BarLayout;
 use App\Domain\Bar\BarStore;
+use App\Domain\Chat\ChatStore;
 use App\Domain\Clock\StartTime;
 use App\Domain\Element\Element;
 use App\Domain\Element\ElementRegistry;
@@ -69,6 +71,8 @@ final class RitualHarness
     public const BONFIRE = 'bonfire';
     public const CIRCLE = 'circle';
     public const DICE_SECRET = 'test-dice-secret';
+    public const CHAT_MAX = 12;
+    public const CHAT_HISTORY = 3;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -105,6 +109,8 @@ final class RitualHarness
     public readonly DiceService $dice;
     public readonly DawnStore $dawnStore;
     public readonly DawnService $dawn;
+    public readonly ChatStore $chatStore;
+    public readonly ChatService $chat;
 
     /**
      * @param positive-int $threshold
@@ -178,6 +184,8 @@ final class RitualHarness
         $this->dice = new DiceService($this->diceStore, DiceRoller::withSecret(self::DICE_SECRET), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->stops);
         $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
         $this->dawn = new DawnService($this->dawnStore, $publisher, $this->clock, 3);
+        $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
+        $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());

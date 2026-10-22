@@ -40,7 +40,8 @@ final class HellowinConfig extends InjectableConfig
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
         'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5, 'dawn_board' => 200, 'beer_handover_ms' => 900],
         'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
-        'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'other' => '10,30'],
+        'chat' => ['max' => 120, 'history' => 50],
+        'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
         'horizon' => 38,
@@ -337,6 +338,22 @@ final class HellowinConfig extends InjectableConfig
     public function getDawnBoard(): int
     {
         return self::positiveInt($this->rapier()['dawn_board'] ?? null, 'rapier.dawn_board', 'HELLOWIN_DAWN_BOARD');
+    }
+
+    /**
+     * @return positive-int Characters of a chat message at most.
+     */
+    public function getChatMax(): int
+    {
+        return self::positiveInt($this->chat()['max'] ?? null, 'chat.max', 'HELLOWIN_CHAT_MAX');
+    }
+
+    /**
+     * @return positive-int Chat messages the history keeps for the moderator.
+     */
+    public function getChatHistory(): int
+    {
+        return self::positiveInt($this->chat()['history'] ?? null, 'chat.history', 'HELLOWIN_CHAT_HISTORY');
     }
 
     /**
@@ -786,6 +803,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($rapier) or throw new \InvalidArgumentException('Config "hellowin.rapier" must be an array.');
 
         return $rapier;
+    }
+
+    private function chat(): array
+    {
+        $chat = $this->config['chat'] ?? [];
+        \is_array($chat) or throw new \InvalidArgumentException('Config "hellowin.chat" must be an array.');
+
+        return $chat;
     }
 
     private function dice(): array

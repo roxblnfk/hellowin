@@ -10,7 +10,7 @@
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
 — сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
-слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»).
+слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»).
 
 ## Классы
 
@@ -39,6 +39,7 @@
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 | Рапира: цель проклятого мира, слово, зомби-игроки, босс, топ рассвета | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
 | Кости 6-6-6: запись, грани, секрет | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
+| Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
 
 ## Периодический процесс (тикер)
 
@@ -404,6 +405,20 @@
   воркера.
 - **Снимок** — `dice`: с шага 1 `{on, winner?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
 
+## Чат
+
+Протокол — [`protocol.md`](protocol.md), «Чат».
+
+- **Сказать** (`ChatService::say`): фигурка игрока на поле (`hellowin:walkers`) — иначе `no character`; чистка — обрезка,
+  управляющие символы, переводы строк и пробелы любой длины → один пробел; 1…`HELLOWIN_CHAT_MAX` символов (`mb_strlen`)
+  — иначе `invalid text`; игрок в `hellowin:chat:muted` — `muted`. Принятое сообщение под RR-локом `chat` дописывается в
+  `hellowin:chat` и публикуется событием `say`; у зомби-игрока (`Walker::zombie()`) в историю идёт исходный текст с
+  `zombie: true`, а в событие — только `zombie: true`. Ход фигурки чат не останавливает.
+- **История** — `{seq, messages}`: `seq` — номер последнего сообщения за вечер (это `id` сообщения), `messages` — не
+  больше `HELLOWIN_CHAT_HISTORY` последних. Сброс и `again` ключи чата не трогают.
+- **Заглушить** (`chat.mute`): нужен только `hellowin:player:{id}` — фигурка не обязательна; список меняется под тем же
+  локом `chat`, имена в ответах — из записей игроков.
+
 ## Модератор
 
 - **Роль.** `ConnectService` сравнивает `moderatorSecret` из `data` подключения с `HELLOWIN_MODERATOR_SECRET`
@@ -555,7 +570,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 - **RPC** — в PHP, потому что HTTP-лимитер RoadRunner их не видит, а лимиты команд Centrifugo есть только в PRO.
   `RPCService` до любого метода, кроме вызовов модератора, берёт токен из ведра (token bucket): ведро держит до
   `burst` токенов и пополняется на `rate` в секунду. Ключ — игрок (`user` подключения), без игрока — id подключения;
-  группа — `click` (и `strike`: удар — тот же клик), `shoot`, `move` или `other` (все прочие методы). Пустое ведро — ответ `rate limited` и
+  группа — `click` (и `strike`: удар — тот же клик), `shoot`, `move`, `say` или `other` (все прочие методы). Пустое ведро — ответ `rate limited` и
   `hellowin_rpc_rate_limited_total{group}`. Вёдра лежат в KV `process` (память RoadRunner: лимиту не нужна
   долговечность, рестарт воркеров их не теряет) под ключом `hellowin:rate:{group}:{caller}` с TTL на время полного
   пополнения плюс секунда (KV округляет срок до секунд, а пропавшее раньше ведро выдало бы лишний `burst`). У KV нет
@@ -583,8 +598,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
 | Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
+| Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -664,6 +680,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_DICE_SECRET` | пусто | ключ HMAC костей; пусто — из `ENCRYPTER_KEY` с солью, без него — случайный в `hellowin:dice:secret` |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
 | `HELLOWIN_DAWN_BOARD` | 200 | строк топа рассвета в событии `dawn` и снимке, не больше |
+| `HELLOWIN_CHAT_MAX` | 120 | символов в сообщении чата после чистки, не больше (`invalid text`) |
+| `HELLOWIN_CHAT_HISTORY` | 50 | последних сообщений чата в `hellowin:chat` для `chat.history` |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
@@ -671,6 +689,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_RPC_RATE_CLICK` | `20,40` | лимит `click` на игрока: `<в секунду>,<burst>` token bucket; 0 — без лимита |
 | `HELLOWIN_RPC_RATE_SHOOT` | `20,40` | то же для `shoot` |
 | `HELLOWIN_RPC_RATE_MOVE` | `10,20` | то же для `move` |
+| `HELLOWIN_RPC_RATE_SAY` | `1,3` | то же для `say` (чат) |
 | `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`…) |
 | `CENTRIFUGO_WS_URL` | `:8000/connection/websocket` | URL WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL или путь — как есть |
 | `GRAFANA_URL` | `:3000/` | ссылка на дашборд со страниц, в тех же формах |

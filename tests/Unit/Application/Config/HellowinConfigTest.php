@@ -318,6 +318,22 @@ final class HellowinConfigTest
         Assert::same((new HellowinConfig(['rapier' => ['dawn_board' => '10']]))->getDawnBoard(), 10);
     }
 
+    public function chatLimitsComeFromTheConfig(): void
+    {
+        $config = new HellowinConfig();
+        Assert::same([$config->getChatMax(), $config->getChatHistory()], [120, 50]);
+
+        $config = new HellowinConfig(['chat' => ['max' => '80', 'history' => '20']]);
+        Assert::same([$config->getChatMax(), $config->getChatHistory()], [80, 20]);
+    }
+
+    public function rejectsAnEmptyChatHistory(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_CHAT_HISTORY');
+
+        (new HellowinConfig(['chat' => ['history' => '0']]))->getChatHistory();
+    }
+
     public function animationLengthsComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
@@ -472,6 +488,7 @@ final class HellowinConfigTest
             'click' => new TokenBucket(20.0, 40),
             'shoot' => new TokenBucket(20.0, 40),
             'move' => new TokenBucket(10.0, 20),
+            'say' => new TokenBucket(1.0, 3),
             'other' => new TokenBucket(10.0, 30),
         ]);
     }

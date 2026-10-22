@@ -70,12 +70,20 @@ return [
         'cooldown_ms' => env('HELLOWIN_DICE_COOLDOWN_MS', 1800),
     ],
 
+    // The players' chat (docs/spec/protocol.md, «Чат»): a message is `max` characters at most after the cleaning, and
+    // the moderator's history keeps the last `history` messages
+    'chat' => [
+        'max' => env('HELLOWIN_CHAT_MAX', 120),
+        'history' => env('HELLOWIN_CHAT_HISTORY', 50),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [
         'click' => env('HELLOWIN_RPC_RATE_CLICK', '20,40'),
         'shoot' => env('HELLOWIN_RPC_RATE_SHOOT', '20,40'),
         'move' => env('HELLOWIN_RPC_RATE_MOVE', '10,20'),
+        'say' => env('HELLOWIN_RPC_RATE_SAY', '1,3'),
         'other' => env('HELLOWIN_RPC_RATE_OTHER', '10,30'),
     ],
 

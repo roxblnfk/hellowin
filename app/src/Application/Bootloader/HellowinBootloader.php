@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Bootloader;
 
 use App\Application\Bar\BarService;
+use App\Application\Chat\ChatService;
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
 use App\Application\Config\PlayerConfig;
@@ -27,6 +28,7 @@ use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
 use App\Domain\Bar\BarStore;
+use App\Domain\Chat\ChatStore;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\StartTime;
 use App\Domain\Clock\SystemClock;
@@ -171,6 +173,29 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 LoggerInterface $logger,
             ): DawnService => new DawnService($store, $publisher, $clock, $config->getDawnBoard(), $logger),
+            ChatStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): ChatStore => new ChatStore($cache->storage($config->getStorage()), new Locks($lock)),
+            ChatService::class => static fn(
+                HellowinConfig $config,
+                ChatStore $store,
+                WalkerStore $walkers,
+                PlayerService $players,
+                RitualStore $ritual,
+                ChannelPublisher $publisher,
+                Clock $clock,
+            ): ChatService => new ChatService(
+                $store,
+                $walkers,
+                $players,
+                $ritual,
+                $publisher,
+                $clock,
+                $config->getChatMax(),
+                $config->getChatHistory(),
+            ),
             DiceStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

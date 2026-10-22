@@ -13,10 +13,12 @@ use RoadRunner\Lock\LockInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Testing\Attribute\Config;
 use Spiral\Testing\Attribute\Env;
+use Spiral\Views\ViewsInterface;
 use Testo\Assert;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Tests\Fake\FakeLock;
+use Tests\Fake\SpyViews;
 use Tests\TestCase;
 
 #[Test]
@@ -54,6 +56,18 @@ final class HomeControllerTest extends TestCase
         $this->fakeHttp()->get('/')
             ->assertOk()
             ->assertBodyContains(\sprintf('data-bar-layout="%s"', \htmlspecialchars(\json_encode($layout, \JSON_THROW_ON_ERROR), \ENT_QUOTES)));
+    }
+
+    #[Env('HELLOWIN_CHAT_MAX', '80')]
+    public function homePageCarriesTheChatLimit(): void
+    {
+        $views = new SpyViews($this->getContainer()->get(ViewsInterface::class));
+        $this->getContainer()->bindSingleton(ViewsInterface::class, $views);
+
+        $this->fakeHttp()->get('/')->assertOk();
+
+        Assert::same($views->rendered[0][0], 'home');
+        Assert::same($views->rendered[0][1]['chatMax'], 80);
     }
 
     public function homePageCarriesNoWanderingZombiesOutOfTheCursedWorld(): void
