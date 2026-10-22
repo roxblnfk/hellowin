@@ -3,6 +3,7 @@
 // events, nothing changes locally. ?debug=1 / ?debug=0 and the backquote key expand and collapse it (remembered).
 
 import { LINES } from './owl.js';
+import { createChatConsole } from './chat.js';
 import { isBar } from './layout.js';
 
 const STORAGE_KEY = 'hellowin:console';
@@ -74,7 +75,8 @@ const el = (tag, attrs = {}, text = '') => {
  * @param {(method: string, data: object) => Promise<object>} actions.call  console RPC; rejects with Error(code)
  * @param {() => void} actions.clickAll  RPC `click` on every pumpkin
  * @param {boolean} [actions.open]  start expanded or collapsed instead of the remembered state
- * @returns {null|{update: (model: object) => void}}  update repaints the console from the client model
+ * @returns {null|{update: (model: object) => void, say: (event: object) => void}}  update repaints the console from the client
+ *   model; say adds a `say` event to the chat log
  */
 export function initDebugPanel(panel, { call, clickAll, open }) {
     if (!panel) return null;
@@ -185,6 +187,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const limitsInfo = el('span', { class: 'console__info', 'data-console-thresholds': '' });
     const online = el('span', { class: 'console__info', 'data-console-online': '' });
     limits.append(limitsInfo, online);
+
+    // The players' chat (docs/spec/frontend.md, «Чат»): the log, re-read whenever the console opens, and the mutes.
+    const chatGroup = group('Чат');
+    const chat = createChatConsole(call);
+    chatGroup.append(chat.node);
 
     const tools = group('Отладка');
     button(tools, { 'data-action': 'click-all' }, 'Клик по всем').addEventListener('click', () => clickAll());
@@ -305,20 +312,30 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
         panel.classList.toggle('console--closed', !on);
     };
     setOpen(open ?? rememberedOpen());
+    // The log is read on every opening: a zombie's original text comes only with `chat.history`.
+    const reread = () => {
+        if (!panel.hidden && !body.hidden) chat.history();
+    };
     toggle.addEventListener('click', () => {
         setOpen(body.hidden);
         remember(!body.hidden);
+        reread();
     });
     document.addEventListener('keydown', (event) => {
         if (event.code !== 'Backquote' || panel.hidden || event.target.closest?.('input, textarea, select')) return;
         setOpen(body.hidden);
         remember(!body.hidden);
+        reread();
     });
 
     return {
+        say: (event) => chat.say(event),
+
         update(state) {
             model = state;
+            const wasHidden = panel.hidden;
             panel.hidden = !model.moderator;
+            if (wasHidden && !panel.hidden) reread();
             const final = model.scene >= model.sceneStages;
             const current = model.finale?.step ?? 0;
 

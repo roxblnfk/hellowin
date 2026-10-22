@@ -4,6 +4,7 @@
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
 import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf } from './dice.js';
 import { createDawnTable, dawnOf } from './dawn.js';
+import { chatShowMs, sayText } from './chat.js';
 import { CLINK } from './pixel/clink.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
@@ -173,8 +174,9 @@ export function readSnapshot(root) {
  * @param {(model: object) => void} [options.onChange]  after every applied event or snapshot (the console repaints)
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  * @param {((attempt: number) => Promise<object|undefined>)|null} [options.roll]  RPC `roll {attempt}`, resolving with the reply
+ * @param {(event: object) => void} [options.onSay]  after a `say` event (the moderator's chat log)
  */
-export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {} }) {
     // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
     // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice seen in this round.
     const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false, owlRolls: 0 };
@@ -455,6 +457,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (zone) zone.hidden = !(model.moderator && (step() ?? -1) >= RUNNER_STEP);
     }
 
+    // «Чат» in the HUD: for a player with a walker, a zombie too (its words come out as a zombie line); without one
+    // the field closes.
+    function paintChat() {
+        const on = myWalker() !== null;
+        const opener = root.querySelector('[data-chat-open]');
+        if (opener) opener.hidden = !on;
+        const field = root.querySelector('[data-chat]');
+        if (field && !on && !field.hidden) {
+            field.hidden = true;
+            if (field.contains(document.activeElement)) document.activeElement.blur();
+        }
+    }
+
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
@@ -472,6 +487,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintDice();
         paintMeep();
         paintDawn();
+        paintChat();
     }
 
     function load(snapshot) {
@@ -585,6 +601,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.walker(w);
             paintBar();
             paintRapier();
+            paintChat();
         },
 
         move(event) {
@@ -616,6 +633,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.leave(id);
             paintBar();
             paintRapier();
+            paintChat();
         },
 
         // Every viewer plays the same foam from `since` to `until` on the server clock.
@@ -860,6 +878,17 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             owl?.say(event, model.scene);
         },
 
+        // A player's line over its walker until `at` + chatShowMs on the server clock: a late event (a background tab,
+        // a reconnect) shows what is left of it, an expired one nothing.
+        say(event) {
+            const id = event.player?.id;
+            const text = sayText(event);
+            if (!id || !text) return;
+            const until = (event.at > 0 ? event.at : now() + offset) + chatShowMs(text);
+            if (until > now() + offset) scene?.say?.(id, text, until);
+            onSay(event);
+        },
+
         pause(event) {
             model.paused = Boolean(event.on);
             paintStory();
@@ -1014,10 +1043,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
             scene?.setMe(model.me);
             paintDawn();
+            paintChat();
             sound?.me(model.me, model);
         },
 
         canWalk,
+
+        /** Whether my walker is on the field, a zombie too: it may speak in the chat (RPC `say`). */
+        onField: () => myWalker() !== null,
 
         cursed,
 
@@ -1255,7 +1288,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // Controls laid over the scene: a press on them is never a shot or a step.
-const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice, [data-dawn-toggle]';
+const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice, [data-dawn-toggle], [data-chat]';
 
 /**
  * Shooting at flyers. The canvas lies under the pumpkin buttons, so the hit test runs on the root in the capture

@@ -28,7 +28,8 @@
           data-boss="{{ json_encode($boss ?? null) }}"
           data-dice="{{ json_encode($dice ?? null) }}"
           data-dawn="{{ json_encode($dawn ?? null) }}"
-          data-flyers="{{ json_encode($flyers ?? []) }}">
+          data-flyers="{{ json_encode($flyers ?? []) }}"
+          data-chat-max="{{ $chatMax ?? 120 }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="Звук включён" title="Звук"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="Музыка включена" title="Музыка"></button>
@@ -101,6 +102,13 @@
         <!-- The moderator's hit zone over RoadRunner of the finale: a click makes him meep. -->
         <button type="button" class="rr-meep" data-rr-meep hidden aria-label="RoadRunner: мип-мип" title="Мип-мип"></button>
         <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
+        <!-- The chat (docs/spec/frontend.md, «Чат»): over the HUD, opened by «Чат» or Enter; the line becomes a bubble. -->
+        <form class="chat" data-chat hidden>
+            <label class="chat__label" for="chat-input">Сказать всем</label>
+            <input class="chat__input" id="chat-input" data-chat-input name="text" maxlength="{{ $chatMax ?? 120 }}" autocomplete="off" spellcheck="false" enterkeyhint="send">
+            <button type="submit" class="chat__button" data-chat-submit>Сказать</button>
+            <p class="chat__note" data-chat-note role="alert"></p>
+        </form>
 
         <footer class="hud">
             <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
@@ -113,6 +121,7 @@
             <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
+            <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         </footer>
     </main>

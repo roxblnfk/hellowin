@@ -1,5 +1,6 @@
 import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
+import { bindChat } from './chat.js';
 import { createOwl } from './owl.js';
 import { refusal } from './toasts.js';
 import { createReveal } from './reveal.js';
@@ -142,6 +143,7 @@ async function main() {
         reveal,
         sound,
         onChange: (model) => moderatorConsole?.update(model),
+        onSay: (event) => moderatorConsole?.say(event),
         // The dice of finale step 1: the reply only carries the attempt; the dice are drawn from the `roll` event.
         roll: (attempt) => centrifuge.rpc('roll', { attempt }).then(({ data }) => data),
     });
@@ -234,6 +236,8 @@ async function main() {
     // The rapier (docs/spec/frontend.md, «Рапира»): the word form and the blow at FrankenPHP.
     bindWord(root, client, (text) => centrifuge.rpc('word', { text }).then(({ data }) => data));
     bindStriking(root, client, () => rpc('strike'));
+    // The chat (docs/spec/frontend.md, «Чат»): the field answers the refusals itself, the bubble comes as `say`.
+    bindChat(root, client, (text) => centrifuge.rpc('say', { text }).then(({ data }) => data));
 
     // The bar (protocol.md, «Бар») and the cursed world: a mug from the counter, a clink with RoadRunner behind it (its
     // refusals — `not bar`, `no target`, `no beer`… — only warned, like any clink's), a drink by Space or «Выпить».

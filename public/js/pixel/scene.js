@@ -1492,6 +1492,8 @@ export async function createScene(rootEl, snapshot) {
     let hall = null;
     // Lines only the scene knows: the local «Сначала чокнись…» hint over my own walker.
     const hints = new Map();
+    // The players' chat lines (docs/spec/frontend.md, «Чат»): walker id → { text, until } on the server clock.
+    const says = new Map();
     // The bartender's frames keep their beer hue in the hall's light (bar.js, bakeBar).
     const barBakes = new WeakMap();
     const barTexture = (def) => {
@@ -3032,6 +3034,8 @@ export async function createScene(rootEl, snapshot) {
     const PUMPKIN_REACH = 6;
     // The toast's bubble: over a walker's anchor by this much, over a pumpkin's top by this much (art px).
     const WALKER_HEAD = 34;
+    // A chat line stays up for seconds: its bubble rises over the name label (CSS px) instead of covering it.
+    const SAY_OVER_LABEL = 15;
     const PUMPKIN_HEAD = 2;
     // The walker's hit box around its anchor, art px: generous, so a moving finger still finds a standing figure.
     const WALKER_HIT = { half: 8, up: 30, down: 2 };
@@ -3225,7 +3229,7 @@ export async function createScene(rootEl, snapshot) {
     // The toast over the group from CLINK.toast; a toast of two voices puts the line over the first (by click: the walker
     // who came up) and the reply over the second (its target, the pumpkin too), one after the other.
     function toastBubbles(groups, now) {
-        if (!groups.length && !hints.size && !toastSpeech && !runnerShown() && !meepOf) return;
+        if (!groups.length && !hints.size && !says.size && !toastSpeech && !runnerShown() && !meepOf) return;
         toastSpeech ??= createBubbles({ labels: labelLayer, layout: () => layout });
         runnerSpeech(now);
         meepSpeech();
@@ -3237,6 +3241,17 @@ export async function createScene(rootEl, snapshot) {
             }
             const at = walkerArt(walkAt(w.track, clock).at);
             toastSpeech.say('hint:' + id, hint.text, { x: at.x, y: at.y - WALKER_HEAD });
+        }
+        // Over the drawn walker, so the bubble rides along with it and stops where it stops.
+        const server = serverNow();
+        for (const [id, line] of says) {
+            const w = walkers.get(id);
+            if (server >= line.until || !w?.drawn) {
+                if (server >= line.until || !w) says.delete(id);
+                continue;
+            }
+            const at = walkerArt(w.drawn);
+            toastSpeech.say('say:' + id, line.text, { x: at.x, y: at.y - WALKER_HEAD - SAY_OVER_LABEL / layout.cssPx });
         }
         for (const g of groups) {
             const t = now - g.at;
@@ -4268,6 +4283,15 @@ export async function createScene(rootEl, snapshot) {
         /** A local hint over walker `id` for a few seconds (`not clinked`: only this browser sees it). */
         hint(id, text) {
             if (walkers.has(id) && text) hints.set(id, { text, until: clock + HINT_MS });
+        },
+
+        /**
+         * A chat line over walker `id` until `until` (server clock): a new line of the same player replaces its bubble;
+         * no such walker, or the time is up — nothing. The text goes only into a PixiJS Text.
+         */
+        say(id, text, until) {
+            if (!walkers.has(id) || !text || !(until > serverNow())) return;
+            says.set(id, { text: String(text), until });
         },
 
         /** Channel event `leave`: the player has no connections left. */

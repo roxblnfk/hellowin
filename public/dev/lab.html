@@ -131,9 +131,14 @@
   point the server's, ?stoplag=ms (default 250) of walking past the one drawn — then the action's own event. ?walkon=ms
   sends a new move at that moment (inside the pause it cancels the pause). Under ?freeze lab.walkTrace holds my drawn
   point per frame: ?walkstop=shoot&scene=1&freeze=2000 — the shot where it stopped, 3200 — walking on to the server's.
+  Chat (docs/spec/frontend.md, «Чат»): with a character (?me=1) «Чат» or Enter opens the field, `say` is checked like the
+  server's (HELLOWIN_CHAT_MAX 120, 1 per second with a burst of 3). ?chat=N — N bots talk every 6 s (under ?freeze — once
+  at the start: ?chat=4&freeze=1500 shows their bubbles); ?chatzombie=1 — every second of them a zombie worker, whose
+  line comes from chat.js; ?mod=1 — the console's «Чат» with a short history and «заглушить» (a muted player's `say`
+  answers `muted`).
 -->
 <body data-scene="0">
-<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5"
+<main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5" data-chat-max="120"
       data-bushes='[{"id":"bush-1","x":4,"y":86},{"id":"bush-2","x":96,"y":88},{"id":"bush-3","x":2,"y":62},{"id":"bush-4","x":98,"y":66},{"id":"bush-5","x":16,"y":44},{"id":"bush-6","x":88,"y":43}]'>
     <a class="help-link" href="/how-it-works" title="Как это работает" aria-label="Как это работает">
         <span aria-hidden="true">🎃</span><span class="help-link__mark" aria-hidden="true">?</span>
@@ -168,6 +173,13 @@
     <!-- The moderator's hit zone over RoadRunner of the finale: a click makes him meep. -->
     <button type="button" class="rr-meep" data-rr-meep hidden aria-label="RoadRunner: мип-мип" title="Мип-мип"></button>
     <aside class="debug" data-debug-panel hidden aria-label="Пульт ведущего"></aside>
+    <!-- The chat (docs/spec/frontend.md, «Чат»). -->
+    <form class="chat" data-chat hidden>
+        <label class="chat__label" for="chat-input">Сказать всем</label>
+        <input class="chat__input" id="chat-input" data-chat-input name="text" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send">
+        <button type="submit" class="chat__button" data-chat-submit>Сказать</button>
+        <p class="chat__note" data-chat-note role="alert"></p>
+    </form>
     <aside class="debug lab-tools" data-lab-panel aria-label="Лаборатория">
         <button type="button" class="debug__button" data-lab-duck>утка</button>
         <button type="button" class="debug__button" data-lab-click>клик</button>
@@ -189,6 +201,7 @@
         <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
+        <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
     </footer>
@@ -224,6 +237,7 @@
     import { deathOf } from '/js/sound.js';
     import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
     import { initDebugPanel } from '/js/debug.js';
+    import { bindChat } from '/js/chat.js';
     import { initJoin, storedLook } from '/js/join.js';
     import { LINES, createOwl } from '/js/owl.js';
     import { createReveal } from '/js/reveal.js';
@@ -839,6 +853,8 @@
             case 'cursed.target': return engineCursedTarget(data);
             case 'boss.hp': return engineBossHp(data);
             case 'dice.owl': return engineDiceOwl();
+            case 'chat.history': return { ok: true, messages: structuredClone(chatLog), muted: [...chatMuted.values()] };
+            case 'chat.mute': return engineChatMute(data);
             case 'meep':
                 // A flyer that is no id is dropped, like the server's.
                 deliver({ type: 'meep', ...(typeof data?.flyer === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(data.flyer) ? { flyer: data.flyer } : {}), at: serverTime() });
@@ -1679,6 +1695,66 @@
     }
 
     // Name rules of players.md: trimmed, 1–24 letters, digits, single spaces, _ . -, at least one letter or digit.
+    // The chat (protocol.md, «Чат»): `say` cleaned like the server's (control characters and line breaks to a space,
+    // spaces collapsed), 1…HELLOWIN_CHAT_MAX characters, the bucket HELLOWIN_RPC_RATE_SAY (1 per second, burst 3); a
+    // zombie's event goes without its text, the history keeps it. ?chat=N — N bots talk, ?chatzombie=1 — every second of
+    // them a zombie worker; with ?mod=1 the history starts with a few lines and the console mutes.
+    const CHAT_MAX = Number.parseInt(root.dataset.chatMax, 10) || 120;
+    const CHAT_HISTORY = 50;
+    const SAY_RATE = { perSecond: 1, burst: 3 };
+    const chatLog = [];
+    const chatMuted = new Map();
+    const sayBuckets = new Map();
+    let chatSeq = 0;
+    // The history a replay of a frozen run starts from.
+    let chatSeed = [];
+    const CHAT_LINES = ['кто украл мою метлу?!', 'тыквы сами себя не вырежут', 'ух ты, ведьма!', 'а где пиво?', 'RoadRunner жив, я знаю',
+        'кто со мной чокнуться?', 'смотрите, летучая мышь', 'я тут впервые, что делать?', 'ещё по одной!', 'это всё через один воркер?!',
+        'не толкайтесь у стойки', 'ура, костёр!'];
+    function engineSay(id, { text } = {}) {
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        const t = serverTime();
+        const bucket = sayBuckets.get(id) ?? { tokens: SAY_RATE.burst, at: t };
+        bucket.tokens = Math.min(SAY_RATE.burst, bucket.tokens + ((t - bucket.at) / 1000) * SAY_RATE.perSecond);
+        bucket.at = t;
+        sayBuckets.set(id, bucket);
+        if (bucket.tokens < 1) return { ok: false, error: 'rate limited' };
+        bucket.tokens -= 1;
+        const said = typeof text === 'string' ? text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        if (said.length < 1 || [...said].length > CHAT_MAX) return { ok: false, error: 'invalid text' };
+        if (chatMuted.has(id)) return { ok: false, error: 'muted' };
+        const player = playerOf(w);
+        chatLog.push({ id: `m-${++chatSeq}`, player, text: said, ...(w.zombie ? { zombie: true } : {}), at: t });
+        chatLog.splice(0, Math.max(0, chatLog.length - CHAT_HISTORY));
+        deliver(w.zombie ? { type: 'say', player, zombie: true, at: t } : { type: 'say', player, text: said, at: t });
+        return { ok: true };
+    }
+    const chatBots = () => wanderers().slice(0, Math.max(0, Number.parseInt(params.get('chat') ?? '0', 10) || 0));
+    function chatSetup() {
+        if (params.get('chatzombie') === '1') chatBots().forEach((w, i) => i % 2 === 1 && (w.zombie = true));
+        if (!moderator) return;
+        const [a, b] = wanderers();
+        const t = serverTime();
+        if (a) chatLog.push({ id: `m-${++chatSeq}`, player: playerOf(a), text: 'всем привет из лаборатории!', at: t - 95000 });
+        if (b) chatLog.push({ id: `m-${++chatSeq}`, player: playerOf(b), text: 'где тут пиво наливают?', zombie: true, at: t - 61000 });
+        if (a) chatLog.push({ id: `m-${++chatSeq}`, player: playerOf(a), text: 'у стойки, справа', at: t - 30000 });
+        chatSeed = structuredClone(chatLog);
+    }
+    // Under ?freeze every chatting bot speaks at once, a little apart, so a frozen frame shows their bubbles.
+    function chatBotsTalk(random = Math.random) {
+        chatBots().forEach((w, i) => later(() => engineSay(w.id, { text: CHAT_LINES[Math.floor(random() * CHAT_LINES.length)] }), 120 + i * 140));
+    }
+    function engineChatMute({ player, on } = {}) {
+        const w = engine.walkers.find((x) => x.id === player);
+        const known = w ? playerOf(w) : chatLog.find((m) => m.player.id === player)?.player;
+        if (!known) throw new Error('no target');
+        if (typeof on !== 'boolean') throw new Error('invalid on');
+        if (on) chatMuted.set(known.id, known);
+        else chatMuted.delete(known.id);
+        return { ok: true, muted: [...chatMuted.values()] };
+    }
+
     async function engineRegister(rawName, look) {
         const name = rawName.trim();
         if (!/^(?=.*[\p{L}\p{N}])(?!.*  )[\p{L}\p{N} _.-]{1,24}$/u.test(name)) throw new Error('invalid name');
@@ -1899,11 +1975,13 @@
         reveal,
         sound,
         onChange: (model) => moderatorConsole?.update(model),
+        onSay: (event) => moderatorConsole?.say(event),
         roll: async (attempt) => engineRoll(ME, { attempt }),
     });
     client.start();
     client.setStatus('connected');
     startState();
+    chatSetup();
     client.load(engineSnapshot());
     client.setModerator(moderator && params.get('ui') !== '0');
     if (params.get('ui') === '0') root.querySelector('[data-lab-panel]').hidden = true;
@@ -1954,6 +2032,7 @@
     bindClinking(root, scene, client, labClink, (target) => warned(engineCure(ME, target), 'cure'));
     bindWord(root, client, async (text) => engineWord(ME, { text }));
     bindStriking(root, client, () => warned(engineStrike(ME), 'strike'));
+    bindChat(root, client, async (text) => engineSay(ME, { text }));
     // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
     const warned = (reply, method) => {
         if (!reply.ok) console.warn(`${method} rejected`, reply.error);
@@ -2004,6 +2083,10 @@
         walkInSteps();
         walkStopSteps();
         if (rrClinkStart) later(rrClinkSteps, 300);
+        if (chatBots().length) {
+            chatBotsTalk();
+            setInterval(() => chatBotsTalk(), 6000);
+        }
         // ?bar=1: the paired bots drink once their beer is clinked, then fetch the next one.
         if (barPairs) setInterval(() => wanderers().forEach((w) => engine.scene === 0 && (w.clinked ? engineDrink(w.id) : w.item !== 'beer' && !w.taking && engineTake(w.id))), 4000);
         if (clickClinkStart) {
@@ -2051,6 +2134,9 @@
         emptySaidAt = -Infinity;
         takeSeq = 0;
         wordSeq = 0;
+        sayBuckets.clear();
+        chatMuted.clear();
+        chatLog.splice(0, chatLog.length, ...structuredClone(chatSeed));
         Object.assign(cursedBonus, { drinks: 0, zombies: 0 });
         flyerSeq = 0;
         deliveredBy = 0;
@@ -2117,6 +2203,7 @@
                 walkInSteps();
                 walkStopSteps();
                 if (rrClinkStart) rrClinkSteps();
+                chatBotsTalk(seeded(2121));
             }
             if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !rrClinkStart && !still) {
                 const random = seeded(99);
