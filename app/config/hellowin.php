@@ -17,46 +17,48 @@ return [
     'centrifugo_url' => env('CENTRIFUGO_WS_URL', ':8000/connection/websocket'),
     'grafana_url' => env('GRAFANA_URL', ':3000/'),
 
-    // Clicks on a pumpkin that move it to its next stage
-    'clicks_per_stage' => env('HELLOWIN_CLICKS_PER_STAGE', 5),
+    // Every limit of the game (docs/spec/protocol.md, «Лимиты и баланс») is
+    // `max(1, ceil(k × (base + per_player × (n − 1)))) + the moderator's bonus`, n the figures on the floor (at least
+    // one), k the moderator's multiplier; fractions are fine. The crowd plays longer, a lone player still finishes fast.
+    // `pumpkin`, `bonfire`, `circle` — clicks per stage of the element; `bar` — mugs the bar drinks before it may leave;
+    // `drinks`, `zombies` — the goals of the cursed world; `boss` — FrankenPHP's health
+    'limits' => [
+        'pumpkin' => ['base' => env('HELLOWIN_PUMPKIN_BASE', 2), 'per_player' => env('HELLOWIN_PUMPKIN_PER_PLAYER', 5)],
+        'bonfire' => ['base' => env('HELLOWIN_BONFIRE_BASE', 8), 'per_player' => env('HELLOWIN_BONFIRE_PER_PLAYER', 20)],
+        'circle' => ['base' => env('HELLOWIN_CIRCLE_BASE', 15), 'per_player' => env('HELLOWIN_CIRCLE_PER_PLAYER', 40)],
+        'bar' => ['base' => env('HELLOWIN_BAR_BASE', 5), 'per_player' => env('HELLOWIN_BAR_PER_PLAYER', 1.5)],
+        'drinks' => ['base' => env('HELLOWIN_CURSED_DRINKS_BASE', 5), 'per_player' => env('HELLOWIN_CURSED_DRINKS_PER_PLAYER', 4)],
+        'zombies' => ['base' => env('HELLOWIN_CURSED_ZOMBIES_BASE', 5), 'per_player' => env('HELLOWIN_CURSED_ZOMBIES_PER_PLAYER', 4)],
+        'boss' => ['base' => env('HELLOWIN_BOSS_HP_BASE', 45), 'per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 60)],
+    ],
 
     // A connection passing this secret is the moderator and drives the story from the console; empty turns it off
     'moderator_secret' => env('HELLOWIN_MODERATOR_SECRET', ''),
 
     // Last pumpkin stage of each scene, cumulative; the scene after the last one is the final scene. A leading 0 makes
-    // scene 0 the bar: no pumpkins to click there, ready once the room has drunk HELLOWIN_BAR_DRINKS
+    // scene 0 the bar: no pumpkins to click there, ready once the room has drunk the limit `bar`
     'scene_stage_max' => env('HELLOWIN_SCENE_STAGE_MAX', '0,4,8,11'),
 
-    // The bonfire in the middle: clicks per stage (the whole room clicks it, so more than a pumpkin) and its last
-    // stage by scene, cumulative like the pumpkins'; 0 in a scene leaves it out there
-    'bonfire_clicks_per_stage' => env('HELLOWIN_BONFIRE_CLICKS_PER_STAGE', 20),
+    // The bonfire in the middle: its last stage by scene, cumulative like the pumpkins'; 0 in a scene leaves it out there
     'bonfire_stage_max' => env('HELLOWIN_BONFIRE_STAGE_MAX', '0,0,4,7'),
 
-    // The magic circle on the ashes of the final scene: clicks per stage and its last stage, where it is closed
-    'circle_clicks_per_stage' => env('HELLOWIN_CIRCLE_CLICKS_PER_STAGE', 20),
+    // The magic circle on the ashes of the final scene: its last stage, where it is closed
     'circle_stages' => env('HELLOWIN_CIRCLE_STAGES', 4),
 
     // The bar of scene 0: one full mug per player on the floor, up to the `mugs` the counter has room for; the owl
-    // pours one in `pour_ms` milliseconds and mutters a rumour over every pour with the chance `rumor_chance`; the room
-    // leaves for the patch once it has drunk `drinks` mugs in the round — the moderator moves this goal on the console.
+    // pours one in `pour_ms` milliseconds and mutters a rumour over every pour with the chance `rumor_chance`.
     // A sip plays `drink_ms` milliseconds, in the bar and in the cursed world: the server takes no mug and lets none be
     // drunk meanwhile, so a click never skips the animation
     'bar' => [
         'mugs' => env('HELLOWIN_BAR_MUGS', 12),
         'pour_ms' => env('HELLOWIN_BAR_POUR_MS', 2500),
-        'drinks' => env('HELLOWIN_BAR_DRINKS', 30),
         'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),
         'drink_ms' => env('HELLOWIN_DRINK_MS', 1200),
     ],
 
-    // The end of the night (docs/spec/scenario.md, «Рапира»): the cursed world wants `cursed_per_player` mugs drunk
-    // and as many zombies slain per player on the floor; FrankenPHP wakes with `boss_hp_base` health plus
-    // `boss_hp_per_player` per player, times the threshold multiplier; the dawn ranks its shooters, `dawn_board` rows at most.
+    // The end of the night (docs/spec/scenario.md, «Рапира»): the dawn ranks its shooters, `dawn_board` rows at most.
     // A pumpkin hands its beer over for `beer_handover_ms` milliseconds after the character arrives
     'rapier' => [
-        'cursed_per_player' => env('HELLOWIN_CURSED_PER_PLAYER', 5),
-        'boss_hp_base' => env('HELLOWIN_BOSS_HP_BASE', 40),
-        'boss_hp_per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 5),
         'dawn_board' => env('HELLOWIN_DAWN_BOARD', 200),
         'beer_handover_ms' => env('HELLOWIN_BEER_HANDOVER_MS', 900),
     ],

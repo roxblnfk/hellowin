@@ -102,7 +102,6 @@ final class TickerTest
         $ticker = self::ticker($ritual);
         $ticker->tick(0);
 
-        $ritual->story->zombies(true);
         $ticker->tick(3_000);
         Assert::blank(self::zombies($ritual));
 
@@ -112,8 +111,7 @@ final class TickerTest
         Assert::same(\array_keys(self::zombies($ritual)[0]), ['type', 'round', 'flyer', 'kind', 'depth', 'from', 'points', 'launchedAt', 'wander']);
         Assert::same(\array_column($ritual->snapshot->create()['flyers'], 'flyer'), \array_column(self::zombies($ritual), 'flyer'));
 
-        // The console's switch does not hold them, and the sweep never takes them
-        $ritual->story->zombies(false);
+        // The sweep never takes them
         $ritual->flyers->shoot(self::zombies($ritual)[0]['flyer'], null);
         $ticker->tick(600_000);
         Assert::count(self::zombies($ritual), 3);
@@ -240,7 +238,6 @@ final class TickerTest
 
         $worm = $ritual->broadcast->ofType('flyer')[0] ?? [];
         Assert::same([$worm['kind'] ?? null, $worm['depth'] ?? null], ['worm', 1]);
-        Assert::false($ritual->store->snapshot()->story->zombies);
         $ritual->clock->now = 3_000;
         Assert::same($ritual->flyers->shoot($worm['flyer'], 'aaaaaaaaaaaaaaaa'), 2);
     }
@@ -283,8 +280,6 @@ final class TickerTest
         $flyers = \array_values(\array_filter($ritual->broadcast->ofType('flyer'), static fn(array $flyer): bool => $flyer['kind'] !== 'zombie'));
         Assert::count($flyers, 2);
         Assert::same([$flyers[1]['kind'] ?? null, $flyers[1]['points'] ?? null], ['firefly', 1]);
-        // The cursed world lets its zombies out by itself; the pause holds them like the flyers
-        Assert::true($ritual->store->snapshot()->story->zombies);
     }
 
     public function escapedFlyerIsCountedOnceAfterItsFlight(): void

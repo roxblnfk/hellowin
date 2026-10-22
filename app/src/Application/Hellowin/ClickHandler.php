@@ -61,13 +61,13 @@ final readonly class ClickHandler
         $stats = $this->players->clicked($player);
 
         $emoji = $element->emojis[$this->randomizer->getInt(0, \count($element->emojis) - 1)];
-        $threshold = $this->policy->threshold($type, $outcome->k);
+        $threshold = $this->policy->threshold($type, $outcome->k, $outcome->players);
         $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $threshold, $stats);
 
-        // Clicks gathered before the moderator lowered the threshold count: the next click moves the element
+        // Clicks gathered before the threshold came down count: the next click moves the element
         $toStage = $element->centrepiece()
-            ? $this->policy->centrepieceTransition($element->type, $outcome->pumpkin, $outcome->scene, $outcome->k)
-            : $this->policy->pumpkinTransition($outcome->pumpkin, $outcome->scene, $outcome->k);
+            ? $this->policy->centrepieceTransition($element->type, $outcome->pumpkin, $outcome->scene, $outcome->k, $outcome->players)
+            : $this->policy->pumpkinTransition($outcome->pumpkin, $outcome->scene, $outcome->k, $outcome->players);
         $toStage === null or $this->transitions->pumpkin($outcome->round, $element->id, $toStage, $player, $type);
 
         return $outcome;

@@ -34,7 +34,7 @@ final readonly class Story
     /** The last finale step: the dawn, an endless mode until the room goes back to the bar. */
     public const LAST_STEP = self::DAWN_STEP;
 
-    /** Bounds of the threshold multiplier the moderator may set. */
+    /** Bounds of the multiplier the moderator may set. */
     public const K_MIN = 0.1;
 
     public const K_MAX = 10.0;
@@ -43,26 +43,26 @@ final readonly class Story
      * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
      * @param int<0, 7>|null $finale Finale step; null outside the final scene.
      * @param bool $paused Flyers and zombies are not launched.
-     * @param bool $zombies Zombies walk out of the patch in the cursed world.
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
      *        pumpkin, or the centrepiece in a scene that has one: the bonfire or the circle.
      * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.
-     * @param float $k Multiplier of every click threshold, from {@see K_MIN} to {@see K_MAX}.
-     * @param positive-int|null $barTarget Mugs the room drinks in the bar before it may leave, set by the moderator;
-     *        null keeps the configured one. Like `$k`, it is about the room and outlives a reset.
+     * @param float $k Multiplier of every limit, from {@see K_MIN} to {@see K_MAX}.
+     * @param int $barBonus The moderator's addition to the bar's goal; gone with the round.
      * @param bool $roadrunner RoadRunner stands behind the bar's counter: the dawn has led the room back to the bar, and
      *        only the moderator's reset sends him away.
+     * @param int<0, max> $players Figures on the floor the limits are counted for: the ticker moves it once a count has
+     *        held for a while, so a flickering connection does not shake the goals. Like `$k`, it is about the room.
      */
     public function __construct(
         public ?int $ready = null,
         public ?int $finale = null,
         public bool $paused = false,
-        public bool $zombies = false,
         public ?string $lastPumpkin = null,
         public ?int $bonfire = null,
         public float $k = 1.0,
-        public ?int $barTarget = null,
+        public int $barBonus = 0,
         public bool $roadrunner = false,
+        public int $players = 0,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -81,19 +81,21 @@ final readonly class Story
         $bonfire = $value['bonfire'] ?? null;
         /** @var mixed $k */
         $k = $value['k'] ?? null;
-        /** @var mixed $barTarget */
-        $barTarget = $value['barTarget'] ?? null;
+        /** @var mixed $barBonus */
+        $barBonus = $value['barBonus'] ?? null;
+        /** @var mixed $players */
+        $players = $value['players'] ?? null;
 
         return new self(
             \is_int($ready) && $ready >= 0 ? $ready : null,
             \is_int($finale) && $finale >= 0 && $finale <= self::DAWN_STEP ? $finale : null,
             ($value['paused'] ?? false) === true,
-            ($value['zombies'] ?? false) === true,
             PlayerId::isValid($player) ? $player : null,
             \is_int($bonfire) && $bonfire >= 0 ? $bonfire : null,
             self::isK($k) ? (float) $k : 1.0,
-            \is_int($barTarget) && $barTarget > 0 ? $barTarget : null,
+            \is_int($barBonus) ? $barBonus : 0,
             ($value['roadrunner'] ?? false) === true,
+            \is_int($players) && $players > 0 ? $players : 0,
         );
     }
 
@@ -111,7 +113,7 @@ final readonly class Story
      */
     public function readyIn(int $scene, ?string $player): self
     {
-        return new self($scene, $this->finale, $this->paused, $this->zombies, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
+        return new self($scene, $this->finale, $this->paused, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
     /**
@@ -119,7 +121,7 @@ final readonly class Story
      */
     public function bonfireOpenIn(int $scene): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $scene, $this->k, $this->barTarget, $this->roadrunner);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $scene, $this->k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
     /**
@@ -127,7 +129,7 @@ final readonly class Story
      */
     public function nextScene(bool $final): self
     {
-        return new self(null, $final ? 0 : null, $this->paused, $this->zombies, $this->lastPumpkin, k: $this->k, barTarget: $this->barTarget, roadrunner: $this->roadrunner);
+        return new self(null, $final ? 0 : null, $this->paused, $this->lastPumpkin, null, $this->k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
     /**
@@ -141,13 +143,10 @@ final readonly class Story
         }
         /** @var int<1, 7> $step */
 
-        // The dice and the cursed world are ready by their own goal, not by the circle closed long ago; the zombies of the
-        // cursed world come out by themselves
-        return match ($step) {
-            self::DICE_STEP => new self(null, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
-            self::CURSED_STEP => new self(null, $step, $this->paused, true, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
-            default => new self($this->ready, $step, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner),
-        };
+        // The dice and the cursed world are ready by their own goal, not by the circle closed long ago
+        $ready = $step === self::DICE_STEP || $step === self::CURSED_STEP ? null : $this->ready;
+
+        return new self($ready, $step, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
     /**
@@ -168,34 +167,35 @@ final readonly class Story
 
     public function withPaused(bool $paused): self
     {
-        return new self($this->ready, $this->finale, $paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
-    }
-
-    public function withZombies(bool $zombies): self
-    {
-        return new self($this->ready, $this->finale, $this->paused, $zombies, $this->lastPumpkin, $this->bonfire, $this->k, $this->barTarget, $this->roadrunner);
+        return new self($this->ready, $this->finale, $paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
     public function withK(float $k): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $k, $this->barTarget, $this->roadrunner);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $k, $this->barBonus, $this->roadrunner, $this->players);
     }
 
-    /**
-     * @param positive-int|null $target Null goes back to the configured goal.
-     */
-    public function withBarTarget(?int $target): self
+    public function withBarBonus(int $bonus): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->zombies, $this->lastPumpkin, $this->bonfire, $this->k, $target, $this->roadrunner);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $bonus, $this->roadrunner, $this->players);
     }
 
     /**
-     * A new round starts the story over; the pause and the threshold multiplier stay, they are about the room rather
-     * than the story. RoadRunner comes to the bar with a new cycle from the dawn and leaves with the moderator's reset.
+     * @param int<0, max> $players
+     */
+    public function withPlayers(int $players): self
+    {
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $players);
+    }
+
+    /**
+     * A new round starts the story over; the pause, the multiplier and the figures the limits are counted for stay,
+     * they are about the room rather than the story, while the moderator's bonuses go with the round. RoadRunner comes
+     * to the bar with a new cycle from the dawn and leaves with the moderator's reset.
      */
     public function restarted(bool $again = false): self
     {
-        return new self(paused: $this->paused, k: $this->k, barTarget: $this->barTarget, roadrunner: $again);
+        return new self(paused: $this->paused, k: $this->k, roadrunner: $again, players: $this->players);
     }
 
     /**
@@ -228,7 +228,7 @@ final readonly class Story
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, zombies: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barTarget: positive-int|null, roadrunner: bool}
+     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barBonus: int, roadrunner: bool, players: int<0, max>}
      */
     public function toArray(): array
     {
@@ -236,12 +236,12 @@ final readonly class Story
             'ready' => $this->ready,
             'finale' => $this->finale,
             'paused' => $this->paused,
-            'zombies' => $this->zombies,
             'lastPumpkin' => $this->lastPumpkin,
             'bonfire' => $this->bonfire,
             'k' => $this->k,
-            'barTarget' => $this->barTarget,
+            'barBonus' => $this->barBonus,
             'roadrunner' => $this->roadrunner,
+            'players' => $this->players,
         ];
     }
 }

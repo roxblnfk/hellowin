@@ -50,10 +50,9 @@ final class RapierTest
 
         $ritual->story->finaleStep(5, force: true);
 
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'cursed', 'zombies', 'flyer', 'flyer', 'owl']);
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'cursed', 'limits', 'flyer', 'flyer', 'owl']);
         Assert::same($ritual->broadcast->ofType('finale')[0]['item'], 'beer');
         Assert::same($ritual->broadcast->ofType('cursed')[0], ['type' => 'cursed', 'round' => 1, 'drunk' => 0, 'slain' => 0, 'drinksTarget' => 4, 'zombiesTarget' => 4]);
-        Assert::same($ritual->broadcast->ofType('zombies')[0]['on'], true);
         $snapshot = $ritual->snapshot->create();
         Assert::same(\array_column($snapshot['walkers'], 'item'), ['beer', 'beer']);
         Assert::same($snapshot['cursed'], ['drunk' => 0, 'slain' => 0, 'drinksTarget' => 4, 'zombiesTarget' => 4]);
@@ -415,6 +414,32 @@ final class RapierTest
         Assert::same(\array_column($ritual->broadcast->ofType('boss'), 'hp'), [60, 1]);
     }
 
+    public function bossHealthFollowsTheRoomAndKeepsTheDamage(): void
+    {
+        $ritual = self::rapier();
+        $ritual->rapier->word(self::JACK, 'rapira');
+        $ritual->rapier->tune(5);
+        for ($i = 0; $i < 3; ++$i) {
+            $ritual->rapier->strike(self::JACK);
+        }
+        $ritual->limits->settle();
+        $ritual->broadcast->published = [];
+
+        // A third player: 40 + 5 × 3 and the bonus of 5, less the 3 strikes
+        self::place($ritual, 'cccccccccccccccc', 40, 90);
+        $ritual->limits->settle();
+        $ritual->limits->settle();
+
+        Assert::same($ritual->broadcast->ofType('boss'), [['type' => 'boss', 'round' => 1, 'hp' => 57, 'max' => 60]]);
+        Assert::same(\array_column(\array_column($ritual->broadcast->ofType('limits'), 'limits'), 'boss'), [60]);
+
+        // Damage beyond the new maximum leaves the boss one point, never fells it
+        $ritual->rapier->tune(-100);
+        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 1, 'max' => 1]);
+        $ritual->rapier->tune(10);
+        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 8, 'max' => 11]);
+    }
+
     public function dawnFliesItsOwnBirdsAndNoZombies(): void
     {
         $ritual = self::rapier();
@@ -510,6 +535,7 @@ final class RapierTest
     {
         $ritual->players->register($id, 'Jack', self::LOOK);
         self::move($ritual, $id, $x, $y);
+        $ritual->countPlayers();
     }
 
     /**

@@ -18,7 +18,6 @@ final class OwlLine
     public const BONFIRE_DONE = 'bonfire-done';
     public const CIRCLE_DONE = 'circle-done';
     public const WITCH_DOWN = 'witch-down';
-    public const ZOMBIES = 'zombies';
     public const BAR_EMPTY = 'bar-empty';
     public const BAR_INTRO = 'bar-intro';
     public const BAR_AGAIN = 'bar-again';

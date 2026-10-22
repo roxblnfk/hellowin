@@ -37,7 +37,8 @@ final readonly class HomeController
     {
         return $this->views->render('how-it-works', [
             'channel' => $this->config->getChannel(),
-            'clicksPerStage' => $this->config->getClicksPerStage(),
+            // A pumpkin's clicks per stage for a lone player at k = 1: the page explains the formula, not the room
+            'clicksPerStage' => $this->config->getLimit(HellowinConfig::LIMIT_PUMPKIN)->of(1),
             'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
         ]);
     }

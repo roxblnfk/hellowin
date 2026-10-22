@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Config;
 
+use App\Domain\Balance\Limit;
 use App\Domain\Bar\BarLayout;
 use App\Domain\Bar\Perch;
 use App\Domain\Element\Element;
@@ -23,22 +24,46 @@ use Spiral\Core\InjectableConfig;
 final class HellowinConfig extends InjectableConfig
 {
     public const CONFIG = 'hellowin';
+    public const LIMIT_PUMPKIN = 'pumpkin';
+    public const LIMIT_BONFIRE = 'bonfire';
+    public const LIMIT_CIRCLE = 'circle';
+    public const LIMIT_BAR = 'bar';
+    public const LIMIT_DRINKS = 'drinks';
+    public const LIMIT_ZOMBIES = 'zombies';
+    public const LIMIT_BOSS = 'boss';
+
+    /** The env prefix of every limit: `<prefix>_BASE`, `<prefix>_PER_PLAYER`. */
+    private const ENV_OF_LIMIT = [
+        self::LIMIT_PUMPKIN => 'HELLOWIN_PUMPKIN',
+        self::LIMIT_BONFIRE => 'HELLOWIN_BONFIRE',
+        self::LIMIT_CIRCLE => 'HELLOWIN_CIRCLE',
+        self::LIMIT_BAR => 'HELLOWIN_BAR',
+        self::LIMIT_DRINKS => 'HELLOWIN_CURSED_DRINKS',
+        self::LIMIT_ZOMBIES => 'HELLOWIN_CURSED_ZOMBIES',
+        self::LIMIT_BOSS => 'HELLOWIN_BOSS_HP',
+    ];
 
     protected array $config = [
         'channel' => 'hellowin',
         'storage' => 'hellowin',
         'centrifugo_url' => ':8000/connection/websocket',
         'grafana_url' => ':3000/',
-        'clicks_per_stage' => 5,
         'moderator_secret' => '',
         'scene_stage_max' => '0,4,8,11',
-        'bonfire_clicks_per_stage' => 20,
         'bonfire_stage_max' => '0,0,4,7',
-        'circle_clicks_per_stage' => 20,
         'circle_stages' => 4,
+        'limits' => [
+            self::LIMIT_PUMPKIN => ['base' => 2, 'per_player' => 5],
+            self::LIMIT_BONFIRE => ['base' => 8, 'per_player' => 20],
+            self::LIMIT_CIRCLE => ['base' => 15, 'per_player' => 40],
+            self::LIMIT_BAR => ['base' => 5, 'per_player' => 1.5],
+            self::LIMIT_DRINKS => ['base' => 5, 'per_player' => 4],
+            self::LIMIT_ZOMBIES => ['base' => 5, 'per_player' => 4],
+            self::LIMIT_BOSS => ['base' => 45, 'per_player' => 60],
+        ],
         'valkey_dsn' => 'tcp://valkey:6379',
-        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'drinks' => 30, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
-        'rapier' => ['cursed_per_player' => 5, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5, 'dawn_board' => 200, 'beer_handover_ms' => 900],
+        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
+        'rapier' => ['dawn_board' => 200, 'beer_handover_ms' => 900],
         'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
         'chat' => ['max' => 120, 'history' => 50],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
@@ -137,14 +162,34 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Clicks on a pumpkin that move it to its next stage. A digit string is accepted too: env variables
-     * arrive as strings.
+     * A limit of the game (docs/spec/protocol.md, «Лимиты и баланс»): `base` for one figure on the floor and
+     * `per_player` for every other one, fractions allowed. Numeric strings are accepted too: env variables arrive as
+     * strings.
      *
-     * @return positive-int
+     * @param self::LIMIT_* $name
      */
-    public function getClicksPerStage(): int
+    public function getLimit(string $name): Limit
     {
-        return self::positiveInt($this->config['clicks_per_stage'] ?? null, 'clicks_per_stage', 'HELLOWIN_CLICKS_PER_STAGE');
+        $limits = $this->config['limits'] ?? [];
+        \is_array($limits) or throw new \InvalidArgumentException('Config "hellowin.limits" must be an array.');
+        $limit = $limits[$name] ?? null;
+        \is_array($limit) or throw new \InvalidArgumentException(\sprintf('Config "hellowin.limits.%s" must be {base, per_player}.', $name));
+
+        $env = self::ENV_OF_LIMIT[$name];
+        $base = self::number($limit['base'] ?? null);
+        $perPlayer = self::number($limit['per_player'] ?? null);
+        $base !== null && $base > 0.0 or throw new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.limits.%s.base" (env %s_BASE) must be a number above zero.',
+            $name,
+            $env,
+        ));
+        $perPlayer !== null && $perPlayer >= 0.0 or throw new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.limits.%s.per_player" (env %s_PER_PLAYER) must be a non-negative number.',
+            $name,
+            $env,
+        ));
+
+        return new Limit($base, $perPlayer);
     }
 
     /**
@@ -180,20 +225,6 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Clicks on the bonfire that move it to its next stage: the whole room clicks it, so it takes more than a pumpkin.
-     *
-     * @return positive-int
-     */
-    public function getBonfireClicksPerStage(): int
-    {
-        return self::positiveInt(
-            $this->config['bonfire_clicks_per_stage'] ?? null,
-            'bonfire_clicks_per_stage',
-            'HELLOWIN_BONFIRE_CLICKS_PER_STAGE',
-        );
-    }
-
-    /**
      * The last bonfire stage of every scene, cumulative like {@see getSceneStageMax()}: `[0, 0, 4, 7]` leaves the
      * bonfire out in the bar and scene 1 and takes it to stage 4 in scene 2, to 7 in scene 3. Scenes past the list keep
      * its last value.
@@ -225,20 +256,6 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * Clicks on the magic circle that move it to its next stage: the whole room draws it, like the bonfire.
-     *
-     * @return positive-int
-     */
-    public function getCircleClicksPerStage(): int
-    {
-        return self::positiveInt(
-            $this->config['circle_clicks_per_stage'] ?? null,
-            'circle_clicks_per_stage',
-            'HELLOWIN_CIRCLE_CLICKS_PER_STAGE',
-        );
-    }
-
-    /**
      * @return positive-int The last stage of the magic circle: it is closed there, and the final scene is ready.
      */
     public function getCircleStages(): int
@@ -261,14 +278,6 @@ final class HellowinConfig extends InjectableConfig
     public function getBarPourMs(): int
     {
         return self::positiveInt($this->bar()['pour_ms'] ?? null, 'bar.pour_ms', 'HELLOWIN_BAR_POUR_MS');
-    }
-
-    /**
-     * @return positive-int Mugs the room drinks in the bar before it is ready to leave; the moderator moves the goal.
-     */
-    public function getBarDrinks(): int
-    {
-        return self::positiveInt($this->bar()['drinks'] ?? null, 'bar.drinks', 'HELLOWIN_BAR_DRINKS');
     }
 
     /**
@@ -300,36 +309,6 @@ final class HellowinConfig extends InjectableConfig
     public function getBeerHandoverMs(): int
     {
         return self::positiveInt($this->rapier()['beer_handover_ms'] ?? null, 'rapier.beer_handover_ms', 'HELLOWIN_BEER_HANDOVER_MS');
-    }
-
-    /**
-     * @return positive-int Mugs and zombies per player on the floor the cursed world wants for each of its goals.
-     */
-    public function getCursedPerPlayer(): int
-    {
-        return self::positiveInt($this->rapier()['cursed_per_player'] ?? null, 'rapier.cursed_per_player', 'HELLOWIN_CURSED_PER_PLAYER');
-    }
-
-    /**
-     * @return positive-int FrankenPHP's health as it wakes, before the players on the floor and the multiplier.
-     */
-    public function getBossHpBase(): int
-    {
-        return self::positiveInt($this->rapier()['boss_hp_base'] ?? null, 'rapier.boss_hp_base', 'HELLOWIN_BOSS_HP_BASE');
-    }
-
-    /**
-     * @return int<0, max> FrankenPHP's health per player on the floor as it wakes.
-     */
-    public function getBossHpPerPlayer(): int
-    {
-        /** @var mixed $value */
-        $value = $this->rapier()['boss_hp_per_player'] ?? null;
-        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
-
-        return \is_int($value) && $value >= 0
-            ? $value
-            : throw new \InvalidArgumentException('Config "hellowin.rapier.boss_hp_per_player" (env HELLOWIN_BOSS_HP_PER_PLAYER) must be a non-negative integer.');
     }
 
     /**
@@ -632,6 +611,16 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value > 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.walk.clink_duration" must be a positive integer.');
+    }
+
+    /**
+     * @return float|null Null for anything but a number or a numeric string.
+     */
+    private static function number(mixed $value): ?float
+    {
+        \is_string($value) && \is_numeric(\trim($value)) and $value = (float) \trim($value);
+
+        return \is_int($value) || \is_float($value) ? (float) $value : null;
     }
 
     private static function nonNegative(mixed $value, string $key): float

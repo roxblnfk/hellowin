@@ -87,7 +87,9 @@ final readonly class RitualStore
             $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1, $current->spent);
             $this->writePumpkin($pumpkin);
 
-            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin, $this->readStory()->k);
+            $story = $this->readStory();
+
+            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin, $story->k, $story->players);
         });
     }
 

@@ -6,6 +6,8 @@ namespace Tests\Unit\Endpoint\Centrifugo;
 
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Domain\Balance\Limit;
+use App\Domain\Flyer\Flyer;
 use App\Domain\Lock\Locks;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\RateLimit\TokenBucket;
@@ -129,7 +131,7 @@ final class RPCServiceTest
             'paused' => false,
             'k' => 1.0,
             'online' => 0,
-            'zombies' => false,
+            'limits' => ['players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4, 'bonfire' => 3]],
             'cursed' => null,
             'boss' => null,
             'dice' => null,
@@ -418,7 +420,8 @@ final class RPCServiceTest
     #[DataSet(['owl.say'])]
     #[DataSet(['flyer.special'])]
     #[DataSet(['pause'])]
-    #[DataSet(['zombies'])]
+    #[DataSet(['flyers.burst'])]
+    #[DataSet(['bar.target'])]
     #[DataSet(['thresholds'])]
     #[DataSet(['cursed.target'])]
     #[DataSet(['boss.hp'])]
@@ -576,17 +579,18 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'pause', ['on' => 1], moderator: true), ['ok' => false, 'error' => 'invalid on']);
     }
 
-    public function thresholdsAnswerTheThresholdsInForce(): void
+    public function thresholdsAnswerTheLimitsInForce(): void
     {
         $ritual = new RitualHarness(threshold: 4);
 
         $response = $this->call($ritual, 'thresholds', ['k' => 2], moderator: true);
         $this->call($ritual, 'thresholds', ['k' => 2.0], moderator: true);
 
-        $thresholds = ['pumpkin' => 8, 'bonfire' => 6, 'circle' => 6];
+        $limits = ['pumpkin' => 8, 'bonfire' => 6];
         // JSON drops the zero fraction: the client gets the number 2
-        Assert::same($response, ['ok' => true, 'k' => 2, 'thresholds' => $thresholds]);
-        Assert::same($ritual->broadcast->ofType('thresholds'), [['type' => 'thresholds', 'round' => 1, 'k' => 2, 'thresholds' => $thresholds]]);
+        Assert::same($response, ['ok' => true, 'k' => 2, 'players' => 1, 'limits' => $limits]);
+        Assert::same($ritual->broadcast->ofType('limits'), [['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 2, 'burst' => true, 'limits' => $limits]]);
+        Assert::blank($ritual->broadcast->ofType('thresholds'));
         Assert::same($this->call($ritual, 'state', [])['state']['k'], 2);
     }
 
@@ -667,17 +671,71 @@ final class RPCServiceTest
         ]);
     }
 
-    public function zombiesSwitchMakesTheOwlWarn(): void
+    public function zombieSwitchIsGone(): void
     {
         $ritual = new RitualHarness();
 
-        $this->call($ritual, 'zombies', ['on' => true], moderator: true);
-        $this->call($ritual, 'zombies', ['on' => true], moderator: true);
-        $this->call($ritual, 'zombies', ['on' => false], moderator: true);
+        Assert::same($this->call($ritual, 'zombies', ['on' => true], moderator: true), ['ok' => false, 'error' => 'unknown method']);
+        Assert::false(\array_key_exists('zombies', $this->call($ritual, 'state', [])['state']));
+        Assert::blank($ritual->broadcast->published);
+    }
 
-        Assert::same(\array_column($ritual->broadcast->ofType('zombies'), 'on'), [true, false]);
-        Assert::same($ritual->broadcast->ofType('owl'), [['type' => 'owl', 'round' => 1, 'line' => 'zombies']]);
-        Assert::false($this->call($ritual, 'state', [])['state']['zombies']);
+    public function burstLaunchesFlyersOfTheSetOnceInACooldown(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->story->pause(true);
+        $ritual->broadcast->published = [];
+
+        // One figure on the floor: the base of 2; the pause does not hold a burst
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 2]);
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => false, 'error' => 'busy']);
+
+        $flyers = $ritual->broadcast->ofType('flyer');
+        Assert::same(\array_column($flyers, 'kind'), ['duck', 'duck']);
+        Assert::same(\array_unique(\array_column($flyers, 'launchedAt')), [$ritual->clock->now]);
+
+        // Every other figure adds half a flyer, up to the most of 4
+        foreach (['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'] as $id) {
+            $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], $id);
+        }
+        $ritual->clock->now += RitualHarness::BURST_COOLDOWN;
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 3]);
+    }
+
+    public function burstNeedsFlyersInTheSet(): void
+    {
+        $ritual = new RitualHarness(flyerKinds: [[Flyer::KIND_DUCK], []]);
+        $ritual->transitions->scene(1, 1);
+        $ritual->broadcast->published = [];
+
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => false, 'error' => 'no flyers']);
+        Assert::false($this->call($ritual, 'state', [])['state']['limits']['burst']);
+        Assert::blank($ritual->broadcast->ofType('flyer'));
+    }
+
+    public function barTargetIsForTheBarOnly(): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => '5'], moderator: true), ['ok' => false, 'error' => 'invalid delta']);
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => 5], moderator: true), ['ok' => false, 'error' => 'not bar']);
+    }
+
+    public function barTargetIsTheLimitWithTheBonusAndTellsTheConsole(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], barDrinks: new Limit(5, 1.5));
+        foreach (['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'] as $id) {
+            $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], $id);
+        }
+        $ritual->countPlayers();
+        $ritual->limits->settle();
+        $ritual->broadcast->published = [];
+
+        Assert::same($this->call($ritual, 'bar.target', ['delta' => 5], moderator: true), ['ok' => true, 'target' => 13]);
+
+        Assert::same($ritual->broadcast->ofType('drinks'), [['type' => 'drinks', 'round' => 1, 'drunk' => 0, 'target' => 13]]);
+        Assert::same($ritual->broadcast->ofType('limits'), [['type' => 'limits', 'round' => 1, 'players' => 3, 'k' => 1, 'burst' => true, 'limits' => ['bar' => 13]]]);
+        Assert::same($this->call($ritual, 'state', [])['state']['limits']['limits'], ['bar' => 13]);
     }
 
     public function playerOverItsClickBurstIsRateLimited(): void
@@ -1022,6 +1080,7 @@ final class RPCServiceTest
             $ritual->cursed,
             $ritual->dice,
             $ritual->chat,
+            $ritual->limits,
         );
         $service->handle(new RPC(
             worker: $this->worker,

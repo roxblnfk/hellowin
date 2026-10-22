@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Bootloader;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
 use App\Application\Config\FlyerConfig;
@@ -27,6 +28,8 @@ use App\Application\Walk\ActionStop;
 use App\Application\Walk\CentrifugoPresence;
 use App\Application\Walk\Presence;
 use App\Application\Walk\WalkService;
+use App\Domain\Balance\Burst;
+use App\Domain\Balance\LimitsStore;
 use App\Domain\Bar\BarStore;
 use App\Domain\Chat\ChatStore;
 use App\Domain\Clock\Clock;
@@ -88,13 +91,16 @@ final class HellowinBootloader extends Bootloader
             ): PlayerStore => new PlayerStore($cache->storage($config->getStorage()), new Locks($lock)),
             RitualPolicy::class => static fn(HellowinConfig $config): RitualPolicy
                 => new LockstepPolicy(
-                    $config->getClicksPerStage(),
+                    $config->getLimit(HellowinConfig::LIMIT_PUMPKIN),
                     $config->getSceneStageMax(),
-                    $config->getBonfireClicksPerStage(),
+                    $config->getLimit(HellowinConfig::LIMIT_BONFIRE),
                     $config->getBonfireStageMax(),
-                    $config->getCircleClicksPerStage(),
+                    $config->getLimit(HellowinConfig::LIMIT_CIRCLE),
                     $config->getCircleStages(),
                 ),
+            Burst::class => static fn(FlyerConfig $flyers): Burst => $flyers->getBurst(),
+            LimitsStore::class => static fn(HellowinConfig $config, CacheStorageProviderInterface $cache): LimitsStore
+                => new LimitsStore($cache->storage($config->getStorage())),
             SnapshotFactory::class => static fn(
                 HellowinConfig $config,
                 FlyerConfig $flyers,
@@ -111,6 +117,7 @@ final class HellowinBootloader extends Bootloader
                 DiceService $dice,
                 DawnService $dawn,
                 FlyerService $flyerService,
+                LimitsService $limits,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -127,6 +134,7 @@ final class HellowinBootloader extends Bootloader
                 $dice,
                 $dawn,
                 $flyerService,
+                $limits,
             ),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
@@ -230,9 +238,15 @@ final class HellowinBootloader extends Bootloader
                 CursedStore $store,
                 RitualStore $ritual,
                 RitualPolicy $policy,
-                WalkerStore $walkers,
                 ChannelPublisher $publisher,
-            ): CursedService => new CursedService($store, $ritual, $policy, $walkers, $publisher, $config->getCursedPerPlayer()),
+            ): CursedService => new CursedService(
+                $store,
+                $ritual,
+                $policy,
+                $publisher,
+                $config->getLimit(HellowinConfig::LIMIT_DRINKS),
+                $config->getLimit(HellowinConfig::LIMIT_ZOMBIES),
+            ),
             RapierService::class => static fn(
                 HellowinConfig $config,
                 WalkerStore $walkers,
@@ -253,8 +267,7 @@ final class HellowinBootloader extends Bootloader
                 $clock,
                 $config->getWalkZone(),
                 $config->getWalkSpeed(),
-                $config->getBossHpBase(),
-                $config->getBossHpPerPlayer(),
+                $config->getLimit(HellowinConfig::LIMIT_BOSS),
                 stops: $stops,
             ),
             BarStore::class => static fn(
@@ -282,7 +295,7 @@ final class HellowinBootloader extends Bootloader
                 $clock,
                 $config->getBarMugs(),
                 $config->getBarPourMs(),
-                $config->getBarDrinks(),
+                $config->getLimit(HellowinConfig::LIMIT_BAR),
                 $config->getBarRumorChance(),
                 cursed: $cursed,
                 drinkMs: $config->getDrinkMs(),
@@ -391,6 +404,7 @@ final class HellowinBootloader extends Bootloader
                 LoggerInterface $logger,
                 RapierService $rapier,
                 CursedService $cursed,
+                LimitsService $limits,
             ): Ticker => new Ticker(
                 $leaderboard,
                 $players->getLeaderboardInterval(),
@@ -403,6 +417,7 @@ final class HellowinBootloader extends Bootloader
                 dawnInterval: $flyerConfig->getDawnInterval(),
                 rapier: $rapier,
                 cursed: $cursed,
+                limits: $limits,
             ),
         ];
     }

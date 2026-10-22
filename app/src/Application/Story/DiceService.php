@@ -135,9 +135,9 @@ final readonly class DiceService
 
     /**
      * The dice as the snapshot carries them: from step 1 on, on until the first 6-6-6 or until the step is taken
-     * without it.
+     * without it; `owl` — the owl's throws so far, for the console.
      *
-     * @return array{on: bool, winner?: Winner}|null
+     * @return array{on: bool, winner?: Winner, owl: int<0, max>}|null
      */
     public function state(int $round, Story $story): ?array
     {
@@ -145,9 +145,11 @@ final readonly class DiceService
             return null;
         }
 
-        $winner = $this->store->get($round)->winner;
+        $dice = $this->store->get($round);
 
-        return $winner === null ? ['on' => $story->dice()] : ['on' => false, 'winner' => $winner];
+        return $dice->winner === null
+            ? ['on' => $story->dice(), 'owl' => $dice->owl]
+            : ['on' => false, 'winner' => $dice->winner, 'owl' => $dice->owl];
     }
 
     /**

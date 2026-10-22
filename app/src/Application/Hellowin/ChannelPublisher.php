@@ -228,11 +228,13 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * @param array<non-empty-string, positive-int> $thresholds Thresholds in force by element type.
+     * The limits of the current context changed: the room, the multiplier, a bonus, the scene or the step.
+     *
+     * @param array{players: positive-int, k: float, burst: bool, limits: array|\stdClass} $limits
      */
-    public function thresholds(int $round, float $k, array $thresholds): void
+    public function limits(int $round, array $limits): void
     {
-        $this->publish(['type' => 'thresholds', 'round' => $round, 'k' => $k, 'thresholds' => $thresholds]);
+        $this->publish(['type' => 'limits', 'round' => $round] + $limits);
     }
 
     public function ready(int $round, int $scene): void
@@ -405,11 +407,6 @@ final readonly class ChannelPublisher
     public function pause(int $round, bool $on): void
     {
         $this->publish(['type' => 'pause', 'round' => $round, 'on' => $on]);
-    }
-
-    public function zombies(int $round, bool $on): void
-    {
-        $this->publish(['type' => 'zombies', 'round' => $round, 'on' => $on]);
     }
 
     /**

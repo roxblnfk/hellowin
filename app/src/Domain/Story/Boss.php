@@ -6,19 +6,23 @@ namespace App\Domain\Story;
 
 /**
  * FrankenPHP awake with its health (docs/spec/scenario.md, «Шаг 6 — босс FrankenPHP»): the whole room strikes this one
- * thing, and the strike that takes the last point is the one that fells it.
+ * thing, and the strike that takes the last point is the one that fells it. Its maximum follows the limit `boss` for the
+ * room plus the moderator's bonus; the damage stays whatever the maximum does, so the health is `max(1, max − damage)`
+ * until the last strike.
  */
 final readonly class Boss
 {
     /**
      * @param int<0, max> $hp
      * @param positive-int $max
-     * @param int<0, max> $damage Strikes taken: the reveal's damage, whatever the moderator did to the health.
+     * @param int<0, max> $damage Strikes taken: the reveal's damage, whatever the maximum did.
+     * @param int $bonus The moderator's addition to the maximum; gone with the round.
      */
     public function __construct(
         public int $hp,
         public int $max,
         public int $damage = 0,
+        public int $bonus = 0,
     ) {}
 
     public static function fromArray(mixed $value): ?self
@@ -33,9 +37,11 @@ final readonly class Boss
         $max = $value['max'] ?? null;
         /** @var mixed $damage */
         $damage = $value['damage'] ?? null;
+        /** @var mixed $bonus */
+        $bonus = $value['bonus'] ?? null;
 
         return \is_int($hp) && $hp >= 0 && \is_int($max) && $max > 0
-            ? new self($hp, \max($max, $hp, 1), \is_int($damage) && $damage > 0 ? $damage : 0)
+            ? new self($hp, \max($max, $hp, 1), \is_int($damage) && $damage > 0 ? $damage : 0, \is_int($bonus) ? $bonus : 0)
             : null;
     }
 
@@ -46,17 +52,20 @@ final readonly class Boss
 
     public function struck(): self
     {
-        return new self(\max(0, $this->hp - 1), $this->max, $this->damage + 1);
+        return new self(\max(0, $this->hp - 1), $this->max, $this->damage + 1, $this->bonus);
     }
 
     /**
-     * The moderator's tuning: health and its maximum move together, the health never below one.
+     * A new maximum — the room changed, or the moderator's bonus did: the damage stays, the health never drops below
+     * one by it. A fallen boss stays down.
+     *
+     * @param positive-int $max
      */
-    public function tuned(int $delta): self
+    public function rescaled(int $max, ?int $bonus = null): self
     {
-        $hp = \max(1, $this->hp + $delta);
-
-        return new self($hp, \max($hp, $this->max + $delta, 1), $this->damage);
+        return $this->down()
+            ? $this
+            : new self(\max(1, $max - $this->damage), $max, $this->damage, $bonus ?? $this->bonus);
     }
 
     /**
@@ -64,7 +73,7 @@ final readonly class Boss
      */
     public function felled(): self
     {
-        return new self(0, $this->max, $this->damage);
+        return new self(0, $this->max, $this->damage, $this->bonus);
     }
 
     /**
@@ -76,10 +85,10 @@ final readonly class Boss
     }
 
     /**
-     * @return array{hp: int<0, max>, max: positive-int, damage: int<0, max>}
+     * @return array{hp: int<0, max>, max: positive-int, damage: int<0, max>, bonus: int}
      */
     public function toArray(): array
     {
-        return ['hp' => $this->hp, 'max' => $this->max, 'damage' => $this->damage];
+        return ['hp' => $this->hp, 'max' => $this->max, 'damage' => $this->damage, 'bonus' => $this->bonus];
     }
 }

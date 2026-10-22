@@ -44,11 +44,11 @@ final class DiceTest
 
         $ritual->story->finaleStep(1);
 
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'owl', 'dice']);
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'limits', 'owl', 'dice']);
         Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => true]]);
         $snapshot = $ritual->snapshot->create();
         Assert::false($snapshot['ready']);
-        Assert::same($snapshot['dice'], ['on' => true]);
+        Assert::same($snapshot['dice'], ['on' => true, 'owl' => 0]);
         Assert::same(self::refusal(static fn() => $ritual->story->finaleStep(2)), 'not ready');
     }
 
@@ -175,7 +175,7 @@ final class DiceTest
         Assert::same($ritual->broadcast->ofType('owl'), [['type' => 'owl', 'round' => 1, 'line' => 'dice-win', 'params' => $winner]]);
         $snapshot = $ritual->snapshot->create();
         Assert::true($snapshot['ready']);
-        Assert::same($snapshot['dice'], ['on' => false, 'winner' => $winner]);
+        Assert::same($snapshot['dice'], ['on' => false, 'winner' => $winner, 'owl' => 0]);
 
         // The winning request again, its answer lost on the way: the same throw and nothing new
         Assert::same($ritual->dice->roll(self::JACK, $attempt), $result);
@@ -217,7 +217,7 @@ final class DiceTest
         Assert::same($ritual->story->finaleStep(2), 2);
 
         Assert::blank($ritual->broadcast->ofType('dice'));
-        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'winner' => ['owl' => true, 'attempt' => 3]]);
+        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'winner' => ['owl' => true, 'attempt' => 3], 'owl' => 3]);
     }
 
     public function forcedSecondStepTurnsTheDiceOffWithoutWinner(): void
@@ -229,7 +229,7 @@ final class DiceTest
 
         Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => false]]);
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type')[0], 'dice');
-        Assert::same($ritual->snapshot->create()['dice'], ['on' => false]);
+        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'owl' => 0]);
     }
 
     public function owlWinsOnItsThirdThrow(): void

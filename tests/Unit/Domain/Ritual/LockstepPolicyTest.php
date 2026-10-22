@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Ritual;
 
+use App\Domain\Balance\Limit;
 use App\Domain\Element\Element;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\Pumpkin;
@@ -28,14 +29,14 @@ final class LockstepPolicyTest
     #[DataSet([8, 3, 9, null], 'final scene')]
     public function pumpkinMovesUpToTheLastStageOfTheScene(int $stage, int $scene, int $clicks, ?int $expected): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(5), stageMax: [4, 6, 8]);
 
         Assert::same($policy->pumpkinTransition(new Pumpkin('p', $stage, $clicks), $scene), $expected);
     }
 
     public function sceneIsReadyWhenEveryPumpkinReachedItsLastStage(): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(5), stageMax: [4, 6, 8]);
 
         Assert::true($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 4), new Pumpkin('b', 4)])));
         Assert::true($policy->sceneReady(self::ritual(2, [new Pumpkin('a', 8), new Pumpkin('b', 8)])));
@@ -43,14 +44,14 @@ final class LockstepPolicyTest
 
     public function sceneWaitsForTheLastPumpkin(): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6, 8]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(5), stageMax: [4, 6, 8]);
 
         Assert::false($policy->sceneReady(self::ritual(0, [new Pumpkin('a', 4), new Pumpkin('b', 3)])));
     }
 
     public function finalSceneIsNotReadyWithoutTheCircle(): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(5), stageMax: [4, 6]);
 
         Assert::same($policy->finalScene(), 2);
         Assert::false($policy->sceneReady(self::ritual(2, [new Pumpkin('a', 6)], story: new Story(finale: 0))));
@@ -58,14 +59,14 @@ final class LockstepPolicyTest
 
     public function finalSceneKeepsTheLastStageMax(): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 5, stageMax: [4, 6]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(5), stageMax: [4, 6]);
 
         Assert::same([$policy->stageMax(0), $policy->stageMax(1), $policy->stageMax(2)], [4, 6, 6]);
     }
 
     public function leadingZeroMakesSceneZeroTheBarWithoutPumpkinsToFinish(): void
     {
-        $policy = new LockstepPolicy(clicksPerStage: 1, stageMax: [0, 4], bonfireStageMax: [0, 0, 3]);
+        $policy = new LockstepPolicy(pumpkin: new Limit(1), stageMax: [0, 4], bonfireStageMax: [0, 0, 3]);
 
         Assert::true($policy->bar(0));
         Assert::false($policy->bar(1));
@@ -79,12 +80,12 @@ final class LockstepPolicyTest
 
     public function withoutALeadingZeroThereIsNoBar(): void
     {
-        Assert::false((new LockstepPolicy(5, [4, 6]))->bar(0));
+        Assert::false((new LockstepPolicy(new Limit(5), [4, 6]))->bar(0));
     }
 
     public function sceneWithoutPumpkinsStays(): void
     {
-        Assert::false((new LockstepPolicy(5, [4]))->sceneReady(self::ritual(0, [])));
+        Assert::false((new LockstepPolicy(new Limit(5), [4]))->sceneReady(self::ritual(0, [])));
     }
 
     #[DataSet([[]], 'empty')]
@@ -95,7 +96,7 @@ final class LockstepPolicyTest
     {
         Expect::exception(\InvalidArgumentException::class);
 
-        new LockstepPolicy(5, $stageMax);
+        new LockstepPolicy(new Limit(5), $stageMax);
     }
 
     #[DataSet([0, 0], 'no bonfire in scene 0')]
@@ -152,7 +153,7 @@ final class LockstepPolicyTest
     {
         Expect::exception(\InvalidArgumentException::class);
 
-        new LockstepPolicy(5, [4, 6], 20, [0, 4, 3]);
+        new LockstepPolicy(new Limit(5), [4, 6], new Limit(20), [0, 4, 3]);
     }
 
     #[DataSet([0, 0], 'scene 0')]
@@ -210,9 +211,9 @@ final class LockstepPolicyTest
     }
 
     #[DataSet([1.0, [5, 20, 15]], 'as configured')]
-    #[DataSet([0.5, [3, 10, 8]], 'halves round half up')]
+    #[DataSet([0.5, [3, 10, 8]], 'halves round up')]
     #[DataSet([0.1, [1, 2, 2]], 'never below one click')]
-    #[DataSet([1.25, [6, 25, 19]], 'one step up')]
+    #[DataSet([1.25, [7, 25, 19]], 'one step up, rounded up')]
     #[DataSet([10.0, [50, 200, 150]], 'the most')]
     public function multiplierScalesEveryThreshold(float $k, array $expected): void
     {
@@ -222,6 +223,17 @@ final class LockstepPolicyTest
             [$policy->threshold(k: $k), $policy->threshold(Element::TYPE_BONFIRE, $k), $policy->threshold(Element::TYPE_CIRCLE, $k)],
             $expected,
         );
+    }
+
+    public function crowdRaisesEveryThresholdAndOneFigureCountsLikeNone(): void
+    {
+        $policy = new LockstepPolicy(new Limit(2, 5), [4], new Limit(8, 20), [0, 4], new Limit(15, 40));
+
+        Assert::same([$policy->threshold(players: 0), $policy->threshold(players: 1)], [2, 2]);
+        Assert::same($policy->threshold(players: 40), 197);
+        Assert::same($policy->threshold(Element::TYPE_BONFIRE, 0.5, 3), 24);
+        Assert::same($policy->pumpkinTransition(new Pumpkin('p', 0, 7), 0, 1.0, 2), 1);
+        Assert::null($policy->pumpkinTransition(new Pumpkin('p', 0, 6), 0, 1.0, 2));
     }
 
     public function lowerThresholdLetsTheGatheredClicksMove(): void
@@ -238,11 +250,11 @@ final class LockstepPolicyTest
     private static function policy(): LockstepPolicy
     {
         return new LockstepPolicy(
-            clicksPerStage: 5,
+            pumpkin: new Limit(5),
             stageMax: [4, 6, 8],
-            bonfireClicksPerStage: 20,
+            bonfire: new Limit(20),
             bonfireStageMax: [0, 4, 7],
-            circleClicksPerStage: 15,
+            circle: new Limit(15),
             circleStages: 4,
         );
     }

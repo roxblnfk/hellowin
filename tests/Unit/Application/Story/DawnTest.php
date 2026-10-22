@@ -36,7 +36,7 @@ final class DawnTest
         Assert::same($answer, ['scene' => 0, 'round' => 2]);
         $snapshot = $ritual->store->snapshot();
         Assert::same([$snapshot->round, $snapshot->scene, $snapshot->story->finale], [2, 0, null]);
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['reset', 'owl']);
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['reset', 'owl', 'limits']);
         $reset = $ritual->broadcast->ofType('reset')[0];
         Assert::same([$reset['round'], $reset['again'], $reset['item']], [2, true, null]);
         Assert::count($reset['walkers'], 1);
@@ -60,12 +60,11 @@ final class DawnTest
     {
         $ritual = self::atDawn();
         $ritual->story->thresholds(2);
-        $ritual->bar->moveTarget(5);
 
         $ritual->story->nextScene(3, false);
 
         Assert::same($ritual->store->snapshot()->story->k, 2.0);
-        Assert::same($ritual->bar->target($ritual->store->story()), 9);
+        Assert::same($ritual->bar->target($ritual->store->story()), 8);
     }
 
     public function consoleResetIsNotACycle(): void
@@ -100,7 +99,7 @@ final class DawnTest
             $ritual->story->nextScene($scene, true);
             $ritual->runJobs();
         }
-        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: $step, k: $story->k, barTarget: $story->barTarget));
+        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: $step, k: $story->k, barBonus: $story->barBonus, players: $story->players));
 
         return $ritual;
     }

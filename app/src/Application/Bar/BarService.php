@@ -11,6 +11,7 @@ use App\Application\Story\OwlLine;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
+use App\Domain\Balance\Limit;
 use App\Domain\Bar\Bar;
 use App\Domain\Bar\BarStore;
 use App\Domain\Clock\Clock;
@@ -40,7 +41,7 @@ final readonly class BarService
     /**
      * @param positive-int $mugs Full mugs the counter has room for, however many players are on the floor.
      * @param positive-int $pourMs Milliseconds the owl pours one mug.
-     * @param positive-int $drinks Mugs the room drinks before it may leave, unless the moderator moved the goal.
+     * @param Limit $drinks Mugs the room drinks before it may leave, before the moderator's bonus.
      * @param float $rumorChance Probability that the owl mutters a rumour over a pour.
      * @param positive-int $drinkMs Milliseconds a sip plays: no mug is taken or drunk meanwhile.
      */
@@ -54,7 +55,7 @@ final readonly class BarService
         private Clock $clock,
         private int $mugs,
         private int $pourMs,
-        private int $drinks,
+        private Limit $drinks,
         private float $rumorChance = 0.0,
         private Randomizer $random = new Randomizer(),
         private ?CursedService $cursed = null,
@@ -221,34 +222,42 @@ final readonly class BarService
     }
 
     /**
-     * Moves the bar's goal by `$delta` mugs, never below one. A goal at or below what the room has drunk makes the bar
-     * ready at once.
+     * Moves the moderator's bonus on top of the bar's goal by `$delta` mugs, until the end of the round; the goal never
+     * drops below one. The clients learn the new goal from the limits ({@see follow()}), like any other change of it.
      *
      * @return positive-int The goal in force.
-     * @throws BarRefusedException `invalid delta`.
+     * @throws BarRefusedException `invalid delta`, `not bar`.
      * @throws RitualBusyException
      */
     public function moveTarget(mixed $delta): int
     {
         \is_int($delta) or throw new BarRefusedException('invalid delta');
+        $this->policy->bar($this->ritual->scene()) or throw new BarRefusedException('not bar');
 
-        // A goal moved back to the configured one is no longer the moderator's: a new env value takes effect again
-        [$before, $after] = $this->ritual->updateStory(function (Story $story) use ($delta): Story {
-            $target = \max(1, $this->target($story) + $delta);
+        [, $after] = $this->ritual->updateStory(fn(Story $story): Story => $story->withBarBonus(
+            $this->drinks->moved($story->barBonus, $delta, $story->players, $story->k),
+        ));
 
-            return $story->withBarTarget($target === $this->drinks ? null : $target);
-        });
-        $target = $this->target($after);
-        if ($target === $this->target($before)) {
-            return $target;
+        return $this->target($after);
+    }
+
+    /**
+     * The goal has changed — the room, the multiplier or the bonus: the clients get it, and a goal at or below what the
+     * room has drunk makes the bar ready at once.
+     *
+     * @throws RitualBusyException
+     */
+    public function follow(int $round): void
+    {
+        $ritual = $this->ritual->snapshot();
+        if ($ritual->round !== $round || !$this->policy->bar($ritual->scene)) {
+            return;
         }
 
-        $round = $this->ritual->round();
         $drunk = $this->bar->drinks($round);
+        $target = $this->target($ritual->story);
         $this->publisher->drinks($round, $drunk, $target);
-        $drunk >= $target && $this->policy->bar($this->ritual->scene()) and $this->ready($round);
-
-        return $target;
+        $drunk >= $target and $this->ready($round);
     }
 
     /**
@@ -310,11 +319,11 @@ final readonly class BarService
     }
 
     /**
-     * @return positive-int The goal the moderator set, or the configured one.
+     * @return positive-int The bar's limit for the room plus the moderator's bonus.
      */
     public function target(Story $story): int
     {
-        return $story->barTarget ?? $this->drinks;
+        return $this->drinks->with($story->barBonus, $story->players, $story->k);
     }
 
     /**

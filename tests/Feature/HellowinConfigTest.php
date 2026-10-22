@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
+use App\Domain\Balance\Limit;
 use App\Domain\Flyer\FlyerDepth;
 use App\Domain\Flyer\Point;
 use Spiral\Testing\Attribute\Env;
@@ -108,12 +109,17 @@ final class HellowinConfigTest extends TestCase
         Assert::equals($config->getDepths(), [new FlyerDepth(3000, 5), new FlyerDepth(1000, 1)]);
     }
 
-    #[Env('HELLOWIN_CLICKS_PER_STAGE', '2')]
-    public function clicksPerStageComesFromEnv(): void
+    #[Env('HELLOWIN_PUMPKIN_BASE', '3')]
+    #[Env('HELLOWIN_PUMPKIN_PER_PLAYER', '0.5')]
+    #[Env('HELLOWIN_BOSS_HP_PER_PLAYER', '10')]
+    #[Env('HELLOWIN_FLYER_BURST_MAX', '7')]
+    public function limitsComeFromEnv(): void
     {
         $config = $this->getContainer()->get(HellowinConfig::class);
 
-        Assert::same($config->getClicksPerStage(), 2);
+        Assert::equals($config->getLimit(HellowinConfig::LIMIT_PUMPKIN), new Limit(3, 0.5));
+        Assert::equals($config->getLimit(HellowinConfig::LIMIT_BOSS), new Limit(45, 10));
+        Assert::same($this->getContainer()->get(FlyerConfig::class)->getBurst()->max, 7);
     }
 
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '2,3')]
@@ -124,14 +130,14 @@ final class HellowinConfigTest extends TestCase
         Assert::same($config->getSceneStageMax(), [2, 3]);
     }
 
-    #[Env('HELLOWIN_CLICKS_PER_STAGE', 'five')]
+    #[Env('HELLOWIN_BAR_BASE', 'five')]
     public function invalidEnvValueIsAConfigError(): never
     {
         $config = $this->getContainer()->get(HellowinConfig::class);
 
         Expect::exception(\InvalidArgumentException::class)
-            ->withMessage('Config "hellowin.clicks_per_stage" (env HELLOWIN_CLICKS_PER_STAGE) must be a positive integer, got "five".');
+            ->withMessage('Config "hellowin.limits.bar.base" (env HELLOWIN_BAR_BASE) must be a number above zero.');
 
-        $config->getClicksPerStage();
+        $config->getLimit(HellowinConfig::LIMIT_BAR);
     }
 }

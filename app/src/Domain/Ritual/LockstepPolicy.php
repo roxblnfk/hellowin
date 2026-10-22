@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Ritual;
 
+use App\Domain\Balance\Limit;
 use App\Domain\Element\Element;
 
 /**
@@ -24,22 +25,22 @@ final readonly class LockstepPolicy implements RitualPolicy
     private array $bonfireStageMax;
 
     /**
-     * @param positive-int $clicksPerStage Clicks a pumpkin needs to move at k = 1.
+     * @param Limit $pumpkin Clicks a pumpkin needs to move.
      * @param list<int> $stageMax The last pumpkin stage of each scene before the final
      *        one, strictly increasing; its length is the number of the final scene. Only the first may be 0: scene 0
      *        is the bar then.
-     * @param positive-int $bonfireClicksPerStage Clicks the bonfire needs to move at k = 1.
+     * @param Limit $bonfire Clicks the bonfire needs to move.
      * @param list<int> $bonfireStageMax The last bonfire stage of each scene, never decreasing; scenes past the list
      *        keep its last value. Empty leaves the bonfire at stage 0 everywhere.
-     * @param positive-int $circleClicksPerStage Clicks the circle needs to move at k = 1.
+     * @param Limit $circle Clicks the circle needs to move.
      * @param positive-int $circleStages The last circle stage, in the final scene; before it the circle stays at 0.
      */
     public function __construct(
-        private int $clicksPerStage,
+        private Limit $pumpkin,
         array $stageMax,
-        private int $bonfireClicksPerStage = 1,
+        private Limit $bonfire = new Limit(1),
         array $bonfireStageMax = [],
-        private int $circleClicksPerStage = 1,
+        private Limit $circle = new Limit(1),
         private int $circleStages = 1,
     ) {
         $previous = -1;
@@ -62,15 +63,15 @@ final readonly class LockstepPolicy implements RitualPolicy
     }
 
     #[\Override]
-    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0): ?int
+    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0, int $players = 1): ?int
     {
-        return $this->transition(Element::TYPE_PUMPKIN, $pumpkin, $scene, $k);
+        return $this->transition(Element::TYPE_PUMPKIN, $pumpkin, $scene, $k, $players);
     }
 
     #[\Override]
-    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0): ?int
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0, int $players = 1): ?int
     {
-        return $this->transition($type, $centrepiece, $scene, $k);
+        return $this->transition($type, $centrepiece, $scene, $k, $players);
     }
 
     #[\Override]
@@ -120,15 +121,15 @@ final readonly class LockstepPolicy implements RitualPolicy
     }
 
     #[\Override]
-    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0): int
+    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0, int $players = 1): int
     {
-        $base = match ($type) {
-            Element::TYPE_PUMPKIN => $this->clicksPerStage,
-            Element::TYPE_BONFIRE => $this->bonfireClicksPerStage,
-            Element::TYPE_CIRCLE => $this->circleClicksPerStage,
+        $limit = match ($type) {
+            Element::TYPE_PUMPKIN => $this->pumpkin,
+            Element::TYPE_BONFIRE => $this->bonfire,
+            Element::TYPE_CIRCLE => $this->circle,
         };
 
-        return \max(1, (int) \round((float) $base * $k));
+        return $limit->of($players, $k);
     }
 
     #[\Override]
@@ -147,14 +148,15 @@ final readonly class LockstepPolicy implements RitualPolicy
      * Pumpkins and the bonfire move before the final scene, the circle only in it.
      *
      * @param Element::TYPE_* $type
+     * @param int<0, max> $players
      * @return int<1, max>|null
      */
-    private function transition(string $type, Pumpkin $element, int $scene, float $k): ?int
+    private function transition(string $type, Pumpkin $element, int $scene, float $k, int $players): ?int
     {
         return $scene >= 0
             && ($scene >= $this->finalScene()) === ($type === Element::TYPE_CIRCLE)
             && $element->stage < $this->stageMax($scene, $type)
-            && $element->clicks >= $this->threshold($type, $k)
+            && $element->clicks >= $this->threshold($type, $k, $players)
             ? $element->stage + 1
             : null;
     }

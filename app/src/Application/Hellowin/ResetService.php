@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Story\OwlLine;
@@ -28,6 +29,7 @@ final readonly class ResetService
         private ?WalkService $walks = null,
         private ?BarService $bar = null,
         private ?FlyerService $flyers = null,
+        private ?LimitsService $limits = null,
     ) {}
 
     /**
@@ -55,6 +57,7 @@ final readonly class ResetService
         );
         $this->retire();
         $again and $this->publisher->owl($round, OwlLine::BAR_AGAIN);
+        $this->limits?->nudge();
         $this->metrics->state($this->store->snapshot());
 
         return $round;

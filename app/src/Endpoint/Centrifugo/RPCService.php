@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarRefusedException;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatRefusedException;
@@ -56,7 +57,7 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'pause', 'zombies', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -76,6 +77,7 @@ final readonly class RPCService implements ServiceInterface
         private ?CursedService $cursed = null,
         private ?DiceService $dice = null,
         private ?ChatService $chat = null,
+        private ?LimitsService $limits = null,
     ) {}
 
     #[\Override]
@@ -111,20 +113,20 @@ final readonly class RPCService implements ServiceInterface
             'finale.step' => $this->finaleStep($request->getData()),
             'owl.say' => $this->say($request->getData()),
             'flyer.special' => $this->special($request->getData()),
+            'flyers.burst' => ['ok' => true, 'count' => $this->flyers->burst($this->clock->now())],
             'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
-            'zombies' => $this->toggle($request->getData(), $this->story->zombies(...)),
             'thresholds' => ['ok' => true] + $this->story->thresholds($request->getData()['k'] ?? null),
             'bar.take' => $this->take($player),
             'drink' => $this->drink($player),
             'clink.auto' => $this->clinkAuto($request->getData(), $player),
-            'bar.target' => ['ok' => true, 'target' => $this->barService()->moveTarget($request->getData()['delta'] ?? null)],
+            'bar.target' => $this->settled(['ok' => true, 'target' => $this->barService()->moveTarget($request->getData()['delta'] ?? null)]),
             'bar.ready' => $this->barReady(),
             'beer' => $this->beer($request->getData(), $player),
             'word' => $player === null ? self::fail('anonymous') : ['ok' => true, 'correct' => $this->rapierService()->word($player, $request->getData()['text'] ?? null)],
             'cure' => $this->cure($request->getData(), $player),
             'strike' => $player === null ? self::fail('anonymous') : ['ok' => true, 'hp' => $this->rapierService()->strike($player)],
-            'cursed.target' => ['ok' => true, 'target' => $this->cursedService()->moveTarget($request->getData()['goal'] ?? null, $request->getData()['delta'] ?? null)],
-            'boss.hp' => ['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null),
+            'cursed.target' => $this->settled(['ok' => true, 'target' => $this->cursedService()->moveTarget($request->getData()['goal'] ?? null, $request->getData()['delta'] ?? null)]),
+            'boss.hp' => $this->settled(['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null)),
             'roll' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->diceService()->roll($player, $request->getData()['attempt'] ?? null),
             'dice.owl' => ['ok' => true] + $this->diceService()->owl(),
             'meep' => $this->meep($request->getData()),
@@ -296,6 +298,20 @@ final readonly class RPCService implements ServiceInterface
         $flyer = \is_string($kind) ? $this->flyers->launchSpecial($kind, $this->clock->now()) : null;
 
         return $flyer === null ? self::fail('unknown kind') : ['ok' => true, 'flyer' => $flyer->id];
+    }
+
+    /**
+     * A bonus of the moderator moved a limit: the clients learn it from the limits, the bar's goal among them.
+     *
+     * @template T of array
+     * @param T $answer
+     * @return T
+     */
+    private function settled(array $answer): array
+    {
+        $this->limits?->nudge();
+
+        return $answer;
     }
 
     /**

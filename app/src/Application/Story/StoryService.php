@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Story;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ResetService;
@@ -12,7 +13,6 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
-use App\Domain\Element\Element;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
@@ -43,6 +43,7 @@ final readonly class StoryService
         private Clock $clock = new SystemClock(),
         private ?FlyerService $flyers = null,
         private ?DawnService $dawn = null,
+        private ?LimitsService $limits = null,
     ) {}
 
     /**
@@ -167,11 +168,11 @@ final readonly class StoryService
     }
 
     /**
-     * Scales every click threshold to the room. An element that already has the clicks of its new threshold moves
-     * with its next click: the policy compares the clicks with the threshold in force on every click.
+     * Scales every limit to the room. Progress that has reached a lower limit moves on by itself
+     * ({@see LimitsService::settle()}).
      *
-     * @return array{k: float, thresholds: array<Element::TYPE_*, positive-int>} The multiplier and the thresholds in
-     *         force after the call.
+     * @return array{k: float, players: positive-int, limits: array<non-empty-string, positive-int>|\stdClass} The
+     *         multiplier and the limits in force after the call, as the `limits` event carries them.
      * @throws StoryRefusedException
      * @throws RitualBusyException
      */
@@ -180,31 +181,11 @@ final readonly class StoryService
         Story::isK($k) or throw new StoryRefusedException('invalid k');
         $k = (float) $k;
 
-        [$before] = $this->store->updateStory(static fn(Story $story): Story => $story->withK($k));
-        $thresholds = [];
-        foreach ([Element::TYPE_PUMPKIN, ...Element::CENTREPIECES] as $type) {
-            $thresholds[$type] = $this->policy->threshold($type, $k);
-        }
-        $before->k === $k or $this->publisher->thresholds($this->store->round(), $k, $thresholds);
+        $this->store->updateStory(static fn(Story $story): Story => $story->withK($k));
+        $this->limits?->nudge();
+        $state = LimitsService::toClient($this->limits?->state() ?? ['players' => 1, 'k' => $k, 'burst' => false, 'limits' => []]);
 
-        return ['k' => $k, 'thresholds' => $thresholds];
-    }
-
-    /**
-     * The console's zombie switch. The wandering zombies of the cursed world do not heed it.
-     *
-     * @throws RitualBusyException
-     */
-    public function zombies(bool $on): void
-    {
-        [$before] = $this->store->updateStory(static fn(Story $story): Story => $story->withZombies($on));
-        if ($before->zombies === $on) {
-            return;
-        }
-
-        $round = $this->store->round();
-        $this->publisher->zombies($round, $on);
-        $on and $this->publisher->owl($round, OwlLine::ZOMBIES);
+        return ['k' => $k, 'players' => $state['players'], 'limits' => $state['limits']];
     }
 
     /**
@@ -236,8 +217,8 @@ final readonly class StoryService
                 $this->cursed?->begin($round);
             } catch (LockBusyException) {
             }
-            $before->zombies or $this->publisher->zombies($round, true);
         }
+        $this->limits?->nudge();
         $this->herd($step);
         $this->publisher->owl($round, OwlLine::finale($step));
         $step === Story::DICE_STEP and $this->dice?->begin($round);

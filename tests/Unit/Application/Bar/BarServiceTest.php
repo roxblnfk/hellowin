@@ -7,6 +7,7 @@ namespace Tests\Unit\Application\Bar;
 use App\Application\Bar\BarRefusedException;
 use App\Application\Bar\BarService;
 use App\Application\Walk\NoCharacterException;
+use App\Domain\Balance\Limit;
 use App\Domain\Bar\Bar;
 use App\Domain\Bar\BarStore;
 use App\Domain\Flyer\Point;
@@ -314,43 +315,54 @@ final class BarServiceTest
         self::place($ritual, self::A, 20, 92);
         self::give($ritual, self::A, clinked: true);
         $ritual->bar->drink(self::A);
+        $ritual->limits->settle();
         $ritual->broadcast->published = [];
 
+        // The bonus moves the goal, the limits tell the clients
         Assert::same($ritual->bar->moveTarget(5), 9);
+        $ritual->limits->settle();
         Assert::same($ritual->bar->moveTarget(-100), 1);
+        $ritual->limits->settle();
         Assert::same($ritual->bar->moveTarget(-5), 1);
+        $ritual->limits->settle();
 
         Assert::same($ritual->broadcast->ofType('drinks'), [
             ['type' => 'drinks', 'round' => 1, 'drunk' => 1, 'target' => 9],
             ['type' => 'drinks', 'round' => 1, 'drunk' => 1, 'target' => 1],
         ]);
+        Assert::same(\array_column(\array_column($ritual->broadcast->ofType('limits'), 'limits'), 'bar'), [9, 1]);
         Assert::count($ritual->broadcast->ofType('ready'), 1);
         Assert::same(self::refusal(static fn() => $ritual->bar->moveTarget('5')), 'invalid delta');
     }
 
-    public function goalMovedBackIsTheConfiguredOneAgain(): void
+    public function goalIsMovedInTheBarOnly(): void
     {
         $ritual = self::bar();
-
         $ritual->bar->moveTarget(5);
-        Assert::same($ritual->store->story()->barTarget, 9);
-        $ritual->bar->moveTarget(-5);
+        Assert::same($ritual->store->story()->barBonus, 5);
 
-        Assert::null($ritual->store->story()->barTarget);
+        $ritual->bar->wave();
+        $ritual->story->nextScene(0, false);
+        $ritual->runJobs();
+
+        Assert::same(self::refusal(static fn() => $ritual->bar->moveTarget(5)), 'not bar');
+        Assert::same(self::refusal(static fn() => $ritual->bar->moveTarget('5')), 'invalid delta');
     }
 
-    public function goalOutlivesTheResetAndTheCountDoesNot(): void
+    public function goalFollowsTheRoomAndTheBonusGoesWithTheRound(): void
     {
-        $ritual = self::bar();
+        $ritual = self::bar(drinks: new Limit(5, 1.5));
         self::place($ritual, self::A, 20, 92);
-        self::give($ritual, self::A, clinked: true);
-        $ritual->bar->drink(self::A);
-        $ritual->bar->moveTarget(6);
+        self::place($ritual, self::B, 40, 92);
+        self::place($ritual, self::C, 60, 92);
+        $ritual->countPlayers();
+        Assert::same($ritual->snapshot->create()['bar']['target'], 8);
 
+        $ritual->bar->moveTarget(6);
         $ritual->reset->reset();
 
-        Assert::same($ritual->broadcast->ofType('reset')[0]['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10, 'roadrunner' => false]);
-        Assert::same($ritual->snapshot->create()['bar'], ['mugs' => 1, 'max' => 1, 'pouring' => null, 'drunk' => 0, 'target' => 10, 'roadrunner' => false]);
+        Assert::same($ritual->broadcast->ofType('reset')[0]['bar']['target'], 8);
+        Assert::same($ritual->snapshot->create()['bar']['target'], 8);
         Assert::false($ritual->snapshot->create()['ready']);
     }
 
@@ -396,9 +408,9 @@ final class BarServiceTest
         Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->drinks, 1);
     }
 
-    private static function bar(?int $mugs = null): RitualHarness
+    private static function bar(?int $mugs = null, ?Limit $drinks = null): RitualHarness
     {
-        $ritual = new RitualHarness(stageMax: [0, 1, 2]);
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], barDrinks: $drinks ?? new Limit(4));
         $mugs === null or $ritual->barStore->update(static fn(Bar $bar): array => [new Bar($mugs), null]);
 
         return $ritual;

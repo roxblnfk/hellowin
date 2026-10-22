@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\OwlLine;
@@ -32,6 +33,7 @@ final readonly class TransitionHandler
         private ?WalkService $walks = null,
         private ?LoggerInterface $logger = null,
         private ?BarService $bar = null,
+        private ?LimitsService $limits = null,
     ) {}
 
     /**
@@ -47,7 +49,8 @@ final readonly class TransitionHandler
     {
         // The threshold in force when the job runs is what the transition takes; the reveal counts the rest as burned
         $type = $this->store->typeOf($pumpkin);
-        $cost = $this->policy->threshold($type, $this->store->story()->k);
+        $story = $this->store->story();
+        $cost = $this->policy->threshold($type, $story->k, $story->players);
         $moved = $this->store->advancePumpkin($round, $pumpkin, $toStage, $cost);
         if ($moved === null) {
             return false;
@@ -106,6 +109,7 @@ final readonly class TransitionHandler
         $final and $this->publisher->finale($round, $toScene, 0);
         $this->publisher->owl($round, OwlLine::scene($toScene));
         $this->metrics->sceneMoved($toScene);
+        $this->limits?->nudge();
 
         return true;
     }

@@ -10,6 +10,7 @@ use App\Application\Player\PlayerService;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
+use App\Domain\Balance\Limit;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Point;
 use App\Domain\Lock\LockBusyException;
@@ -45,8 +46,7 @@ final readonly class RapierService
     /**
      * @param WalkZone $lawn Where zombies shamble.
      * @param float $speed Percents of the screen per second along the path.
-     * @param positive-int $hpBase FrankenPHP's health before the players and the multiplier.
-     * @param int<0, max> $hpPerPlayer FrankenPHP's health per player on the floor.
+     * @param Limit $hp FrankenPHP's health as it wakes, before the moderator's bonus.
      */
     public function __construct(
         private WalkerStore $walkers,
@@ -58,8 +58,7 @@ final readonly class RapierService
         private Clock $clock,
         private WalkZone $lawn,
         private float $speed,
-        private int $hpBase,
-        private int $hpPerPlayer,
+        private Limit $hp,
         private Randomizer $random = new Randomizer(),
         private ?ActionStop $stops = null,
     ) {}
@@ -79,7 +78,7 @@ final readonly class RapierService
     {
         $now = $this->clock->now();
         $text = \is_string($text) ? \trim($text) : '';
-        [$walker, $correct, $players] = $this->walkers->update(
+        [$walker, $correct] = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($id, $text, $now): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
@@ -93,13 +92,13 @@ final readonly class RapierService
                 $walker = $correct ? $walker->armed() : $walker->zombified($now, $now + $this->shamblePause());
                 $walkers[$id] = $walker;
 
-                return [$walkers, [$walker, $correct, \count($walkers)]];
+                return [$walkers, [$walker, $correct]];
             },
         );
 
         $round = $this->ritual->round();
         $this->publisher->word($round, self::player($walker), $correct);
-        $correct and $this->wake($round, $players);
+        $correct and $this->wake($round);
 
         return $correct;
     }
@@ -183,7 +182,8 @@ final readonly class RapierService
     }
 
     /**
-     * The moderator tunes FrankenPHP's health and its maximum by `$delta`, the health never below one.
+     * The moderator moves the bonus on top of FrankenPHP's maximum by `$delta`, until the end of the round; the damage
+     * stays, so the health is `max(1, max − damage)`.
      *
      * @return array{hp: int<0, max>, max: positive-int}
      * @throws StoryRefusedException `invalid delta`, or `not now` — no boss or it is down.
@@ -192,16 +192,54 @@ final readonly class RapierService
     public function tune(mixed $delta): array
     {
         \is_int($delta) or throw new StoryRefusedException('invalid delta');
-        $round = $this->ritual->round();
+        $ritual = $this->ritual->snapshot();
+        $story = $ritual->story;
         [$before, $after] = $this->boss->update(
-            $round,
-            static fn(?Boss $boss): ?Boss => $boss === null || $boss->down() ? $boss : $boss->tuned($delta),
+            $ritual->round,
+            function (?Boss $boss) use ($delta, $story): ?Boss {
+                if ($boss === null || $boss->down()) {
+                    return $boss;
+                }
+                $bonus = $this->hp->moved($boss->bonus, $delta, $story->players, $story->k);
+
+                return $boss->rescaled($this->hp->with($bonus, $story->players, $story->k), $bonus);
+            },
         );
         $before !== null && !$before->down() && $after !== null or throw new StoryRefusedException('not now');
 
-        $after == $before or $this->publisher->boss($round, $after->toEvent());
+        $after->toEvent() === $before->toEvent() or $this->publisher->boss($ritual->round, $after->toEvent());
 
         return $after->toEvent();
+    }
+
+    /**
+     * The limits' work: FrankenPHP's maximum follows the room and the multiplier, the damage stays.
+     *
+     * @throws LockBusyException
+     */
+    public function rescale(int $round): void
+    {
+        $story = $this->ritual->story();
+        $boss = $this->boss->get($round);
+        if ($boss === null || $boss->down() || $boss->max === $this->hp->with($boss->bonus, $story->players, $story->k)) {
+            return;
+        }
+
+        [$before, $after] = $this->boss->update(
+            $round,
+            fn(?Boss $boss): ?Boss => $boss?->rescaled($this->hp->with($boss->bonus, $story->players, $story->k)),
+        );
+        $after !== null && $after->toEvent() !== $before?->toEvent() and $this->publisher->boss($round, $after->toEvent());
+    }
+
+    /**
+     * FrankenPHP's maximum in force for the room: the limit `boss` plus the moderator's bonus, before it wakes too.
+     *
+     * @return positive-int
+     */
+    public function hpMax(int $round, Story $story): int
+    {
+        return $this->hp->with($this->boss->get($round)?->bonus ?? 0, $story->players, $story->k);
     }
 
     /**
@@ -275,14 +313,14 @@ final readonly class RapierService
     }
 
     /**
-     * The first rapier wakes FrankenPHP with health for the players on the floor, scaled like every threshold.
+     * The first rapier wakes FrankenPHP with health for the room, like every limit.
      *
-     * @param int<0, max> $players
      * @throws LockBusyException
      */
-    private function wake(int $round, int $players): void
+    private function wake(int $round): void
     {
-        $max = \max(1, (int) \ceil((float) ($this->hpBase + $this->hpPerPlayer * $players) * $this->ritual->story()->k));
+        $story = $this->ritual->story();
+        $max = $this->hp->of($story->players, $story->k);
         [$before, $after] = $this->boss->update($round, static fn(?Boss $boss): Boss => $boss ?? new Boss($max, $max));
         $before === null && $after !== null and $this->publisher->boss($round, $after->toEvent());
     }

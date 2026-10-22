@@ -150,20 +150,17 @@ final readonly class FlyerFactory
      * @param int $now Unix time in milliseconds.
      * @param bool $cursed The cursed world: its own set of kinds, the rare flyer still of the scene.
      * @param bool $dawn The dawn: its own set of kinds, like the cursed world.
+     * @param bool $rare Whether this launch may turn out the rare flyer of the scene.
      * @return Flyer|null Null when the set has no flyers and this launch is not the rare one.
      */
-    public function launch(int $now, int $scene = 0, bool $cursed = false, bool $dawn = false): ?Flyer
+    public function launch(int $now, int $scene = 0, bool $cursed = false, bool $dawn = false, bool $rare = true): ?Flyer
     {
-        $rare = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
-        if ($rare !== null && $this->chance($this->rareChance)) {
-            return $this->special($rare, $now);
+        $special = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
+        if ($rare && $special !== null && $this->chance($this->rareChance)) {
+            return $this->special($special, $now);
         }
 
-        $kinds = match (true) {
-            $dawn => $this->dawn,
-            $cursed => $this->cursed,
-            default => $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)],
-        };
+        $kinds = $this->kinds($scene, $cursed, $dawn);
         if ($kinds === []) {
             return null;
         }
@@ -203,6 +200,14 @@ final readonly class FlyerFactory
             kind: $kind,
             wobble: $kind === Flyer::KIND_BAT ? $this->wobble() : null,
         );
+    }
+
+    /**
+     * Whether the set of the scene, the cursed world or the dawn has flyers at all, the rare one aside.
+     */
+    public function hasKinds(int $scene, bool $cursed = false, bool $dawn = false): bool
+    {
+        return $this->kinds($scene, $cursed, $dawn) !== [];
     }
 
     /**
@@ -464,6 +469,18 @@ final readonly class FlyerFactory
     private function wobble(): Wobble
     {
         return new Wobble($this->float(...self::WOBBLE_AMP), $this->float(...self::WOBBLE_WAVES));
+    }
+
+    /**
+     * @return list<non-empty-string>
+     */
+    private function kinds(int $scene, bool $cursed, bool $dawn): array
+    {
+        return match (true) {
+            $dawn => $this->dawn,
+            $cursed => $this->cursed,
+            default => $this->kinds[\min(\max(0, $scene), \count($this->kinds) - 1)],
+        };
     }
 
     private function chance(float $probability): bool

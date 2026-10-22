@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Ticker;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Player\LeaderboardService;
@@ -47,6 +48,7 @@ final class Ticker
         private readonly array $dawnInterval = [1000, 2500],
         private readonly ?RapierService $rapier = null,
         private readonly ?CursedService $cursed = null,
+        private readonly ?LimitsService $limits = null,
     ) {}
 
     /**
@@ -80,6 +82,7 @@ final class Ticker
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;
             $this->safely('walkers', fn() => $this->walks->sync());
+            $this->safely('limits', fn() => $this->limits?->follow());
             $this->safely('cursed goals', fn() => $this->cursed?->follow());
         }
 

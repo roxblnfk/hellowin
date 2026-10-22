@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
+use App\Domain\Balance\Limit;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
@@ -12,32 +13,31 @@ use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Cursed;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\Story;
-use App\Domain\Walk\WalkerStore;
 
 /**
  * The goal of the cursed world (docs/spec/scenario.md, «Шаг 5 — цель проклятого мира»): mugs drunk and zombies slain,
- * `$perPlayer` of each for every player on the floor plus the moderator's addition. Both reached — the final scene is
- * ready once more, and the moderator may take the rapier step.
+ * each its limit for the figures on the floor plus the moderator's addition. Both reached — the final scene is ready
+ * once more, and the moderator may take the rapier step.
  *
- * The goals follow the players live: the ticker compares the players on the floor with those the clients were last
- * told the goals for ({@see follow()}).
+ * The goals follow the room live: the ticker compares them with those the clients were last told ({@see follow()}).
  */
 final readonly class CursedService
 {
     /**
-     * @param positive-int $perPlayer Mugs and zombies per player on the floor.
+     * @param Limit $drinks Mugs the cursed world wants.
+     * @param Limit $zombies Zombies the cursed world wants slain.
      */
     public function __construct(
         private CursedStore $store,
         private RitualStore $ritual,
         private RitualPolicy $policy,
-        private WalkerStore $walkers,
         private ChannelPublisher $publisher,
-        private int $perPlayer,
+        private Limit $drinks,
+        private Limit $zombies,
     ) {}
 
     /**
-     * The cursed world has begun: the clients get the goals for the players on the floor now.
+     * The cursed world has begun: the clients get the goals for the room there is now.
      *
      * @throws LockBusyException
      * @throws RitualBusyException
@@ -85,20 +85,32 @@ final readonly class CursedService
         $ritual = $this->ritual->snapshot();
         $ritual->story->finale === Story::CURSED_STEP or throw new StoryRefusedException('not cursed');
 
-        $players = $this->players();
-        $after = $this->settle(
+        $story = $ritual->story;
+        $limit = $goal === Cursed::DRINKS ? $this->drinks : $this->zombies;
+        $event = $this->settle(
             $ritual->round,
-            fn(Cursed $cursed): Cursed => $cursed->moved($goal, $delta, $this->perPlayer, $players),
+            static fn(Cursed $cursed): Cursed => $cursed->moved($goal, $delta, $limit, $story->players, $story->k),
             false,
-            $players,
         );
 
-        return $after->target($goal, $this->perPlayer, $players);
+        return $goal === Cursed::DRINKS ? $event['drinksTarget'] : $event['zombiesTarget'];
     }
 
     /**
-     * The ticker's work: when players came or went since the clients were told the goals, they get the new ones — and
-     * a goal that came down to the counters makes the world ready.
+     * The goals in force now, for the limits of the console.
+     *
+     * @return array{drinks: positive-int, zombies: positive-int}
+     */
+    public function targets(int $round, Story $story): array
+    {
+        $event = $this->store->get($round)->toEvent($this->drinks, $this->zombies, $story->players, $story->k);
+
+        return ['drinks' => $event['drinksTarget'], 'zombies' => $event['zombiesTarget']];
+    }
+
+    /**
+     * The ticker's work, and the limits' after they change: when the goals moved since the clients were told them, they
+     * get the new ones — and a goal that came down to the counters makes the world ready.
      *
      * @throws LockBusyException
      * @throws RitualBusyException
@@ -110,21 +122,21 @@ final readonly class CursedService
             return;
         }
 
-        $players = $this->players();
-        $this->store->get($ritual->round)->players === $players
-            or $this->settle($ritual->round, static fn(Cursed $cursed): Cursed => $cursed, false, $players);
+        $story = $ritual->story;
+        $cursed = $this->store->get($ritual->round);
+        $cursed->toEvent($this->drinks, $this->zombies, $story->players, $story->k) === $cursed->toldEvent()
+            or $this->settle($ritual->round, static fn(Cursed $cursed): Cursed => $cursed, false);
     }
 
     /**
      * The counters and goals as the snapshot carries them: from the goal step on, null before it.
      *
-     * @param int<0, max> $players Characters on the floor.
      * @return array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null
      */
-    public function state(int $round, Story $story, int $players): ?array
+    public function state(int $round, Story $story): ?array
     {
         return $story->finale !== null && $story->finale >= Story::CURSED_STEP
-            ? $this->store->get($round)->toEvent($this->perPlayer, $players)
+            ? $this->store->get($round)->toEvent($this->drinks, $this->zombies, $story->players, $story->k)
             : null;
     }
 
@@ -133,36 +145,30 @@ final readonly class CursedService
      * final scene ready on the goal step once both goals are reached.
      *
      * @param \Closure(Cursed): Cursed $change
-     * @param int<0, max>|null $players Players on the floor, when the caller has counted them.
+     * @return array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}
      * @throws LockBusyException
      * @throws RitualBusyException
      */
-    private function settle(int $round, \Closure $change, bool $always, ?int $players = null): Cursed
+    private function settle(int $round, \Closure $change, bool $always): array
     {
-        $players ??= $this->players();
+        $story = $this->ritual->story();
         [$before, $after] = $this->store->update(
             $round,
-            static fn(Cursed $cursed): Cursed => $change($cursed)->toldFor($players),
+            fn(Cursed $cursed): Cursed => ($changed = $change($cursed))->told(
+                $changed->toEvent($this->drinks, $this->zombies, $story->players, $story->k),
+            ),
         );
-        $event = $after->toEvent($this->perPlayer, $players);
-        if ($always || $event !== $before->toEvent($this->perPlayer, $before->players)) {
+        $event = $after->toEvent($this->drinks, $this->zombies, $story->players, $story->k);
+        if ($always || $event !== $before->toldEvent()) {
             $this->publisher->cursed($round, $event);
         }
 
-        if ($after->done($this->perPlayer, $players)
+        if ($after->done($this->drinks, $this->zombies, $story->players, $story->k)
             && $this->ritual->markReady($round, $this->policy->finalScene(), null, Story::CURSED_STEP)) {
             $this->publisher->ready($round, $this->policy->finalScene());
             $this->publisher->owl($round, OwlLine::CURSED_READY);
         }
 
-        return $after;
-    }
-
-    /**
-     * @return int<0, max>
-     */
-    private function players(): int
-    {
-        return \count($this->walkers->all());
+        return $event;
     }
 }

@@ -10,7 +10,8 @@
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
 — сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
-слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»).
+слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»),
+единая формула лимитов с пересчётом вживую и волна летунов модератора («Лимиты и баланс», бриф №22).
 
 ## Классы
 
@@ -26,6 +27,7 @@
 | События канала | `Application/Hellowin/ChannelPublisher` |
 | Игроки: id из секрета, имя, запись в KV | `Domain/Player/PlayerId`, `PlayerName`, `PlayerStore`, `Application/Player/PlayerService` |
 | Локи нескольких ресурсов | `Domain/Lock/Locks` |
+| Лимиты: формула, волна, пересчёт | `Domain/Balance/Limit`, `Domain/Balance/Burst`, `Domain/Balance/LimitsStore`, `Application/Balance/LimitsService` |
 | Лимит RPC | `Domain/RateLimit/TokenBucket` (ведро), `Domain/RateLimit/RateLimiter` (вёдра в KV под локом), из `Endpoint/Centrifugo/RPCService` |
 | Адреса Centrifugo и Grafana для страницы | `Application/Web/ServiceUrl` (из `Endpoint/Web/HomeController`) |
 | Таблица лидеров | `Domain/Player/Leaderboard` (ранжирование), `Application/Player/LeaderboardService` |
@@ -74,7 +76,8 @@
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Пиво из тыкв | каждый тик | `WalkService::beers`: фигурки с наступившим `takeAt` у тыквы (`takeFrom`) под локом `walkers` получают пиво, если мир всё ещё на шаге 5 → событие `take` с `pumpkin`; см. «Рапира» |
 | Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
-| Цели проклятого мира | раз в секунду, после фигурок | `CursedService::follow`: число фигурок изменилось с прошлого `cursed` → новое `cursed` и проверка готовности |
+| Лимиты | раз в секунду, после фигурок | `LimitsService::follow`: число фигурок продержалось `LimitsService::DEBOUNCE` (3 с) → `Story::$players`; лимиты разошлись с последним `limits` → догон прогресса и событие `limits`; см. «Лимиты и баланс» |
+| Цели проклятого мира | раз в секунду, после лимитов | `CursedService::follow`: цели разошлись с последними сказанными (`drinksTold`, `zombiesTold`) → новое `cursed` и проверка готовности |
 | Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
@@ -102,7 +105,7 @@
   `FlyerFactory::launch(now, scene, cursed, dawn)`. До
   шага 5 финальная сцена летает своим набором из `HELLOWIN_FLYER_KINDS`. Редкий летун — по-прежнему по сцене
   (`HELLOWIN_FLYER_RARE`, по умолчанию у финала его нет). Пустой набор — как пустой набор сцены. Пауза останавливает и
-  этот набор; зомби идут отдельно (бродячие, см. ниже), переключатель `zombies` на них не действует.
+  этот набор; зомби идут отдельно (бродячие, см. ниже).
 - **Светлячки** (`firefly`) — обычные летуны (край или куст, прямая или дуга), но глубина — только 1–2
   (`FIREFLY_DEPTHS`, ограничено числом глубин): из куста вне этих глубин светлячок не взлетает — путь берётся с края,
   глубина — равновероятно 1 или 2. Длительность — глубины, очки — `HELLOWIN_FLYER_FIREFLY_POINTS` на любой глубине.
@@ -111,7 +114,7 @@
   зону `walk` и выбирает две точки лужайки на 12–25 % экрана друг от друга, обе вне эллипса грядки и так, чтобы прямая
   между ними её не пересекала (`WalkZone::route` — без обхода; 20 попыток, иначе отрезок внизу лужайки). `depth` 1,
   длительность и очки глубины 1, без `via` и `bush`, `wobble` поменьше (`WORM_AMP` 0,8–2, `WORM_WAVES` 3–6). От
-  проклятого мира и переключателя `zombies` не зависит; набор с `worm` без зоны — ошибка конструктора.
+  проклятого мира не зависит; набор с `worm` без зоны — ошибка конструктора.
   На паузе модератора (`paused` в сюжете) тикер не запускает никого, расписание идёт дальше.
 - **Мухи** (`fly`) — вид набора бара (сцена 0): `FlyerFactory` берёт `walk.bar` (`BarLayout`) и задаёт только посадки
   и время, петли между точками строит фронт. Посадок — случайно в `HELLOWIN_FLYER_FLY_STOPS` (`2-3`), каждая на
@@ -302,9 +305,11 @@
   (`busy`), `clinked` — или фигурка на поле одна, по тем же `walkers`, что видит клиент (`not clinked`), `clinkedUntil`
   (`busy`) → руки пустые, `busyUntil`; затем `drinks + 1` игроку (`player:{id}`), `+1` в `hellowin:drinks` `{round, count}`
   (под локом `bar`; счёт другого раунда читается как 0 — сброс его не трогает), события `drink` и `drinks`.
-- **Цель и готовность.** Цель — `barTarget` в сюжете `hellowin:story` (рядом с `k`, переживает сброс; `null` —
-  `HELLOWIN_BAR_DRINKS`). `bar.target {delta}` меняет её под локом `scene` (не ниже 1; вернувшаяся к env — снова
-  `null`), событие `drinks`. Бар готов, когда `drunk ≥ target` (после `drink` или понижения цели) или по `bar.ready`:
+- **Цель и готовность.** Цель — лимит `bar` («Лимиты и баланс») плюс надбавка `barBonus` в сюжете `hellowin:story`
+  (до конца раунда: сброс и `again` её снимают). `bar.target {delta}` — проверки `invalid delta`, `not bar`; надбавка
+  сдвигается под локом `scene` (цель не ниже 1 для нынешних фигурок, `Limit::moved`), а события `drinks` и `limits`
+  приходят из `LimitsService::settle` — RPC зовёт его сразу. Бар готов, когда `drunk ≥ target` (после `drink`,
+  понижения цели надбавкой или пересчётом) или по `bar.ready`:
   `RitualStore::markReady(round, 0)` под локом `scene` — один раз за раунд, событие `ready` и реплика `bar-intro`.
   `scene.next` из бара без готовности — `not ready` (или `force`), как в других сценах.
 - **Выход из бара и сброс.** `TransitionHandler::scene` (0 → 1): стойка пустеет (`{mugs: 0, pouring: null}`), фигурки
@@ -317,17 +322,17 @@
 Правила — [`scenario.md`](scenario.md), «Рапира»; сообщения — [`protocol.md`](protocol.md), «Рапира».
 
 - **Шаги.** `Story`: `CURSED_STEP` 5, `RAPIER_STEP` 6, `DAWN_STEP` 7 = `LAST_STEP`; `cursed()` — шаги 5–6, `dawn()` —
-  7. `stepTo(5)` снимает `ready` и включает `zombies`; `awaitsReady` — шаг 1 ждёт круга, шаг 6 — цели проклятого мира
+  7. `stepTo(5)` снимает `ready`; `awaitsReady` — шаг 1 ждёт круга, шаг 6 — цели проклятого мира
   (`ready`), шаг 7 от модератора без `force` — всегда `not ready` (его даёт последний удар). Что приносит шаг —
-  `StoryService::entered`: на 5 — пиво всем фигуркам (`WalkService::handBeer`), `cursed`, `zombies {on: true}`,
+  `StoryService::entered`: на 5 — пиво всем фигуркам (`WalkService::handBeer`), `cursed`, `limits`,
   `HELLOWIN_ZOMBIE_MIN` бродячих зомби; на 7 — `force` модератора валит босса (`RapierService::fell`, без
   `boss-down`), заклятие снимается со всех (`WalkService::cureAll`), бродячие зомби уходят (`gone`).
-- **Цель проклятого мира** — ключ `hellowin:cursed` `{round, drunk, slain, drinksBonus, zombiesBonus, players}` под
-  RR-локом `cursed` (`CursedStore`); запись другого раунда читается как пустая, так что сброс её не трогает, а добавки
-  модератора не переживают раунд. Цель — `max(1, HELLOWIN_CURSED_PER_PLAYER × max(1, n) + добавка)`, n — фигурки в
-  `hellowin:walkers`. `drink` (`BarService::drink` — тот же метод, что в баре) и сбитый зомби (`FlyerService::shoot`) на
-  шагах 5–6 — `+1` под локом и событие `cursed`; `players` в записи — для какого n клиентам последний раз сказали цели:
-  тикер раз в секунду сравнивает (`CursedService::follow`). Обе цели выполнены на шаге 5 — `RitualStore::markReady(round,
+- **Цель проклятого мира** — ключ `hellowin:cursed` `{round, drunk, slain, drinksBonus, zombiesBonus, drinksTold,
+  zombiesTold}` под RR-локом `cursed` (`CursedStore`); запись другого раунда читается как пустая, так что сброс её не
+  трогает, а добавки модератора не переживают раунд. Цель — лимит `drinks` / `zombies` («Лимиты и баланс») плюс
+  добавка, не ниже 1. `drink` (`BarService::drink` — тот же метод, что в баре) и сбитый зомби (`FlyerService::shoot`) на
+  шагах 5–6 — `+1` под локом и событие `cursed`; `drinksTold`, `zombiesTold` — цели, последний раз сказанные клиентам:
+  тикер раз в секунду и пересчёт лимитов сравнивают с ними (`CursedService::follow`). Обе цели выполнены на шаге 5 — `RitualStore::markReady(round,
   финальная, step: 5)` под локом `scene`: один раз за раунд (готовность снята на входе в шаг 5), событие `ready` и
   реплика `cursed-ready`.
 - **Пиво из тыквы** (`beer`, `WalkService::toPumpkin`): под локом `walkers` — проверки по порядку, путь к стороне кружки
@@ -342,13 +347,14 @@
   (под локом `walkers`, в той же синхронизации с presence) и, вернувшись на шаге 6, снова зомби.
 - **Расколдовать** (`cure`, `RapierService::cure`): под локом `walkers` — цель ещё зомби → `zombieAt` снят, событие
   `cure`; уже нет — `cured: false`. Первый под локом — как первый сбивший летуна.
-- **Босс** — ключ `hellowin:boss` `{round, hp, max, damage}` под RR-локом `boss` (`BossStore`). Первое верное слово —
-  `{hp: max, max}`, `max = ceil((HELLOWIN_BOSS_HP_BASE + HELLOWIN_BOSS_HP_PER_PLAYER × n) × k)` (под локом: проснётся один
+- **Босс** — ключ `hellowin:boss` `{round, hp, max, damage, bonus}` под RR-локом `boss` (`BossStore`). Первое верное
+  слово — `{hp: max, max}`, `max` — лимит `boss` («Лимиты и баланс») (под локом: проснётся один
   раз), событие `boss`. `strike`: под локом `boss` жив → `hp − 1`, `damage + 1`; `damage + 1` игроку; событие `strike`.
   Весь зал бьёт в одну запись под одним локом — как костёр; удар, снявший последнюю единицу, ровно один: он говорит
   `boss-down` и ставит задачу `TransitionFinale {key: "{round}:finale:7", round, toStep: 7}` (`#[Idempotent]`, как
   переходы), обработчик — `StoryService::finaleOf` (шаг меняется, только если раунд тот же и шаг 6 → 7).
-  `boss.hp {delta}` — `hp` и `max` вместе, `hp` не ниже 1.
+  `boss.hp {delta}` — `bonus + delta` (не ниже `1 − лимит`), `max = max(1, лимит + bonus)`, `hp = max(1, max − damage)`;
+  пересчёт лимитов (`RapierService::rescale`) делает то же с новым лимитом. Упавший босс не меняется.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не встают (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
 - **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): каждое попадание игрока
@@ -435,21 +441,21 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, zombies, lastPumpkin, bonfire, k, barTarget, roadrunner}` (`Domain/Story/Story`;
-  `k` — множитель порогов, вне 0,1–10 или нет поля — читается как 1;
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, lastPumpkin, bonfire, k, barBonus, roadrunner, players}` (`Domain/Story/Story`;
+  `k` — множитель лимитов, вне 0,1–10 или нет поля — читается как 1; `players` — n лимитов после дебаунса,
+  `barBonus` — надбавка модератора к цели бара;
   `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
-  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; пауза и `k` при этом остаются.
-- **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `zombies`, `thresholds` меняют сюжет под локом через
+  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; пауза, `k` и `players` при этом остаются, `barBonus` — нет.
+- **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `thresholds` меняют сюжет под локом через
   `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
   нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
   только публикует.
-- **Множитель порогов** (`k`): действующий порог — `RitualPolicy::threshold($type, $k)` = `max(1, round(базовый × k))`,
-  базовые — `HELLOWIN_CLICKS_PER_STAGE`, `HELLOWIN_BONFIRE_CLICKS_PER_STAGE`, `HELLOWIN_CIRCLE_CLICKS_PER_STAGE`. Клик
-  читает `k` из сюжета под локом элемента вместе с `round` и `scene` (`ClickOutcome::$k`) и по нему же решает о переходе
-  и шлёт `threshold` в `click`; снимок умножает `threshold` по `k` из того же `getMultiple`. Смена `k` ничего не
-  пересчитывает и задач не ставит: элемент, у которого `clicks` уже не меньше нового порога, двинется со следующим
-  кликом — тем же путём и с тем же ключом `{round}:{id}:{toStage}`, один переход на стадию; излишек сгорает, как обычно.
+- **Пороги** (`k`, `players`): действующий порог — `RitualPolicy::threshold($type, $k, $players)`, лимиты `pumpkin`,
+  `bonfire`, `circle` («Лимиты и баланс»). Клик читает `k` и `players` из сюжета под локом элемента вместе с `round` и
+  `scene` (`ClickOutcome`), по ним же решает о переходе и шлёт `threshold` в `click`; снимок считает `threshold` из того
+  же `getMultiple`. Порог, упавший до накопленных `clicks`, двигает элемент сам: `LimitsService` ставит ту же задачу,
+  что клик, — с тем же ключом `{round}:{id}:{toStage}`, один переход на стадию; излишек сгорает, как обычно.
 - **Разбегание** на шаге финала 2 (`Story::SCATTER_STEP`): после события `finale` и реплики `finale-2`
   `WalkService::scatter` под локом `walkers` ведёт каждую фигурку с её текущей точки к краю лужайки — по лучу от центра
   грядки через фигурку до стороны прямоугольника `walk` (`WalkZone::outward`), путь — тем же `WalkZone::route`, что у
@@ -492,8 +498,8 @@
 4. Статистика игрока: под RR-локом `player:{id}` `clicks + 1` (анонимный клик — пропуск). Сбой статистики пишется
    в лог и не ломает клик.
 5. Публикация `click` в канал (с `player`, если он есть).
-6. Если политика разрешает переход (`clicks >=` действующий порог тыквы — `HELLOWIN_CLICKS_PER_STAGE` × `k` — и
-   `stage < stageMax(scene)`; у костра и круга — их порог и потолок, `RitualPolicy::threshold($type, $k)`,
+6. Если политика разрешает переход (`clicks >=` действующий порог тыквы — лимит `pumpkin` — и
+   `stage < stageMax(scene)`; у костра и круга — их порог и потолок, `RitualPolicy::threshold($type, $k, $players)`,
    `stageMax($scene, $type)`) — задача
    `TransitionPumpkin {key, round, pumpkin, toStage, player}` в очередь, метрика
    `hellowin_transition_jobs_pushed_total{kind="pumpkin"}` (у костра — `kind="bonfire"`, у круга — `kind="circle"`).
@@ -514,12 +520,12 @@
   `bonfire` (сцена) в сюжете под тем же локом `scene`, тоже один раз на сцену (`RitualStore::markBonfireOpen`), и
   реплики `last-pumpkin`, `bonfire-open`.
 - **Костёр.** Та же задача `TransitionPumpkin` с `pumpkin: "bonfire"`, ключ `{round}:bonfire:{toStage}`; отличаются лок
-  (`bonfire`), запись (`hellowin:bonfire`), порог (`HELLOWIN_BONFIRE_CLICKS_PER_STAGE`), потолок
+  (`bonfire`), запись (`hellowin:bonfire`), порог (лимит `bonfire`), потолок
   (`HELLOWIN_BONFIRE_STAGE_MAX`) и метрики: `kind="bonfire"` в `pushed` и `transitions`, gauge
   `hellowin_bonfire_stage`. Переход костра на последнюю стадию сцены делает сцену готовой: `ready`, реплики
   `bonfire-done` (игрок из payload) и `scene-ready`; в `lastPumpkin` сюжета — игрок костра.
 - **Круг.** Тот же механизм центрального элемента, что у костра: задача `TransitionPumpkin` с `pumpkin: "circle"`, ключ
-  `{round}:circle:{toStage}`, лок `circle`, запись `hellowin:circle`, порог `HELLOWIN_CIRCLE_CLICKS_PER_STAGE`, потолок
+  `{round}:circle:{toStage}`, лок `circle`, запись `hellowin:circle`, порог (лимит `circle`), потолок
   `HELLOWIN_CIRCLE_STAGES` в финальной сцене (0 до неё), метрики `kind="circle"` и gauge `hellowin_circle_stage`.
   Политика двигает тыквы и костёр только до финальной сцены, круг — только в ней. Переход круга на последнюю стадию на
   шаге финала 0 делает финальную сцену готовой: `ready`, реплики `circle-done` (игрок из payload) и `scene-ready`; в
@@ -563,6 +569,67 @@ claim возвращает nil, обработчик не вызывается, 
 `RetryableLockException` → повтор с задержкой относится к lease-хранилищам (AtLeastOnce) и сработает, только если
 alias `transitions` переключить обратно на `RedisLeaseConfig`.
 
+## Лимиты и баланс
+
+Статус: **реализовано** (бриф №22). Сообщения — [`protocol.md`](protocol.md), «Лимиты и баланс».
+
+- **Формула** (`Domain/Balance/Limit`): `limit = max(1, ceil(k × (BASE + PER_PLAYER × (max(1, n) − 1)))) + надбавка`,
+  n — `Story::$players`, k — `Story::$k` (множитель модератора, `thresholds`), BASE и PER_PLAYER — env ниже, дробные
+  можно; `ceil` с допуском `1e-9`, чтобы `1.1 × 10` не стало 12. Число стадий (`HELLOWIN_SCENE_STAGE_MAX`,
+  `HELLOWIN_BONFIRE_STAGE_MAX`, `HELLOWIN_CIRCLE_STAGES`) формула не трогает — только клики на стадию. Надбавка
+  (`Limit::moved`) сдвигается на `delta` и не опускает лимит ниже 1 для нынешних n — серия «−5» не копит скрытый долг.
+  Надбавки живут до конца раунда: `barBonus` в сюжете (`Story::restarted` её снимает), `drinksBonus` / `zombiesBonus` в
+  `hellowin:cursed`, `bonus` в `hellowin:boss` (записи раунда).
+- **Чей лимит где.** `LockstepPolicy` — `pumpkin`, `bonfire`, `circle` (`threshold($type, $k, $players)`); `BarService` —
+  `bar` (`target`); `CursedService` — `drinks`, `zombies`; `RapierService` — `boss` (`hpMax`, `wake`, `tune`, `rescale`).
+- **n с дебаунсом.** Тикер раз в секунду (`LimitsService::follow`, после синхронизации фигурок) считает фигурки
+  `hellowin:walkers`. Совпало с `Story::$players` — ожидание снято; новое — `hellowin:limits:pending {players, since}`;
+  то же число держится `LimitsService::DEBOUNCE` = 3000 мс — `Story::withPlayers(n)` под локом `scene`. Другое число
+  до срока — ожидание начинается заново. n переживает сброс (это зал, как `k`). `online` в снимке — живое число, без
+  дебаунса.
+- **Пересчёт** (`LimitsService::settle`): состояние `{players: max(1, n), k, burst, limits}` текущего контекста сравнивается
+  с последним сказанным в раунде (`hellowin:limits {round, told}`). Совпало — ничего. Иначе — догон прогресса, событие
+  `limits`, запись. Зовут его: тикер раз в секунду (страховка), `thresholds`, RPC `bar.target`, `cursed.target`,
+  `boss.hp` (после ответа сервиса), переход сцены (`TransitionHandler::scene`), шаг финала (`StoryService::entered`) и
+  сброс (`ResetService`). Вызов из RPC и сюжета при занятом локе молча уступает тикеру (`nudge`). Лока на запись нет: две
+  гонки в худшем случае публикуют одно событие дважды или оставляют устаревшее до следующей секунды.
+- **Контекст `limits`.** Бар — `bar`; сцены до финальной — `pumpkin`, `bonfire`; финальная сцена, шаг 0 — `circle`; шаг 5 —
+  `drinks`, `zombies`; шаг 6, пока босс не упал, — `boss` (до пробуждения — лимит без надбавки); остальное — пустой объект
+  `{}` (`LimitsService::toClient`). `burst` — у набора летунов сцены, проклятого мира или рассвета есть виды
+  (`FlyerFactory::hasKinds`, редкий не в счёт).
+- **Догон прогресса** — только для лимита, который был в сказанном и изменился (новый раунд, сцена или шаг приходят со
+  своими событиями и догонять нечего): `pumpkin` / `bonfire` / `circle` — для каждой тыквы (и открытого центрального
+  элемента, `centrepieceOpen`) с `clicks` не меньше нового порога — `TransitionQueue::pumpkin` с ключом
+  `{round}:{id}:{toStage}`, как у клика: дубли отсекает идемпотентность, переход один; `bar` — `BarService::follow`:
+  событие `drinks` и `ready`, если `drunk ≥ target`; `drinks` / `zombies` — `CursedService::follow` (новое `cursed`,
+  готовность шага 5); `boss` — `RapierService::rescale`: `max` = лимит + `bonus`, `hp = max(1, max − damage)` под локом
+  `boss`, событие `boss` при изменении; упавший босс не воскресает.
+- **Волна** (`flyers.burst`, `FlyerService::burst`, `Domain/Balance/Burst`): только модератору. Проверки по порядку: набор
+  пуст — `no flyers`; RR-лок `burst` + ключ `hellowin:burst` (время прошлой волны): меньше
+  `HELLOWIN_FLYER_BURST_COOLDOWN_MS` — `busy`. Иначе `count = min(MAX, ceil(BASE + PER_PLAYER × (n − 1)))`, n — живое
+  число фигурок (минимум 1), и `count` раз `FlyerFactory::launch(now, …, rare: false)` → обычный `release` (ключ, индекс,
+  `flyer`, метрика). Пауза на волну не действует.
+- **Переключатель `zombies` удалён** (RPC, событие, поле снимка, `Story::$zombies`): на сервере он ничего не делал —
+  бродячими зомби правит шаг 5–6 и пауза.
+
+Лимиты по умолчанию (k = 1; «n=40» — для порядка):
+
+| Лимит | Env | BASE | PER_PLAYER | n = 1 | n = 10 | n = 40 |
+|---|---|---|---|---|---|---|
+| `pumpkin` — кликов на стадию тыквы | `HELLOWIN_PUMPKIN_BASE`, `HELLOWIN_PUMPKIN_PER_PLAYER` | 2 | 5 | 2 | 47 | 197 |
+| `bonfire` — кликов на стадию костра | `HELLOWIN_BONFIRE_BASE`, `HELLOWIN_BONFIRE_PER_PLAYER` | 8 | 20 | 8 | 188 | 788 |
+| `circle` — кликов на стадию круга | `HELLOWIN_CIRCLE_BASE`, `HELLOWIN_CIRCLE_PER_PLAYER` | 15 | 40 | 15 | 375 | 1575 |
+| `bar` — кружек бара | `HELLOWIN_BAR_BASE`, `HELLOWIN_BAR_PER_PLAYER` | 5 | 1.5 | 5 | 19 | 64 |
+| `drinks` — кружек проклятого мира | `HELLOWIN_CURSED_DRINKS_BASE`, `HELLOWIN_CURSED_DRINKS_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
+| `zombies` — зомби проклятого мира | `HELLOWIN_CURSED_ZOMBIES_BASE`, `HELLOWIN_CURSED_ZOMBIES_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
+| `boss` — здоровье FrankenPHP | `HELLOWIN_BOSS_HP_BASE`, `HELLOWIN_BOSS_HP_PER_PLAYER` | 45 | 60 | 45 | 585 | 2385 |
+| волна летунов (без `k`, не больше MAX = 15) | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5 | 0.2 | 5 | 7 | 13 |
+
+Заменяют `HELLOWIN_CLICKS_PER_STAGE`, `HELLOWIN_BONFIRE_CLICKS_PER_STAGE`, `HELLOWIN_CIRCLE_CLICKS_PER_STAGE`,
+`HELLOWIN_BAR_DRINKS`, `HELLOWIN_CURSED_PER_PLAYER` (их сервер больше не читает); `HELLOWIN_BOSS_HP_BASE` и
+`HELLOWIN_BOSS_HP_PER_PLAYER` остались по имени, но PER_PLAYER теперь за каждую фигурку сверх первой, `k` — снаружи
+скобок, как у всех.
+
 ## Лимиты запросов
 
 Основная нагрузка игры — RPC через Centrifugo; HTTP — две страницы и статика.
@@ -599,8 +666,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
 | Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
+| Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}`, последняя волна летунов `hellowin:burst` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `burst`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -638,16 +706,13 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 | Переменная | По умолчанию | Смысл |
 |---|---|---|
-| `HELLOWIN_CLICKS_PER_STAGE` | 5 | кликов по тыкве для перехода в следующую стадию |
+| `HELLOWIN_<X>_BASE`, `HELLOWIN_<X>_PER_PLAYER` | см. «Лимиты и баланс» | лимиты игры: X — `PUMPKIN`, `BONFIRE`, `CIRCLE`, `BAR`, `CURSED_DRINKS`, `CURSED_ZOMBIES`, `BOSS_HP`; дробные можно, `BASE` > 0, `PER_PLAYER` ≥ 0 (`app/config/hellowin.php`, `limits`) |
 | `HELLOWIN_MODERATOR_SECRET` | пусто | секрет модератора (`moderatorSecret` в `data` подключения); пусто — пульт выключен, RPC пульта всем отвечают `forbidden` |
 | `HELLOWIN_SCENE_STAGE_MAX` | `0,4,8,11` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены; 0 — только первым: сцена 0 — бар (`RitualPolicy::bar`) |
-| `HELLOWIN_BONFIRE_CLICKS_PER_STAGE` | 20 | кликов по костру для перехода в следующую стадию; больше тыквенного — его кликает весь зал |
 | `HELLOWIN_BONFIRE_STAGE_MAX` | `0,0,4,7` | последняя стадия костра по сценам, накопительно, неубывающий список от 0; 0 (или не выше текущей стадии) — костёр сцене не нужен; за концом списка и в финале — последнее значение до финала |
-| `HELLOWIN_CIRCLE_CLICKS_PER_STAGE` | 20 | кликов по магическому кругу для перехода в следующую стадию; его рисует весь зал |
 | `HELLOWIN_CIRCLE_STAGES` | 4 | последняя стадия круга в финальной сцене, целое > 0: на ней круг замкнут и сцена готова |
 | `HELLOWIN_BAR_MUGS` | 12 | место на стойке бара: потолок `max` — сова наливает по кружке на фигурку на поле, но не больше (`hellowin:bar`) |
 | `HELLOWIN_BAR_POUR_MS` | 2500 | мс розлива одной кружки |
-| `HELLOWIN_BAR_DRINKS` | 30 | базовая цель бара: столько кружек за раунд — и бар готов; действующую модератор двигает (`bar.target`, `barTarget` в сюжете) |
 | `HELLOWIN_BAR_RUMOR_CHANCE` | 0.33 | вероятность `rumor` у розлива: случайное 0…2³¹−1 в `pour` и `pouring` |
 | `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
 | `HELLOWIN_BEER_HANDOVER_MS` | 900 | мс передачи пива тыквой: `until` события `take` и `busyUntil` (`hellowin.rapier.beer_handover_ms`) |
@@ -669,14 +734,12 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_FLY_POINTS` | 1 | очки за муху |
 | `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
+| `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER`, `HELLOWIN_FLYER_BURST_MAX`, `HELLOWIN_FLYER_BURST_COOLDOWN_MS` | 5, 0.2, 15, 3000 | волна летунов модератора (`flyers.burst`), см. «Лимиты и баланс» (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между бродячими зомби сверх минимума в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
-| `HELLOWIN_CURSED_PER_PLAYER` | 5 | цели проклятого мира: кружек и зомби на каждого игрока на поле (`hellowin:cursed`) |
-| `HELLOWIN_BOSS_HP_BASE` | 40 | здоровье FrankenPHP при пробуждении без игроков, до множителя `k` |
-| `HELLOWIN_BOSS_HP_PER_PLAYER` | 5 | добавка к здоровью FrankenPHP на каждого игрока на поле |
 | `HELLOWIN_DICE_SECRET` | пусто | ключ HMAC костей; пусто — из `ENCRYPTER_KEY` с солью, без него — случайный в `hellowin:dice:secret` |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
 | `HELLOWIN_DAWN_BOARD` | 200 | строк топа рассвета в событии `dawn` и снимке, не больше |

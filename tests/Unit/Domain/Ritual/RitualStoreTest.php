@@ -136,7 +136,7 @@ final class RitualStoreTest
     {
         $store = self::store();
         $store->markReady(1, 0, 'aaaaaaaaaaaaaaaa');
-        $store->updateStory(static fn(Story $story): Story => $story->withPaused(true)->withZombies(true));
+        $store->updateStory(static fn(Story $story): Story => $story->withPaused(true)->withBarBonus(5));
 
         $store->reset(1);
 
@@ -147,11 +147,11 @@ final class RitualStoreTest
     {
         $store = self::store();
 
-        [$before, $after] = $store->updateStory(static fn(Story $story): Story => $story->withZombies(true));
+        [$before, $after] = $store->updateStory(static fn(Story $story): Story => $story->withPlayers(3));
 
-        Assert::false($before->zombies);
-        Assert::true($after->zombies);
-        Assert::true($store->snapshot()->story->zombies);
+        Assert::same($before->players, 0);
+        Assert::same($after->players, 3);
+        Assert::same($store->snapshot()->story->players, 3);
     }
 
     public function resetRunsOncePerRound(): void

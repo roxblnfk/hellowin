@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Story\CursedService;
@@ -41,10 +42,10 @@ use App\Domain\Walk\WalkerStore;
  *     paused: bool,
  *     k: float,
  *     online: int<0, max>,
- *     zombies: bool,
+ *     limits: array{players: positive-int, k: float, burst: bool, limits: array|\stdClass}|null,
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
  *     boss: array{hp: int<0, max>, max: positive-int}|null,
- *     dice: array{on: bool, winner?: array}|null,
+ *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
  *     dawn: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}>}|null,
  *     flyers: list<array>,
  *     startedAt: int,
@@ -72,6 +73,7 @@ final readonly class SnapshotFactory
         private ?DiceService $dice = null,
         private ?DawnService $dawn = null,
         private ?FlyerService $flyers = null,
+        private ?LimitsService $limits = null,
     ) {}
 
     /**
@@ -94,7 +96,7 @@ final readonly class SnapshotFactory
                 'clicks' => $pumpkin?->clicks ?? 0,
             ];
             $element->centrepiece() and $state += [
-                'threshold' => $this->policy->threshold($element->type, $k),
+                'threshold' => $this->policy->threshold($element->type, $k, $ritual->story->players),
                 'stageMax' => $this->policy->stageMax($ritual->scene, $element->type),
             ];
             $elements[] = $state;
@@ -105,7 +107,7 @@ final readonly class SnapshotFactory
             'scene' => $ritual->scene,
             'sceneStages' => $this->policy->finalScene(),
             'stageMax' => $this->policy->stageMax($ritual->scene),
-            'threshold' => $this->policy->threshold(k: $k),
+            'threshold' => $this->policy->threshold(k: $k, players: $ritual->story->players),
             'bushes' => \array_map(static fn(Bush $bush): array => $bush->toArray(), $this->bushes),
             'elements' => $elements,
             'walkers' => \array_values(\array_map(
@@ -118,8 +120,8 @@ final readonly class SnapshotFactory
             'paused' => $ritual->story->paused,
             'k' => $k,
             'online' => \count($walkers),
-            'zombies' => $ritual->story->zombies,
-            'cursed' => $this->cursed?->state($ritual->round, $ritual->story, \count($walkers)),
+            'limits' => $this->limits === null ? null : LimitsService::toClient($this->limits->state($ritual)),
+            'cursed' => $this->cursed?->state($ritual->round, $ritual->story),
             'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,
             'dice' => $this->dice?->state($ritual->round, $ritual->story),
             'dawn' => $this->dawn?->state($ritual->story),

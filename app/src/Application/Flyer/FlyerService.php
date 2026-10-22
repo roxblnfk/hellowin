@@ -10,7 +10,9 @@ use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DawnService;
 use App\Application\Story\OwlLine;
+use App\Application\Story\StoryRefusedException;
 use App\Application\Walk\ActionStop;
+use App\Domain\Balance\Burst;
 use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
@@ -51,6 +53,7 @@ final readonly class FlyerService
         private ?ZombieCrowd $crowd = null,
         private ?WalkerStore $walkers = null,
         private ?ActionStop $stops = null,
+        private ?Burst $burst = null,
     ) {}
 
     /**
@@ -170,6 +173,40 @@ final readonly class FlyerService
         return \in_array($kind, self::SPECIAL, true)
             ? $this->release($this->ritual->round(), $this->factory->special($kind, $now))
             : null;
+    }
+
+    /**
+     * Whether the sky has flyers to burst with now: the set of the scene, the cursed world or the dawn is not empty.
+     */
+    public function burstable(int $scene, Story $story): bool
+    {
+        return $this->factory->hasKinds($scene, $story->cursed(), $story->dawn());
+    }
+
+    /**
+     * The moderator's burst: flyers of the current set, the rare one aside, all launched now — even on a pause, as
+     * the moderator asked for them. More figures on the floor, more flyers.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return positive-int Flyers launched.
+     * @throws StoryRefusedException `no flyers` — the set is empty, `busy` — the last burst is too recent.
+     * @throws LockBusyException
+     */
+    public function burst(int $now): int
+    {
+        $burst = $this->burst ?? throw new StoryRefusedException('no flyers');
+        $ritual = $this->ritual->snapshot();
+        $story = $ritual->story;
+        $this->burstable($ritual->scene, $story) or throw new StoryRefusedException('no flyers');
+        $this->store->claimBurst($now, $burst->cooldown) or throw new StoryRefusedException('busy');
+
+        $count = $burst->count(\count($this->walkers?->all() ?? []));
+        for ($i = 0; $i < $count; ++$i) {
+            $flyer = $this->factory->launch($now, $ritual->scene, $story->cursed(), $story->dawn(), rare: false);
+            $flyer === null or $this->release($ritual->round, $flyer);
+        }
+
+        return $count;
     }
 
     /**

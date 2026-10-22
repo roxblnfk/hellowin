@@ -16,23 +16,25 @@ use App\Domain\Element\Element;
  * done, and the scene is ready once the bonfire is done too. The magic circle is drawn in the final scene before the
  * first finale step; the final scene is ready once the circle is closed.
  *
- * Every threshold is a base one scaled by the moderator's multiplier `k` (`Story::$k`): the moderator fits the
- * ritual to the room without restarting it.
+ * Every threshold is a limit ({@see \App\Domain\Balance\Limit}) of the figures on the floor scaled by the moderator's
+ * multiplier `k` (`Story::$players`, `Story::$k`): the ritual fits the room without restarting it.
  */
 interface RitualPolicy
 {
     /**
-     * @param float $k Threshold multiplier in force.
+     * @param float $k Multiplier in force.
+     * @param int<0, max> $players Figures on the floor the limits are counted for.
      * @return int<1, max>|null Stage the pumpkin may move to now, null when it stays.
      */
-    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0): ?int;
+    public function pumpkinTransition(Pumpkin $pumpkin, int $scene, float $k = 1.0, int $players = 1): ?int;
 
     /**
      * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
-     * @param float $k Threshold multiplier in force.
+     * @param float $k Multiplier in force.
+     * @param int<0, max> $players Figures on the floor the limits are counted for.
      * @return int<1, max>|null Stage the centrepiece may move to now, null when it stays.
      */
-    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0): ?int;
+    public function centrepieceTransition(string $type, Pumpkin $centrepiece, int $scene, float $k = 1.0, int $players = 1): ?int;
 
     /**
      * @param Element::TYPE_BONFIRE|Element::TYPE_CIRCLE $type
@@ -54,10 +56,11 @@ interface RitualPolicy
 
     /**
      * @param Element::TYPE_* $type
-     * @param float $k Threshold multiplier in force.
-     * @return positive-int Clicks an element of the type needs to move: `max(1, round(base × k))`.
+     * @param float $k Multiplier in force.
+     * @param int<0, max> $players Figures on the floor the limits are counted for; none counts as one.
+     * @return positive-int Clicks an element of the type needs to move.
      */
-    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0): int;
+    public function threshold(string $type = Element::TYPE_PUMPKIN, float $k = 1.0, int $players = 1): int;
 
     /**
      * @return bool Whether the scene is the bar: the evening gathers there before the ritual, it has no pumpkins to

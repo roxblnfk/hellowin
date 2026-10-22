@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fake;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
 use App\Application\Flyer\FlyerService;
@@ -28,6 +29,9 @@ use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\WalkService;
+use App\Domain\Balance\Burst;
+use App\Domain\Balance\Limit;
+use App\Domain\Balance\LimitsStore;
 use App\Domain\Bar\BarLayout;
 use App\Domain\Bar\BarStore;
 use App\Domain\Chat\ChatStore;
@@ -52,6 +56,7 @@ use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\Story;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
@@ -73,6 +78,7 @@ final class RitualHarness
     public const DICE_SECRET = 'test-dice-secret';
     public const CHAT_MAX = 12;
     public const CHAT_HISTORY = 3;
+    public const BURST_COOLDOWN = 3000;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -111,6 +117,8 @@ final class RitualHarness
     public readonly DawnService $dawn;
     public readonly ChatStore $chatStore;
     public readonly ChatService $chat;
+    public readonly LimitsStore $limitsStore;
+    public readonly LimitsService $limits;
 
     /**
      * @param positive-int $threshold
@@ -124,6 +132,9 @@ final class RitualHarness
      * @param array<non-empty-string, array{float, float}> $positions Pumpkin positions by id; the rest stand at (10, 20).
      * @param positive-int $zombieMin Wandering zombies the cursed world keeps alive.
      * @param positive-int $zombiesPerPlayer Wandering zombies per character the zombie interval tops the crowd up to.
+     * @param Limit|null $barDrinks Mugs the bar wants; 4 by default, whoever is on the floor.
+     * @param non-empty-list<list<non-empty-string>>|null $flyerKinds Flyer kinds by scene in place of the usual sets.
+     * @param Limit|null $pumpkin Clicks a pumpkin stage takes, in place of the flat `$threshold`.
      */
     public function __construct(
         int $threshold = 2,
@@ -139,6 +150,9 @@ final class RitualHarness
         bool $door = false,
         int $zombieMin = 2,
         int $zombiesPerPlayer = 3,
+        ?Limit $barDrinks = null,
+        ?array $flyerKinds = null,
+        ?Limit $pumpkin = null,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -163,7 +177,7 @@ final class RitualHarness
         $this->store = new RitualStore($this->storage, $this->lock, $pumpkins, bonfire: $bonfire === null ? null : self::BONFIRE, circle: $circle === null ? null : self::CIRCLE);
         $this->playerStore = new PlayerStore($this->storage, new Locks($this->lock));
         $this->players = new PlayerService($this->playerStore, new NullLogger());
-        $policy = new LockstepPolicy($threshold, $stageMax, $bonfireThreshold, $bonfire ?? [], $circleThreshold, $circle ?? 1);
+        $policy = new LockstepPolicy($pumpkin ?? new Limit($threshold), $stageMax, new Limit($bonfireThreshold), $bonfire ?? [], new Limit($circleThreshold), $circle ?? 1);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
         $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']));
         $queue = new TransitionQueue($this->queue, $metrics);
@@ -176,10 +190,10 @@ final class RitualHarness
         $this->shots = new ShotTally($this->storage, new Locks($this->lock));
         $this->barStore = new BarStore($this->storage, new Locks($this->lock));
         $this->cursedStore = new CursedStore($this->storage, new Locks($this->lock));
-        $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $this->walkerStore, $publisher, 2);
+        $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $publisher, new Limit(2, 2), new Limit(2, 2));
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
-        $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, 40, 5, new Randomizer(new Mt19937(5)), $this->stops);
-        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, 4, 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
+        $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops);
+        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->dice = new DiceService($this->diceStore, DiceRoller::withSecret(self::DICE_SECRET), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->stops);
         $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
@@ -198,7 +212,7 @@ final class RitualHarness
                 0.5,
                 0.5,
                 new Randomizer(new Mt19937(42)),
-                [...(($stageMax[0] ?? null) === 0 ? [[Flyer::KIND_FLY]] : []), [Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
+                $flyerKinds ?? [...(($stageMax[0] ?? null) === 0 ? [[Flyer::KIND_FLY]] : []), [Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
                 lawn: self::walkZone(),
                 cursed: [Flyer::KIND_FIREFLY],
                 fireflyPoints: 1,
@@ -219,8 +233,11 @@ final class RitualHarness
             new ZombieCrowd($zombieMin, $zombiesPerPlayer),
             $this->walkerStore,
             $this->stops,
+            new Burst(2, 0.5, 4, self::BURST_COOLDOWN),
         );
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn, $this->flyers);
+        $this->limitsStore = new LimitsStore($this->storage);
+        $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn, $this->flyers, $this->limits);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,
@@ -243,9 +260,9 @@ final class RitualHarness
             bar: ($stageMax[0] ?? null) === 0 ? self::barLayout($door) : null,
             policy: $policy,
         );
-        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar);
-        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->dawn);
+        $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->dawn, $this->limits);
     }
 
     /**
@@ -280,6 +297,16 @@ final class RitualHarness
             doorIn: 6.0,
             roadrunner: new Point(74, 46),
         );
+    }
+
+    /**
+     * The limits count the characters on the lawn now, as the ticker does once a count has held: tests that are not
+     * about the wait skip it.
+     */
+    public function countPlayers(): void
+    {
+        $players = \count($this->walkerStore->all());
+        $this->store->updateStory(static fn(Story $story): Story => $story->withPlayers($players));
     }
 
     public function click(string $pumpkin, int $times = 1, ?string $player = null): void

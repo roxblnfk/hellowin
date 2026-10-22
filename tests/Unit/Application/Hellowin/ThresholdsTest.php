@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Application\Hellowin;
 
+use App\Application\Balance\LimitsService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\Job\TransitionPumpkin;
 use App\Application\Hellowin\SnapshotFactory;
@@ -23,22 +24,24 @@ use Tests\Fake\RitualHarness;
 #[Covers(ClickHandler::class)]
 #[Covers(TransitionHandler::class)]
 #[Covers(SnapshotFactory::class)]
+#[Covers(LimitsService::class)]
 final class ThresholdsTest
 {
-    public function loweredThresholdMovesTheElementWithItsNextClickOnce(): void
+    public function loweredThresholdMovesTheElementByItselfOnce(): void
     {
         $ritual = new RitualHarness(threshold: 4, stageMax: [3, 6]);
+        $ritual->limits->settle();
         $ritual->click('pumpkin-1', 3);
 
+        // The clicks already gathered are over the new threshold: the limits queue the transition without a click
         $ritual->story->thresholds(0.5);
-
-        // The clicks already gathered are over the new threshold, but nothing moves without a click
-        Assert::blank($ritual->queue->pushed);
+        $ritual->limits->settle();
+        Assert::same(\array_column($ritual->queue->payloads(TransitionPumpkin::class), 'key'), ['1:pumpkin-1:1']);
 
         $ritual->click('pumpkin-1', 2);
 
         Assert::same(\array_column($ritual->broadcast->ofType('click'), 'threshold'), [4, 4, 4, 2, 2]);
-        Assert::same(\array_column($ritual->queue->payloads(TransitionPumpkin::class), 'key'), ['1:pumpkin-1:1', '1:pumpkin-1:1']);
+        Assert::same(\array_column($ritual->queue->payloads(TransitionPumpkin::class), 'key'), ['1:pumpkin-1:1', '1:pumpkin-1:1', '1:pumpkin-1:1']);
 
         $ritual->runJobs();
 
@@ -79,22 +82,25 @@ final class ThresholdsTest
         $answer = $ritual->story->thresholds(0.5);
         $state = $ritual->snapshot->create();
 
-        Assert::same($answer, ['k' => 0.5, 'thresholds' => ['pumpkin' => 3, 'bonfire' => 2, 'circle' => 2]]);
+        Assert::same($answer, ['k' => 0.5, 'players' => 1, 'limits' => ['pumpkin' => 3, 'bonfire' => 2]]);
         Assert::same($state['k'], 0.5);
         Assert::same($state['threshold'], 3);
         Assert::same(\end($state['elements'])['threshold'] ?? null, 2);
+        Assert::same($state['limits'], ['players' => 1, 'k' => 0.5, 'burst' => true, 'limits' => ['pumpkin' => 3, 'bonfire' => 2]]);
     }
 
     public function multiplierIsPublishedOnChangeOnly(): void
     {
         $ritual = new RitualHarness(threshold: 4);
+        $ritual->limits->settle();
+        $ritual->broadcast->published = [];
 
         $ritual->story->thresholds(1);
         $ritual->story->thresholds(1.25);
         $ritual->story->thresholds(1.25);
 
-        Assert::same($ritual->broadcast->ofType('thresholds'), [
-            ['type' => 'thresholds', 'round' => 1, 'k' => 1.25, 'thresholds' => ['pumpkin' => 5, 'bonfire' => 4, 'circle' => 4]],
+        Assert::same($ritual->broadcast->ofType('limits'), [
+            ['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 1.25, 'burst' => true, 'limits' => ['pumpkin' => 5, 'bonfire' => 4]],
         ]);
     }
 

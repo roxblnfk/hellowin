@@ -89,7 +89,7 @@ final class HomeControllerTest extends TestCase
     }
 
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '4,6,8')]
-    #[Env('HELLOWIN_CLICKS_PER_STAGE', '5')]
+    #[Env('HELLOWIN_PUMPKIN_BASE', '5')]
     public function homePageStartsAtSceneZero(): void
     {
         $this->fakeHttp()->get('/')
@@ -102,7 +102,7 @@ final class HomeControllerTest extends TestCase
             ->assertBodyContains('data-clicks="0"');
     }
 
-    #[Env('HELLOWIN_CLICKS_PER_STAGE', '4')]
+    #[Env('HELLOWIN_PUMPKIN_BASE', '4')]
     public function homePageShowsStoredRitual(): void
     {
         $storage = $this->getContainer()->get(CacheStorageProviderInterface::class)->storage('hellowin');
@@ -182,7 +182,7 @@ final class HomeControllerTest extends TestCase
         Assert::same($tabs[1], $panels[1]);
     }
 
-    #[Env('HELLOWIN_CLICKS_PER_STAGE', '3')]
+    #[Env('HELLOWIN_PUMPKIN_BASE', '3')]
     public function howItWorksPageShowsConfiguredThreshold(): void
     {
         $this->fakeHttp()->get('/how-it-works')

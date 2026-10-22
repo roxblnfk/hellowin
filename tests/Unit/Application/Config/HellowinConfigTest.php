@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Application\Config;
 
 use App\Application\Config\HellowinConfig;
+use App\Domain\Balance\Limit;
 use App\Domain\Bar\Perch;
 use App\Domain\Flyer\Bush;
 use App\Domain\Flyer\Point;
@@ -22,31 +23,38 @@ use Testo\Test;
 #[Covers(HellowinConfig::class)]
 final class HellowinConfigTest
 {
-    public function clicksPerStageDefaultsToFive(): void
+    #[DataSet([HellowinConfig::LIMIT_PUMPKIN, 2.0, 5.0])]
+    #[DataSet([HellowinConfig::LIMIT_BONFIRE, 8.0, 20.0])]
+    #[DataSet([HellowinConfig::LIMIT_CIRCLE, 15.0, 40.0])]
+    #[DataSet([HellowinConfig::LIMIT_BAR, 5.0, 1.5])]
+    #[DataSet([HellowinConfig::LIMIT_DRINKS, 5.0, 4.0])]
+    #[DataSet([HellowinConfig::LIMIT_ZOMBIES, 5.0, 4.0])]
+    #[DataSet([HellowinConfig::LIMIT_BOSS, 45.0, 60.0])]
+    public function limitsHaveTheirDefaults(string $name, float $base, float $perPlayer): void
     {
-        Assert::same((new HellowinConfig())->getClicksPerStage(), 5);
+        Assert::equals((new HellowinConfig())->getLimit($name), new Limit($base, $perPlayer));
     }
 
-    #[DataSet([' 12 ', 12], 'env string')]
-    #[DataSet([42, 42], 'integer')]
-    public function acceptsAPositiveInteger(mixed $value, int $expected): void
+    #[DataSet([' 1.5 ', '0', new Limit(1.5)], 'env strings')]
+    #[DataSet([3, 2, new Limit(3, 2)], 'integers')]
+    public function limitAcceptsFractions(mixed $base, mixed $perPlayer, Limit $expected): void
     {
-        Assert::same((new HellowinConfig(['clicks_per_stage' => $value]))->getClicksPerStage(), $expected);
+        $config = new HellowinConfig(['limits' => ['pumpkin' => ['base' => $base, 'per_player' => $perPlayer]]]);
+
+        Assert::equals($config->getLimit(HellowinConfig::LIMIT_PUMPKIN), $expected);
     }
 
-    #[DataSet(['0'], 'zero')]
-    #[DataSet([-5], 'negative')]
-    #[DataSet(['2.5'], 'fraction')]
-    #[DataSet(['five'], 'word')]
-    #[DataSet(['5,10,15'], 'list')]
-    #[DataSet([''], 'empty string')]
-    #[DataSet([null], 'missing')]
-    public function rejectsInvalidClicksPerStage(mixed $value): never
+    #[DataSet(['0', 1, 'HELLOWIN_CURSED_DRINKS_BASE'], 'zero base')]
+    #[DataSet(['five', 1, 'HELLOWIN_CURSED_DRINKS_BASE'], 'word')]
+    #[DataSet([null, 1, 'HELLOWIN_CURSED_DRINKS_BASE'], 'missing')]
+    #[DataSet([5, '-1', 'HELLOWIN_CURSED_DRINKS_PER_PLAYER'], 'negative per player')]
+    #[DataSet([5, '', 'HELLOWIN_CURSED_DRINKS_PER_PLAYER'], 'empty per player')]
+    public function rejectsAnInvalidLimit(mixed $base, mixed $perPlayer, string $env): never
     {
-        Expect::exception(\InvalidArgumentException::class)
-            ->withMessageContaining('"hellowin.clicks_per_stage" (env HELLOWIN_CLICKS_PER_STAGE) must be a positive integer');
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
 
-        (new HellowinConfig(['clicks_per_stage' => $value]))->getClicksPerStage();
+        (new HellowinConfig(['limits' => ['drinks' => ['base' => $base, 'per_player' => $perPlayer]]]))
+            ->getLimit(HellowinConfig::LIMIT_DRINKS);
     }
 
     #[DataSet([null, null], 'default')]
@@ -145,9 +153,7 @@ final class HellowinConfigTest
         $config = new HellowinConfig();
 
         Assert::same($config->getBonfireStageMax(), [0, 0, 4, 7]);
-        Assert::same($config->getBonfireClicksPerStage(), 20);
         Assert::same((new HellowinConfig(['bonfire_stage_max' => ' 0, 0 ,3']))->getBonfireStageMax(), [0, 0, 3]);
-        Assert::same((new HellowinConfig(['bonfire_clicks_per_stage' => '40']))->getBonfireClicksPerStage(), 40);
     }
 
     public function circleHasNoSizeAndItsOwnNumbers(): void
@@ -157,19 +163,15 @@ final class HellowinConfigTest
         ]]);
 
         Assert::same($config->getElements()[0]->toArray(), ['id' => 'circle', 'type' => 'circle', 'x' => 50.0, 'y' => 63.0]);
-        Assert::same([$config->getCircleClicksPerStage(), $config->getCircleStages()], [20, 4]);
+        Assert::same($config->getCircleStages(), 4);
         Assert::same((new HellowinConfig(['circle_stages' => ' 6 ']))->getCircleStages(), 6);
     }
 
-    #[DataSet(['circle_stages', 0, 'HELLOWIN_CIRCLE_STAGES'])]
-    #[DataSet(['circle_clicks_per_stage', 'x', 'HELLOWIN_CIRCLE_CLICKS_PER_STAGE'])]
-    public function rejectsInvalidCircleNumbers(string $key, mixed $value, string $env): never
+    public function rejectsInvalidCircleStages(): never
     {
-        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_CIRCLE_STAGES');
 
-        $config = new HellowinConfig([$key => $value]);
-        $config->getCircleStages();
-        $config->getCircleClicksPerStage();
+        (new HellowinConfig(['circle_stages' => 0]))->getCircleStages();
     }
 
     #[DataSet(['0,4,3'], 'decreasing')]
@@ -290,28 +292,6 @@ final class HellowinConfigTest
         (new HellowinConfig(['walk' => ['bar' => self::bar(['perches' => $perches])]]))->getBarLayout();
     }
 
-    public function rapierNumbersComeFromTheConfig(): void
-    {
-        $config = new HellowinConfig();
-        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [5, 40, 5]);
-
-        $config = new HellowinConfig(['rapier' => ['cursed_per_player' => '3', 'boss_hp_base' => '100', 'boss_hp_per_player' => '0']]);
-        Assert::same([$config->getCursedPerPlayer(), $config->getBossHpBase(), $config->getBossHpPerPlayer()], [3, 100, 0]);
-    }
-
-    #[DataSet(['cursed_per_player', '0', 'HELLOWIN_CURSED_PER_PLAYER'])]
-    #[DataSet(['boss_hp_base', 'many', 'HELLOWIN_BOSS_HP_BASE'])]
-    #[DataSet(['boss_hp_per_player', '-1', 'HELLOWIN_BOSS_HP_PER_PLAYER'])]
-    public function rejectsInvalidRapierNumbers(string $key, string $value, string $env): never
-    {
-        Expect::exception(\InvalidArgumentException::class)->withMessageContaining($env);
-
-        $config = new HellowinConfig(['rapier' => [$key => $value] + ['cursed_per_player' => 2, 'boss_hp_base' => 40, 'boss_hp_per_player' => 5]]);
-        $config->getCursedPerPlayer();
-        $config->getBossHpBase();
-        $config->getBossHpPerPlayer();
-    }
-
     public function dawnBoardComesFromTheConfig(): void
     {
         Assert::same((new HellowinConfig())->getDawnBoard(), 200);
@@ -384,10 +364,10 @@ final class HellowinConfigTest
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
-        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarDrinks(), $config->getBarRumorChance()], [12, 2500, 30, 0.33]);
+        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarRumorChance()], [12, 2500, 0.33]);
 
-        $config = new HellowinConfig(['bar' => ['mugs' => '3', 'pour_ms' => '1000', 'drinks' => '7', 'rumor_chance' => '0']]);
-        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarDrinks(), $config->getBarRumorChance()], [3, 1000, 7, 0.0]);
+        $config = new HellowinConfig(['bar' => ['mugs' => '3', 'pour_ms' => '1000', 'rumor_chance' => '0']]);
+        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarRumorChance()], [3, 1000, 0.0]);
     }
 
     public function barRumorChanceIsAProbability(): never
