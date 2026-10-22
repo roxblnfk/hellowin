@@ -8,7 +8,7 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { BAR_LAYOUT, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, jumpedOut, spreadLeft, spreadX } from '../layout.js';
+import { BAR_LAYOUT, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, jumpedOut, shownItem, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
@@ -2624,8 +2624,9 @@ export async function createScene(rootEl, snapshot) {
         return t;
     }
 
-    // What the hand shows: a beer from a pumpkin only once the pumpkin has held it out.
-    const heldItem = (w) => (w.item === 'beer' && clock < (w.beerAt ?? -1e9) ? null : w.item ?? null);
+    // What the hand shows: a beer from a pumpkin only once the pumpkin has held it out; empty hands in the bar carry
+    // the pistol (layout.js, shownItem).
+    const heldItem = (w) => shownItem(w.item === 'beer' && clock < (w.beerAt ?? -1e9) ? null : w.item ?? null, state.scene);
     // Whether the walker is drawn as a zombie now: turned (past the middle of the turn's flash), or cured but still
     // waiting for the spark.
     const zombieLook = (w) => (w.zombie && clock - (w.turnAt ?? -1e9) >= TURN_MS / 2)
@@ -2766,7 +2767,7 @@ export async function createScene(rootEl, snapshot) {
             return;
         }
         w.track = trackFrom({ ...w.drawn }, []);
-        w.halt = { walk, until: clock + stopMs(stop, w.item ?? null) };
+        w.halt = { walk, until: clock + stopMs(stop, heldItem(w)) };
     }
 
     function walkOn(w) {
@@ -3665,7 +3666,7 @@ export async function createScene(rootEl, snapshot) {
         const [dir, flip] = isBar(state.scene)
             ? (Math.abs(dx) >= Math.abs(dy) * 0.8 ? ['side', dx < 0] : dy > 0 ? ['front', false] : ['back', false])
             : Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
-        const item = w.item ?? null;
+        const item = heldItem(w);
         const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
         // The rapier's lightning is thinned like a click shot: the pose without the bolt past the scene's cap or within
         // the walker's own refire time.

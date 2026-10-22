@@ -6,7 +6,7 @@ import { flyAt, flyPlan } from './pixel/fly-path.js';
 import { wanderAt } from './pixel/wander.js';
 import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
-import { SCENE, fromDoor, isBar } from './layout.js';
+import { SCENE, fromDoor, isBar, shownItem } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
 import { ROLL_LAND_MS, ROLL_TUMBLE_MS, isSix } from './dice.js';
 // A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
@@ -227,7 +227,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         if (f.wander === true) flyers.delete(event.flyer);
         const id = event.player?.id;
         const walker = id && model.walkers.find((w) => w.id === id);
-        const fire = walker && SHOT_SOUNDS[walker.item];
+        const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
         if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
     }
 

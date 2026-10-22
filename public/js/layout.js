@@ -33,6 +33,13 @@ export const SCENE = { bar: 0, day: 1, sunset: 2, night: 3 };
 export const isBar = (scene) => scene === SCENE.bar;
 
 /**
+ * The item a walker shows in its hand (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): in the bar empty hands
+ * (`item: null` of the server) carry the pistol, as on the day; elsewhere the server's item as it is. Drawing only —
+ * the bar's rules (take, gulp, clink) look at the server's item.
+ */
+export const shownItem = (item, scene) => item ?? (isBar(scene) ? 'pistol' : null);
+
+/**
  * The bar's geometry when the markup has none (`#app[data-bar-layout]`, `walk.bar` of app/config/hellowin.php;
  * protocol.md, «Бар»), in percents of the screen without the patch spread: the floor, the obstacles (the counter a
  * rectangle, the tables ellipses), the strip in front of the counter where a mug is taken, where characters put back
