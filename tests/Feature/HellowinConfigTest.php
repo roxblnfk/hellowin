@@ -6,9 +6,13 @@ namespace Tests\Feature;
 
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
+use App\Application\Story\DiceService;
 use App\Domain\Balance\Limit;
 use App\Domain\Flyer\FlyerDepth;
 use App\Domain\Flyer\Point;
+use Spiral\Idempotency\Guarantee;
+use Spiral\Idempotency\GuaranteeProvider;
+use Spiral\Idempotency\IdempotencyRegistry;
 use Spiral\Testing\Attribute\Env;
 use Testo\Assert;
 use Testo\Expect;
@@ -107,6 +111,17 @@ final class HellowinConfigTest extends TestCase
 
         Assert::same($config->getInterval(), [100, 200]);
         Assert::equals($config->getDepths(), [new FlyerDepth(3000, 5), new FlyerDepth(1000, 1)]);
+    }
+
+    #[Env('HELLOWIN_DICE_IDEMPOTENCY_TTL', '60')]
+    public function diceAnswersAreKeptInALeaseForTheTtlFromEnv(): void
+    {
+        $registry = $this->getContainer()->get(IdempotencyRegistry::class);
+
+        Assert::same($this->getContainer()->get(HellowinConfig::class)->getDiceIdempotencyTtl(), 60);
+        $storage = $registry->get(DiceService::STORAGE);
+        Assert::instanceOf($storage, GuaranteeProvider::class);
+        Assert::same($storage->guarantee(), Guarantee::AtLeastOnce);
     }
 
     #[Env('HELLOWIN_PUMPKIN_BASE', '3')]

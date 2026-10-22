@@ -63,12 +63,10 @@ return [
         'beer_handover_ms' => env('HELLOWIN_BEER_HANDOVER_MS', 900),
     ],
 
-    // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): the faces are HMAC-SHA256 of the attempt under
-    // `secret`; empty derives it from ENCRYPTER_KEY, and without that key the first throw draws a random one and keeps
-    // it in Valkey. A player throws anew at most once in `cooldown_ms` milliseconds
+    // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): a player throws anew at most once in
+    // `cooldown_ms` milliseconds, and the answer of every attempt is kept `idempotency_ttl` seconds for a repeat
     'dice' => [
-        'secret' => env('HELLOWIN_DICE_SECRET', ''),
-        'encrypter_key' => env('ENCRYPTER_KEY', ''),
+        'idempotency_ttl' => env('HELLOWIN_DICE_IDEMPOTENCY_TTL', 900),
         'cooldown_ms' => env('HELLOWIN_DICE_COOLDOWN_MS', 1800),
     ],
 

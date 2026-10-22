@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Spiral\Idempotency\Driver\Redis\RedisAtMostOnceConfig;
+use Spiral\Idempotency\Driver\Redis\RedisLeaseConfig;
 use Spiral\Idempotency\Queue\QueueKeyMiddleware;
 use Spiral\Idempotency\Queue\QueueRetryMiddleware;
 
@@ -27,6 +28,13 @@ return [
         'transitions' => new RedisAtMostOnceConfig(
             keyPrefix: 'hellowin:amo:',
             retentionTtl: 300,
+        ),
+        // The answer of a dice attempt, replayed to a repeat of it (App\Application\Story\DiceService): a lease, not
+        // the dedup-guard above, because a repeat must get the faces, not a refusal. Each call passes the retention of
+        // HELLOWIN_DICE_IDEMPOTENCY_TTL; the prefix must not share a beginning with `hellowin:amo:`.
+        'dice' => new RedisLeaseConfig(
+            keyPrefix: 'hellowin:lease:',
+            lockTtl: 5,
         ),
     ],
 ];

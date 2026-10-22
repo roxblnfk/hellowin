@@ -70,7 +70,6 @@ final class HowItWorksPageTest extends TestCase
             '{round}:roll:{player}:{attempt}',
             'hellowin:dice',
             'HELLOWIN_DICE_COOLDOWN_MS',
-            'HELLOWIN_DICE_SECRET',
         ];
         foreach ($terms as $term) {
             Assert::string($body)->contains($term);

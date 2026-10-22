@@ -20,20 +20,36 @@ use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\Story;
 use App\Domain\Walk\WalkerStore;
+use Spiral\Idempotency\Exception\LockedException;
+use Spiral\Idempotency\ExecuteOptions;
+use Spiral\Idempotency\FailurePolicy;
+use Spiral\Idempotency\Idempotency;
 
 /**
  * The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): the room rolls until someone rolls 6-6-6.
  *
- * An attempt is idempotent by its key `{round}:roll:{player}:{attempt}`: the faces are the HMAC of it, so a repeated
- * request is answered with the same throw and no event, and only the next attempt throws anew — a retry cannot
- * re-roll. Every throw takes the one lock `dice`, which decides whose 6-6-6 is the first.
+ * The faces are a real random draw, so a retry must never draw again. An attempt is idempotent by its key
+ * `{round}:roll:{player}:{attempt}` in an AtLeastOnce lease ({@see $replies}): the answer of the first run is kept and
+ * replayed to a repeat, with no event and no count. The lease may run the throw twice — a worker dies after the throw
+ * but before the answer is kept, or the kept answer expires — so the throw dedups itself as well: under the lock
+ * `dice` the attempt number and its faces are written in one record, and a run that finds its attempt there answers
+ * those faces instead of drawing. The same lock decides whose 6-6-6 is the first.
  *
+ * @psalm-import-type Faces from Dice
  * @psalm-import-type Winner from Dice
  */
 final readonly class DiceService
 {
+    /** Seconds a run holds the attempt's key before a repeat may take it over: a throw takes milliseconds. */
+    private const LOCK_TTL = 5;
+
+    /** The idempotency storage alias that keeps the answers, app/config/idempotency.php. */
+    public const STORAGE = 'dice';
+
     /**
      * @param int<0, max> $cooldown Milliseconds between new throws of a player.
+     * @param Idempotency $replies AtLeastOnce lease storage that keeps the answer of every attempt.
+     * @param positive-int $replyTtl Seconds the answer of an attempt is kept for a repeat.
      */
     public function __construct(
         private DiceStore $store,
@@ -45,18 +61,29 @@ final readonly class DiceService
         private ChannelPublisher $publisher,
         private Clock $clock,
         private int $cooldown,
+        private Idempotency $replies,
+        private int $replyTtl,
         private ?ActionStop $stops = null,
     ) {}
 
     /**
-     * The player throws the attempt: the next one throws anew, the last one again answers what it threw.
+     * @return non-empty-string
+     */
+    public static function key(int $round, string $player, int $attempt): string
+    {
+        return \sprintf('%d:roll:%s:%d', $round, $player, $attempt);
+    }
+
+    /**
+     * The player throws the attempt: the next one throws anew, one thrown before answers what it threw.
      *
      * @param non-empty-string $id
-     * @return array{attempt: positive-int, dice: array{int<1, 6>, int<1, 6>, int<1, 6>}}
+     * @return array{attempt: positive-int, dice: Faces}
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw,
-     *         `paused` — a new throw while the moderator holds the progress; a repeat still answers.
+     * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw
+     *         or the same attempt is being thrown right now, `paused` — a new throw while the moderator holds the
+     *         progress; a repeat still answers.
      * @throws BadAttemptException
      * @throws LockBusyException
      */
@@ -67,48 +94,29 @@ final readonly class DiceService
         $ritual = $this->ritual->snapshot();
         $round = $ritual->round;
         $ritual->story->dice() or throw new StoryRefusedException('not now');
-        $now = $this->clock->now();
 
-        $paused = $ritual->story->paused;
-        $thrown = $this->store->update($round, function (Dice $dice) use ($id, $attempt, $round, $now, $walker, $paused): array {
-            $last = $dice->last($id);
-            // A repeat answers even after the 6-6-6: its response may have been lost on the way
-            if ($last > 0 && $attempt === $last) {
-                return [$dice, [$last, $this->roller->roll($round, $id, $last), false, false]];
-            }
-            $dice->winner === null or throw new StoryRefusedException('not now');
-            if (!\is_int($attempt) || $attempt !== $last + 1) {
-                throw new BadAttemptException($last);
-            }
-            /** @var positive-int $attempt */
-            $at = $dice->lastAt($id);
-            $at !== null && $now - $at < $this->cooldown and throw new StoryRefusedException('busy');
-            $paused and throw new StoryRefusedException('paused');
-
-            $faces = $this->roller->roll($round, $id, $attempt);
-            $dice = $dice->rolled($id, $attempt, $now);
-            $won = $faces === DiceRoller::SIX;
-            $won and $dice = $dice->won(['player' => ['id' => $id, 'name' => $walker->name], 'attempt' => $attempt]);
-
-            return [$dice, [$attempt, $faces, true, $won]];
-        });
-        [$attempt, $faces, $new, $won] = $thrown;
-
-        // A repeat answers a throw that has stopped the character already
-        if ($new) {
-            $this->stops?->stop($id, ActionStop::DICE);
-            $player = $this->players->rolled($id) ?? new Player($id, $walker->name);
-            $this->publisher->roll($round, $player, $attempt, $faces, $now);
-            $won and $this->win($round, ['player' => $player->ref(), 'attempt' => $attempt]);
+        $throw = fn(): array => $this->throw($round, $id, $attempt, $walker->name, $ritual->story->paused);
+        // Not a number of an attempt: nothing to keep, the throw refuses it with the last one
+        if (!\is_int($attempt) || $attempt < 1) {
+            return $throw();
         }
 
-        return ['attempt' => $attempt, 'dice' => $faces];
+        try {
+            // A refusal is not an answer: released, so the attempt throws once the refusal is gone
+            return $this->replies->execute(
+                self::key($round, $id, $attempt),
+                $throw,
+                new ExecuteOptions(lockTtl: self::LOCK_TTL, ttl: $this->replyTtl, failurePolicy: FailurePolicy::Release),
+            );
+        } catch (LockedException) {
+            throw new StoryRefusedException('busy');
+        }
     }
 
     /**
      * The moderator's «Сова бросает»: the owl's first two throws are anything but 6-6-6, the third is 6-6-6 and wins.
      *
-     * @return array{attempt: positive-int, dice: array{int<1, 6>, int<1, 6>, int<1, 6>}}
+     * @return array{attempt: positive-int, dice: Faces}
      * @throws StoryRefusedException `not now` — not step 1 or the dice are off.
      * @throws LockBusyException
      */
@@ -119,10 +127,10 @@ final readonly class DiceService
         $ritual->story->dice() or throw new StoryRefusedException('not now');
         $now = $this->clock->now();
 
-        $thrown = $this->store->update($round, function (Dice $dice) use ($round): array {
+        $thrown = $this->store->update($round, function (Dice $dice): array {
             $dice->winner === null or throw new StoryRefusedException('not now');
             $attempt = $dice->owl + 1;
-            $faces = $this->roller->owl($round, $attempt);
+            $faces = $this->roller->owl($attempt);
             $dice = $dice->owlRolled();
             $faces === DiceRoller::SIX and $dice = $dice->won(['owl' => true, 'attempt' => $attempt]);
 
@@ -212,5 +220,53 @@ final readonly class DiceService
         isset($winner['owl'])
             ? $this->publisher->owl($round, OwlLine::DICE_OWL_WIN)
             : $this->publisher->owl($round, OwlLine::DICE_WIN, $winner);
+    }
+
+    /**
+     * The throw under the lock `dice`: the attempt found in the record answers its faces, the next one draws.
+     *
+     * @param non-empty-string $id
+     * @param non-empty-string|null $name
+     * @return array{attempt: positive-int, dice: Faces}
+     * @throws StoryRefusedException
+     * @throws BadAttemptException
+     * @throws LockBusyException
+     */
+    private function throw(int $round, string $id, mixed $attempt, ?string $name, bool $paused): array
+    {
+        $now = $this->clock->now();
+        $thrown = $this->store->update($round, function (Dice $dice) use ($id, $attempt, $now, $name, $paused): array {
+            $last = $dice->last($id);
+            // A repeat answers even after the 6-6-6: its response may have been lost on the way
+            if ($last > 0 && $attempt === $last) {
+                return [$dice, [$last, $dice->lastDice($id) ?? throw new \LogicException('The last attempt keeps its faces.'), false, false]];
+            }
+            $dice->winner === null or throw new StoryRefusedException('not now');
+            if (!\is_int($attempt) || $attempt !== $last + 1) {
+                throw new BadAttemptException($last);
+            }
+            /** @var positive-int $attempt */
+            $at = $dice->lastAt($id);
+            $at !== null && $now - $at < $this->cooldown and throw new StoryRefusedException('busy');
+            $paused and throw new StoryRefusedException('paused');
+
+            $faces = $this->roller->roll();
+            $dice = $dice->rolled($id, $attempt, $now, $faces);
+            $won = $faces === DiceRoller::SIX;
+            $won and $dice = $dice->won(['player' => ['id' => $id, 'name' => $name], 'attempt' => $attempt]);
+
+            return [$dice, [$attempt, $faces, true, $won]];
+        });
+        [$attempt, $faces, $new, $won] = $thrown;
+
+        // A repeat answers a throw that has stopped the character already
+        if ($new) {
+            $this->stops?->stop($id, ActionStop::DICE);
+            $player = $this->players->rolled($id) ?? new Player($id, $name);
+            $this->publisher->roll($round, $player, $attempt, $faces, $now);
+            $won and $this->win($round, ['player' => $player->ref(), 'attempt' => $attempt]);
+        }
+
+        return ['attempt' => $attempt, 'dice' => $faces];
     }
 }

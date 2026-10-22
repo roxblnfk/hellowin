@@ -51,7 +51,6 @@ use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
-use App\Domain\Story\DiceSecret;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Walk\WalkerStore;
@@ -62,6 +61,7 @@ use RoadRunner\Lock\LockInterface;
 use Spiral\Boot\Bootloader\Bootloader;
 use Spiral\Broadcasting\BroadcastInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
+use Spiral\Idempotency\IdempotencyRegistry;
 use Spiral\RoadRunnerBridge\RoadRunnerMode;
 
 final class HellowinBootloader extends Bootloader
@@ -209,13 +209,7 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): DiceStore => new DiceStore($cache->storage($config->getStorage()), new Locks($lock)),
-            DiceSecret::class => static fn(
-                HellowinConfig $config,
-                CacheStorageProviderInterface $cache,
-                LockInterface $lock,
-            ): DiceSecret => new DiceSecret($config->getDiceSecret(), $cache->storage($config->getStorage()), new Locks($lock)),
-            // The secret is asked on the first throw, not on boot: a worker starts even while Valkey is away
-            DiceRoller::class => static fn(DiceSecret $secret): DiceRoller => new DiceRoller($secret->get(...)),
+            DiceRoller::class => static fn(): DiceRoller => new DiceRoller(),
             DiceService::class => static fn(
                 HellowinConfig $config,
                 DiceStore $store,
@@ -227,7 +221,21 @@ final class HellowinBootloader extends Bootloader
                 ChannelPublisher $publisher,
                 Clock $clock,
                 ActionStop $stops,
-            ): DiceService => new DiceService($store, $roller, $ritual, $policy, $walkers, $players, $publisher, $clock, $config->getDiceCooldown(), $stops),
+                IdempotencyRegistry $idempotency,
+            ): DiceService => new DiceService(
+                $store,
+                $roller,
+                $ritual,
+                $policy,
+                $walkers,
+                $players,
+                $publisher,
+                $clock,
+                $config->getDiceCooldown(),
+                $idempotency->get(DiceService::STORAGE),
+                $config->getDiceIdempotencyTtl(),
+                $stops,
+            ),
             BossStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

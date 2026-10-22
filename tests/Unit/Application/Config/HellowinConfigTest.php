@@ -337,15 +337,17 @@ final class HellowinConfigTest
         (new HellowinConfig(['rapier' => ['dawn_board' => '0']]))->getDawnBoard();
     }
 
-    public function diceSecretIsConfiguredOrDerivedFromTheEncryptionKey(): void
+    public function diceAnswersAreKeptForTheConfiguredSeconds(): void
     {
-        Assert::null((new HellowinConfig())->getDiceSecret());
-        Assert::same((new HellowinConfig(['dice' => ['secret' => 'mine', 'encrypter_key' => 'key']]))->getDiceSecret(), 'mine');
+        Assert::same((new HellowinConfig())->getDiceIdempotencyTtl(), 900);
+        Assert::same((new HellowinConfig(['dice' => ['idempotency_ttl' => '60']]))->getDiceIdempotencyTtl(), 60);
+    }
 
-        $derived = (new HellowinConfig(['dice' => ['secret' => '', 'encrypter_key' => 'key']]))->getDiceSecret();
+    public function rejectsADiceTtlThatKeepsNothing(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DICE_IDEMPOTENCY_TTL');
 
-        Assert::same($derived, \hash_hmac('sha256', 'hellowin:dice', 'key'));
-        Assert::notSame($derived, 'key');
+        (new HellowinConfig(['dice' => ['idempotency_ttl' => '0']]))->getDiceIdempotencyTtl();
     }
 
     public function diceCooldownComesFromTheConfig(): void

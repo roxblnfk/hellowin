@@ -381,36 +381,44 @@
 ## Кости
 
 Правила — [`scenario.md`](scenario.md), «Кости 6-6-6»; сообщения — [`protocol.md`](protocol.md), «Кости». Классы —
-`Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`).
+`Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`).
 
 - **Шаг.** `Story::DICE_STEP` 1: `stepTo(1)` снимает `ready` (круг замкнут давно), `awaitsReady(2)` на шаге 1 ждёт
   `ready` — без него `not ready`, с `force` — можно. Режим «включён» не хранится: это шаг 1 без победителя.
   `StoryService::entered` на шаге 1 после `finale-1` шлёт `dice {on: true}`, при уходе с шага 1 без победителя (только
   `force`) — `dice {on: false}` перед `finale {step: 2}`.
-- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at}}, winner, owl, rolls}` под RR-локом `dice`
-  (`DiceStore`); запись другого раунда читается как пустая — сброс её не трогает. Граней в записи нет: только последняя
-  попытка игрока и время его последнего нового броска.
-- **Бросок** (`roll {attempt}`, `DiceService::roll`): без лока — фигурка (`no character`), не зомби, шаг 1 (`not now`);
-  под локом `dice` по порядку: `attempt` = последней — повтор: грани заново из HMAC, без записи, события, счёта и паузы
-  (отвечает и после победы — ответ на победный бросок мог потеряться); есть победитель — `not now`; не последняя + 1 —
-  `bad attempt` с `last`; с прошлого нового броска меньше `HELLOWIN_DICE_COOLDOWN_MS` — `busy`; иначе грани, запись
-  `{attempt, at}`, `rolls + 1`, а при 6-6-6 — `winner`. После лока: `rolls + 1` игроку, событие `roll`; победа —
-  `dice {on: false, winner}`, `RitualStore::markReady(round, финальная, step: 1)` → `ready`, реплика `dice-win`.
-- **Почему повтор не перебрасывает.** Ключ идемпотентности попытки — `{round}:roll:{player}:{attempt}`, а грани —
-  функция от него: `DiceRoller` берёт HMAC-SHA256(секрет, `"{round}:{player}:{attempt}"`) и превращает байты в грани
-  выборкой с отбрасыванием: байт ≥ 252 пропускается, остальные — `byte % 6 + 1` (252 = 6 × 42, без смещения по модулю);
-  кончились 32 байта — следующий блок HMAC от ключа со счётчиком. Повтор того же запроса (двойной клик, переподключение)
-  получает те же грани без хранения результата, а новая попытка — только следующая по номеру и не чаще паузы, так что
-  перебрать попытки быстрее зала нельзя; без секрета нельзя и предсказать, на какой выпадет 6-6-6.
+- **Грани** — настоящий случайный выбор: `DiceRoller` берёт три раза `Randomizer::getInt(1, 6)`; по умолчанию движок —
+  системный CSPRNG (как `random_int`), в тестах — подставной. Предсказать, на какой попытке выпадет 6-6-6, не может никто,
+  и сервер тоже; поэтому бросок тянется один раз, а повтор отвечает сохранённым.
+- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at, dice}}, winner, owl, rolls}` под RR-локом `dice`
+  (`DiceStore`); запись другого раунда читается как пустая — сброс её не трогает. У игрока — последняя попытка, время
+  его последнего нового броска и её грани, записанные одной записью с номером попытки.
+- **Бросок** (`roll {attempt}`, `DiceService::roll`): без лока — фигурка (`no character`), не зомби, шаг 1 (`not now`).
+  Целое `attempt` ≥ 1 идёт через хранилище идемпотентности `dice` (ниже); под локом `dice` по порядку: `attempt` =
+  последней — повтор: грани из записи, без события, счёта и паузы (отвечает и после победы — ответ на победный бросок мог
+  потеряться); есть победитель — `not now`; не последняя + 1 — `bad attempt` с `last`; с прошлого нового броска меньше
+  `HELLOWIN_DICE_COOLDOWN_MS` — `busy`; пауза прогресса — `paused`; иначе грани, запись `{attempt, at, dice}`,
+  `rolls + 1`, а при 6-6-6 — `winner`. После лока: `rolls + 1` игроку, событие `roll`; победа — `dice {on: false, winner}`,
+  `RitualStore::markReady(round, финальная, step: 1)` → `ready`, реплика `dice-win`.
+- **Почему повтор не перебрасывает.** Ключ попытки — `{round}:roll:{player}:{attempt}` в хранилище `dice` пакета
+  `spiral/idempotency` (`app/config/idempotency.php`): `RedisLeaseConfig`, гарантия **AtLeastOnce** — лизинг с локом
+  (`lockTtl` 5 с) и сохранённым ответом `{attempt, dice}`, префикс `hellowin:lease:`, хранится
+  `HELLOWIN_DICE_IDEMPOTENCY_TTL` с (900, передаётся в `ExecuteOptions::$ttl`). Повтор той же попытки (двойной клик,
+  переподключение, потерянный ответ) получает сохранённый ответ, броска не происходит: ни события, ни счёта. Не
+  AtMostOnce (`hellowin:amo:`): тот отказывает дубликату, а повтору нужны грани. Отказ (`busy`, `paused`, `not now`,
+  `bad attempt`) — не ответ: `FailurePolicy::Release` освобождает ключ, попытку можно бросить, когда отказ уйдёт. Ключ
+  занят другим запросом той же попытки (`LockedException`) — `busy`.
+- **Если сохранённого ответа нет.** AtLeastOnce допускает второй прогон: воркер упал между записью броска и сохранением
+  ответа, ответ истёк или потерян. Тогда прогон доходит до лока `dice` и видит свою попытку в записи — отдаёт её грани,
+  не бросая заново, без события и счёта. Так запись под локом — источник правды о бросках, а ответ в хранилище — быстрый
+  повтор без лока; вместе они дают эффект ровно один раз: грани попытки не меняются, событие `roll` — не больше одного
+  (между записью и событием упавший воркер событие теряет, бросок остаётся). Новая попытка — только следующая по номеру и
+  не чаще `HELLOWIN_DICE_COOLDOWN_MS`, так что перебрать попытки быстрее зала нельзя.
 - **Первое 6-6-6** — под локом `dice`: все броски зала проходят через одну запись, и победитель записывается тем, кто
   взял лок первым; следующий 6-6-6 видит `winner` и получает `not now`, как второй выстрел по сбитому летуну.
-- **Сова** (`dice.owl`, `DiceService::owl`): под тем же локом `owl + 1`; броски 1 и 2 — HMAC от `"{round}:owl:{n}"`,
-  тройка 6-6-6 пропускается (следующие три грани потока), бросок 3 — 6-6-6 и победа `{owl: true, attempt: 3}`, реплика
-  `dice-owl-win`. В `rolls` не идут.
-- **Секрет** — `HELLOWIN_DICE_SECRET`; пусто — `HMAC-SHA256("hellowin:dice", ENCRYPTER_KEY)` (своя соль, ключ шифрования
-  в кости не попадает); нет и его — `DiceSecret` при первом броске под локом `dice:secret` создаёт случайный и кладёт в
-  `hellowin:dice:secret`: все воркеры и перезапуски RoadRunner бросают одинаково. Спрашивается при броске, не при старте
-  воркера.
+- **Сова** (`dice.owl`, `DiceService::owl`): под тем же локом `owl + 1`; броски 1 и 2 — случайные, выпавшее 6-6-6
+  перебрасывается; бросок 3 — 6-6-6 и победа `{owl: true, attempt: 3}`, реплика `dice-owl-win`. Без ключа
+  идемпотентности (это кнопка модератора: каждое нажатие — бросок). В `rolls` не идут.
 - **Снимок** — `dice`: с шага 1 `{on, winner?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
 
 ## Чат
@@ -679,12 +687,13 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
-| Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
+| Кости: `hellowin:dice` `{round, …}` | Valkey | тот же storage `hellowin` |
+| Ответы попыток костей: `hellowin:lease:{round}:roll:{player}:{attempt}` (хэш лизинга, TTL `HELLOWIN_DICE_IDEMPOTENCY_TTL`) | Valkey | хранилище идемпотентности `dice` (`RedisLeaseConfig`) |
 | Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -756,7 +765,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
-| `HELLOWIN_DICE_SECRET` | пусто | ключ HMAC костей; пусто — из `ENCRYPTER_KEY` с солью, без него — случайный в `hellowin:dice:secret` |
+| `HELLOWIN_DICE_IDEMPOTENCY_TTL` | 900 | секунды, сколько хранится ответ на попытку броска для её повтора (`ExecuteOptions::$ttl` хранилища `dice`) |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
 | `HELLOWIN_DAWN_BOARD` | 200 | строк топа рассвета в событии `dawn` и снимке, не больше |
 | `HELLOWIN_CHAT_MAX` | 120 | символов в сообщении чата после чистки, не больше (`invalid text`) |

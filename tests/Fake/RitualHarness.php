@@ -75,7 +75,7 @@ final class RitualHarness
 {
     public const BONFIRE = 'bonfire';
     public const CIRCLE = 'circle';
-    public const DICE_SECRET = 'test-dice-secret';
+    public const DICE_TTL = 900;
     public const CHAT_MAX = 12;
     public const CHAT_HISTORY = 3;
 
@@ -112,6 +112,8 @@ final class RitualHarness
     public readonly RapierService $rapier;
     public readonly DiceStore $diceStore;
     public readonly DiceService $dice;
+    public readonly ScriptedDice $diceFaces;
+    public readonly FakeIdempotency $diceReplies;
     public readonly DawnStore $dawnStore;
     public readonly DawnService $dawn;
     public readonly ChatStore $chatStore;
@@ -194,7 +196,9 @@ final class RitualHarness
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops);
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
-        $this->dice = new DiceService($this->diceStore, DiceRoller::withSecret(self::DICE_SECRET), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->stops);
+        $this->diceFaces = new ScriptedDice();
+        $this->diceReplies = new FakeIdempotency();
+        $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops);
         $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
         $this->dawn = new DawnService($this->dawnStore, $publisher, $this->clock, 3);
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));

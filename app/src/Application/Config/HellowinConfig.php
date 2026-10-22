@@ -64,7 +64,7 @@ final class HellowinConfig extends InjectableConfig
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
         'rapier' => ['dawn_board' => 200, 'beer_handover_ms' => 900],
-        'dice' => ['secret' => '', 'encrypter_key' => '', 'cooldown_ms' => 1800],
+        'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
         'chat' => ['max' => 120, 'history' => 50],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
@@ -336,23 +336,11 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * The key of the dice HMAC: the configured one, or one derived from the application's encryption key under a salt
-     * of its own, so the dice never share a key with the encrypter.
-     *
-     * @return non-empty-string|null Null — neither is set: the dice draw a random key and keep it in the store.
+     * @return positive-int Seconds the answer of a dice attempt is kept for a repeat of it.
      */
-    public function getDiceSecret(): ?string
+    public function getDiceIdempotencyTtl(): int
     {
-        /** @var mixed $secret */
-        $secret = $this->dice()['secret'] ?? null;
-        if (\is_string($secret) && $secret !== '') {
-            return $secret;
-        }
-
-        /** @var mixed $key */
-        $key = $this->dice()['encrypter_key'] ?? null;
-
-        return \is_string($key) && $key !== '' ? \hash_hmac('sha256', 'hellowin:dice', $key) : null;
+        return self::positiveInt($this->dice()['idempotency_ttl'] ?? null, 'dice.idempotency_ttl', 'HELLOWIN_DICE_IDEMPOTENCY_TTL');
     }
 
     /**

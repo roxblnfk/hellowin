@@ -10,9 +10,9 @@ use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Application\Walk\NoCharacterException;
 use App\Domain\Lock\LockBusyException;
-use App\Domain\Story\Dice;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\Story;
+use Spiral\Idempotency\FailurePolicy;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -55,10 +55,11 @@ final class DiceTest
     public function newAttemptThrowsForEveryone(): void
     {
         $ritual = self::dice();
+        $ritual->diceFaces->faces = [2, 5, 3];
 
         $result = $ritual->dice->roll(self::JACK, 1);
 
-        $dice = DiceRoller::withSecret(RitualHarness::DICE_SECRET)->roll(1, self::JACK, 1);
+        $dice = [2, 5, 3];
         Assert::same($result, ['attempt' => 1, 'dice' => $dice]);
         Assert::same($ritual->broadcast->ofType('roll'), [[
             'type' => 'roll',
@@ -82,6 +83,59 @@ final class DiceTest
         Assert::count($ritual->broadcast->ofType('roll'), 1);
         Assert::same($ritual->playerStore->find(self::JACK)?->rolls, 1);
         Assert::same($ritual->diceStore->get(1)->rolls, 1);
+    }
+
+    public function answerIsKeptByTheAttemptsKeyForItsTtlAndReleasedOnARefusal(): void
+    {
+        $ritual = self::dice();
+        $ritual->diceFaces->faces = [4, 1, 2];
+
+        $first = $ritual->dice->roll(self::JACK, 1);
+        $refused = self::refusal(static fn() => $ritual->dice->roll(self::JACK, 2));
+
+        Assert::same($refused, 'busy');
+        Assert::same($ritual->diceReplies->kept, ['1:roll:' . self::JACK . ':1' => ['attempt' => 1, 'dice' => [4, 1, 2]]]);
+        [$key, $options] = $ritual->diceReplies->calls[0];
+        Assert::same([$key, $options?->ttl, $options?->failurePolicy], ['1:roll:' . self::JACK . ':1', RitualHarness::DICE_TTL, FailurePolicy::Release]);
+        Assert::same($first['dice'], [4, 1, 2]);
+    }
+
+    public function facesAreWrittenWithTheAttempt(): void
+    {
+        $ritual = self::dice();
+        $ritual->diceFaces->faces = [5, 3, 6];
+
+        $ritual->dice->roll(self::JACK, 1);
+
+        Assert::same($ritual->diceStore->get(1)->players[self::JACK] ?? null, ['attempt' => 1, 'at' => $ritual->clock->now, 'dice' => [5, 3, 6]]);
+        Assert::same($ritual->diceStore->get(1)->lastDice(self::JACK), [5, 3, 6]);
+    }
+
+    public function repeatWithoutItsKeptAnswerFallsBackToTheRecord(): void
+    {
+        $ritual = self::dice();
+        $first = $ritual->dice->roll(self::JACK, 1);
+        $ritual->diceReplies->kept = [];
+
+        $again = $ritual->dice->roll(self::JACK, 1);
+
+        Assert::same($again, $first);
+        Assert::count($ritual->broadcast->ofType('roll'), 1);
+        Assert::same($ritual->diceStore->get(1)->rolls, 1);
+    }
+
+    public function nextAttemptDrawsAnewAndAnEarlierOneIsReplayed(): void
+    {
+        $ritual = self::dice();
+        $ritual->diceFaces->faces = [1, 1, 2, 3, 4, 5];
+        $first = $ritual->dice->roll(self::JACK, 1);
+        $ritual->clock->now += self::COOLDOWN;
+
+        $second = $ritual->dice->roll(self::JACK, 2);
+
+        Assert::same([$first['dice'], $second['dice']], [[1, 1, 2], [3, 4, 5]]);
+        Assert::same($ritual->dice->roll(self::JACK, 1), $first);
+        Assert::count($ritual->broadcast->ofType('roll'), 2);
     }
 
     public function newThrowStopsAWalkingCharacterFirstAndARefusedOneDoesNot(): void
@@ -161,8 +215,10 @@ final class DiceTest
     public function firstSixSixSixWinsAndMakesTheStepReady(): void
     {
         $ritual = self::dice();
-        $attempt = self::sixSixSix(self::JACK);
-        self::lastAttempt($ritual, self::JACK, $attempt - 1);
+        $attempt = 2;
+        $ritual->dice->roll(self::JACK, 1);
+        $ritual->clock->now += self::COOLDOWN;
+        $ritual->diceFaces->faces = [6, 6, 6];
         $ritual->broadcast->published = [];
 
         $result = $ritual->dice->roll(self::JACK, $attempt);
@@ -188,10 +244,9 @@ final class DiceTest
     public function ofTwoSixSixSixTheOneUnderTheLockFirstWins(): void
     {
         $ritual = self::dice();
-        $jack = self::sixSixSix(self::JACK);
-        $jill = self::sixSixSix(self::JILL);
-        self::lastAttempt($ritual, self::JACK, $jack - 1);
-        self::lastAttempt($ritual, self::JILL, $jill - 1);
+        $jack = 1;
+        $jill = 1;
+        $ritual->diceFaces->faces = [6, 6, 6, 6, 6, 6];
         $ritual->broadcast->published = [];
 
         // While Jill's throw holds the lock, Jack's waits for it
@@ -235,17 +290,16 @@ final class DiceTest
     public function owlWinsOnItsThirdThrow(): void
     {
         $ritual = self::dice();
+        $ritual->diceFaces->faces = [6, 6, 6, 1, 2, 3, 4, 5, 6];
         $ritual->broadcast->published = [];
 
         $first = $ritual->dice->owl();
         $second = $ritual->dice->owl();
         $third = $ritual->dice->owl();
 
-        $roller = DiceRoller::withSecret(RitualHarness::DICE_SECRET);
-        Assert::same($first, ['attempt' => 1, 'dice' => $roller->owl(1, 1)]);
-        Assert::same($second, ['attempt' => 2, 'dice' => $roller->owl(1, 2)]);
-        Assert::notSame($first['dice'], DiceRoller::SIX);
-        Assert::notSame($second['dice'], DiceRoller::SIX);
+        // The first draw of 6-6-6 is drawn again
+        Assert::same($first, ['attempt' => 1, 'dice' => [1, 2, 3]]);
+        Assert::same($second, ['attempt' => 2, 'dice' => [4, 5, 6]]);
         Assert::same($third, ['attempt' => 3, 'dice' => DiceRoller::SIX]);
         Assert::same($ritual->broadcast->ofType('roll')[0], ['type' => 'roll', 'round' => 1, 'owl' => true, 'attempt' => 1, 'dice' => $first['dice'], 'at' => $ritual->clock->now]);
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['roll', 'roll', 'roll', 'dice', 'ready', 'owl']);
@@ -318,36 +372,6 @@ final class DiceTest
     {
         $ritual->players->register($id, 'Jack', self::LOOK);
         $ritual->walks->move($id, 20, 90);
-    }
-
-    /**
-     * The first attempt of the player in round 1 that throws 6-6-6 under the harness's secret.
-     *
-     * @param non-empty-string $id
-     * @return positive-int
-     */
-    private static function sixSixSix(string $id): int
-    {
-        $roller = DiceRoller::withSecret(RitualHarness::DICE_SECRET);
-        for ($attempt = 1; ; ++$attempt) {
-            if ($roller->roll(1, $id, $attempt) === DiceRoller::SIX) {
-                return $attempt;
-            }
-        }
-    }
-
-    /**
-     * The player has thrown up to the attempt long enough ago: the next attempt is free to throw.
-     *
-     * @param non-empty-string $id
-     */
-    private static function lastAttempt(RitualHarness $ritual, string $id, int $attempt): void
-    {
-        if ($attempt < 1) {
-            return;
-        }
-        $at = $ritual->clock->now - self::COOLDOWN;
-        $ritual->diceStore->update(1, static fn(Dice $dice): array => [$dice->rolled($id, $attempt, $at), null]);
     }
 
     /**
