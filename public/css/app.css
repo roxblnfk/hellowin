@@ -1787,34 +1787,57 @@ body:not([data-final]) .circle,
 }
 
 /*
- * The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»; client.js and dawn.js): at the right in the middle of
- * the height, under the console and clear of the corner controls, «место · имя · счёт», my row gold. Presses go
- * through it to the ducks behind; only a phone's toggle takes them.
+ * The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»; client.js and dawn.js): in the top right corner,
+ * over the sky or the bar's wall, clear of the counter, the patch and the circle; «место · имя · очки», my row gold.
+ * Folded — the three leaders and my row, «весь топ ▾» under them. Presses go through it to the flyers behind; only the
+ * toggle takes them.
  */
 .dawn-top {
     position: absolute;
-    top: 50%;
+    top: 16px;
     right: 16px;
     z-index: 1002;
+    display: flex;
+    flex-direction: column;
     width: 236px;
     padding: 8px 10px 10px;
     font: 700 13px/1.3 var(--pixel-font);
     color: var(--cream);
     background: var(--outline);
     box-shadow: 0 0 0 2px var(--gold), 0 0 0 4px var(--outline), 0 4px 0 2px var(--outline);
-    transform: translateY(-50%);
     pointer-events: none;
 }
 
 .dawn-top[hidden],
 .dawn-top__empty[hidden],
-.dawn-top__row[hidden] {
+.dawn-top__row[hidden],
+.dawn-top__toggle[hidden] {
     display: none;
 }
 
-/* The open console covers the right edge: the table steps out to its left. */
+/* The moderator's folded console holds the corner: the table stands under it. */
+.patch:has(.console:not([hidden])) .dawn-top:not([data-compact]) {
+    top: 64px;
+}
+
+/* The open console covers the right edge: the table steps out to its left, up in the corner again. */
 .patch:has(.console:not([hidden]):not(.console--closed)) .dawn-top:not([data-compact]) {
+    top: 16px;
     right: calc(min(360px, 100% - 88px) + 32px);
+}
+
+/* On a middling width the panels at the top in the middle reach the corner: the table goes under them — the magic word
+   (440 px wide) below 960 px, the dice (about 270 px) below 800 px. */
+@container patch (max-width: 960px) {
+    .patch:has(.word:not([hidden]), .word-zombie:not([hidden])) .dawn-top:not([data-compact]) {
+        top: 176px;
+    }
+}
+
+@container patch (max-width: 800px) {
+    .patch:has(.dice:not([hidden])) .dawn-top:not([data-compact]) {
+        top: 176px;
+    }
 }
 
 .dawn-top__title {
@@ -1826,8 +1849,25 @@ body:not([data-final]) .circle,
     text-shadow: 2px 2px 0 var(--soil);
 }
 
+/* A wide screen's «весь топ ▾» / «свернуть ▴»: small, under the rows, at the right. */
 .dawn-top__toggle {
-    display: none;
+    order: 1;
+    align-self: flex-end;
+    display: flex;
+    gap: 6px;
+    margin: 6px 0 0;
+    padding: 2px 0;
+    border: 0;
+    font: inherit;
+    font-size: 11px;
+    color: var(--sky-light);
+    background: none;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.dawn-top__toggle:hover {
+    color: var(--gold);
 }
 
 .dawn-top__list {
@@ -1867,7 +1907,7 @@ body:not([data-final]) .circle,
     font-variant-numeric: tabular-nums;
 }
 
-/* The columns' heading «место · имя · очки» over the rows: small and dim, no plate; gone with the empty call and the strip. */
+/* The columns' heading «место · имя · очки» over the rows: small and dim, no plate; only in the unfolded table. */
 .dawn-top__head {
     padding-block: 0;
     background: none;
@@ -1885,7 +1925,8 @@ body:not([data-final]) .circle,
     color: var(--sky-light);
 }
 
-.dawn-top:has(.dawn-top__empty:not([hidden])) .dawn-top__head {
+.dawn-top:has(.dawn-top__empty:not([hidden])) .dawn-top__head,
+.dawn-top[data-folded] .dawn-top__head {
     display: none;
 }
 
@@ -1942,7 +1983,8 @@ body:not([data-final]) .circle,
     }
 }
 
-/* A phone: a strip «#3 · ты · 7 · топ ▾» over the HUD (--hud-h from client.js), unfolding into five rows and mine. */
+/* A phone: a strip «#3 · ты · 7 · топ ▾» over the HUD (--hud-h from client.js), unfolding into the three and mine (the
+   dawn's five). */
 .dawn-top[data-compact] {
     top: auto;
     right: auto;
@@ -1959,25 +2001,21 @@ body:not([data-final]) .circle,
 }
 
 .dawn-top[data-compact] .dawn-top__title,
-.dawn-top[data-folded] .dawn-top__list,
-.dawn-top[data-folded] .dawn-top__head,
-.dawn-top[data-folded] .dawn-top__empty,
-.dawn-top[data-folded] .dawn-top__row--mine {
+.dawn-top[data-compact][data-folded] .dawn-top__list,
+.dawn-top[data-compact][data-folded] .dawn-top__empty,
+.dawn-top[data-compact][data-folded] .dawn-top__row--mine {
     display: none;
 }
 
 .dawn-top[data-compact] .dawn-top__toggle {
-    display: flex;
+    order: 0;
+    align-self: stretch;
     gap: 8px;
     justify-content: center;
-    width: 100%;
+    margin: 0;
     padding: 7px 4px;
-    border: 0;
-    font: inherit;
+    font-size: inherit;
     color: var(--gold);
-    background: none;
-    cursor: pointer;
-    pointer-events: auto;
 }
 
 .dawn-top__toggle::after {

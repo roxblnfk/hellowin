@@ -27,7 +27,7 @@
           data-cursed="{{ json_encode($cursed ?? null) }}"
           data-boss="{{ json_encode($boss ?? null) }}"
           data-dice="{{ json_encode($dice ?? null) }}"
-          data-dawn="{{ json_encode($dawn ?? null) }}"
+          data-dawn="{{ json_encode($top ?? $dawn ?? null) }}"
           data-flyers="{{ json_encode($flyers ?? []) }}"
           data-chat-max="{{ $chatMax ?? 120 }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="Звук" hidden>
@@ -90,7 +90,7 @@
             <div class="dice__faces" data-dice-faces hidden><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span></div>
             <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
         </section>
-        <!-- The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»): at the side on a wide screen, a folded strip
+        <!-- The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»): at the side on a wide screen, a folded strip
              over the HUD on a phone. -->
         <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
             <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>

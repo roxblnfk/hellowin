@@ -1,11 +1,13 @@
-// The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»): `dawn` of the snapshot and the event, my place in
-// the board, and the pixel table at the side with rows that slide when someone is overtaken. No PixiJS here: client.js
-// and the node tests load it.
+// The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»): `top` of the snapshot and the event (`dawn` from a
+// server before the rename), my place in the board, and the pixel table at the side with rows that slide when someone is
+// overtaken. No PixiJS here: client.js and the node tests load it.
 
-/** Rows of the table on a wide screen. */
+/** Rows of the unfolded table on a wide screen. */
 export const DAWN_TOP = 10;
-/** Rows of the unfolded table on a phone. */
+/** Rows of the unfolded table on a phone at the dawn. */
 export const DAWN_TOP_PHONE = 5;
+/** Leaders of the folded table (and of a phone's unfolded one outside the dawn); my row goes under them. */
+export const DAWN_FOLDED = 3;
 // How long a row slides from its old place to the new one.
 export const DAWN_MOVE_MS = 300;
 const FLASH_MS = 600;
@@ -13,8 +15,8 @@ const STORAGE_KEY = 'hellowin:dawn-top';
 export const DAWN_EMPTY = 'Сбивайте уток рапирой!';
 
 /**
- * `dawn` of the snapshot or the event: {board} with the rows in the server's order, or null without the contest. A row's
- * score is the player's points (`points`; `shots` from a server that still counts flyers).
+ * `top` (or the older `dawn`) of the snapshot or the event: {board} with the rows in the server's order, or null without
+ * one. A row's score is the player's points (`points`; `shots` from a server that still counts flyers).
  */
 export function dawnOf(dawn) {
     if (!dawn || typeof dawn !== 'object' || !Array.isArray(dawn.board)) return null;
@@ -28,22 +30,28 @@ export function dawnOf(dawn) {
 export const nameOf = (name) => (typeof name === 'string' && name.trim()) || 'кто-то';
 
 /**
- * The table's rows: the first `top` of the board, mine marked; when I am in the board but below the top, the first
- * `top - 1` and `mine` — my own row in the last slot (null otherwise). The server's order is the ranking, so the place
- * is the index + 1.
+ * The table's rows: the first `top` of the board, mine marked. When I am in the board but below the top, `mine` is my
+ * own row (null otherwise): in the last slot instead of the top's last (`below` false — the unfolded ten), or under the
+ * whole top (`below` true — the folded three). The server's order is the ranking, so the place is the index + 1.
  */
-export function dawnRows(board, me, top = DAWN_TOP) {
+export function dawnRows(board, me, top = DAWN_TOP, below = false) {
     const index = me === null || me === undefined ? -1 : board.findIndex((row) => row.player.id === me);
     const rowOf = (row, i) => ({ id: row.player.id, name: nameOf(row.player.name), shots: row.shots, place: i + 1, me: i === index });
     if (index < top) return { rows: board.slice(0, top).map(rowOf), mine: null };
-    return { rows: board.slice(0, top - 1).map(rowOf), mine: rowOf(board[index], index) };
+    return { rows: board.slice(0, below ? top : top - 1).map(rowOf), mine: rowOf(board[index], index) };
+}
+
+/** How many rows a view shows and where my row goes: {top, below}. */
+export function shapeOf({ compact, folded, atDawn }) {
+    if (compact) return atDawn ? { top: DAWN_TOP_PHONE, below: false } : { top: DAWN_FOLDED, below: true };
+    return folded ? { top: DAWN_FOLDED, below: true } : { top: DAWN_TOP, below: false };
 }
 
 /** The folded strip of a phone: «#3 · ты · 7 · топ», or a plain call when I am not in the board. */
 export function stripText(board, me) {
     const index = me === null || me === undefined ? -1 : board.findIndex((row) => row.player.id === me);
     if (index >= 0) return `#${index + 1} · ты · ${board[index].shots} · топ`;
-    return board.length ? 'Топ рассвета' : DAWN_EMPTY;
+    return board.length ? 'Топ стрелков' : DAWN_EMPTY;
 }
 
 function readFolded(storage) {
@@ -58,14 +66,18 @@ function writeFolded(storage, folded) {
     try {
         storage?.setItem(STORAGE_KEY, folded ? 'closed' : 'open');
     } catch {
-        // Private mode or blocked storage: the strip just starts folded next time.
+        // Private mode or blocked storage: the table just starts folded next time.
     }
 }
 
 /**
- * The table in `[data-dawn-top]`. Rows are keyed by player id, so a repaint moves the same nodes: their old y is read
- * before the update and each slides from there (FLIP); a row that climbed flashes, a new one rides in from the right, one
- * pushed out of the top drops away. Under reduced motion the new order simply stands.
+ * The table in `[data-dawn-top]`, shown whenever there is a board (an empty one only at the dawn, as its call). Folded
+ * by default — the three leaders and my row; the toggle unfolds it to the ten, and the choice is remembered. Entering
+ * the dawn unfolds it afresh: its contest is the stage's; leaving it brings the remembered choice back.
+ *
+ * Rows are keyed by player id, so a repaint moves the same nodes: their old y is read before the update and each slides
+ * from there (FLIP); a row that climbed flashes, a new one rides in from the right, one pushed out of the top drops away.
+ * Folding and unfolding just redraw. Under reduced motion the new order simply stands.
  *
  * @param {{reduced?: () => boolean, storage?: Storage|null}} options
  */
@@ -82,9 +94,11 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
     const cellsOf = new WeakMap();
     const flashes = new Map();
     let folded = readFolded(storage);
+    // Whether the last paint was at the dawn (null before the first): entering it unfolds, leaving it restores.
+    let wasDawn = null;
+    let lastShape = null;
     let last = null;
 
-    const animates = () => !reduced() && !el.hidden && !el.hasAttribute('data-folded');
     const animate = (node, frames, options) => (typeof node.animate === 'function' ? node.animate(frames, options) : null);
 
     // place · name · score, built once per node.
@@ -139,8 +153,7 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
         else li.remove();
     }
 
-    function paintRows(next) {
-        const motion = animates();
+    function paintRows(next, motion) {
         const before = new Map();
         if (motion) rows.forEach((li, id) => before.set(id, { y: li.getBoundingClientRect().top, top: li.offsetTop, place: Number(li.dataset.place) }));
         const keep = new Set(next.map((row) => row.id));
@@ -187,11 +200,13 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
         fill(mineBox, { place: `#${mine.place}`, name: 'ты', shots: mine.shots });
     }
 
-    function paintFold(compact) {
-        const shut = compact && folded;
-        el.toggleAttribute('data-folded', shut);
-        el.toggleAttribute('data-compact', compact);
-        if (toggle) toggle.setAttribute('aria-expanded', String(!shut));
+    // The toggle: a phone's strip «#3 · ты · 7 · топ ▾»; on a wide screen «весь топ ▾» / «свернуть ▴» under the rows,
+    // gone while the board has nothing beyond the folded three.
+    function paintToggle(board, me, compact) {
+        if (!toggle) return;
+        toggle.hidden = !compact && board.length <= DAWN_FOLDED;
+        toggle.setAttribute('aria-expanded', String(!folded));
+        if (strip) strip.textContent = compact ? stripText(board, me) : folded ? 'весь топ' : 'свернуть';
     }
 
     toggle?.addEventListener('click', (event) => {
@@ -203,22 +218,33 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
     });
 
     /**
-     * @param {{dawn: {board: Array}|null, me: string|null, shown: boolean, compact: boolean}} view  compact — a phone:
-     *   five rows, folded into a strip until tapped open
+     * @param {{dawn: {board: Array}|null, me: string|null, atDawn: boolean, compact: boolean}} view  dawn — the board
+     *   (`top`); atDawn — finale step 7 on screen; compact — a phone, folded into a strip until tapped open
      */
     function paint(view) {
         last = view;
-        const { dawn, me, shown, compact } = view;
-        if (!shown || !dawn) {
+        const { dawn, me, atDawn, compact } = view;
+        if (atDawn && wasDawn !== true) folded = false;
+        if (!atDawn && wasDawn === true) folded = readFolded(storage);
+        wasDawn = atDawn;
+        if (!dawn || (!dawn.board.length && !atDawn)) {
             el.hidden = true;
+            lastShape = null;
             clear();
             return;
         }
-        const { rows: next, mine } = dawnRows(dawn.board, me, compact ? DAWN_TOP_PHONE : DAWN_TOP);
-        paintFold(compact);
-        if (strip) strip.textContent = stripText(dawn.board, me);
+        const shape = shapeOf({ compact, folded, atDawn });
+        const key = `${compact}|${folded}|${shape.top}|${shape.below}`;
+        // Rows move only within the same shape of a shown table: a fold, a width change or the table's appearance redraws.
+        const motion = !reduced() && !el.hidden && !(compact && folded) && key === lastShape;
+        lastShape = key;
+        const { rows: next, mine } = dawnRows(dawn.board, me, shape.top, shape.below);
+        el.toggleAttribute('data-folded', folded);
+        el.toggleAttribute('data-compact', compact);
+        el.toggleAttribute('data-dawn-stage', atDawn);
+        paintToggle(dawn.board, me, compact);
         if (empty) empty.hidden = dawn.board.length > 0;
-        paintRows(next);
+        paintRows(next, motion);
         paintMine(mine);
         el.hidden = false;
     }

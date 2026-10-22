@@ -89,7 +89,7 @@
   pumpkin with clicks enough for a lowered limit goes to its next stage, a bar goal at `drunk` makes the bar ready.
   «Пуск летунов» (?mod=1, shown while the set has flyers — `burst`) is `flyers.burst`: ceil(5 + 0.2 × (n − 1)) of the
   current set at once, no cooldown, no ceiling. `online` is the number of walkers, in the snapshot and in a
-  `leaderboard` event every 5 s (with an empty `top`).
+  `leaderboard` event every 5 s (a removed event the client only reads `online` from).
   The pause of the progress (protocol.md, «Пауза прогресса»; the console's «Пауза прогресса», ?paused=1): `click`,
   `drink`, `strike` and `roll` answer `paused` (my refusal flashes «Пауза» in the HUD), no stage, goal or readiness
   comes; flyers, wandering zombies and shots go on, a zombie shot then does not count for the cursed world's goal. Its
@@ -134,10 +134,14 @@
   behind the counter is `meep`; ?meep=ms sends one at that frozen moment (?meepflyer=1 — over the first runner flyer).
   ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice);
   ?owlrolls=N — the owl has rolled N times already (`dice.owl` of the snapshot, as after a reload).
-  The dawn's top (docs/spec/frontend.md, «Топ рассвета»): every hit of a player at step 7 adds the flyer's points and sends
-  the whole board (`dawn`, rows `{player, points}`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
-  the field) fire at thicker flyers; ?dawnboard=15 — a board of 15 at once, me 12th (with ?me=1 — my row under the line);
-  ?dawntop=8&freeze=ms — the overtakes of a seeded run at that moment; ?dawnopen=1 — a phone's table unfolded.
+  The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»): every hit of a player in any scene adds the flyer's
+  points; the whole board (`top`, rows `{player, points}`, ordered like the server) goes out at most every 500 ms
+  (HELLOWIN_TOP_INTERVAL) and stands in the snapshot; neither a reset nor «В бар» clears it. ?dawntop=N — N shooters of
+  different aim (the bots first, then shooters off the field) fire at thicker flyers in any scene; ?dawnboard=15 — a
+  board of 15 at once, me 12th (with ?me=1 — my row under the line); ?dawntop=8&freeze=ms — the overtakes of a seeded
+  run at that moment; ?dawnopen=1|0 — the table starts unfolded / folded (the dawn unfolds it anyway); ?topold=1 — the
+  server before the rename: `dawn` in the snapshot and the events. E.g. ?scene=1&dawnboard=15&me=1 — folded by day,
+  ?finale=7&dawnboard=15&me=1 — the dawn's ten.
   An action stops the walk (docs/spec/frontend.md, «Действие останавливает ход»): ?walkstop=shoot|click|strike|drink|dice
   puts my character on the field and walks it left; at ?stopat=ms (default 1600) the `move` with `stop` comes — its
   point the server's, ?stoplag=ms (default 250) of walking past the one drawn — then the action's own event. ?walkon=ms
@@ -177,7 +181,7 @@
         <div class="dice__faces" data-dice-faces hidden><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span><span class="dice__face" data-dice-face></span></div>
         <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
     </section>
-    <!-- The dawn's top shooters (docs/spec/frontend.md, «Топ рассвета»). -->
+    <!-- The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»). -->
     <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
         <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>
         <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
@@ -266,7 +270,8 @@
     const root = document.getElementById('app');
     // ?w=390: headless windows have a minimum width, so narrow layouts are checked in a narrowed #app.
     if (params.has('w')) root.style.width = `${Number.parseInt(params.get('w'), 10)}px`;
-    // ?dawnopen=1|0: the phone's dawn table starts unfolded or folded (its remembered choice, dawn.js).
+    // ?dawnopen=1|0: the top's table starts unfolded or folded (its remembered choice, dawn.js); at the dawn, which unfolds
+    // it anyway, ?dawnopen=0 folds it back once the client has started.
     if (params.has('dawnopen')) {
         try {
             localStorage.setItem('hellowin:dawn-top', params.get('dawnopen') === '1' ? 'open' : 'closed');
@@ -601,7 +606,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)), dice: engine.dice && { ...engine.dice, owl: diceState.owl } });
+    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), dawn: undefined, [topOld ? 'dawn' : 'top']: structuredClone(engine.dawn), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)), dice: engine.dice && { ...engine.dice, owl: diceState.owl } });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);
@@ -700,8 +705,6 @@
         engine.cursed = null;
         engine.dice = null;
         diceForget();
-        dawnScores.clear();
-        engine.dawn = null;
         engine.boss = null;
         Object.assign(limitBonus, { bar: 0, drinks: 0, zombies: 0, boss: 0 });
         cursedReadySaid = false;
@@ -801,8 +804,6 @@
             if (step === LAST_STEP) {
                 engine.walkers.forEach((w) => delete w.zombie);
                 if (engine.boss) engine.boss.hp = 0;
-                dawnScores.clear();
-                engine.dawn = { board: [] };
             }
             const item = itemOfFinale(step);
             if (item !== undefined) engine.walkers.forEach((w) => { w.item = item; w.clinked = false; });
@@ -1179,7 +1180,7 @@
         stats.shot++;
         const by = playerOf(player);
         deliver({ type: 'shot', flyer: id, points: f.points, ...(by ? { player: by } : {}) });
-        if (by && dawnOn()) dawnHit(by, f.points);
+        if (by && f.points > 0) dawnHit(by, f.points);
         if (f.kind === 'witch' && by) deliver({ type: 'owl', line: 'witch-down', params: { player: by } });
         // A zombie worker slain from step 5 on counts for the cursed world's goal — not while the progress is paused.
         if (f.kind === 'zombie' && engine.cursed && !engine.paused) {
@@ -1697,10 +1698,15 @@
         later(diceBots, 100);
     }
 
-    // The dawn's top like DawnService: a player's hit at step 7 adds the flyer's points, and the whole board goes out after
-    // the `shot` — most points first, of equal ones the earlier, then the id.
+    // The evening's top like the server's: a player's hit in any scene adds the flyer's points (the player's `points`;
+    // a reset keeps them), and the whole board goes out after the `shot`, glued to one `top` per 500 ms
+    // (HELLOWIN_TOP_INTERVAL) — most points first, of equal ones the earlier, then the id. The engine keeps it in
+    // `engine.dawn`; the snapshot calls it `top` (`dawn` with ?topold=1).
     const dawnScores = new Map();
-    const dawnOn = () => engine.scene >= engine.sceneStages && engine.finale?.step === LAST_STEP;
+    const topOld = params.get('topold') === '1';
+    const TOP_INTERVAL_MS = 500;
+    let topDue = false;
+    engine.dawn = { board: [] };
     function dawnBoard() {
         return [...dawnScores]
             .sort(([a, x], [b, y]) => y.points - x.points || x.at - y.at || (a < b ? -1 : a > b ? 1 : 0))
@@ -1709,13 +1715,19 @@
     function dawnHit(player, points) {
         dawnScores.set(player.id, { points: (dawnScores.get(player.id)?.points ?? 0) + points, at: serverTime(), name: player.name ?? null });
         engine.dawn = { board: dawnBoard() };
-        deliver({ type: 'dawn', board: structuredClone(engine.dawn.board) });
+        if (topDue) return;
+        topDue = true;
+        later(() => {
+            topDue = false;
+            deliver({ type: topOld ? 'dawn' : 'top', board: structuredClone(engine.dawn.board) });
+        }, TOP_INTERVAL_MS);
     }
     const DAWN_NAMES = ['Ann', 'Lilith', 'Vlad', 'Пугало', 'Призрак Оля', 'Gremlin', 'Банши', 'Nosferatu', 'Скелетон', 'Moth', 'Леший', 'Wisp'];
-    // ?dawnboard=N: a board of N shooters at the start of the dawn, me 12th with 4 points (or last of a shorter one).
+    // ?dawnboard=N: a board of N shooters at the start, in any scene, me 12th with 4 points (or last of a shorter one).
     function dawnSeed() {
         dawnScores.clear();
-        if (!dawnOn()) return;
+        topDue = false;
+        engine.dawn = { board: [] };
         const others = [...wanderers().map(playerOf), ...DAWN_NAMES.map((name, i) => ({ id: `lab-dawn-${String(i).padStart(8, '0')}`, name }))];
         const n = Math.min(others.length + 1, Math.max(0, Number.parseInt(params.get('dawnboard') ?? '0', 10) || 0));
         const mine = Math.min(11, n - 1);
@@ -1727,7 +1739,7 @@
         engine.dawn = { board: dawnBoard() };
     }
     // ?dawntop=N: N shooters (the bots on the field first, then shooters off it) of different aim fire at the flyers of
-    // the dawn, which come thicker; seeded, so a frozen run (?freeze) replays the same overtakes.
+    // any scene, which come thicker; seeded, so a frozen run (?freeze) replays the same overtakes.
     const dawnTop = Math.max(0, Math.min(20, Number.parseInt(params.get('dawntop') ?? '0', 10) || 0));
     let dawnRandom = seeded(1807);
     function dawnShooters() {
@@ -1736,7 +1748,7 @@
         return [...field, ...off].slice(0, dawnTop).map((player, i) => ({ player, aim: 0.3 + 0.7 * (((i * 7) % dawnTop) + 1) / dawnTop }));
     }
     function dawnBots() {
-        if (dawnTop && dawnOn()) {
+        if (dawnTop) {
             const open = [...live].filter(([, f]) => !f.shot && f.kind !== 'roadrunner' && serverTime() < f.until - 600);
             if (open.length < 3) engineFlyer();
             const shooters = dawnShooters();
@@ -2120,6 +2132,9 @@
     client.setModerator(moderator && params.get('ui') !== '0');
     if (params.get('ui') === '0') root.querySelector('[data-lab-panel]').hidden = true;
     if (params.get('me') === '1') client.setMe(ME);
+    // ?dawnopen=0 at the dawn: the table folded back, as the player's own click would.
+    const topTable = root.querySelector('[data-dawn-top]');
+    if (params.get('dawnopen') === '0' && topTable && !topTable.hidden && !topTable.hasAttribute('data-folded')) root.querySelector('[data-dawn-toggle]')?.click();
     bindWalking(root, scene, () => client.canWalk(), (point) => engineMove(ME, point));
     const join = initJoin(document.querySelector('[data-join]'), { register: engineRegister });
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());
@@ -2203,7 +2218,7 @@
     // ?wkill=ms (with ?freeze): the first walker shoots the first wandering zombie at that moment.
     const wkillAt = params.has('wkill') ? Math.round(Number.parseInt(params.get('wkill'), 10) / 16) * 16 : -1;
     if (!simulated) {
-        setInterval(() => deliver({ type: 'leaderboard', top: [], online: engine.walkers.length }), 5000);
+        setInterval(() => deliver({ type: 'leaderboard', online: engine.walkers.length }), 5000);
         launchLater();
         later(wanderTick, 4000 + Math.random() * 5000);
         later(limitsTick, 1000);

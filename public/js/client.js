@@ -21,7 +21,7 @@ const DAWN_STEP = 7;
 const RUNNER_STEP = 3;
 // The finale step the hall rolls the dice on (scenario.md, «Кости 6-6-6»).
 const DICE_STEP = 1;
-// Up to this width of #app the dawn's table is a phone's folded strip (docs/spec/frontend.md, «Топ рассвета»).
+// Up to this width of #app the top shooters' table is a phone's folded strip (docs/spec/frontend.md, «Топ стрелков»).
 const DAWN_COMPACT_PX = 600;
 // A `meep` older than this by its `at` is not drawn (docs/spec/frontend.md, «Пульт модератора», «Мип-мип»).
 const MEEP_STALE_MS = 1500;
@@ -164,6 +164,7 @@ export function readSnapshot(root) {
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
         owlRolls: owlRollsOf(parseJson(root.dataset.dice, null)),
+        // The evening's top shooters (protocol.md, «Топ стрелков»): `top` of the snapshot, `dawn` before the rename.
         dawn: dawnOf(parseJson(root.dataset.dawn, null)),
         // The wandering zombies alive (protocol.md, «Бродячие зомби»): `flyer` events with `wander`, steps 5–6 only.
         flyers: parseList(root.dataset.flyers),
@@ -478,14 +479,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         animateDice();
     }
 
-    // The dawn's top shooters at the side (docs/spec/frontend.md, «Топ рассвета»): only at step 7; my place is my index
-    // in the board. On a phone the folded strip sits on the HUD, whose height wraps with the width.
+    // The evening's top shooters at the side (docs/spec/frontend.md, «Топ стрелков»): in every scene, unfolded afresh at
+    // step 7; my place is my index in the board. On a phone the folded strip sits on the HUD, whose height wraps.
     function paintDawn() {
         root.dataset.dawn = JSON.stringify(model.dawn);
         const width = root.clientWidth || window.innerWidth;
         const hudHeight = root.querySelector('.hud')?.offsetHeight;
         if (hudHeight) root.style.setProperty('--hud-h', `${hudHeight}px`);
-        dawnTable.paint({ dawn: model.dawn, me: model.me, shown: step() === DAWN_STEP, compact: width <= DAWN_COMPACT_PX });
+        dawnTable.paint({ dawn: model.dawn, me: model.me, atDawn: step() === DAWN_STEP, compact: width <= DAWN_COMPACT_PX });
     }
 
     // The moderator's hit zone over RoadRunner of the finale (shown by the scene only while he is on screen).
@@ -552,7 +553,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
-            dawn: dawnOf(snapshot.dawn),
+            dawn: dawnOf(snapshot.top ?? snapshot.dawn),
             flyers: Array.isArray(snapshot.flyers) ? snapshot.flyers : [],
         });
         stageMaxByScene.set(model.scene, model.stageMax);
@@ -789,7 +790,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.scene = event.scene;
             model.stageMax = event.stageMax;
             model.ready = false;
-            model.dawn = null;
             if (model.scene < model.sceneStages) {
                 model.finale = null;
                 model.dice = null;
@@ -829,8 +829,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (event.step === CURSED_STEP || event.step === DICE_STEP) model.ready = false;
             if (event.step === DICE_STEP) model.owlRolls = 0;
             if (event.step < DICE_STEP) model.dice = null;
-            // The dawn's count starts empty with the step (protocol.md, «Топ рассвета»); its first hit brings the board.
-            model.dawn = event.step === DAWN_STEP ? model.dawn ?? { board: [] } : null;
+            // The top lives through the whole evening (protocol.md, «Топ стрелков»): only a new board replaces it. The
+            // dawn shows it even empty, as its call to shoot.
+            if (event.step === DAWN_STEP) model.dawn ??= { board: [] };
             // The dawn lifts every zombie and fells FrankenPHP, whether his health ran out or the moderator forced it.
             const lifted = event.step >= DAWN_STEP ? model.walkers.filter((w) => w.zombie) : [];
             lifted.forEach((w) => delete w.zombie);
@@ -890,10 +891,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.meep?.(event.flyer ?? null);
         },
 
-        // A counted hit at the dawn: the whole ranking again, which replaces ours.
-        dawn(event) {
-            model.dawn = dawnOf(event);
+        // The top changed (any scene, at most every HELLOWIN_TOP_INTERVAL): the whole ranking again, which replaces ours.
+        top(event) {
+            model.dawn = dawnOf(event) ?? model.dawn;
             paintDawn();
+        },
+        // The same from a server before the rename (`dawn`, at step 7 only).
+        dawn(event) {
+            handlers.top(event);
         },
 
         // The goal of step 5: mugs drunk and zombies slain against their targets (readiness itself comes as `ready`).
@@ -988,7 +993,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintElements();
         },
 
-        // Only `online` for now: the players' table on the page is still to come (players.md).
+        // Gone from the server (protocol.md, «Топ стрелков»: the table is `top`); one that still comes only tells `online`.
         leaderboard(event) {
             if (!Number.isInteger(event.online)) return;
             model.online = event.online;
@@ -1007,7 +1012,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.cursed = null;
             model.boss = null;
             model.dice = null;
-            model.dawn = null;
             model.flyers = [];
             forgetDice();
             wordClosed = false;
