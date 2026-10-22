@@ -63,7 +63,8 @@ final class HellowinConfig extends InjectableConfig
         ],
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
-        'rapier' => ['dawn_board' => 200, 'beer_handover_ms' => 900],
+        'rapier' => ['beer_handover_ms' => 900],
+        'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
         'chat' => ['max' => 120, 'history' => 50],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
@@ -312,11 +313,19 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Rows of the dawn's ranking every hit sends at most.
+     * @return positive-int Rows of the shooters' top an event or the snapshot carries at most.
      */
-    public function getDawnBoard(): int
+    public function getTopBoard(): int
     {
-        return self::positiveInt($this->rapier()['dawn_board'] ?? null, 'rapier.dawn_board', 'HELLOWIN_DAWN_BOARD');
+        return self::positiveInt($this->top()['board'] ?? null, 'top.board', 'HELLOWIN_TOP_BOARD');
+    }
+
+    /**
+     * @return positive-int Milliseconds the ticker waits at least between two publications of the shooters' top.
+     */
+    public function getTopInterval(): int
+    {
+        return self::positiveInt($this->top()['interval'] ?? null, 'top.interval', 'HELLOWIN_TOP_INTERVAL');
     }
 
     /**
@@ -780,6 +789,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($rapier) or throw new \InvalidArgumentException('Config "hellowin.rapier" must be an array.');
 
         return $rapier;
+    }
+
+    private function top(): array
+    {
+        $top = $this->config['top'] ?? [];
+        \is_array($top) or throw new \InvalidArgumentException('Config "hellowin.top" must be an array.');
+
+        return $top;
     }
 
     private function chat(): array

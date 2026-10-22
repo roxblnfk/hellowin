@@ -90,7 +90,7 @@ jobs:
 # The lock plugin needs no configuration: it is served over rpc. Locks live in this RoadRunner process,
 # which is enough while a single app instance runs.
 
-# The periodic process of the game: flyer launches and sweeps, leaderboard builds. One long-running PHP process outside
+# The periodic process of the game: flyer launches and sweeps, the shooters' top. One long-running PHP process outside
 # the worker pools, so restarting or scaling workers never runs a second schedule; it reaches kv, lock, metrics
 # and centrifuge over rpc like a worker. The RoadRunner lock `ticker` keeps an overlapping second copy idle.
 service:

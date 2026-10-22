@@ -9,20 +9,19 @@ use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
-use App\Application\Config\PlayerConfig;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionQueue;
-use App\Application\Player\LeaderboardService;
+use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
-use App\Application\Story\DawnService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
+use App\Application\Story\TopService;
 use App\Application\Ticker\Ticker;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\CentrifugoPresence;
@@ -49,10 +48,10 @@ use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
-use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\TopStore;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -115,7 +114,7 @@ final class HellowinBootloader extends Bootloader
                 CursedService $cursed,
                 RapierService $rapier,
                 DiceService $dice,
-                DawnService $dawn,
+                TopService $top,
                 FlyerService $flyerService,
                 LimitsService $limits,
             ): SnapshotFactory => new SnapshotFactory(
@@ -132,7 +131,7 @@ final class HellowinBootloader extends Bootloader
                 $cursed,
                 $rapier,
                 $dice,
-                $dawn,
+                $top,
                 $flyerService,
                 $limits,
             ),
@@ -169,18 +168,18 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): CursedStore => new CursedStore($cache->storage($config->getStorage()), new Locks($lock)),
-            DawnStore::class => static fn(
+            TopStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
-            ): DawnStore => new DawnStore($cache->storage($config->getStorage()), new Locks($lock)),
-            DawnService::class => static fn(
+            ): TopStore => new TopStore($cache->storage($config->getStorage()), new Locks($lock)),
+            TopService::class => static fn(
                 HellowinConfig $config,
-                DawnStore $store,
+                TopStore $store,
+                RitualStore $ritual,
                 ChannelPublisher $publisher,
                 Clock $clock,
-                LoggerInterface $logger,
-            ): DawnService => new DawnService($store, $publisher, $clock, $config->getDawnBoard(), $logger),
+            ): TopService => new TopService($store, $ritual, $publisher, $clock, $config->getTopBoard()),
             ChatStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -352,24 +351,6 @@ final class HellowinBootloader extends Bootloader
                 BroadcastInterface $broadcast,
             ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems()),
             Clock::class => SystemClock::class,
-            LeaderboardService::class => static fn(
-                HellowinConfig $config,
-                PlayerConfig $players,
-                PlayerStore $store,
-                RitualStore $ritual,
-                CacheStorageProviderInterface $cache,
-                ChannelPublisher $publisher,
-                PlayMetrics $metrics,
-                WalkerStore $walkers,
-            ): LeaderboardService => new LeaderboardService(
-                $store,
-                $ritual,
-                $cache->storage($config->getStorage()),
-                $publisher,
-                $metrics,
-                $players->getLeaderboardSize(),
-                $walkers,
-            ),
             FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(
                 $flyers->getDepths(),
                 $config->getBushes(\count($flyers->getDepths())),
@@ -403,9 +384,10 @@ final class HellowinBootloader extends Bootloader
                 LockInterface $lock,
             ): FlyerStore => new FlyerStore($cache->storage($config->getStorage()), new Locks($lock)),
             Ticker::class => static fn(
-                PlayerConfig $players,
+                HellowinConfig $config,
                 FlyerConfig $flyerConfig,
-                LeaderboardService $leaderboard,
+                TopService $top,
+                PlayerCensus $census,
                 FlyerService $flyers,
                 BarService $bar,
                 WalkService $walks,
@@ -414,8 +396,8 @@ final class HellowinBootloader extends Bootloader
                 CursedService $cursed,
                 LimitsService $limits,
             ): Ticker => new Ticker(
-                $leaderboard,
-                $players->getLeaderboardInterval(),
+                $top,
+                $config->getTopInterval(),
                 $flyers,
                 $flyerConfig->getInterval(),
                 $walks,
@@ -426,6 +408,7 @@ final class HellowinBootloader extends Bootloader
                 rapier: $rapier,
                 cursed: $cursed,
                 limits: $limits,
+                census: $census,
             ),
         ];
     }

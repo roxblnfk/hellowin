@@ -8,10 +8,10 @@ use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Story\CursedService;
-use App\Application\Story\DawnService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
+use App\Application\Story\TopService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\StartTime;
 use App\Domain\Clock\SystemClock;
@@ -46,7 +46,7 @@ use App\Domain\Walk\WalkerStore;
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
  *     boss: array{hp: int<0, max>, max: positive-int}|null,
  *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
- *     dawn: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}>}|null,
+ *     top: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}>},
  *     flyers: list<array>,
  *     startedAt: int,
  *     now: int
@@ -71,7 +71,7 @@ final readonly class SnapshotFactory
         private ?CursedService $cursed = null,
         private ?RapierService $rapier = null,
         private ?DiceService $dice = null,
-        private ?DawnService $dawn = null,
+        private ?TopService $top = null,
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
     ) {}
@@ -124,7 +124,7 @@ final readonly class SnapshotFactory
             'cursed' => $this->cursed?->state($ritual->round, $ritual->story),
             'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,
             'dice' => $this->dice?->state($ritual->round, $ritual->story),
-            'dawn' => $this->dawn?->state($ritual->story),
+            'top' => $this->top?->state() ?? ['board' => []],
             'flyers' => $this->flyers?->wanderers($ritual->story) ?? [],
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now

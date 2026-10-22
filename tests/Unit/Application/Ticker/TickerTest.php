@@ -20,13 +20,13 @@ final class TickerTest
 {
     private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
 
-    public function firstTickBuildsTheLeaderboardAndLaunchesNothing(): void
+    public function firstTickTellsTheTopAndLaunchesNothing(): void
     {
         $ritual = new RitualHarness();
 
         self::ticker($ritual)->tick(1_000);
 
-        Assert::count($ritual->broadcast->ofType('leaderboard'), 1);
+        Assert::same($ritual->broadcast->ofType('top'), [['type' => 'top', 'round' => 1, 'board' => []]]);
         Assert::blank($ritual->broadcast->ofType('flyer'));
     }
 
@@ -51,17 +51,35 @@ final class TickerTest
         Assert::count($ritual->broadcast->ofType('clink'), 1);
     }
 
-    public function leaderboardWaitsForItsInterval(): void
+    public function topGoesOutOnAChangeAtMostOncePerInterval(): void
     {
         $ritual = new RitualHarness();
+        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack');
         $ticker = self::ticker($ritual);
-
         $ticker->tick(1_000);
-        $ticker->tick(3_000);
-        $ticker->tick(5_999);
-        $ticker->tick(6_000);
 
-        Assert::count($ritual->broadcast->ofType('leaderboard'), 2);
+        $ticker->tick(1_500);
+        self::shootAWitch($ritual, 'aaaaaaaaaaaaaaaa');
+        self::shootAWitch($ritual, 'aaaaaaaaaaaaaaaa');
+        $ticker->tick(1_999);
+        Assert::count($ritual->broadcast->ofType('top'), 1, 'unchanged, then within the interval');
+        $ticker->tick(2_000);
+        $ticker->tick(2_500);
+
+        $tops = $ritual->broadcast->ofType('top');
+        Assert::count($tops, 2);
+        Assert::same($tops[1]['board'], [['player' => ['id' => 'aaaaaaaaaaaaaaaa', 'name' => 'Jack'], 'points' => $ritual->players->find('aaaaaaaaaaaaaaaa')?->points]]);
+        Assert::blank($ritual->broadcast->ofType('leaderboard'));
+    }
+
+    public function censusCountsThePlayersForTheGauges(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack');
+
+        self::ticker($ritual)->tick(1_000);
+
+        Assert::equals($ritual->counters()['hellowin_players{}'] ?? null, 1);
     }
 
     public function flyerIsLaunchedOncePerInterval(): void
@@ -328,7 +346,16 @@ final class TickerTest
 
     private static function ticker(RitualHarness $ritual): Ticker
     {
-        return new Ticker($ritual->leaderboard, 5000, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger(), [3000, 3000]);
+        return new Ticker($ritual->top, 500, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger(), [3000, 3000], census: $ritual->census);
+    }
+
+    /**
+     * @param non-empty-string $player
+     */
+    private static function shootAWitch(RitualHarness $ritual, string $player): void
+    {
+        $flyer = $ritual->flyers->launchSpecial('witch', $ritual->clock->now);
+        Assert::notNull($ritual->flyers->shoot($flyer?->id ?? '', $player));
     }
 
     /**

@@ -292,10 +292,12 @@ final class HellowinConfigTest
         (new HellowinConfig(['walk' => ['bar' => self::bar(['perches' => $perches])]]))->getBarLayout();
     }
 
-    public function dawnBoardComesFromTheConfig(): void
+    public function topComesFromTheConfig(): void
     {
-        Assert::same((new HellowinConfig())->getDawnBoard(), 200);
-        Assert::same((new HellowinConfig(['rapier' => ['dawn_board' => '10']]))->getDawnBoard(), 10);
+        Assert::same((new HellowinConfig())->getTopBoard(), 200);
+        Assert::same((new HellowinConfig())->getTopInterval(), 500);
+        Assert::same((new HellowinConfig(['top' => ['board' => '10', 'interval' => '1000']]))->getTopBoard(), 10);
+        Assert::same((new HellowinConfig(['top' => ['interval' => '1000']]))->getTopInterval(), 1000);
     }
 
     public function chatLimitsComeFromTheConfig(): void
@@ -330,11 +332,11 @@ final class HellowinConfigTest
         (new HellowinConfig(['bar' => ['drink_ms' => '0']]))->getDrinkMs();
     }
 
-    public function rejectsAnEmptyDawnBoard(): never
+    public function rejectsAnEmptyTopBoard(): never
     {
-        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_DAWN_BOARD');
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_TOP_BOARD');
 
-        (new HellowinConfig(['rapier' => ['dawn_board' => '0']]))->getDawnBoard();
+        (new HellowinConfig(['top' => ['board' => '0']]))->getTopBoard();
     }
 
     public function diceAnswersAreKeptForTheConfiguredSeconds(): void

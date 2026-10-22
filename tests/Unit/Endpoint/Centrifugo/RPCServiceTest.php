@@ -135,7 +135,7 @@ final class RPCServiceTest
             'cursed' => null,
             'boss' => null,
             'dice' => null,
-            'dawn' => null,
+            'top' => ['board' => []],
             'flyers' => [],
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
@@ -213,20 +213,18 @@ final class RPCServiceTest
         $ritual = new RitualHarness();
         $ritual->click('pumpkin-2', 3, self::PLAYER);
 
-        $ritual->leaderboard->build();
-
         $response = $this->call($ritual, 'me', [], self::PLAYER);
 
         Assert::same($response['player']['clicks'] ?? null, 3);
-        Assert::same(\array_column($response['top'] ?? [], 'id'), [self::PLAYER]);
+        Assert::false(\array_key_exists('top', $response));
     }
 
     public function meIsNullForAnUnknownOrAnonymousPlayer(): void
     {
         $ritual = new RitualHarness();
 
-        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null, 'top' => [], 'moderator' => false]);
-        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'top' => [], 'moderator' => false]);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER), ['ok' => true, 'player' => null, 'moderator' => false]);
+        Assert::same($this->call($ritual, 'me', []), ['ok' => true, 'player' => null, 'moderator' => false]);
     }
 
     public function firstShotHitsAndTheSecondMisses(): void
@@ -627,10 +625,7 @@ final class RPCServiceTest
         $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
         $this->call($ritual, 'register', ['name' => 'Ghost'], '0123456789abcdee');
 
-        $ritual->leaderboard->build();
-
         Assert::same($this->call($ritual, 'state', [])['state']['online'], 1);
-        Assert::same(\array_column($ritual->broadcast->ofType('leaderboard'), 'online'), [1]);
     }
 
     public function moderatorLaunchesAWitchEvenOnAPause(): void
@@ -1084,7 +1079,6 @@ final class RPCServiceTest
             $ritual->clicks,
             $ritual->snapshot,
             $ritual->players,
-            $ritual->leaderboard,
             $ritual->flyers,
             new NullLogger(),
             $ritual->reset,

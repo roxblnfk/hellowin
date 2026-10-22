@@ -31,7 +31,8 @@ final class TickerCommandTest extends TestCase
     {
         $this->runCommand('hellowin:ticker', ['--ticks' => 2, '--step' => 1]);
 
-        Assert::count($this->broadcast->ofType('leaderboard'), 1);
+        Assert::count($this->broadcast->ofType('top'), 1);
+        Assert::blank($this->broadcast->ofType('leaderboard'));
         Assert::true(isset($this->metrics->declared[PlayMetrics::PLAYERS_REGISTERED]));
         Assert::blank($this->lock->held);
     }

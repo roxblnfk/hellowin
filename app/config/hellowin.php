@@ -56,11 +56,17 @@ return [
         'drink_ms' => env('HELLOWIN_DRINK_MS', 1200),
     ],
 
-    // The end of the night (docs/spec/scenario.md, «Рапира»): the dawn ranks its shooters, `dawn_board` rows at most.
-    // A pumpkin hands its beer over for `beer_handover_ms` milliseconds after the character arrives
+    // The end of the night (docs/spec/scenario.md, «Рапира»): a pumpkin hands its beer over for `beer_handover_ms`
+    // milliseconds after the character arrives
     'rapier' => [
-        'dawn_board' => env('HELLOWIN_DAWN_BOARD', 200),
         'beer_handover_ms' => env('HELLOWIN_BEER_HANDOVER_MS', 900),
+    ],
+
+    // The shooters' top of the evening (docs/spec/protocol.md, «Топ стрелков»): `board` rows at most, published by the
+    // ticker when it changed, at most once in `interval` milliseconds
+    'top' => [
+        'board' => env('HELLOWIN_TOP_BOARD', 200),
+        'interval' => env('HELLOWIN_TOP_INTERVAL', 500),
     ],
 
     // The dice of finale step 1 (docs/spec/scenario.md, «Кости 6-6-6»): a player throws anew at most once in

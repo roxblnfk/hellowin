@@ -18,7 +18,6 @@ use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\UnknownElementException;
 use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
-use App\Application\Player\LeaderboardService;
 use App\Application\Player\PlayerService;
 use App\Application\Story\BadAttemptException;
 use App\Application\Story\CursedService;
@@ -63,7 +62,6 @@ final readonly class RPCService implements ServiceInterface
         private ClickHandler $clicks,
         private SnapshotFactory $snapshot,
         private PlayerService $players,
-        private LeaderboardService $leaderboard,
         private FlyerService $flyers,
         private LoggerInterface $logger,
         private ResetService $reset,
@@ -136,7 +134,6 @@ final readonly class RPCService implements ServiceInterface
             'me' => [
                 'ok' => true,
                 'player' => $player === null ? null : $this->players->find($player)?->toArray(),
-                'top' => $this->leaderboard->last(),
                 'moderator' => $moderator,
             ],
             default => self::fail('unknown method'),

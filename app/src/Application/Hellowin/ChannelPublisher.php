@@ -219,15 +219,6 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * @param list<array> $top Players as {@see Player::toArray()}, best first.
-     * @param int<0, max> $online Players with a character on the lawn.
-     */
-    public function leaderboard(int $round, array $top, int $online = 0): void
-    {
-        $this->publish(['type' => 'leaderboard', 'round' => $round, 'top' => $top, 'online' => $online]);
-    }
-
-    /**
      * The limits of the current context changed: the room, the multiplier, a bonus, the scene or the step.
      *
      * @param array{players: positive-int, k: float, burst: bool, limits: array|\stdClass} $limits
@@ -371,13 +362,13 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * The whole ranking of the dawn's shooters after a counted hit.
+     * The whole ranking of the evening's shooters, once it has changed.
      *
-     * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, shots: positive-int}> $board
+     * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}> $board
      */
-    public function dawn(int $round, array $board): void
+    public function top(int $round, array $board): void
     {
-        $this->publish(['type' => 'dawn', 'round' => $round, 'board' => $board]);
+        $this->publish(['type' => 'top', 'round' => $round, 'board' => $board]);
     }
 
     /**

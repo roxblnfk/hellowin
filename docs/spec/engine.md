@@ -30,7 +30,7 @@
 | Лимиты: формула, волна, пересчёт | `Domain/Balance/Limit`, `Domain/Balance/Burst`, `Domain/Balance/LimitsStore`, `Application/Balance/LimitsService` |
 | Лимит RPC | `Domain/RateLimit/TokenBucket` (ведро), `Domain/RateLimit/RateLimiter` (вёдра в KV под локом), из `Endpoint/Centrifugo/RPCService` |
 | Адреса Centrifugo и Grafana для страницы | `Application/Web/ServiceUrl` (из `Endpoint/Web/HomeController`) |
-| Таблица лидеров | `Domain/Player/Leaderboard` (ранжирование), `Application/Player/LeaderboardService` |
+| Счёт игроков для метрик | `Application/Player/PlayerCensus` (тикер) |
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
@@ -39,7 +39,7 @@
 | Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
-| Рапира: цель проклятого мира, слово, зомби-игроки, босс, топ рассвета | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
+| Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
 | Кости 6-6-6: запись, грани, секрет | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 | Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
 
@@ -78,7 +78,8 @@
 | Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
 | Лимиты | раз в секунду, после фигурок | `LimitsService::follow`: число фигурок продержалось `LimitsService::DEBOUNCE` (3 с) → `Story::$players`; лимиты разошлись с последним `limits` → догон прогресса и событие `limits`; см. «Лимиты и баланс» |
 | Цели проклятого мира | раз в секунду, после лимитов | `CursedService::follow`: цели разошлись с последними сказанными (`drinksTold`, `zombiesTold`) → новое `cursed` и проверка готовности |
-| Таблица лидеров | раз в `HELLOWIN_LEADERBOARD_INTERVAL` мс | игроки по индексу → `Leaderboard::top` (`HELLOWIN_LEADERBOARD_SIZE`) → ключ `hellowin:leaderboard` → событие `leaderboard` (с `online` — числом фигурок `hellowin:walkers`) → gauge `hellowin_players`, `hellowin_players_registered` |
+| Топ стрелков | раз в `HELLOWIN_TOP_INTERVAL` мс | `TopService::tell`: доска `hellowin:top` (не больше `HELLOWIN_TOP_BOARD` строк) сравнивается с последней опубликованной этим тикером (в памяти тикера; после перезапуска — одна публикация сразу) → изменилась — событие `top {board}` |
+| Счёт игроков | раз в 5 с (`PlayerCensus::INTERVAL`) | игроки по индексу → gauge `hellowin_players`, `hellowin_players_registered` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
 публикуется на каждой сборке, даже без изменений: новый клиент получает таблицу в пределах интервала, а сразу —
@@ -359,15 +360,16 @@
   пересчёт лимитов (`RapierService::rescale`) делает то же с новым лимитом. Упавший босс не меняется.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не встают (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
-- **Топ рассвета** (`Domain/Story/DawnBoard`, `DawnStore`, `Application/Story/DawnService`): каждое попадание игрока
-  (`FlyerService::shoot`, не анонимное, в любой сцене) — сразу после `shot` под RR-локом `dawn` пишет в `hellowin:dawn`
-  `{players: {id: {shots, at, name}}}` абсолютное `flyers` из записи игрока, которую вернул `PlayerService::shotFlyer`:
-  `shots = max(старое, новое)`, `at` меняется, только когда счёт вырос, `name` — из записи. Повтор и гонка поэтому не
-  считают дважды; запись игрока не обновилась — доска тоже. Доска — на весь вечер: сброс и новый цикл её не чистят
-  (статистику игроков не чистит ничто). Событие `dawn {board}` — весь порядок (`shots` ↓, `at` ↑, `id`), не больше
-  `HELLOWIN_DAWN_BOARD` строк — только на шаге 7: на каждое попадание и один раз на входе в шаг
-  (`StoryService::entered` → `DawnService::begin`, сразу после `finale`). Сбой доски пишется в лог: ни попадание, ни шаг
-  не падают. Снимок — `dawn {board}` на шаге 7, иначе `null`. Старая запись `{round, players}` читается как доска вечера.
+- **Топ стрелков** (`Domain/Story/TopBoard`, `TopStore`, `Application/Story/TopService`; протокол — «Топ стрелков»):
+  каждое попадание игрока (`FlyerService::shoot`, не анонимное, в любой сцене) — сразу после `shot` под RR-локом `top`
+  пишет в `hellowin:top` `{players: {id: {points, at, name}}}` абсолютное `points` из записи игрока, которую вернул
+  `PlayerService::shotFlyer`: `points = max(старое, новое)`, `at` меняется, только когда счёт вырос, `name` — из записи.
+  Повтор и гонка поэтому не считают дважды; 0 очков (только бегун) в доску не попадает. Доска — на весь вечер: сброс и
+  новый цикл её не чистят (статистику игроков не чистит ничто). Попадание само ничего не публикует: событие `top {board}`
+  — весь порядок (`points` ↓, `at` ↑, `id`), не больше `HELLOWIN_TOP_BOARD` строк — шлёт тикер, когда доска отличается
+  от последней опубликованной, не чаще `HELLOWIN_TOP_INTERVAL` мс (полный список каждому на каждое попадание при полном
+  зале — слишком много). Сбой доски пишется в лог: попадание не падает. Снимок — `top {board}` всегда. Старый ключ
+  `hellowin:dawn` (`shots`) не читается: при переходе его удаляют, доска набирается заново.
 - **RoadRunner в баре** (бриф «RoadRunner в баре»): флаг `roadrunner` в сюжете `hellowin:story` — `RitualStore::reset(round,
   again)` под локами сброса ставит его новым циклом с рассвета и снимает сбросом модератора; переходы сцен его не
   трогают. Он приходит как `bar.roadrunner` в снимке и `reset.bar`; место — `walk.bar.roadrunner` (`BarLayout`, в разметке).
@@ -683,17 +685,17 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
-| Игроки: `hellowin:player:{id}`, индекс `hellowin:players`, таблица лидеров `hellowin:leaderboard` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
+| Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}` | Valkey | тот же storage `hellowin` |
 | Ответы попыток костей: `hellowin:lease:{round}:roll:{player}:{attempt}` (хэш лизинга, TTL `HELLOWIN_DICE_IDEMPOTENCY_TTL`) | Valkey | хранилище идемпотентности `dice` (`RedisLeaseConfig`) |
-| Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
+| Топ стрелков: `hellowin:top` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -741,8 +743,6 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_BAR_RUMOR_CHANCE` | 0.33 | вероятность `rumor` у розлива: случайное 0…2³¹−1 в `pour` и `pouring` |
 | `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
 | `HELLOWIN_BEER_HANDOVER_MS` | 900 | мс передачи пива тыквой: `until` события `take` и `busyUntil` (`hellowin.rapier.beer_handover_ms`) |
-| `HELLOWIN_LEADERBOARD_INTERVAL` | 5000 | мс между сборками таблицы лидеров (`app/config/players.php`) |
-| `HELLOWIN_LEADERBOARD_SIZE` | 10 | игроков в таблице лидеров |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_DURATION` | `16000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
@@ -767,7 +767,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
 | `HELLOWIN_DICE_IDEMPOTENCY_TTL` | 900 | секунды, сколько хранится ответ на попытку броска для её повтора (`ExecuteOptions::$ttl` хранилища `dice`) |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
-| `HELLOWIN_DAWN_BOARD` | 200 | строк топа рассвета в событии `dawn` и снимке, не больше |
+| `HELLOWIN_TOP_BOARD` | 200 | строк топа стрелков в событии `top` и снимке, не больше |
+| `HELLOWIN_TOP_INTERVAL` | 500 | мс, не чаще которых тикер публикует изменившийся топ стрелков |
 | `HELLOWIN_CHAT_MAX` | 120 | символов в сообщении чата после чистки, не больше (`invalid text`) |
 | `HELLOWIN_CHAT_HISTORY` | 50 | последних сообщений чата в `hellowin:chat` для `chat.history` |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |

@@ -19,14 +19,14 @@ use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
-use App\Application\Player\LeaderboardService;
+use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
-use App\Application\Story\DawnService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
+use App\Application\Story\TopService;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\WalkService;
 use App\Domain\Balance\Burst;
@@ -52,11 +52,11 @@ use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
-use App\Domain\Story\DawnStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\Story;
+use App\Domain\Story\TopStore;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
@@ -92,7 +92,7 @@ final class RitualHarness
     public readonly ArrayStorage $storage;
     public readonly ChannelPublisher $publisher;
     public readonly PlayMetrics $playMetrics;
-    public readonly LeaderboardService $leaderboard;
+    public readonly PlayerCensus $census;
     public readonly FrozenClock $clock;
     public readonly FlyerStore $flyerStore;
     public readonly FlyerService $flyers;
@@ -114,8 +114,8 @@ final class RitualHarness
     public readonly DiceService $dice;
     public readonly ScriptedDice $diceFaces;
     public readonly FakeIdempotency $diceReplies;
-    public readonly DawnStore $dawnStore;
-    public readonly DawnService $dawn;
+    public readonly TopStore $topStore;
+    public readonly TopService $top;
     public readonly ChatStore $chatStore;
     public readonly ChatService $chat;
     public readonly LimitsStore $limitsStore;
@@ -199,14 +199,14 @@ final class RitualHarness
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();
         $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops);
-        $this->dawnStore = new DawnStore($this->storage, new Locks($this->lock));
-        $this->dawn = new DawnService($this->dawnStore, $publisher, $this->clock, 3);
+        $this->topStore = new TopStore($this->storage, new Locks($this->lock));
+        $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
         $this->publisher = $publisher;
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
-        $this->leaderboard = new LeaderboardService($this->playerStore, $this->store, $this->storage, $publisher, $this->playMetrics, 3, $this->walkerStore);
+        $this->census = new PlayerCensus($this->playerStore, $this->playMetrics);
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
         $this->flyers = new FlyerService(
             new FlyerFactory(
@@ -232,7 +232,7 @@ final class RitualHarness
             new NullLogger(),
             new ZombieFactory(self::walkZone(), 2, 1, new Randomizer(new Mt19937(3))),
             $this->cursed,
-            $this->dawn,
+            $this->top,
             new ZombieCrowd($zombieMin, $zombiesPerPlayer),
             $this->walkerStore,
             $this->stops,
@@ -240,7 +240,7 @@ final class RitualHarness
         );
         $this->limitsStore = new LimitsStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->dawn, $this->flyers, $this->limits);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,
@@ -265,7 +265,7 @@ final class RitualHarness
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->dawn, $this->limits);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits);
     }
 
     /**

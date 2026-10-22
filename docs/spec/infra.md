@@ -32,7 +32,7 @@ Centrifugo с Origin страницы (`http://localhost:8080`), он и дол�
 - RoadRunner KV (драйвер `redis`) → `valkey:6379` (`VALKEY_ADDR`); PHP → `valkey` напрямую только для ключей
   идемпотентности (predis, `VALKEY_DSN`). `app` стартует после healthy `valkey`.
 - Пулы воркеров: http (2), centrifuge (2), jobs (2, pipeline `transitions`). Отдельно плагин `service` держит один
-  долгоживущий процесс `ticker` (`php app.php hellowin:ticker`): летуны и таблица лидеров, см. `engine.md`.
+  долгоживущий процесс `ticker` (`php app.php hellowin:ticker`): летуны и топ стрелков, см. `engine.md`.
 - Prometheus скрейпит `app:2112` и `centrifugo:9000/metrics` раз в 5 с.
 - Grafana: datasource и дашборд «Hellowin» через provisioning (`docker/grafana/`), анонимы — роль Viewer (публичный
   read-only), дашборд домашний; админ — `GF_SECURITY_ADMIN_PASSWORD` (по умолчанию `admin`, для публичного

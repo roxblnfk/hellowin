@@ -8,9 +8,9 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
-use App\Application\Story\DawnService;
 use App\Application\Story\OwlLine;
 use App\Application\Story\StoryRefusedException;
+use App\Application\Story\TopService;
 use App\Application\Walk\ActionStop;
 use App\Domain\Balance\Burst;
 use App\Domain\Clock\Clock;
@@ -49,7 +49,7 @@ final readonly class FlyerService
         private LoggerInterface $logger = new NullLogger(),
         private ?ZombieFactory $zombies = null,
         private ?CursedService $cursed = null,
-        private ?DawnService $dawn = null,
+        private ?TopService $top = null,
         private ?ZombieCrowd $crowd = null,
         private ?WalkerStore $walkers = null,
         private ?ActionStop $stops = null,
@@ -214,7 +214,7 @@ final readonly class FlyerService
         $round = $this->ritual->round();
         $shooter = $this->players->shotFlyer($player, $flyer->points);
         $this->publisher->shot($round, $flyer, $shooter);
-        $shooter === null or $this->dawnHit($round, $this->ritual->story(), $shooter);
+        $shooter === null or $this->topHit($shooter);
         $this->metrics->flyerShot($flyer);
         $this->count($round);
         $flyer->kind === Flyer::KIND_ZOMBIE and $this->slain($round);
@@ -264,14 +264,14 @@ final readonly class FlyerService
     }
 
     /**
-     * The board of the dawn is a show beside the hit: a failure there must not turn the hit into an error.
+     * The shooters' top is a show beside the hit: a failure there must not turn the hit into an error.
      */
-    private function dawnHit(int $round, Story $story, Player $shooter): void
+    private function topHit(Player $shooter): void
     {
         try {
-            $this->dawn?->hit($round, $story, $shooter);
+            $this->top?->hit($shooter);
         } catch (\Throwable $e) {
-            $this->logger->warning('Hit is not counted for the dawn: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
+            $this->logger->warning('Hit is not counted for the top: {message}', ['message' => $e->getMessage(), 'exception' => $e]);
         }
     }
 

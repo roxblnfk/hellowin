@@ -42,7 +42,6 @@ final readonly class StoryService
         private ?DiceService $dice = null,
         private Clock $clock = new SystemClock(),
         private ?FlyerService $flyers = null,
-        private ?DawnService $dawn = null,
         private ?LimitsService $limits = null,
     ) {}
 
@@ -198,8 +197,7 @@ final readonly class StoryService
 
     /**
      * What a new finale step brings besides the step itself: the cursed world hands a beer to everyone and tells its
-     * goals, zombies come out; the dawn fells FrankenPHP if the moderator took it, lifts the curse from the zombies and
-     * shows the board of the evening's shooters.
+     * goals, zombies come out; the dawn fells FrankenPHP if the moderator took it and lifts the curse from the zombies.
      *
      * @param bool $byRoom The room took the step by itself: the boss is down already.
      * @throws RitualBusyException
@@ -219,7 +217,6 @@ final readonly class StoryService
 
         $before->finale === Story::DICE_STEP and $this->dice?->end($round);
         $this->publisher->finale($round, $ritual->scene, $step, $this->reveal->finale($ritual)['reveal'] ?? null);
-        $step === Story::DAWN_STEP and $this->dawn?->begin($round);
         if ($step === Story::CURSED_STEP) {
             try {
                 $this->cursed?->begin($round);

@@ -7,10 +7,12 @@ namespace App\Application\Ticker;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
-use App\Application\Player\LeaderboardService;
+use App\Application\Player\PlayerCensus;
 use App\Application\Story\CursedService;
 use App\Application\Story\RapierService;
+use App\Application\Story\TopService;
 use App\Application\Walk\WalkService;
+use App\Domain\Story\TopBoard;
 use Psr\Log\LoggerInterface;
 use Random\Randomizer;
 
@@ -18,26 +20,32 @@ use Random\Randomizer;
  * Periodic work of the game, driven by one long-running process ({@see \App\Endpoint\Console\TickerCommand}).
  * The schedule lives in this object: a restarted ticker starts a fresh one, and since only the holder of
  * {@see TickerLease} ticks, a second ticker never doubles the work.
+ *
+ * @psalm-import-type Row from TopBoard
  */
 final class Ticker
 {
     /** Milliseconds between comparisons of the lawn with the channel presence. */
     private const PRESENCE_INTERVAL = 1000;
 
-    private ?int $nextLeaderboard = null;
+    private ?int $nextTop = null;
+    private ?int $nextCensus = null;
     private ?int $nextFlyer = null;
     private ?int $nextZombie = null;
     private ?int $nextPresence = null;
 
+    /** @var list<Row>|null The shooters' top the clients were told last; null — none since this ticker started. */
+    private ?array $toldTop = null;
+
     /**
-     * @param positive-int $leaderboardInterval Milliseconds.
+     * @param positive-int $topInterval Milliseconds the shooters' top waits at least between two publications.
      * @param array{positive-int, positive-int} $flyerInterval Milliseconds between launches, min and max.
      * @param array{positive-int, positive-int} $zombieInterval Milliseconds between zombies, min and max.
      * @param array{positive-int, positive-int} $dawnInterval Milliseconds between launches at dawn, min and max.
      */
     public function __construct(
-        private readonly LeaderboardService $leaderboard,
-        private readonly int $leaderboardInterval,
+        private readonly TopService $top,
+        private readonly int $topInterval,
         private readonly FlyerService $flyers,
         private readonly array $flyerInterval,
         private readonly WalkService $walks,
@@ -49,6 +57,7 @@ final class Ticker
         private readonly ?RapierService $rapier = null,
         private readonly ?CursedService $cursed = null,
         private readonly ?LimitsService $limits = null,
+        private readonly ?PlayerCensus $census = null,
     ) {}
 
     /**
@@ -86,9 +95,16 @@ final class Ticker
             $this->safely('cursed goals', fn() => $this->cursed?->follow());
         }
 
-        if ($this->nextLeaderboard === null || $now >= $this->nextLeaderboard) {
-            $this->nextLeaderboard = $now + $this->leaderboardInterval;
-            $this->safely('leaderboard', fn() => $this->leaderboard->build());
+        if ($this->nextTop === null || $now >= $this->nextTop) {
+            $this->nextTop = $now + $this->topInterval;
+            $this->safely('top', function (): void {
+                $this->toldTop = $this->top->tell($this->toldTop);
+            });
+        }
+
+        if ($this->nextCensus === null || $now >= $this->nextCensus) {
+            $this->nextCensus = $now + PlayerCensus::INTERVAL;
+            $this->safely('players', fn() => $this->census?->count());
         }
     }
 
