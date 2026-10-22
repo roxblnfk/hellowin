@@ -12,12 +12,15 @@ const FLASH_MS = 600;
 const STORAGE_KEY = 'hellowin:dawn-top';
 export const DAWN_EMPTY = 'Сбивайте уток рапирой!';
 
-/** `dawn` of the snapshot or the event: {board} with the rows in the server's order, or null without the contest. */
+/**
+ * `dawn` of the snapshot or the event: {board} with the rows in the server's order, or null without the contest. A row's
+ * score is the player's points (`points`; `shots` from a server that still counts flyers).
+ */
 export function dawnOf(dawn) {
     if (!dawn || typeof dawn !== 'object' || !Array.isArray(dawn.board)) return null;
     const board = dawn.board
-        .filter((row) => row?.player?.id && Number.isInteger(row.shots))
-        .map((row) => ({ player: { id: String(row.player.id), name: row.player.name ?? null }, shots: row.shots }));
+        .filter((row) => row?.player?.id && Number.isInteger(row.points ?? row.shots))
+        .map((row) => ({ player: { id: String(row.player.id), name: row.player.name ?? null }, shots: row.points ?? row.shots }));
     return { board };
 }
 
