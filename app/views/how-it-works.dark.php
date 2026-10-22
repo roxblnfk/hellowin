@@ -88,17 +88,18 @@
                 goridge RPC на <code>127.0.0.1:6001</code>.
             </p>
             <p>
-                Летунов, фигурки и таблицу лидеров двигает время, а не запросы. Для этого есть плагин
+                Летунов, фигурки и топ стрелков двигает время, а не запросы. Для этого есть плагин
                 <code>service</code>: RoadRunner держит один долгоживущий процесс <code>php app.php hellowin:ticker</code>
                 вне пулов воркеров и перезапускает его при падении. Тикер ходит к плагинам по тому же RPC, что и
                 воркеры, а через gRPC API Centrifugo ещё и спрашивает presence канала. Вторую копию (перекрытие при
                 рестарте) держит в стороне лок <code>ticker</code> — лизинг, который владелец продлевает раз в секунду.
             </p>
             <p>
-                Состояние игры — в Valkey: ритуал и сюжет, игроки и таблица лидеров, летуны, фигурки. Его читает и
+                Состояние игры — в Valkey: ритуал и сюжет, игроки и топ стрелков, летуны, фигурки. Его читает и
                 пишет KV-плагин RoadRunner: хранилище <code>hellowin</code> с драйвером <code>redis</code> на
                 <code>VALKEY_ADDR</code>, в PHP это PSR-16 кэш <code>hellowin</code>.
-                Ключи идемпотентности переходов <code>hellowin:amo:*</code> воркеры jobs пишут в тот же Valkey напрямую,
+                Ключи идемпотентности переходов <code>hellowin:amo:*</code> и сохранённые ответы костей
+                <code>hellowin:lease:*</code> воркеры пишут в тот же Valkey напрямую,
                 через predis (<code>VALKEY_DSN</code>): пакету <code>spiral/idempotency</code> нужен атомарный
                 <code>SET NX EX</code>, которого у KV-плагина нет. Локи (<code>pumpkin:{id}</code>, <code>scene</code>,
                 <code>player:{id}</code>, <code>flyer:{id}</code>, <code>walkers</code> и другие) и очередь живут в памяти
@@ -167,10 +168,11 @@
 <text class="d-m" x="1122.5" y="386" text-anchor="middle">hellowin:story</text>
 <text class="d-m" x="1122.5" y="401" text-anchor="middle">hellowin:shot</text>
 <text class="d-m" x="1122.5" y="416" text-anchor="middle">hellowin:player:*</text>
-<text class="d-m" x="1122.5" y="431" text-anchor="middle">hellowin:leaderboard</text>
+<text class="d-m" x="1122.5" y="431" text-anchor="middle">hellowin:top</text>
 <text class="d-m" x="1122.5" y="446" text-anchor="middle">hellowin:flyer:*</text>
 <text class="d-m" x="1122.5" y="461" text-anchor="middle">hellowin:walkers</text>
 <text class="d-m" x="1122.5" y="491" text-anchor="middle">hellowin:amo:*</text>
+<text class="d-m" x="1122.5" y="506" text-anchor="middle">hellowin:lease:*</text>
 <rect class="d-box g-obs" x="250" y="650" width="140" height="60" rx="6"/>
 <text class="d-t" x="320" y="676" text-anchor="middle">Grafana</text>
 <text class="d-m" x="320" y="691" text-anchor="middle">:3000</text>
@@ -1182,88 +1184,112 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
         </section>
 
         <section class="how__section" id="dice" role="tabpanel" aria-labelledby="tab-dice">
-            <h2>Кости: идемпотентность без хранения результата</h2>
+            <h2>Кости: идемпотентность с сохранённым ответом</h2>
             <p>
                 Перед восстанием в финале зал бросает три кости, пока кто-то не выбросит 6-6-6 — версию PHP, которой
                 никогда не было. Бросает сервер: клиент шлёт RPC <code>roll {attempt}</code> с номером своей попытки, а
-                в ответ и событием <code>roll</code> всем приходят кости. Здесь та же задача, что у перехода тыквы, —
-                повтор запроса не должен дать второй эффект, — но решена иначе: результат не хранится, а
-                <em>вычисляется</em> из ключа.
+                в ответ и событием <code>roll</code> всем приходят кости. Задача та же, что у перехода тыквы, — повтор
+                запроса не должен дать второй эффект, — но дубль перехода можно просто отбросить, а повтору броска нужен
+                ответ: те же кости. Поэтому ответ попытки <em>сохраняется</em>, и повтор получает его.
             </p>
 
-            <h3>Ключ и HMAC</h3>
+            <h3>Честный бросок</h3>
             <p>
-                Ключ идемпотентности попытки — <code>{round}:roll:{player}:{attempt}</code>: раунд, публичный id игрока и
-                номер попытки. Кости — функция от него: <code>DiceRoller</code> считает
-                <code>HMAC-SHA256(HELLOWIN_DICE_SECRET, "{round}:{player}:{attempt}")</code> и превращает байты в грани.
-                Байт ≥ 252 отбрасывается, остальные дают <code>byte % 6 + 1</code>: 252 = 6 × 42, и каждая грань
-                выпадает одинаково часто — простое <code>byte % 6</code> по всем 256 значениям чуть чаще давало бы 1–4.
-                Тот же ключ — тот же HMAC — те же кости, в любом воркере и после перезапуска.
+                Кости — настоящий случайный выбор: <code>DiceRoller</code> трижды берёт
+                <code>Randomizer::getInt(1, 6)</code> поверх системного CSPRNG — то же, что <code>random_int</code>.
+                Предсказать, на какой попытке выпадет 6-6-6, не может никто, и сервер тоже. Но и посчитать те же кости
+                второй раз нельзя: бросок тянется один раз, а результат нужно запомнить.
+            </p>
+
+            <h3>Ключ и сохранённый ответ</h3>
+            <p>
+                Ключ попытки — <code>{round}:roll:{player}:{attempt}</code>: раунд, публичный id игрока и номер попытки.
+                <code>DiceService::roll</code> выполняет бросок через хранилище <code>dice</code> пакета
+                <code>spiral/idempotency</code> — лизинг <code>RedisLeaseConfig</code> с гарантией
+                <strong>AtLeastOnce</strong>. Первый вызов с ключом бросает и сохраняет ответ
+                <code>{attempt, dice}</code> на <code>HELLOWIN_DICE_IDEMPOTENCY_TTL</code> с. Повтор того же ключа —
+                двойной клик, переподключение, ретрай после потерянного ответа — получает сохранённый ответ: нового
+                броска нет, события и счёта тоже. Отказ (<code>busy</code>, <code>paused</code>, <code>not now</code>,
+                <code>bad attempt</code>) — не ответ: <code>FailurePolicy::Release</code> освобождает ключ, и попытку
+                можно бросить, когда отказ уйдёт.
             </p>
             <p>
-                В Valkey (<code>hellowin:dice</code>, под локом <code>dice</code>) лежит только последняя попытка игрока
-                и время его последнего нового броска — не грани. Этого хватает, чтобы различить три случая:
+                Грани последней попытки игрока ещё и лежат в <code>hellowin:dice</code> под локом <code>dice</code> —
+                одной записью с номером попытки и временем нового броска. Это страховка: AtLeastOnce допускает второй
+                прогон, если воркер упал до сохранения ответа или ответ истёк. Тогда прогон под локом видит свою попытку
+                в записи и отдаёт её грани, не бросая заново.
             </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
-<svg class="diagram__svg" viewBox="0 0 1000 420" style="min-width: 720px" role="img" aria-label="Бросок костей: браузер вызывает RPC roll с номером попытки n. DiceService под локом dice читает из hellowin:dice последнюю попытку игрока last. Если n = last + 1 — новый бросок: кости из HMAC ключа, запись last = n, событие roll всем, счёт бросков; не чаще HELLOWIN_DICE_COOLDOWN_MS. Если n = last — повтор: тот же ключ даёт тот же HMAC и те же кости, без события, без счёта и без паузы. Иначе — ошибка bad attempt с last, клиент берёт last + 1. Первое 6-6-6 записывает победителя под тем же локом.">
+<svg class="diagram__svg" viewBox="0 0 1000 490" style="min-width: 720px" role="img" aria-label="Бросок костей: браузер вызывает RPC roll с номером попытки n. Хранилище dice пакета spiral/idempotency ищет ответ по ключу {round}:roll:{player}:{n}. Ответ сохранён — повтор получает тот же ответ без броска, события и счёта. Ответа нет — DiceService под локом dice читает из hellowin:dice последнюю попытку игрока last. Если n = last + 1 — новый бросок: random_int трижды, запись попытки с гранями, событие roll всем, счёт бросков, ответ сохраняется на HELLOWIN_DICE_IDEMPOTENCY_TTL; не чаще HELLOWIN_DICE_COOLDOWN_MS. Если n = last — ответ потерян, грани берутся из записи, без броска и события. Иначе — ошибка bad attempt с last, клиент берёт last + 1. Первое 6-6-6 записывает победителя под тем же локом.">
 <defs><marker id="n-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="n-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
-<rect class="d-box g-cf" x="20" y="165" width="170" height="70" rx="6"/>
-<text class="d-t" x="105" y="193" text-anchor="middle">Браузер</text>
-<text class="d-m" x="105" y="212" text-anchor="middle">roll {attempt: n}</text>
-<path class="d-e" d="M190 200 L270 200" marker-end="url(#n-ln)"/>
-<text class="d-l" x="230" y="192" text-anchor="middle">RPC</text>
-<rect class="d-box g-php" x="270" y="145" width="220" height="110" rx="6"/>
-<text class="d-t" x="380" y="172" text-anchor="middle">DiceService::roll</text>
-<text class="d-m" x="380" y="192" text-anchor="middle">лок dice</text>
-<text class="d-m" x="380" y="210" text-anchor="middle">hellowin:dice → last</text>
-<text class="d-s" x="380" y="232" text-anchor="middle">последняя попытка игрока</text>
-<rect class="d-crit" x="270" y="268" width="220" height="44" rx="4"/>
-<text class="d-n" x="380" y="286" text-anchor="middle">первое 6-6-6 — winner под тем же</text>
-<text class="d-n" x="380" y="302" text-anchor="middle">локом: второе видит его, not now</text>
-<path class="d-e d-e--ok" d="M490 180 L540 180 L540 70 L580 70" marker-end="url(#n-ok)"/>
-<text class="d-l" x="548" y="150" text-anchor="start">n = last + 1</text>
-<path class="d-e d-e--ret" d="M490 200 L580 200" marker-end="url(#n-ln)"/>
-<text class="d-l" x="535" y="192" text-anchor="middle">n = last</text>
-<path class="d-e" d="M490 220 L540 220 L540 340 L580 340" marker-end="url(#n-ln)"/>
-<text class="d-l" x="548" y="285" text-anchor="start">иначе</text>
-<rect class="d-note d-note--ok" x="580" y="20" width="400" height="100" rx="4"/>
-<text class="d-h d-ok" x="596" y="44" text-anchor="start">Новый бросок</text>
-<text class="d-m" x="596" y="66" text-anchor="start">HMAC(secret, "{round}:{player}:{n}") → кости</text>
-<text class="d-s" x="596" y="86" text-anchor="start">last = n, событие roll всем, rolls + 1;</text>
-<text class="d-s" x="596" y="104" text-anchor="start">не чаще HELLOWIN_DICE_COOLDOWN_MS, иначе busy</text>
-<rect class="d-note" x="580" y="155" width="400" height="90" rx="4"/>
-<text class="d-h" x="596" y="179" text-anchor="start">Повтор — двойной клик, переподключение</text>
-<text class="d-m" x="596" y="201" text-anchor="start">тот же ключ → тот же HMAC → те же кости</text>
-<text class="d-s" x="596" y="223" text-anchor="start">без записи, события, счёта и паузы:</text>
-<text class="d-s" x="596" y="239" text-anchor="start">повтором не перебросить</text>
-<rect class="d-note d-note--bad" x="580" y="295" width="400" height="80" rx="4"/>
-<text class="d-h d-bad" x="596" y="319" text-anchor="start">bad attempt {last}</text>
-<text class="d-s" x="596" y="341" text-anchor="start">пропустить попытку нельзя: клиент берёт last + 1</text>
-<text class="d-s" x="596" y="359" text-anchor="start">и бросает заново</text>
-<text class="d-s" x="20" y="404" text-anchor="start">ключ идемпотентности {round}:roll:{player}:{attempt}; грани не хранятся — их всегда можно посчитать заново</text>
+<rect class="d-box g-cf" x="20" y="60" width="170" height="70" rx="6"/>
+<text class="d-t" x="105" y="88" text-anchor="middle">Браузер</text>
+<text class="d-m" x="105" y="107" text-anchor="middle">roll {attempt: n}</text>
+<path class="d-e" d="M190 95 L270 95" marker-end="url(#n-ln)"/>
+<text class="d-l" x="230" y="87" text-anchor="middle">RPC</text>
+<rect class="d-box g-kv" x="270" y="40" width="260" height="110" rx="6"/>
+<text class="d-t" x="400" y="66" text-anchor="middle">хранилище dice</text>
+<text class="d-m" x="400" y="87" text-anchor="middle">{round}:roll:{player}:{n}</text>
+<text class="d-s" x="400" y="107" text-anchor="middle">spiral/idempotency, AtLeastOnce</text>
+<text class="d-s" x="400" y="125" text-anchor="middle">TTL HELLOWIN_DICE_IDEMPOTENCY_TTL</text>
+<path class="d-e d-e--ret" d="M530 95 L620 95" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="87" text-anchor="middle">есть ответ</text>
+<path class="d-e" d="M400 150 L400 175" marker-end="url(#n-ln)"/>
+<text class="d-l" x="410" y="167" text-anchor="start">ответа нет</text>
+<rect class="d-box g-php" x="270" y="175" width="260" height="260" rx="6"/>
+<text class="d-t" x="400" y="202" text-anchor="middle">DiceService::roll</text>
+<text class="d-m" x="400" y="222" text-anchor="middle">лок dice</text>
+<text class="d-m" x="400" y="240" text-anchor="middle">hellowin:dice → last</text>
+<text class="d-s" x="400" y="260" text-anchor="middle">последняя попытка и её грани</text>
+<rect class="d-crit" x="285" y="372" width="230" height="48" rx="4"/>
+<text class="d-n" x="400" y="391" text-anchor="middle">первое 6-6-6 — winner под тем же</text>
+<text class="d-n" x="400" y="408" text-anchor="middle">локом: второе видит его, not now</text>
+<path class="d-e d-e--ok" d="M530 210 L620 210" marker-end="url(#n-ok)"/>
+<text class="d-l" x="575" y="202" text-anchor="middle">n = last + 1</text>
+<path class="d-e d-e--ret" d="M530 305 L620 305" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="297" text-anchor="middle">n = last</text>
+<path class="d-e" d="M530 395 L620 395" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="387" text-anchor="middle">иначе</text>
+<rect class="d-note" x="620" y="40" width="360" height="110" rx="4"/>
+<text class="d-h" x="636" y="64" text-anchor="start">Повтор: ответ уже сохранён</text>
+<text class="d-m" x="636" y="86" text-anchor="start">тот же {attempt, dice} — без броска</text>
+<text class="d-s" x="636" y="106" text-anchor="start">двойной клик, переподключение, потерянный ответ;</text>
+<text class="d-s" x="636" y="124" text-anchor="start">ни лока, ни события, ни счёта: не перебросить</text>
+<rect class="d-note d-note--ok" x="620" y="165" width="360" height="90" rx="4"/>
+<text class="d-h d-ok" x="636" y="189" text-anchor="start">Новый бросок</text>
+<text class="d-m" x="636" y="211" text-anchor="start">random_int × 3 → кости, ответ сохранён</text>
+<text class="d-s" x="636" y="231" text-anchor="start">запись {attempt, at, dice}, событие roll всем,</text>
+<text class="d-s" x="636" y="247" text-anchor="start">rolls + 1; не чаще HELLOWIN_DICE_COOLDOWN_MS</text>
+<rect class="d-note" x="620" y="265" width="360" height="80" rx="4"/>
+<text class="d-h" x="636" y="289" text-anchor="start">Ответ потерян, попытка в записи</text>
+<text class="d-s" x="636" y="311" text-anchor="start">воркер упал до сохранения или ответ истёк:</text>
+<text class="d-s" x="636" y="329" text-anchor="start">грани из hellowin:dice, без броска и события</text>
+<rect class="d-note d-note--bad" x="620" y="355" width="360" height="80" rx="4"/>
+<text class="d-h d-bad" x="636" y="379" text-anchor="start">bad attempt {last}</text>
+<text class="d-s" x="636" y="401" text-anchor="start">пропустить попытку нельзя: клиент берёт last + 1</text>
+<text class="d-s" x="636" y="419" text-anchor="start">и бросает заново</text>
+<text class="d-s" x="20" y="470" text-anchor="start">ответ попытки — в хранилище dice (hellowin:lease:*) на HELLOWIN_DICE_IDEMPOTENCY_TTL с; грани последней попытки — ещё и в hellowin:dice</text>
 </svg>
                 </div>
                 <figcaption>Зелёное — новый эффект, пунктир — тот же ответ без эффекта, красное — отказ; оранжевое — работа под локом.</figcaption>
             </figure>
             <ul>
-                <li><strong>Почему повтор не перебрасывает.</strong> Ответ на повтор не берётся из кэша — он
-                    вычисляется заново и совпадает, потому что ключ тот же. Новые кости даёт только следующая попытка, и
-                    не чаще паузы <code>HELLOWIN_DICE_COOLDOWN_MS</code>: перебрать попытки быстрее остальных нельзя, а
-                    без секрета нельзя и заранее узнать, на какой из них выпадет 6-6-6. Сравните с переходом тыквы:
-                    там эффект — запись в KV, и дубль отсекает маркер <code>SET NX</code>; здесь эффект — само число, и
-                    детерминизм делает маркер ненужным.</li>
+                <li><strong>Почему повтор не перебрасывает.</strong> Повтор не бросает: он получает сохранённый ответ,
+                    а если тот пропал — грани своей попытки из записи. Новые кости даёт только следующая попытка, и не
+                    чаще паузы <code>HELLOWIN_DICE_COOLDOWN_MS</code>: перебрать попытки быстрее остальных нельзя.
+                    Сравните с переходом тыквы: там AtMostOnce (<code>hellowin:amo:</code>) — маркер
+                    <code>SET NX</code> отсекает дубль, ответ ему не нужен; здесь лизинг AtLeastOnce
+                    (<code>hellowin:lease:</code>) — дубль получает тот же ответ, что и первый вызов.</li>
                 <li><strong>Первое 6-6-6 — под локом.</strong> Все броски зала проходят через одну запись
                     <code>hellowin:dice</code> под одним локом <code>dice</code>, как удары по FrankenPHP. Победителя
                     записывает тот, кто взял лок первым; второе 6-6-6 видит его и получает <code>not now</code> — как
                     второй выстрел по уже сбитому летуну. Победа делает шаг финала готовым
                     (<code>markReady</code>), и сова называет победителя.</li>
-                <li><strong>Секрет.</strong> <code>HELLOWIN_DICE_SECRET</code>; если он пуст — выводится из
-                    <code>ENCRYPTER_KEY</code> через HMAC с собственной солью, а без него первый бросок создаёт случайный
-                    ключ и кладёт в Valkey (<code>hellowin:dice:secret</code>), чтобы все воркеры бросали одинаково.</li>
                 <li><strong>Сова.</strong> Запасная кнопка модератора <code>dice.owl</code>: первые два броска —
-                    HMAC от <code>{round}:owl:{n}</code> с пропуском 6-6-6, третий — 6-6-6 наверняка. В число попыток
-                    зала (<code>reveal.rolls</code>) не идут.</li>
+                    случайные, а выпавшее 6-6-6 перебрасывается; третий — 6-6-6 наверняка. Ключа идемпотентности нет:
+                    каждое нажатие модератора — новый бросок. В число попыток зала (<code>reveal.rolls</code>) не
+                    идут.</li>
             </ul>
         </section>
 
@@ -1499,6 +1525,15 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 один из них, поэтому летун не бывает и сбит, и улетел. Сервер принимает выстрел до
                 <code>expiresAt</code> + 500 мс, а клиент не рисует летуна, чьё время по серверным часам уже вышло.
             </p>
+            <p>
+                Очки собираются в топ стрелков вечера — <code>hellowin:top</code> под локом <code>top</code>
+                (<code>TopService</code>). Попадание пишет туда не «+N», а абсолютные очки игрока, которые вернула его
+                запись, и берёт <code>max(старое, новое)</code>: повтор и гонка дважды не посчитают. Сам выстрел ничего
+                не публикует — доску шлёт тикер событием <code>top {board}</code>, когда она изменилась, и не чаще
+                <code>HELLOWIN_TOP_INTERVAL</code> мс. Это склейка: при полном зале полный список каждому на каждое
+                попадание — слишком много, а раз в интервал — один. Доска живёт весь вечер, сброс её не чистит, и
+                она же лежит в снимке страницы.
+            </p>
             <figure class="diagram">
                 <div class="diagram__scroll">
 <svg class="diagram__svg" viewBox="0 0 1000 440" style="min-width: 720px" role="img" aria-label="Два игрока стреляют в одного летуна. Воркер первого берёт лок flyer:{id}, видит ключ летуна, удаляет его, отпускает лок и публикует shot. Воркер второго ждёт лок, потом не находит ключа и отвечает промахом.">
@@ -1660,7 +1695,7 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                     <tr><td><code>hellowin_pumpkin_stage{element}</code></td><td>TransitionHandler, старт, сброс</td><td>gauge: стадия каждой тыквы</td></tr>
                     <tr><td><code>hellowin_flyers_launched_total{depth}</code>, <code>hellowin_flyers_shot_total{depth}</code>, <code>hellowin_flyers_escaped_total{depth}</code></td><td>тикер, RPC <code>shoot</code></td><td>counter: запущенные, сбитые и улетевшие несбитыми летуны (и зомби)</td></tr>
                     <tr><td><code>hellowin_walkers</code></td><td>тикер, раз в секунду</td><td>gauge: фигурки на поле</td></tr>
-                    <tr><td><code>hellowin_players</code>, <code>hellowin_players_registered</code></td><td>тикер, сборка таблицы лидеров</td><td>gauge: известные игроки и игроки с именем</td></tr>
+                    <tr><td><code>hellowin_players</code>, <code>hellowin_players_registered</code></td><td>тикер, счёт игроков <code>PlayerCensus</code></td><td>gauge: известные игроки и игроки с именем</td></tr>
                     <tr><td><code>rr_http_request_total</code>, <code>rr_http_request_duration_seconds</code>, <code>rr_http_workers_*</code></td><td>RoadRunner http</td><td>HTTP-запросы, задержка, воркеры</td></tr>
                     <tr><td><code>centrifugo_node_num_clients</code>, <code>centrifugo_transport_messages_sent</code>, <code>centrifugo_proxy_duration_seconds_histogram</code></td><td>Centrifugo</td><td>подключения, отправленные сообщения, задержка proxy-вызовов в RoadRunner</td></tr>
                     </tbody>
