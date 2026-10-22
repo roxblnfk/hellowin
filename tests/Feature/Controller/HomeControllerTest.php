@@ -70,6 +70,15 @@ final class HomeControllerTest extends TestCase
         Assert::same($views->rendered[0][1]['chatMax'], 80);
     }
 
+    public function homePageCarriesTheLimitsOfTheScene(): void
+    {
+        $body = (string) $this->fakeHttp()->get('/')->assertOk()->getOriginalResponse()->getBody();
+
+        Assert::same(\preg_match('/data-limits="([^"]*)"/', $body, $match), 1);
+        $limits = \json_decode(\htmlspecialchars_decode($match[1]), true, flags: \JSON_THROW_ON_ERROR);
+        Assert::array($limits)->hasKeys('players', 'limits');
+    }
+
     public function homePageCarriesNoWanderingZombiesOutOfTheCursedWorld(): void
     {
         $this->fakeHttp()->get('/')->assertOk()->assertBodyContains('data-flyers="[]"');
@@ -187,7 +196,7 @@ final class HomeControllerTest extends TestCase
     {
         $this->fakeHttp()->get('/how-it-works')
             ->assertOk()
-            ->assertBodyContains('Сейчас порог — 3')
+            ->assertBodyContains('Игрок один на поле, множитель — 1: порог — 3 кликов на каждую стадию')
             ->assertBodyContains('<b>1</b>с 3 кликов');
     }
 

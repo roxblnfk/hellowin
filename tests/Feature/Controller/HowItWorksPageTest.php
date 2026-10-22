@@ -38,7 +38,9 @@ final class HowItWorksPageTest extends TestCase
         $body = $this->page();
 
         $terms = [
-            'HELLOWIN_CLICKS_PER_STAGE',
+            'HELLOWIN_&lt;X&gt;_BASE',
+            'LimitsService::settle',
+            'flyers.burst',
             'HELLOWIN_SCENE_STAGE_MAX',
             'SnapshotFactory',
             "rpc('state'",
