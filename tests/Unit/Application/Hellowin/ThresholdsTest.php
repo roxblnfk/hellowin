@@ -77,7 +77,7 @@ final class ThresholdsTest
 
     public function snapshotCarriesTheMultiplierAndTheThresholdsInForce(): void
     {
-        $ritual = new RitualHarness(threshold: 5, bonfire: [0, 2], bonfireThreshold: 3);
+        $ritual = new RitualHarness(threshold: 5, bonfire: [2], bonfireThreshold: 3);
 
         $answer = $ritual->story->thresholds(0.5);
         $state = $ritual->snapshot->create();
@@ -100,7 +100,7 @@ final class ThresholdsTest
         $ritual->story->thresholds(1.25);
 
         Assert::same($ritual->broadcast->ofType('limits'), [
-            ['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 1.25, 'burst' => true, 'limits' => ['pumpkin' => 5, 'bonfire' => 4]],
+            ['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 1.25, 'burst' => true, 'limits' => ['pumpkin' => 5]],
         ]);
     }
 

@@ -131,7 +131,7 @@ final class RPCServiceTest
             'paused' => false,
             'k' => 1.0,
             'online' => 0,
-            'limits' => ['players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4, 'bonfire' => 3]],
+            'limits' => ['players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4]],
             'cursed' => null,
             'boss' => null,
             'dice' => null,
@@ -586,7 +586,7 @@ final class RPCServiceTest
         $response = $this->call($ritual, 'thresholds', ['k' => 2], moderator: true);
         $this->call($ritual, 'thresholds', ['k' => 2.0], moderator: true);
 
-        $limits = ['pumpkin' => 8, 'bonfire' => 6];
+        $limits = ['pumpkin' => 8];
         // JSON drops the zero fraction: the client gets the number 2
         Assert::same($response, ['ok' => true, 'k' => 2, 'players' => 1, 'limits' => $limits]);
         Assert::same($ritual->broadcast->ofType('limits'), [['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 2, 'burst' => true, 'limits' => $limits]]);

@@ -128,7 +128,7 @@ final readonly class LimitsService
     }
 
     /**
-     * The limits of the current context: the pumpkins and the bonfire in scenes before the final one, the circle while
+     * The limits of the current context: the pumpkins in scenes before the final one and the bonfire in those that raise it, the circle while
      * it is drawn, the bar's goal in the bar, the cursed world's goals on its goal step, FrankenPHP's health while it
      * stands.
      *
@@ -143,7 +143,8 @@ final readonly class LimitsService
             $this->bar === null or $limits['bar'] = $this->bar->target($story);
         } elseif ($ritual->scene < $this->policy->finalScene()) {
             $limits[Element::TYPE_PUMPKIN] = $this->policy->threshold(Element::TYPE_PUMPKIN, $story->k, $story->players);
-            $limits[Element::TYPE_BONFIRE] = $this->policy->threshold(Element::TYPE_BONFIRE, $story->k, $story->players);
+            $this->policy->stageMax($ritual->scene, Element::TYPE_BONFIRE) > 0
+                and $limits[Element::TYPE_BONFIRE] = $this->policy->threshold(Element::TYPE_BONFIRE, $story->k, $story->players);
         } elseif ($story->finale === 0) {
             $limits[Element::TYPE_CIRCLE] = $this->policy->threshold(Element::TYPE_CIRCLE, $story->k, $story->players);
         } elseif ($story->finale === Story::CURSED_STEP && $this->cursed !== null) {

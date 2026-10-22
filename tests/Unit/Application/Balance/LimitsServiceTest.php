@@ -69,7 +69,7 @@ final class LimitsServiceTest
         $ritual->limits->follow();
 
         Assert::same($ritual->broadcast->ofType('limits'), [
-            ['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4, 'bonfire' => 3]],
+            ['type' => 'limits', 'round' => 1, 'players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4]],
         ]);
     }
 
@@ -98,7 +98,7 @@ final class LimitsServiceTest
 
         $ritual->story->nextScene(0, true);
         $ritual->runJobs();
-        Assert::same($ritual->limits->state()['limits'], ['pumpkin' => 2, 'bonfire' => 3]);
+        Assert::same($ritual->limits->state()['limits'], ['pumpkin' => 2]);
 
         $ritual->story->nextScene(1, true);
         $ritual->runJobs();
@@ -108,6 +108,20 @@ final class LimitsServiceTest
         Assert::same($ritual->limits->state()['limits'], []);
         Assert::equals($ritual->snapshot->create()['limits']['limits'], new \stdClass());
         Assert::string((string) \json_encode(LimitsService::toClient($ritual->limits->state())))->contains('"limits":{}');
+    }
+
+    public function bonfireLimitComesOnlyWithTheScenesThatRaiseIt(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2], bonfire: [0, 0, 2], bonfireThreshold: 3);
+
+        $ritual->story->nextScene(0, true);
+        $ritual->runJobs();
+        Assert::same($ritual->snapshot->create()['limits']['limits'], ['pumpkin' => 2]);
+
+        $ritual->story->nextScene(1, true);
+        $ritual->runJobs();
+        Assert::same($ritual->snapshot->create()['limits']['limits'], ['pumpkin' => 2, 'bonfire' => 3]);
+        Assert::same(\array_slice($ritual->broadcast->ofType('limits'), -1)[0]['limits'], ['pumpkin' => 2, 'bonfire' => 3]);
     }
 
     private static function enter(RitualHarness $ritual, string ...$ids): void
