@@ -378,7 +378,7 @@
       "id": 31,
       "type": "stat",
       "title": "Players",
-      "description": "Browsers known by their secret, named or not. The ticker sets it on every leaderboard build.",
+      "description": "Browsers known by their secret, named or not. The ticker counts them every 5 seconds.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 40 },
       "targets": [{ "refId": "A", "expr": "max(hellowin_players)", "instant": true, "range": false }],
