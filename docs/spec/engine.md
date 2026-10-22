@@ -1,7 +1,7 @@
 # Движок (backend)
 
 Статус: **реализовано** — сцена и стадии тыкв, очередь переходов с идемпотентностью, сброс, RPC `state`, метрики,
-игроки и их статистика, периодический процесс (тикер), таблица лидеров, летуны, фигурки игроков на поле, сюжет
+игроки и их статистика, периодический процесс (тикер), топ стрелков, летуны, фигурки игроков на поле, сюжет
 (готовность сцен, переход по кнопке, финал и разоблачение, сова, пауза, зомби проклятого мира), роль
 модератора (сброс — только ему), костёр (элемент `bonfire`: порог и стадии по сценам, `locked`, реплики совы), летуны
 по сценам с пустыми наборами и `wobble` летучих мышей, магический круг финальной сцены (элемент `circle`: свой порог и
@@ -40,12 +40,12 @@
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 | Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
-| Кости 6-6-6: запись, грани, секрет | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `DiceSecret`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
+| Кости 6-6-6: запись, грани | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 | Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
 
 ## Периодический процесс (тикер)
 
-Летунов и таблицу лидеров двигает время, а не запросы игроков, — нужен процесс с расписанием.
+Летунов и топ стрелков двигает время, а не запросы игроков, — нужен процесс с расписанием.
 Это плагин RoadRunner `service` (`.rr.yaml`, `service.ticker`): RoadRunner держит один долгоживущий процесс
 `php app.php hellowin:ticker` и перезапускает его при падении (`restart_sec`). Процесс — то же приложение Spiral
 в консольном режиме: KV, локи, метрики и публикация в Centrifugo идут по goridge RPC к плагинам, как из воркеров.
@@ -717,7 +717,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_pumpkin_stage{element}` | gauge | стадия каждой тыквы |
 | `hellowin_bonfire_stage` | gauge | стадия костра (отдельно от тыкв, чтобы панель стадий тыкв не смешивала шкалы) |
 | `hellowin_circle_stage` | gauge | стадия магического круга (по той же причине) |
-| `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер при сборке таблицы лидеров |
+| `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер (`PlayerCensus`) раз в 5 с |
 | `hellowin_players_registered` | gauge | игроки с именем; там же |
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |

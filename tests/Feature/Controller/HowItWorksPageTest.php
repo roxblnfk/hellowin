@@ -70,6 +70,10 @@ final class HowItWorksPageTest extends TestCase
             '{round}:roll:{player}:{attempt}',
             'hellowin:dice',
             'HELLOWIN_DICE_COOLDOWN_MS',
+            'HELLOWIN_DICE_IDEMPOTENCY_TTL',
+            'RedisLeaseConfig',
+            'hellowin:top',
+            'HELLOWIN_TOP_INTERVAL',
         ];
         foreach ($terms as $term) {
             Assert::string($body)->contains($term);
