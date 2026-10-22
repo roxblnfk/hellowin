@@ -55,7 +55,8 @@ centrifuge:
   proxy_address: 'tcp://0.0.0.0:10001'
   grpc_api_address: '${CENTRIFUGO_GRPC_API:-centrifugo:10000}'
   pool:
-    num_workers: 2
+    # Every click, shot and move of the room waits for one of these: about two per core
+    num_workers: ${RR_CENTRIFUGE_WORKERS:-4}
     # Centrifugo stops waiting for a proxy answer after 3s (docker/centrifugo/config.json)
     allocate_timeout: 3s
     destroy_timeout: 10s

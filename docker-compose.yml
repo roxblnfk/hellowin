@@ -77,6 +77,7 @@ services:
       VALKEY_DSN: tcp://valkey:6379
       BROADCAST_CONNECTION: centrifugo
       CENTRIFUGO_GRPC_API: centrifugo:10000
+      RR_CENTRIFUGE_WORKERS: ${RR_CENTRIFUGE_WORKERS:-4}
       # RoadRunner proxies nothing: the browser reaches Centrifugo and Grafana on their own ports of the page's host
       CENTRIFUGO_WS_URL: ${CENTRIFUGO_WS_URL:-:${CENTRIFUGO_PORT:-8000}/connection/websocket}
       GRAFANA_URL: ${GRAFANA_URL:-:${GRAFANA_PORT:-3000}/}
