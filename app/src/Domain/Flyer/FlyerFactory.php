@@ -15,7 +15,8 @@ use Random\Randomizer;
  * every client sees the same flight.
  *
  * - From the edge: in from behind the left or right edge (sometimes from a top corner) and out behind the
- *   opposite one, high in the sky, at a random depth.
+ *   opposite one, high in the sky, at a random depth; at the farthest depth the whole path, swing included, stays
+ *   above the horizon ({@see FAR_CLEARANCE}), so a speck never crosses the patch.
  * - From a bush: up from the bush and out across the screen through the top or a side edge, at the bush depth.
  *
  * Either way the flight is straight or, with the arc chance, a quadratic curve through `via`.
@@ -42,6 +43,9 @@ final readonly class FlyerFactory
 
     /** Range of a bat's swing across its path, percents of the screen. */
     private const WOBBLE_AMP = [3.0, 8.0];
+
+    /** How far above the horizon a flight at the farthest depth stays at its lowest, the widest swing aside. */
+    private const FAR_CLEARANCE = 2.0;
 
     /** Range of full swings over a bat's flight: few are zigzags, many with a large swing read as loops. */
     private const WOBBLE_WAVES = [2.0, 5.0];
@@ -174,7 +178,7 @@ final readonly class FlyerFactory
         $depth = $bush?->depth ?? $this->random->getInt(0, \count($this->depths) - 1);
         $settings = $this->depths[$depth];
 
-        [$from, $via, $to] = $bush === null ? $this->fromEdge($arc) : $this->fromBush($bush->at, $arc);
+        [$from, $via, $to] = $bush === null ? $this->fromEdge($arc, $depth) : $this->fromBush($bush->at, $arc);
         $id = 'f-' . \bin2hex($this->random->getBytes(4));
         $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
         if ($kind === Flyer::KIND_WORM) {
@@ -240,7 +244,7 @@ final readonly class FlyerFactory
 
         /** @var int<0, max> $depth */
         $depth = $this->random->getInt(0, \count($this->depths) - 1);
-        [$from, $via, $to] = $this->fromEdge($this->chance($this->arcChance));
+        [$from, $via, $to] = $this->fromEdge($this->chance($this->arcChance), $depth);
 
         return new Flyer(
             id: $id,
@@ -257,21 +261,24 @@ final readonly class FlyerFactory
     }
 
     /**
+     * Neither end nor `via` goes below the lowest y of the depth, and the curve never goes beyond its control point.
+     *
      * @return array{Point, Point|null, Point}
      */
-    private function fromEdge(bool $arc): array
+    private function fromEdge(bool $arc, int $depth): array
     {
+        $low = $this->lowest($depth);
         $leftToRight = $this->chance(0.5);
         $from = $this->chance(0.25)
             ? new Point($leftToRight ? $this->float(0, 25) : $this->float(75, 100), self::OUT[0])
-            : new Point($leftToRight ? self::OUT[0] : self::OUT[1], $this->float(5, 40));
-        $to = new Point($leftToRight ? self::OUT[1] : self::OUT[0], $this->float(-5, 35));
+            : new Point($leftToRight ? self::OUT[0] : self::OUT[1], $this->float(5, \min(40.0, $low)));
+        $to = new Point($leftToRight ? self::OUT[1] : self::OUT[0], $this->float(-5, \min(35.0, $low)));
 
         $via = null;
         if ($arc) {
             $via = $this->chance(0.5)
                 ? new Point($this->float(30, 70), \max(-10.0, \min($from->y, $to->y) - $this->float(10, 25)))
-                : new Point($this->float(30, 70), \min(55.0, \max($from->y, $to->y) + $this->float(10, 20)));
+                : new Point($this->float(30, 70), \min($low, \max($from->y, $to->y) + $this->float(10, 20)));
         }
 
         return [$from, $via, $to];
@@ -308,7 +315,7 @@ final readonly class FlyerFactory
 
         if ($bush !== null && ($bush->depth < $min || $bush->depth > $max)) {
             $bush = null;
-            [$from, $via, $to] = $this->fromEdge($arc);
+            [$from, $via, $to] = $this->fromEdge($arc, $min);
         }
         /** @var int<0, max> $depth */
         $depth = $bush?->depth ?? $this->random->getInt($min, $max);
@@ -464,6 +471,15 @@ final readonly class FlyerFactory
         }
 
         return new Point($this->float($floor->x1 + self::FLY_INSET, $floor->x2 - self::FLY_INSET), $y);
+    }
+
+    /**
+     * The lowest y, in percents from the top, of a flight from the edge at the depth: the farthest depth is drawn as a
+     * speck that must not cross the patch, so it keeps over the horizon by the clearance and the widest bat swing.
+     */
+    private function lowest(int $depth): float
+    {
+        return $depth === 0 ? \max(5.0, $this->horizon - self::FAR_CLEARANCE - self::WOBBLE_AMP[1]) : 55.0;
     }
 
     private function wobble(): Wobble

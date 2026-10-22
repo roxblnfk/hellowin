@@ -360,6 +360,40 @@ final class FlyerFactoryTest
         }
     }
 
+    public function farFlightsStayAboveTheHorizonSwingIncludedNearerOnesMayDipBelowIt(): void
+    {
+        $factory = new FlyerFactory(
+            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
+            [],
+            0.0,
+            0.7,
+            new Randomizer(new Mt19937(3)),
+            [['bat', 'duck']],
+            ['witch'],
+            0.3,
+            horizon: 38.0,
+        );
+        $flyers = [...self::flyers($factory, 1500), ...\array_map(
+            static fn(int $i): Flyer => $factory->special('witch', $i),
+            \range(1, 300),
+        )];
+
+        $far = \array_filter($flyers, static fn(Flyer $f): bool => $f->depth === 0);
+        $kinds = \array_unique(\array_map(static fn(Flyer $f): string => $f->kind, $far));
+        Assert::array($kinds)->sameElementsAs(['bat', 'duck', 'witch']);
+        Assert::true(\count(\array_filter($far, static fn(Flyer $f): bool => $f->via !== null)) > 50);
+        foreach ($far as $flyer) {
+            $lowest = \max($flyer->from->y, $flyer->to->y, $flyer->via->y ?? -INF) + ($flyer->wobble->amp ?? 0.0);
+            Assert::true($lowest <= 36.0, \json_encode($flyer->toEvent()));
+        }
+
+        $nearDips = \array_filter(
+            $flyers,
+            static fn(Flyer $f): bool => $f->depth > 0 && \max($f->from->y, $f->via->y ?? -INF) > 38.0,
+        );
+        Assert::notBlank($nearDips);
+    }
+
     public function flyerCarriesItsLaunchTimeAndAnId(): void
     {
         $flyer = self::factory(0.5, 0.5)->launch(123_456);
