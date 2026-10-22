@@ -136,6 +136,9 @@
   at the start: ?chat=4&freeze=1500 shows their bubbles); ?chatzombie=1 — every second of them a zombie worker, whose
   line comes from chat.js; ?mod=1 — the console's «Чат» with a short history and «заглушить» (a muted player's `say`
   answers `muted`).
+  HUD (docs/spec/frontend.md, «Разметка и DOM-хуки»): ?conn=ok|reconnect|down — the connection lamp green, yellow
+  blinking, red; RoadRunner's uptime beside it from ?finale=3 on and in the bar with ?roadrunner=1. The console (?mod=1)
+  shows only what works in the scene or finale step: ?mod=1&scene=1, ?mod=1&finale=5, ?mod=1&finale=6&boss=60,100.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5" data-chat-max="120"
@@ -191,14 +194,13 @@
         </select>
     </aside>
     <footer class="hud">
-        <span class="hud__item hud__status" data-status="connected">лаборатория</span>
-        <span class="hud__item">Раунд <b data-hud-round>1</b></span>
-        <span class="hud__item">Сцена <b data-hud-scene>0</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
+        <span class="hud__item hud__status" data-status="connected" role="img" aria-label="Связь: есть" title="Связь: есть"></span>
+        <span class="hud__item hud__runner" data-hud-runner hidden></span>
+        <span class="hud__item hud__scene-name" data-hud-scene-name></span>
         <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
         <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
         <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
         <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
-        <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
@@ -1979,7 +1981,8 @@
         roll: async (attempt) => engineRoll(ME, { attempt }),
     });
     client.start();
-    client.setStatus('connected');
+    // ?conn=ok|reconnect|down — the HUD's lamp: green, yellow blinking, red.
+    client.setStatus({ reconnect: 'connecting', down: 'disconnected' }[params.get('conn')] ?? 'connected');
     startState();
     chatSetup();
     client.load(engineSnapshot());

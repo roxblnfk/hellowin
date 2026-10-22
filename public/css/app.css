@@ -481,23 +481,45 @@ body:not([data-final]) .circle,
     color: var(--sky-light);
 }
 
-.hud__status::before {
-    content: '';
+/*
+ * The connection lamp (client.js, paintStatus): a pixel bulb — green on the line, yellow blinking while it reconnects,
+ * red without it; its words are in title and aria-label. Stepped blink, still under reduced motion.
+ */
+.hud__status {
     display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-right: 8px;
-    vertical-align: 1px;
+    align-self: center;
+    width: 10px;
+    height: 10px;
+    margin: 0 2px;
     background: var(--bad);
-    box-shadow: 0 0 0 2px var(--soil-dark);
+    box-shadow: 0 0 0 2px var(--soil-dark), inset -2px -2px 0 rgb(0 0 0 / 0.25), inset 2px 2px 0 rgb(255 255 255 / 0.35);
+    pointer-events: auto;
 }
 
-.hud__status[data-status="connected"]::before {
+.hud__status[data-status="connected"] {
     background: var(--ok);
 }
 
-.hud__status[data-status="connecting"]::before {
-    background: var(--wait);
+.hud__status[data-status="connecting"] {
+    background: var(--gold);
+    animation: lamp-blink 0.9s steps(1) infinite;
+}
+
+@keyframes lamp-blink {
+    50% {
+        background: var(--soil-dark);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hud__status[data-status="connecting"] {
+        animation: none;
+    }
+}
+
+/* RoadRunner's uptime beside the lamp from finale step 3: the twist, in the ok green of the reveal's uptime card. */
+.hud__runner {
+    color: var(--ok);
 }
 
 @container patch (max-width: 600px) {
@@ -693,7 +715,6 @@ body:not([data-final]) .circle,
     background: var(--bad);
 }
 
-.console__select,
 .console__input {
     padding: 7px 8px;
     border: 0;
@@ -703,14 +724,21 @@ body:not([data-final]) .circle,
     box-shadow: 0 0 0 2px var(--soil);
 }
 
-.console__select {
-    cursor: pointer;
-}
-
-.console__select:focus-visible,
 .console__input:focus-visible {
     outline: 2px dashed var(--gold);
     outline-offset: 2px;
+}
+
+/* The owl's quick menu: the lines of this scene or finale step (debug.js, paintMenu). */
+.console__lines {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.console__lines[hidden] {
+    display: none;
 }
 
 .console__say {
@@ -1019,10 +1047,6 @@ body:not([data-final]) .circle,
     .reveal__grid {
         grid-template-columns: 1fr;
     }
-}
-
-.hud__ready {
-    color: var(--ok);
 }
 
 .hud__item[hidden] {

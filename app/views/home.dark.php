@@ -111,15 +111,15 @@
         </form>
 
         <footer class="hud">
-            <span class="hud__item hud__status" data-status="disconnected">нет связи</span>
-            <span class="hud__item">Раунд <b data-hud-round>{{ $round }}</b></span>
-            <span class="hud__item">Сцена <b data-hud-scene>{{ $scene }}</b> <span class="hud__scene-name" data-hud-scene-name></span></span>
+            <!-- The viewer's minimum: the connection lamp (its words in title / aria-label), from finale step 3 RoadRunner's
+                 uptime beside it, the scene's name and its goal; the round and the scene's number are on the console. -->
+            <span class="hud__item hud__status" data-status="disconnected" role="img" aria-label="Связь: нет" title="Связь: нет"></span>
+            <span class="hud__item hud__runner" data-hud-runner hidden></span>
+            <span class="hud__item hud__scene-name" data-hud-scene-name></span>
             <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
             <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
             <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
-            <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>
-            <span class="hud__item hud__ready" data-hud-ready hidden>сцена готова — ждём ведущего</span>
-            <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
+            <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>            <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
             <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>

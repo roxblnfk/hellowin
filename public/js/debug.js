@@ -2,9 +2,9 @@
 // public/dev/lab.html. Shown only to the moderator connection; the effects of every button come back as channel
 // events, nothing changes locally. ?debug=1 / ?debug=0 and the backquote key expand and collapse it (remembered).
 
-import { LINES } from './owl.js';
+import { LINES, lineText, menuOf } from './owl.js';
 import { createChatConsole } from './chat.js';
-import { isBar } from './layout.js';
+import { SCENE, isBar } from './layout.js';
 
 const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
@@ -110,6 +110,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const next = button(story, { 'data-action': 'scene-next' }, 'Следующая сцена');
     const step = button(story, { 'data-action': 'finale-step' }, 'Шаг финала');
     const reset = button(story, { 'data-action': 'reset' }, 'Заново');
+    // The service numbers left the HUD for here: the round, the scene's number, the finale step.
+    const storyInfo = el('span', { class: 'console__info', 'data-console-story': '' });
+    story.append(storyInfo);
 
     // The bar's goal (scenario.md, «Сцена 0 — «Бар»»): mugs the hall drinks before going out; the nudge goes without it.
     const pub = group('Бар');
@@ -132,11 +135,10 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
 
     // FrankenPHP's health (scenario.md, «Шаг 6 — босс FrankenPHP»), ±10; nothing to change before he wakes up.
     const bossGroup = group('Босс');
-    const hpButtons = [[10, 'HP +10'], [-10, 'HP −10']].map(([delta, text]) => {
+    for (const [delta, text] of [[10, 'HP +10'], [-10, 'HP −10']]) {
         const b = button(bossGroup, { 'data-action': `boss-hp-${delta > 0 ? 'up' : 'down'}` }, text);
         b.addEventListener('click', () => send(b, 'boss.hp', { delta }, { done: true }));
-        return b;
-    });
+    }
     const bossInfo = el('span', { class: 'console__info', 'data-console-boss': '' });
     bossGroup.append(bossInfo);
     bossGroup.hidden = true;
@@ -147,17 +149,12 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     owlDice.addEventListener('click', () => send(owlDice, 'dice.owl', {}, { done: true }));
     diceGroup.hidden = true;
 
+    // The quick menu follows the scene or the finale step (owl.js, MENU), rebuilt when that changes; the title is the
+    // text every viewer gets right now. The own text is always there.
     const owl = group('Сова');
-    for (const [id, line] of Object.entries(LINES)) {
-        if (line.button) button(owl, { 'data-owl-line': id, title: line.text, ...(line.bar ? { 'data-owl-bar': '' } : {}) }, line.button);
-    }
-    // Lines the server says by itself, for saying again by hand; those naming a player are left out.
-    const repeat = el('select', { class: 'console__select', 'data-owl-repeat': '', 'aria-label': 'Повторить реплику' });
-    repeat.append(el('option', { value: '' }, 'Повторить…'));
-    for (const [id, line] of Object.entries(LINES)) {
-        if (line.auto && !line.text.includes('{player}')) repeat.append(el('option', { value: id, title: line.text }, id));
-    }
-    owl.append(repeat);
+    const owlLines = el('div', { class: 'console__lines', 'data-owl-lines': '' });
+    owl.append(owlLines);
+    let menuKey = null;
     const form = el('form', { class: 'console__say', 'data-owl-form': '' });
     const input = el('input', { class: 'console__input', 'data-owl-input': '', maxlength: '200', placeholder: 'Свой текст совы', 'aria-label': 'Свой текст совы', autocomplete: 'off' });
     const say = el('button', { type: 'submit', class: 'debug__button', 'data-action': 'owl-text' }, 'Сказать');
@@ -272,15 +269,19 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     more.addEventListener('click', () => send(more, 'bar.target', { delta: 5 }, { done: true }));
     less.addEventListener('click', () => send(less, 'bar.target', { delta: -5 }, { done: true }));
     nudge.addEventListener('click', () => send(nudge, 'bar.ready', {}, { done: true }));
-    owl.addEventListener('click', (event) => {
-        const b = event.target.closest('[data-owl-line]');
-        if (b) send(b, 'owl.say', { line: b.dataset.owlLine }, { done: true });
-    });
-    repeat.addEventListener('change', () => {
-        const line = repeat.value;
-        repeat.value = '';
-        if (line) call('owl.say', { line }).catch((error) => console.warn('owl.say failed', error));
-    });
+    const paintMenu = (scene, current) => {
+        const ids = menuOf(scene, current);
+        const key = `${scene}:${current}`;
+        if (key !== menuKey) {
+            menuKey = key;
+            owlLines.replaceChildren();
+            for (const id of ids) {
+                const b = button(owlLines, { 'data-owl-line': id, title: lineText({ line: id }, scene, current) ?? '' }, LINES[id].button);
+                b.addEventListener('click', () => send(b, 'owl.say', { line: id }, { done: true }));
+            }
+        }
+        owlLines.hidden = ids.length === 0;
+    };
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const text = input.value.trim();
@@ -343,7 +344,8 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             next.hidden = final && !dawn;
             const bar = isBar(model.scene);
             next.toggleAttribute('data-ready', model.ready || dawn);
-            owl.querySelectorAll('[data-owl-bar]').forEach((b) => { b.hidden = !bar; });
+            storyInfo.textContent = [`раунд ${model.round}`, `сцена ${model.scene}`, final && `шаг ${current}`].filter(Boolean).join(' · ');
+            paintMenu(model.scene, final ? current : null);
             pub.hidden = !bar;
             pubInfo.textContent = `цель ${model.bar?.target ?? 0} · выпито ${model.bar?.drunk ?? 0}`;
             nudge.disabled = model.ready;
@@ -357,9 +359,14 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             const cursed = model.cursed;
             cursedInfo.textContent = cursed ? `кружки ${cursed.drunk}/${cursed.drinksTarget} · зомби ${cursed.slain}/${cursed.zombiesTarget}` : 'целей ещё нет';
             const boss = model.boss;
-            bossGroup.hidden = !(final && current === BOSS_STEP);
-            hpButtons.forEach((b) => { b.disabled = !(boss?.hp > 0); });
-            bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : 'босс спит';
+            // Only while FrankenPHP is up: before he wakes and after he falls there is no health to change.
+            bossGroup.hidden = !(final && current === BOSS_STEP && boss?.hp > 0);
+            bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : '';
+            // Each one where it works (docs/spec/frontend.md, «Пульт модератора»): the witch at night and in the finale, the
+            // runner in the day — the rare flyer of HELLOWIN_FLYER_RARE — the zombies in the cursed world; the pause always.
+            witch.hidden = !(model.scene === SCENE.night || final);
+            runner.hidden = model.scene !== SCENE.day;
+            zombies.hidden = !(final && current >= CURSED_STEP && current <= BOSS_STEP);
             zombies.setAttribute('aria-pressed', String(model.zombies));
             setLabel(zombies, model.zombies ? 'Зомби: вкл' : 'Зомби: выкл');
             pause.setAttribute('aria-pressed', String(model.paused));

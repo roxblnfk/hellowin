@@ -2,26 +2,38 @@
 // The server sends a line id with params, or the moderator's own text; the words live here.
 
 /**
- * id → { text, scenes?: {[scene]: text} — the line in that scene instead, hoot?: a dramatic line, the owl puffs up
- * first; button?: label on the moderator's console; bar?: the button shows only in the bar (scene 0); auto?: the server
- * says it by itself; then?: the next part said right after this one, or a list of parts said one after another;
- * rapier?: the part (0 — the first) on which the owl draws its rapier }. A
- * text without a scene key is the day's: a line
- * said in the bar has its own key 0. `{player}` is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
+ * id → { text, scenes?: {[scene]: text} — the line in that scene instead, steps?: {[step]: text} — the line at that
+ * finale step instead (in the final scene, before `scenes`), hoot?: a dramatic line, the owl puffs up first; button?:
+ * label on the moderator's console (where it shows — MENU); auto?: the server says it by itself; then?: the next part
+ * said right after this one, or a list of parts said one after another; rapier?: the part (0 — the first) on which the
+ * owl draws its rapier }. A text without a scene key is the day's: a line said in the bar has its own key 0. `{player}`
+ * is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
 export const LINES = {
     'bar-intro': { auto: true, hoot: true, text: 'Ребята, сегодня Хэллоуин! Ух-ху!', then: 'И RoadRunner можно воскресить! Я знаю одно магическое место неподалёку… За мной!' },
-    intro: { button: 'Начало', hoot: true, text: 'Ух-ху! Печальные вести: RoadRunner мёртв. Но есть древний ритуал на тыквах — он его вернёт. Беритесь за ножи!' },
-    rules: { button: 'Правила', text: 'Кликайте по тыквам — каждый клик видят все. Летунов можно сбивать: очки идут в таблицу.' },
-    hurry: { button: 'Поторопить', text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!', scenes: { 0: 'Пиво само себя не выпьет!', 2: 'Свечи сами не зажгутся!', 3: 'Магия сама себя не наколдует!', 4: 'Круг сам себя не нарисует!' } },
+    // Off the console since `bar-intro` opens the evening; kept for a server or a stale console that still sends it.
+    intro: { hoot: true, text: 'Ух-ху! Печальные вести: RoadRunner мёртв. Но есть древний ритуал на тыквах — он его вернёт. Беритесь за ножи!' },
+    rules: { button: 'Правила', text: 'Кликайте по тыквам — каждый клик видят все. Летунов можно сбивать: очки идут в таблицу.', scenes: { 0: 'Кружку берите у стойки. Сначала чокнитесь с соседом — потом глоток. Пьём, пока шкала не полна!' } },
+    hurry: {
+        button: 'Поторопить',
+        text: 'Тыквы сами себя не вырежут. Ну же, ещё чуть-чуть!',
+        scenes: { 0: 'Пиво само себя не выпьет!', 2: 'Свечи сами не зажгутся!', 3: 'Магия сама себя не наколдует!', 4: 'Круг сам себя не нарисует!' },
+        steps: {
+            0: 'Круг сам себя не нарисует!',
+            1: 'Бросайте кости! Нужно шесть-шесть-шесть!',
+            5: 'Кружки сами себя не выпьют, а зомби сами не упокоятся! Шевелитесь!',
+            6: 'Молвите слово, берите рапиру — и бейте FrankenPHP!',
+            7: 'Утки сами себя не собьют! Рапиры наголо!',
+        },
+    },
     clues: { button: 'Улики', text: 'Странно… Тыквы отзываются слишком быстро — будто кто-то обрабатывает каждый ваш клик.' },
     flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.', scenes: { 0: 'В баре летунов нет — тут пьют.', 2: 'На закате птицы разлетелись. Все смотрят на тыквы.', 3: 'Летучие мыши! Сбивайте — но не забывайте про тыквы.', 4: 'Червяки… Даже земля здесь ползает. Давите!' } },
     outro: { button: 'Прощание', text: 'Спасибо, что пришли! Дверь не закрывайте: тут теперь живут зомби.' },
     'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 2: 'Костёр пылает. Ждём знака… ух-ху.', 3: 'Достаточно… сейчас рванёт!', 4: 'Круг замкнут. Сейчас что-то поднимется…' } },
-    'bar-who': { button: 'Кому ещё?', bar: true, text: 'Кому ещё?' },
-    'bar-crowd': { button: 'Не толпитесь', bar: true, text: 'Не толпитесь — наливаю!' },
-    'bar-clink': { button: 'Сначала чокнись', bar: true, text: 'Сначала чокнись, потом пей!' },
+    'bar-who': { button: 'Кому ещё?', text: 'Кому ещё?' },
+    'bar-crowd': { button: 'Не толпитесь', text: 'Не толпитесь — наливаю!' },
+    'bar-clink': { button: 'Сначала чокнись', text: 'Сначала чокнись, потом пей!' },
     'bar-empty': { auto: true, text: 'Пусто! Подождите, наливаю.' },
     'scene-1': { auto: true, hoot: true, text: 'Вот оно — магическое место! Ух-ху!', then: 'Но сначала всё подготовим к ритуалу: вырезайте тыквам мордашки и вычищайте их!' },
     'scene-2': { auto: true, hoot: true, text: 'Солнце садится! Берите свечи — поджигайте тыквы!', then: 'Пусть горят до самой ночи.' },
@@ -46,6 +58,19 @@ export const LINES = {
     'bar-again': { auto: true, hoot: true, text: 'Ну что, по пиву?' },
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
 };
+
+/**
+ * The owl's quick menu on the console (docs/spec/scenario.md, «Модератор и сова»): catalog ids by scene before the
+ * finale (0 — the bar … 3 — the night) and by finale step; a step not listed (2–4, the film) has none. The moderator's
+ * own text is always there; lines the server says by itself are never in the menu.
+ */
+export const MENU = {
+    scenes: { 0: ['bar-who', 'bar-crowd', 'bar-clink', 'rules'], 1: ['rules', 'hurry', 'flyers'], 2: ['hurry', 'clues'], 3: ['hurry', 'flyers'] },
+    steps: { 0: ['hurry'], 1: ['hurry'], 5: ['hurry'], 6: ['hurry'], 7: ['hurry', 'outro'] },
+};
+
+/** The menu's ids for the scene, or for the finale step in the final scene (`step` — null outside it). */
+export const menuOf = (scene, step = null) => (step === null ? MENU.scenes[scene] : MENU.steps[step]) ?? [];
 
 /**
  * What the owl says while it pours in the bar (docs/spec/scenario.md, «Сцена 0 — «Бар»»): the server sends a number
@@ -80,16 +105,17 @@ const RUMOR_MAX_MS = 9000;
 const SOMEONE = 'кто-то';
 
 /**
- * Text of an `owl` event: the moderator's text as is, a catalog line with its params (in its `scene` variant if it
- * has one), or null for an unknown id.
+ * Text of an `owl` event: the moderator's text as is, a catalog line with its params (in its finale `step` variant, else
+ * its `scene` variant, if it has one), or null for an unknown id. `step` — the finale step, null outside the final
+ * scene: every viewer has applied the same events before this one, so all pick the same text.
  */
-export function lineText(event, scene = 0) {
+export function lineText(event, scene = 0, step = null) {
     if (typeof event?.text === 'string' && event.text.trim() !== '') return event.text.trim();
     const line = LINES[event?.line];
     if (!line) return null;
     const name = event.params?.player?.name;
     const attempt = Number.isInteger(event.params?.attempt) ? String(event.params.attempt) : '?';
-    return (line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
+    return ((step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
 }
 
 // Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good.
@@ -212,9 +238,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     new ResizeObserver(() => requestAnimationFrame(place)).observe(root);
 
     return {
-        /** Channel event `owl` said in `scene`; unknown catalog ids are ignored. */
-        say(event, scene = 0) {
-            const text = lineText(event, scene);
+        /** Channel event `owl` said in `scene` (at finale `step`, null outside the finale); unknown catalog ids are ignored. */
+        say(event, scene = 0, step = null) {
+            const text = lineText(event, scene, step);
             if (!text) return;
             const catalog = event.text ? null : LINES[event.line];
             const then = catalog?.then ?? [];

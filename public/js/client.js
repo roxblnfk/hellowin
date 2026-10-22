@@ -16,7 +16,7 @@ const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target:
 const CURSED_STEP = 5;
 const RAPIER_STEP = 6;
 const DAWN_STEP = 7;
-// From this finale step the HUD's connection line says who answers on the line (scenario.md, «Финал», step 3).
+// From this finale step RoadRunner's uptime stands beside the HUD's lamp (scenario.md, «Финал», step 3: he runs out).
 const RUNNER_STEP = 3;
 // The finale step the hall rolls the dice on (scenario.md, «Кости 6-6-6»).
 const DICE_STEP = 1;
@@ -29,8 +29,11 @@ const OWL_TRY = 'Дайте я попробую!';
 // the scene's drink pose) and a pumpkin's hand-over when its `take` carries no `until` (HELLOWIN_BEER_HANDOVER_MS).
 const DRINK_MS = 1200;
 const HANDOVER_MS = 900;
-// The HUD's connection line; through the evening the other side seems to answer.
-const STATUS = { connecting: 'подключение…', connected: 'связь с потусторонним: есть', disconnected: 'нет связи' };
+// The HUD's connection lamp: its words go to its title and aria-label.
+export const STATUS = { connecting: 'Связь: переподключение…', connected: 'Связь: есть', disconnected: 'Связь: нет' };
+
+/** Whether RoadRunner is out — finale step 3 on, or behind the counter after the dawn: the HUD tells his uptime. */
+export const runnerShown = (model) => (model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= RUNNER_STEP) || model.bar?.roadrunner === true;
 
 /** Uptime as «Ч ч ММ мин» (scenario.md, «Финал»): hours unbounded, minutes two digits. */
 export function formatUptime(ms) {
@@ -283,18 +286,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const node = hud(name);
             if (node) node.textContent = value;
         };
-        set('round', model.round);
-        set('scene', model.scene);
         set('scene-name', sceneName());
         set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
         set('total', pumpkinsOf().length);
-        // The bar has no pumpkins: its meter of mugs drunk stands in for «готово N из M»; step 5 has its two goals.
+        // «Готово N из M» is the pumpkins' goal, scenes 1–3: the bar has its meter of mugs, step 5 its two goals, the rest
+        // of the finale its own panels (the circle, the dice, the boss's health). The round, the scene's number and the
+        // scene's readiness are the moderator's (the console).
         const progress = hud('progress');
-        if (progress) progress.hidden = isBar(model.scene) || step() === CURSED_STEP;
-        const ready = hud('ready');
-        // In the final scene `ready` stays on through the finale; it waits for the moderator at step 0 (the closed
-        // circle), at step 1 (the 6-6-6 rolled) and at step 5 (the cursed world's goals met).
-        if (ready) ready.hidden = !model.ready || (model.scene >= model.sceneStages && step() !== 0 && step() !== DICE_STEP && step() !== CURSED_STEP);
+        if (progress) progress.hidden = isBar(model.scene) || model.scene >= model.sceneStages;
     }
 
     function sceneName() {
@@ -320,14 +319,18 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const uptime = () => (model.startedAt > 0 ? Math.max(0, now() + offset - model.startedAt) : null);
     let status = null;
 
-    // The connection line of the HUD: «на связи» with the other side all evening, RoadRunner from finale step 3.
+    // The HUD's lamp (green, yellow blinking, red) and, while the line is up and RoadRunner is out, his uptime beside it.
     function paintStatus() {
         const node = root.querySelector('[data-status]');
         if (!node || status === null) return;
         node.dataset.status = status;
-        const runner = status === 'connected' && model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= RUNNER_STEP;
+        node.title = STATUS[status];
+        node.setAttribute('aria-label', STATUS[status]);
+        const caption = hud('runner');
+        if (!caption) return;
+        caption.hidden = !(status === 'connected' && runnerShown(model));
         const up = uptime();
-        node.textContent = !runner ? STATUS[status] : up === null ? 'RoadRunner: работает' : `RoadRunner: работает · аптайм ${formatUptime(up)}`;
+        caption.textContent = up === null ? 'RoadRunner: работает' : `RoadRunner: работает · аптайм ${formatUptime(up)}`;
     }
 
     const myWalker = () => (model.me === null ? null : model.walkers.find((w) => w.id === model.me) ?? null);
@@ -875,7 +878,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         // The bubble is a moment, not state: a resync does not bring an old line back.
         owl(event) {
-            owl?.say(event, model.scene);
+            owl?.say(event, model.scene, step());
         },
 
         // A player's line over its walker until `at` + chatShowMs on the server clock: a late event (a background tab,

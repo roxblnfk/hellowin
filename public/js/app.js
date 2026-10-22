@@ -149,7 +149,7 @@ async function main() {
     });
     client.start();
 
-    // The HUD's connection line is the client's: from finale step 3 it tells RoadRunner's uptime instead.
+    // The HUD's connection lamp is the client's: from finale step 3 RoadRunner's uptime stands beside it.
     const setStatus = (status) => client.setStatus(status);
 
     let connectedOnce = false;
