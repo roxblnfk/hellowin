@@ -6,6 +6,7 @@ import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote,
 import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
 import { CLINK } from './pixel/clink.js';
+import { SUMMON_MS } from './pixel/finale-timeline.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
@@ -193,8 +194,9 @@ export function readSnapshot(root) {
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  * @param {((attempt: number) => Promise<object|undefined>)|null} [options.roll]  RPC `roll {attempt}`, resolving with the reply
  * @param {(event: object) => void} [options.onSay]  after a `say` event (the moderator's chat log)
+ * @param {(fn: Function, ms: number) => unknown} [options.later]  setTimeout (the lab's frozen clock passes its own)
  */
-export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {} }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {}, later = (fn, ms) => setTimeout(fn, ms) }) {
     // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
     // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice this round, from the
     // snapshot and the `roll` events.
@@ -223,8 +225,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const hud = (name) => root.querySelector(`[data-hud-${name}]`);
     const button = (id) => root.querySelector(`[data-element="${CSS.escape(id)}"]`);
     const findElement = (id) => model.elements.find((e) => e.id === id);
-    /** The finale step, or null outside the final scene. */
-    const step = () => (model.scene >= model.sceneStages ? model.finale?.step ?? null : null);
+    // The owl's countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): a live step 0 → 1 is shown SUMMON_MS
+    // after its event. Meanwhile the model is at step 1 already (the console), but the page shows step 0: the scene,
+    // the dice, the sound of the step and the owl's lines wait in `summon` {event, before, ready, lines}.
+    let summon = null;
+    let summons = 0;
+    /** The finale step the page shows (0 through the countdown), or null outside the final scene. */
+    const step = () => (model.scene >= model.sceneStages ? (summon ? 0 : model.finale?.step ?? null) : null);
     // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
     let wordClosed = false;
     // My dice (docs/spec/frontend.md, «Кости»): the attempts of RPC `roll`, my roll drawn big, the attempt whose event
@@ -510,6 +517,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     }
 
     function load(snapshot) {
+        dropSummon();
         takeTime(snapshot.now);
         // Another round: my attempts start from 1 again, the owl has not rolled yet.
         if (snapshot.round !== model.round) forgetDice();
@@ -557,7 +565,37 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
     // The scene plays the finale's step; `ready` at step 0 is the closed circle, the cue for the ritual pose.
     function paintFinale() {
-        scene?.setFinale({ step: model.scene >= model.sceneStages ? model.finale?.step ?? null : null, ready: model.ready });
+        scene?.setFinale({ step: step(), ready: summon ? summon.ready : model.ready });
+    }
+
+    // The countdown's start, around the step's event: `summon` is set before it is applied, so the page paints step 0;
+    // after it the owl counts, and the rest waits for the end.
+    function holdSummon(event, before) {
+        summon = { event, before, ready: model.ready, lines: [] };
+    }
+    function startSummon() {
+        const mine = ++summons;
+        owl?.countdown?.(SUMMON_MS);
+        later(() => mine === summons && endSummon(), SUMMON_MS);
+    }
+
+    // The countdown is over: step 1 plays from now — the scene, the dice, the step's sound, the owl's held lines.
+    function endSummon() {
+        const { event, before, lines } = summon;
+        summon = null;
+        paintFinale();
+        paintDice();
+        sound?.event(event, model, before);
+        lines.forEach((line) => owl?.say(line, model.scene, step()));
+        onChange(model);
+    }
+
+    // A reset or a snapshot drops the countdown with all it held: the state is told anew.
+    function dropSummon() {
+        if (!summon) return;
+        summon = null;
+        summons++;
+        owl?.hush?.();
     }
 
     function forgetDice() {
@@ -894,9 +932,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintRapier();
         },
 
-        // The bubble is a moment, not state: a resync does not bring an old line back.
+        // The bubble is a moment, not state: a resync does not bring an old line back. Through the countdown a line
+        // (`finale-1` right behind the step) waits for its end.
         owl(event) {
-            owl?.say(event, model.scene, step());
+            if (summon) summon.lines.push(event);
+            else owl?.say(event, model.scene, step());
         },
 
         // A player's line over its walker until `at` + chatShowMs on the server clock: a late event (a background tab,
@@ -1265,8 +1305,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             }
             // What the event changed is the sound's cue: a finale step that follows the one before, a new walker.
             const before = sound && { scene: model.scene, stageMax: model.stageMax, step: model.finale?.step ?? null, walkers: new Set(model.walkers.map((w) => w.id)), bossHp: model.boss?.hp ?? null };
+            // A reset drops the owl's countdown; the next step cuts it short: step 1 starts at once, silent, and the
+            // new step plays on from it, as after two quick presses.
+            if (summon && (event.type === 'reset' || event.type === 'finale')) {
+                dropSummon();
+                if (event.type === 'finale') {
+                    paintFinale();
+                    paintDice();
+                }
+            }
+            // Only a live step 0 → 1 is counted down: a snapshot already at step 1 shows it as it is.
+            const summoning = event.type === 'finale' && event.step === DICE_STEP && step() === 0;
+            if (summoning) holdSummon(event, before);
             handler(event);
-            sound?.event(event, model, before);
+            if (summoning) startSummon();
+            else sound?.event(event, model, before);
             onChange(model);
         },
 

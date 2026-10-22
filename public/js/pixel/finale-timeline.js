@@ -1,6 +1,13 @@
 // The finale's timeline on its own, without PixiJS: the scene draws by it and the sound (sound.js) plays by it.
 
-/** Timeline of the steps, ms since the step's event. */
+/**
+ * The owl's countdown «Призыв через 3… 2… 1…» before step 1 (docs/spec/frontend.md, «Призыв»), a second a number: a
+ * live step 0 → 1 starts this long after its event. The client holds the scene, the dice, the sound and the owl's lines
+ * back for it, so T of step 1 runs from the countdown's end.
+ */
+export const SUMMON_MS = 3000;
+
+/** Timeline of the steps, ms since the step's event (step 1: since the end of SUMMON_MS). */
 export const T = {
     // Step 1: the circle flashes, the column lights up, smoke rolls, the silhouette rises; the ground rumbles while the
     // pumpkins are pulled into a round dance.

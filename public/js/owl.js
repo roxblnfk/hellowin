@@ -30,7 +30,7 @@ export const LINES = {
     clues: { button: 'Улики', text: 'Странно… Тыквы отзываются слишком быстро — будто кто-то обрабатывает каждый ваш клик.' },
     flyers: { button: 'Про летунов', text: 'Летуны в ритуале не участвуют. Но сбивать их всё равно приятно.', scenes: { 0: 'В баре летунов нет — тут пьют.', 2: 'На закате птицы разлетелись. Все смотрят на тыквы.', 3: 'Летучие мыши! Сбивайте — но не забывайте про тыквы.', 4: 'Червяки… Даже земля здесь ползает. Давите!' } },
     outro: { button: 'Прощание', text: 'Спасибо, что пришли! Дверь не закрывайте: тут теперь живут зомби.' },
-    'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 2: 'Костёр пылает. Ждём знака… ух-ху.', 3: 'Достаточно… сейчас рванёт!', 4: 'Круг замкнут. Сейчас что-то поднимется…' } },
+    'scene-ready': { auto: true, hoot: true, text: 'Все тыквы готовы. Ждём знака… ух-ху.', scenes: { 2: 'Костёр пылает. Ждём знака… ух-ху.', 3: 'Достаточно… сейчас рванёт!', 4: 'Круг замкнут! Ещё немного — и он придёт… Ждём знака!' } },
     'bar-who': { button: 'Кому ещё?', text: 'Кому ещё?' },
     'bar-crowd': { button: 'Не толпитесь', text: 'Не толпитесь — наливаю!' },
     'bar-clink': { button: 'Сначала чокнись', text: 'Сначала чокнись, потом пей!' },
@@ -47,7 +47,7 @@ export const LINES = {
     'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!', then: 'Чтобы он восстал, нужна версия, которой никогда не было… Бросайте кости! Нужно шесть-шесть-шесть!' },
     'dice-win': { auto: true, hoot: true, text: '{player} выбросил 6-6-6 с {attempt}-й попытки! PHP 6 всё-таки вышел!' },
     'dice-owl-win': { auto: true, hoot: true, text: 'Шесть-шесть-шесть! С третьей попытки — как и положено.' },
-    'finale-2': { auto: true, hoot: true, text: 'Что это? Что мы… ЧТО ВЫ НАДЕЛАЛИ?' },
+    'finale-2': { auto: true, hoot: true, text: 'Что это?.. Это разве RoadRunner?!', then: 'Что мы… ЧТО ВЫ НАДЕЛАЛИ?' },
     'finale-3': { auto: true, hoot: true, text: 'Походу… ошибочка вышла.', then: 'RoadRunner никогда не умирал. Кто, по-вашему, весь вечер обрабатывал ваши клики?' },
     'finale-4': { auto: true, hoot: true, text: 'Вот что прошло через RoadRunner за вечер. Каждый ваш клик — через него, а лишние он отбросил, чтобы ни одна тыква не проскочила стадию.', then: 'Видите аптайм? Он не падал ни на секунду. Это мы тут чуть не умерли.' },
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
@@ -128,6 +128,8 @@ const HOLD_MS = 7500;
 const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
 const MAX_HOLD_MS = 36000 + HOLD_MS;
+// The countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): «Призыв через 3…», then «2…», «1…».
+export const summonText = (left, first) => (first ? `Призыв через ${left}…` : `${left}…`);
 // The dice's aside lasts about as long as the throw it comes with.
 const ASIDE_MS = 2600;
 const OWL_HEIGHT = 18;
@@ -165,6 +167,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     let pending = null;
     let waiting = false;
     let token = 0;
+    // The countdown on (its number), 0 — none.
+    let counting = 0;
+    let countdowns = 0;
 
     function place() {
         if (bubble.hidden) return;
@@ -200,8 +205,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     }
 
     // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up. `then` — the parts still to
-    // come; `line` and `part` tell the scene which catalog line is on, `rapier` — the part the owl draws its rapier on.
-    function show({ text, hoot, then = [], line = null, part = 0, ms = showMs(text), hold = then.length ? ms + holdOf(then[0]) : holdOf(text) }) {
+    // come; `line` and `part` tell the scene which catalog line is on, `rapier` — the part the owl draws its rapier on;
+    // `count` — a number of the countdown (the sound beats it instead of a voice).
+    function show({ text, hoot, then = [], line = null, part = 0, count = false, ms = showMs(text), hold = then.length ? ms + holdOf(then[0]) : holdOf(text) }) {
         const mine = ++token;
         textEl.textContent = text;
         holdUntil = now() + hold;
@@ -213,7 +219,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             place();
             const perch = scene?.perch?.();
             const width = root.clientWidth;
-            onShow({ text, hoot, x: perch && width ? (perch.x / width) * 100 : null });
+            onShow({ text, hoot, count, x: perch && width ? (perch.x / width) * 100 : null });
         };
         bubble.hidden = true;
         if (delay > 0) later(() => mine === token && open(), delay);
@@ -281,6 +287,34 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             if (!text || pending || waiting || t < holdUntil) return false;
             show({ text, hoot: false, ms: ASIDE_MS, hold: 0 });
             return true;
+        },
+
+        /**
+         * The countdown before finale step 1: a number a second over `ms` (summonText), each over whatever is on, the
+         * bubble held to its end. The client holds the server's lines back meanwhile and says them after it.
+         */
+        countdown(ms) {
+            const n = Math.max(1, Math.round(ms / 1000));
+            const beat = ms / n;
+            const mine = ++countdowns;
+            counting = mine;
+            pending = null;
+            for (let k = 0; k < n; k++) {
+                const tick = () => counting === mine && show({ text: summonText(n - k, k === 0), hoot: false, count: true, ms: beat, hold: ms - k * beat });
+                if (k === 0) tick();
+                else later(tick, k * beat);
+            }
+            later(() => counting === mine && (counting = 0), ms);
+        },
+
+        /** Stops the countdown on (a reset, a snapshot): its bubble goes at once and holds nothing up. */
+        hush() {
+            if (!counting) return;
+            counting = 0;
+            token++;
+            bubble.hidden = true;
+            holdUntil = -1e9;
+            shown = { until: -1e9 };
         },
 
         /** Re-anchors the bubble, e.g. after the scene rebuilt for a new size. */

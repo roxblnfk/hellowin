@@ -78,7 +78,9 @@
   the server's scatter; the snapshot's `startedAt` is 3 h 07 min before the start (the HUD's uptime from step 3, the
   reveal's from step 4). ?finale=N starts settled at step N (bots stand around the circle and do not wander until
   step 2); ?play=ms with ?freeze presses «Шаг финала» (forced) at that frozen-clock moment, so ?finale=1&play=0&freeze=1600
-  captures the lightning of step 2 mid-way; ?ritual=1 starts at step 0 with the circle closed.
+  captures the lightning of step 2 mid-way; ?ritual=1 starts at step 0 with the circle closed. Step 1 from step 0 waits
+  for the owl's countdown (SUMMON_MS, «Призыв»): ?ritual=1&play=0&freeze=500 — «Призыв через 3…», 2500 — «1…», 3300 — the
+  circle's flash after it.
   Limits (protocol.md, «Лимиты и баланс»): every limit is max(1, ceil(k × (BASE + PER_PLAYER × (n − 1)))) plus the
   moderator's addition (the bar, the cursed world, the boss; gone with a reset), BASE and PER_PLAYER the defaults of
   engine.md; n the walkers on the field (at least 1), followed once it has held 3 s, or ?players=N for good; k from the
@@ -252,6 +254,7 @@
     import { ITEMS, randomLook } from '/js/pixel/characters.js';
     import { createScene } from '/js/pixel/scene.js';
     import { inWanderZone } from '/js/pixel/wander.js';
+    import { SUMMON_MS } from '/js/pixel/finale-timeline.js';
 
     const params = new URLSearchParams(location.search);
     const root = document.getElementById('app');
@@ -1608,8 +1611,8 @@
     function diceBegin() {
         diceForget();
         engine.dice = { on: true };
-        // The bots' first throws come one after another.
-        wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + 300 + i * 450));
+        // The bots' first throws come one after another, once their pages have counted the owl's countdown down.
+        wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + SUMMON_MS + 300 + i * 450));
         deliver({ type: 'dice', on: true });
     }
 
@@ -2086,6 +2089,7 @@
         onChange: (model) => moderatorConsole?.update(model),
         onSay: (event) => moderatorConsole?.say(event),
         roll: async (attempt) => engineRoll(ME, { attempt }),
+        later,
     });
     client.start();
     // ?conn=ok|reconnect|down — the HUD's lamp: green, yellow blinking, red.

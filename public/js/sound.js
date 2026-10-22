@@ -468,10 +468,17 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (id && appeared.has(id) && now() - appeared.get(id) < 3000 && model.walkers.some((w) => w.id === id)) joinedNow(id);
         },
 
-        /** The owl's bubble has opened with a line; after the owl has gone, the line hangs over FrankenPHP. */
-        owl({ text, hoot = false, x = null }) {
+        /**
+         * The owl's bubble has opened with a line; after the owl has gone, the line hangs over FrankenPHP. A number of
+         * the countdown before finale step 1 (`count`) is a beat of the circle's drum, not speech.
+         */
+        owl({ text, hoot = false, x = null, count = false }) {
             if (quiet()) return;
             const pan = panOf(x);
+            if (count) {
+                audio.play('circle.stage', { pan });
+                return;
+            }
             if (owlGone()) {
                 audio.speak('franken', text, { pan });
                 return;
