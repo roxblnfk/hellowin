@@ -579,6 +579,20 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'pause', ['on' => 1], moderator: true), ['ok' => false, 'error' => 'invalid on']);
     }
 
+    public function pausedProgressAnswersPausedAfterTheEarlierChecks(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'pause', ['on' => true], moderator: true);
+
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER), ['ok' => false, 'error' => 'paused']);
+        Assert::same($this->call($ritual, 'strike', []), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+
+        $this->call($ritual, 'pause', ['on' => false], moderator: true);
+
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER), ['ok' => true]);
+    }
+
     public function thresholdsAnswerTheLimitsInForce(): void
     {
         $ritual = new RitualHarness(threshold: 4);

@@ -73,11 +73,11 @@ final class StoryTest
         Assert::same(Story::fromArray(['k' => 10])->k, 10.0);
     }
 
-    public function nextRoundKeepsThePauseTheMultiplierAndTheRoomButNotTheBonus(): void
+    public function nextRoundKeepsTheMultiplierAndTheRoomButNotTheBonusOrThePause(): void
     {
         $story = new Story(1, 0, true, 'aaaaaaaaaaaaaaaa', 1, 2.5, 4, false, 6);
 
-        Assert::equals($story->restarted(), new Story(paused: true, k: 2.5, players: 6));
+        Assert::equals($story->restarted(), new Story(k: 2.5, players: 6));
         Assert::same($story->nextScene(final: false)->k, 2.5);
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Player\PlayerService;
+use App\Application\Story\StoryRefusedException;
 use App\Application\Walk\ActionStop;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Ritual\ClickOutcome;
@@ -35,6 +36,7 @@ final readonly class ClickHandler
      *
      * @param non-empty-string|null $player Public id of the clicking player, null for an anonymous connection.
      * @throws UnknownElementException
+     * @throws StoryRefusedException `paused` — the moderator holds the scene's progress: not counted, not published.
      * @throws ElementLockedException A click on a closed centrepiece or on a pumpkin in the bar: not counted, not published.
      * @throws RitualBusyException
      */
@@ -43,6 +45,7 @@ final readonly class ClickHandler
         $element = $this->elements->find($elementId)
             ?? throw new UnknownElementException(\sprintf('Unknown element "%s".', $elementId));
         $type = $element->type;
+        $this->store->story()->paused and throw new StoryRefusedException('paused');
 
         // A centrepiece reads the whole ritual under its own lock, so a reset cannot slip between the check and the count
         // A pumpkin only checks the scene: there are no pumpkins to click in the bar

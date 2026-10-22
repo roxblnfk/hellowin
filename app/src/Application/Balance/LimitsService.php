@@ -9,6 +9,7 @@ use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Story\CursedService;
+use App\Application\Story\OwlLine;
 use App\Application\Story\RapierService;
 use App\Domain\Balance\LimitsStore;
 use App\Domain\Clock\Clock;
@@ -128,6 +129,26 @@ final readonly class LimitsService
     }
 
     /**
+     * The pause is lifted: the progress the pause held catches up as after a lower limit — elements with the clicks of
+     * their threshold move, the bar and the cursed world check their goals — and a scene whose last element moved
+     * meanwhile is ready now. Safe to repeat: the jobs keep their keys, and a scene is marked ready once.
+     *
+     * @throws LockBusyException
+     * @throws RitualBusyException
+     */
+    public function resume(): void
+    {
+        $ritual = $this->ritual->snapshot();
+        $this->catchUp($ritual);
+        $this->bar?->follow($ritual->round);
+        $this->cursed?->resume();
+        if ($this->policy->sceneReady($ritual) && $this->ritual->markReady($ritual->round, $ritual->scene, null)) {
+            $this->publisher->ready($ritual->round, $ritual->scene);
+            $this->publisher->owl($ritual->round, OwlLine::SCENE_READY);
+        }
+    }
+
+    /**
      * The limits of the current context: the pumpkins in scenes before the final one and the bonfire in those that raise it, the circle while
      * it is drawn, the bar's goal in the bar, the cursed world's goals on its goal step, FrankenPHP's health while it
      * stands.
@@ -177,7 +198,9 @@ final readonly class LimitsService
         // with, and the events that bring it in tell the clients the rest
         $changed = static fn(string $limit): bool => isset($limits[$limit], $told[$limit]) && $told[$limit] !== $limits[$limit];
 
-        if ($changed(Element::TYPE_PUMPKIN) || $changed(Element::TYPE_BONFIRE) || $changed(Element::TYPE_CIRCLE)) {
+        // A pause holds the stages too; lifting it catches up with whatever limit is in force then
+        if (!$ritual->story->paused
+            && ($changed(Element::TYPE_PUMPKIN) || $changed(Element::TYPE_BONFIRE) || $changed(Element::TYPE_CIRCLE))) {
             $this->catchUp($ritual);
         }
         $changed('bar') and $this->bar?->follow($ritual->round);

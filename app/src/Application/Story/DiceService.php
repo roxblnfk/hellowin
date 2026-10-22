@@ -55,7 +55,8 @@ final readonly class DiceService
      * @return array{attempt: positive-int, dice: array{int<1, 6>, int<1, 6>, int<1, 6>}}
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw.
+     * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw,
+     *         `paused` — a new throw while the moderator holds the progress; a repeat still answers.
      * @throws BadAttemptException
      * @throws LockBusyException
      */
@@ -68,7 +69,8 @@ final readonly class DiceService
         $ritual->story->dice() or throw new StoryRefusedException('not now');
         $now = $this->clock->now();
 
-        $thrown = $this->store->update($round, function (Dice $dice) use ($id, $attempt, $round, $now, $walker): array {
+        $paused = $ritual->story->paused;
+        $thrown = $this->store->update($round, function (Dice $dice) use ($id, $attempt, $round, $now, $walker, $paused): array {
             $last = $dice->last($id);
             // A repeat answers even after the 6-6-6: its response may have been lost on the way
             if ($last > 0 && $attempt === $last) {
@@ -81,6 +83,7 @@ final readonly class DiceService
             /** @var positive-int $attempt */
             $at = $dice->lastAt($id);
             $at !== null && $now - $at < $this->cooldown and throw new StoryRefusedException('busy');
+            $paused and throw new StoryRefusedException('paused');
 
             $faces = $this->roller->roll($round, $id, $attempt);
             $dice = $dice->rolled($id, $attempt, $now);
@@ -128,7 +131,7 @@ final readonly class DiceService
         [$attempt, $faces] = $thrown;
 
         $this->publisher->roll($round, null, $attempt, $faces, $now);
-        $faces === DiceRoller::SIX and $this->win($round, ['owl' => true, 'attempt' => $attempt]);
+        $faces === DiceRoller::SIX and $this->win($round, ['owl' => true, 'attempt' => $attempt], evenPaused: true);
 
         return ['attempt' => $attempt, 'dice' => $faces];
     }
@@ -169,6 +172,22 @@ final readonly class DiceService
     }
 
     /**
+     * The pause is lifted: a 6-6-6 thrown just as it came on makes the step ready now.
+     *
+     * @throws RitualBusyException
+     */
+    public function resume(): void
+    {
+        $ritual = $this->ritual->snapshot();
+        $scene = $this->policy->finalScene();
+        if ($ritual->story->dice()
+            && $this->store->get($ritual->round)->winner !== null
+            && $this->ritual->markReady($ritual->round, $scene, null, Story::DICE_STEP)) {
+            $this->publisher->ready($ritual->round, $scene);
+        }
+    }
+
+    /**
      * @return int<0, max> New throws of the players in the round.
      */
     public function rolls(int $round): int
@@ -180,13 +199,14 @@ final readonly class DiceService
      * The first 6-6-6, decided under the lock: the dice go off, the step is ready, and the owl names who rolled it.
      *
      * @param Winner $winner
+     * @param bool $evenPaused The owl's throw: the moderator's own, which a pause does not hold.
      */
-    private function win(int $round, array $winner): void
+    private function win(int $round, array $winner, bool $evenPaused = false): void
     {
         $scene = $this->policy->finalScene();
         $this->publisher->dice($round, false, $winner);
         try {
-            $this->ritual->markReady($round, $scene, null, Story::DICE_STEP) and $this->publisher->ready($round, $scene);
+            $this->ritual->markReady($round, $scene, null, Story::DICE_STEP, $evenPaused) and $this->publisher->ready($round, $scene);
         } catch (RitualBusyException) {
         }
         isset($winner['owl'])

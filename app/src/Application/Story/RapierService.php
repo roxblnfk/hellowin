@@ -152,7 +152,7 @@ final readonly class RapierService
      * @return int<0, max> The health after the strike.
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws StoryRefusedException `not now` — no boss or it is down, `no rapier`.
+     * @throws StoryRefusedException `not now` — no boss or it is down, `no rapier`, `paused`.
      * @throws LockBusyException
      */
     public function strike(string $id): int
@@ -163,6 +163,7 @@ final readonly class RapierService
         $round = $ritual->round;
         $ritual->story->rapier() && $this->boss->get($round)?->down() === false or throw new StoryRefusedException('not now');
         $walker->hasRapier() or throw new StoryRefusedException('no rapier');
+        $ritual->story->paused and throw new StoryRefusedException('paused');
 
         [$before, $after] = $this->boss->update(
             $round,

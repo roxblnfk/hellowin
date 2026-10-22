@@ -157,14 +157,22 @@ final readonly class StoryService
     }
 
     /**
-     * Flyers and zombies stop launching; the ones already out finish their way.
+     * Holds the scene's progress (docs/spec/protocol.md, «Пауза прогресса»): the room's clicks, sips, strikes and
+     * throws are refused and no goal makes the scene ready, while the sky goes on. Lifting it catches up with what the
+     * room reached meanwhile — on every call, not only the first: a busy lock fails the call, and the moderator's
+     * repeat must still catch up.
      *
      * @throws RitualBusyException
+     * @throws LockBusyException
      */
     public function pause(bool $on): void
     {
         [$before] = $this->store->updateStory(static fn(Story $story): Story => $story->withPaused($on));
         $before->paused === $on or $this->publisher->pause($this->store->round(), $on);
+        if (!$on) {
+            $this->limits?->resume();
+            $this->dice?->resume();
+        }
     }
 
     /**

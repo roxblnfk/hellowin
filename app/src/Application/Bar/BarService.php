@@ -8,6 +8,7 @@ use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
+use App\Application\Story\StoryRefusedException;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
@@ -179,6 +180,7 @@ final readonly class BarService
      * @throws BarRefusedException `not bar` — neither the bar nor the cursed world, `no beer`, `not clinked` or `busy`:
      *         the clink of the mug, the last sip or the hand-over of a pumpkin is still playing, so a click never skips
      *         an animation.
+     * @throws StoryRefusedException `paused` — the moderator holds the progress: the mug stays in hand.
      * @throws LockBusyException
      * @throws RitualBusyException
      */
@@ -191,11 +193,13 @@ final readonly class BarService
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $walker->zombie() and throw new ZombifiedException();
                 $inBar = $this->policy->bar($this->ritual->scene());
-                $inBar || $this->ritual->story()->cursed() or throw new BarRefusedException('not bar');
+                $story = $this->ritual->story();
+                $inBar || $story->cursed() or throw new BarRefusedException('not bar');
                 $walker->hasBeer() or throw new BarRefusedException('no beer');
                 $walker->busyAt($now) and throw new BarRefusedException('busy');
                 $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
                 $walker->mugClinking($now) and throw new BarRefusedException('busy');
+                $story->paused and throw new StoryRefusedException('paused');
                 // Not through ActionStop: the walk is cut in the same write as the sip, under the lock held here
                 $stopped = $walker->stoppedAt($now);
                 $walkers[$id] = ($stopped ?? $walker)->drank($now + $this->drinkMs);
@@ -270,7 +274,7 @@ final readonly class BarService
     {
         $this->policy->bar($this->ritual->scene()) or throw new BarRefusedException('not bar');
 
-        $this->ready($this->ritual->round());
+        $this->ready($this->ritual->round(), evenPaused: true);
     }
 
     /**
@@ -342,11 +346,12 @@ final readonly class BarService
     /**
      * Once a round: the bar is ready, and the owl leads the room out.
      *
+     * @param bool $evenPaused The moderator's wave, which a pause does not hold.
      * @throws RitualBusyException
      */
-    private function ready(int $round): void
+    private function ready(int $round, bool $evenPaused = false): void
     {
-        if ($this->ritual->markReady($round, 0, null)) {
+        if ($this->ritual->markReady($round, 0, null, evenPaused: $evenPaused)) {
             $this->publisher->ready($round, 0);
             $this->publisher->owl($round, OwlLine::BAR_INTRO);
         }

@@ -64,7 +64,7 @@ final class Ticker
         $this->nextFlyer ??= $now + $this->flyerPause();
         if ($now >= $this->nextFlyer) {
             $this->nextFlyer = $now + $this->flyerPause();
-            $this->safely('flyer launch', fn() => $this->flyers->launchScheduled($now));
+            $this->safely('flyer launch', fn() => $this->flyers->launch($now));
         }
 
         // Zombies keep their own beat on top of the flyers; the minimum of the crowd does not wait for it

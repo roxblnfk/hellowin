@@ -140,19 +140,21 @@ final readonly class RitualStore
     }
 
     /**
-     * Marks the scene ready for the moderator, once per scene of a round.
+     * Marks the scene ready for the moderator, once per scene of a round. On a pause the room's progress makes nothing
+     * ready: the pause is lifted under this same lock before the catch-up looks, so a goal reached meanwhile is not lost.
      *
      * @param non-empty-string|null $player Who finished the last element of the scene.
      * @param int|null $step The finale step the scene must still be at; null — any.
-     * @return bool False when the scene is stale or already marked.
+     * @param bool $evenPaused The moderator's own call — the wave in the bar, the owl's throw — which a pause does not hold.
+     * @return bool False when the scene is stale, already marked or paused.
      * @throws RitualBusyException
      */
-    public function markReady(int $round, int $scene, ?string $player, ?int $step = null): bool
+    public function markReady(int $round, int $scene, ?string $player, ?int $step = null, bool $evenPaused = false): bool
     {
-        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene, $player, $step): bool {
+        return $this->locked([self::LOCK_SCENE], function () use ($round, $scene, $player, $step, $evenPaused): bool {
             $story = $this->readStory();
             if ($scene < 0 || $this->readRound() !== $round || $this->readScene() !== $scene || $story->ready === $scene
-                || $step !== null && $story->finale !== $step) {
+                || $step !== null && $story->finale !== $step || $story->paused && !$evenPaused) {
                 return false;
             }
 

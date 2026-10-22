@@ -42,7 +42,7 @@ final readonly class Story
     /**
      * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
      * @param int<0, 7>|null $finale Finale step; null outside the final scene.
-     * @param bool $paused Flyers and zombies are not launched.
+     * @param bool $paused The scene's progress is held: its tasks refuse the room, and no goal makes it ready.
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
      *        pumpkin, or the centrepiece in a scene that has one: the bonfire or the circle.
      * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.
@@ -189,13 +189,14 @@ final readonly class Story
     }
 
     /**
-     * A new round starts the story over; the pause, the multiplier and the figures the limits are counted for stay,
-     * they are about the room rather than the story, while the moderator's bonuses go with the round. RoadRunner comes
-     * to the bar with a new cycle from the dawn and leaves with the moderator's reset.
+     * A new round starts the story over; the multiplier and the figures the limits are counted for stay, they are about
+     * the room rather than the story, while the moderator's bonuses and the pause go with the round: a forgotten pause
+     * must not hold the next evening. RoadRunner comes to the bar with a new cycle from the dawn and leaves with the
+     * moderator's reset.
      */
     public function restarted(bool $again = false): self
     {
-        return new self(paused: $this->paused, k: $this->k, roadrunner: $again, players: $this->players);
+        return new self(k: $this->k, roadrunner: $again, players: $this->players);
     }
 
     /**

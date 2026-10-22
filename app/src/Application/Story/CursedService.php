@@ -59,14 +59,16 @@ final readonly class CursedService
     }
 
     /**
-     * A zombie slain in the cursed world, from the goal step on.
+     * A zombie slain in the cursed world, from the goal step on. On a pause the hit is the player's alone: the goal
+     * does not grow.
      *
      * @throws LockBusyException
      * @throws RitualBusyException
      */
     public function slew(int $round): void
     {
-        $this->ritual->story()->cursed() and $this->settle($round, static fn(Cursed $cursed): Cursed => $cursed->slew(), true);
+        $story = $this->ritual->story();
+        $story->cursed() && !$story->paused and $this->settle($round, static fn(Cursed $cursed): Cursed => $cursed->slew(), true);
     }
 
     /**
@@ -126,6 +128,18 @@ final readonly class CursedService
         $cursed = $this->store->get($ritual->round);
         $cursed->toEvent($this->drinks, $this->zombies, $story->players, $story->k) === $cursed->toldEvent()
             or $this->settle($ritual->round, static fn(Cursed $cursed): Cursed => $cursed, false);
+    }
+
+    /**
+     * The pause is lifted: goals reached while it held — a lower goal, the ticker's follow — make the world ready now.
+     *
+     * @throws LockBusyException
+     * @throws RitualBusyException
+     */
+    public function resume(): void
+    {
+        $ritual = $this->ritual->snapshot();
+        $ritual->story->cursed() and $this->settle($ritual->round, static fn(Cursed $cursed): Cursed => $cursed, false);
     }
 
     /**

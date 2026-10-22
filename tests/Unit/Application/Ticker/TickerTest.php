@@ -82,7 +82,7 @@ final class TickerTest
         );
     }
 
-    public function pauseStopsTheLaunches(): void
+    public function pauseLeavesTheLaunchesAlone(): void
     {
         $ritual = new RitualHarness();
         $ticker = self::ticker($ritual);
@@ -90,10 +90,9 @@ final class TickerTest
 
         $ticker->tick(0);
         $ticker->tick(2_000);
-        $ritual->story->pause(false);
         $ticker->tick(4_000);
 
-        Assert::count($ritual->broadcast->ofType('flyer'), 1);
+        Assert::count($ritual->broadcast->ofType('flyer'), 2);
     }
 
     public function zombiesWanderOnlyInTheCursedWorld(): void
@@ -163,21 +162,18 @@ final class TickerTest
         Assert::count($ritual->snapshot->create()['flyers'], 2);
     }
 
-    public function pauseHoldsTheCrowdAndItsMinimum(): void
+    public function pauseLeavesTheCrowdAlone(): void
     {
         $ritual = new RitualHarness(stageMax: [1]);
         $ticker = self::ticker($ritual);
         $ticker->tick(0);
         $ritual->story->pause(true);
         self::cursed($ritual);
-        Assert::blank(self::zombies($ritual));
-
-        $ticker->tick(3_000);
-        Assert::blank(self::zombies($ritual));
-
-        $ritual->story->pause(false);
-        $ticker->tick(3_100);
         Assert::count(self::zombies($ritual), 2);
+
+        $ritual->flyers->shoot(self::zombies($ritual)[0]['flyer'], null);
+        $ticker->tick(3_000);
+        Assert::count(self::zombies($ritual), 3);
     }
 
     public function dawnAndResetTakeTheCrowdOff(): void
@@ -242,15 +238,13 @@ final class TickerTest
         Assert::same($ritual->flyers->shoot($worm['flyer'], 'aaaaaaaaaaaaaaaa'), 2);
     }
 
-    public function fliesBuzzAboutTheBarUntilPaused(): void
+    public function fliesBuzzAboutTheBar(): void
     {
         $ritual = new RitualHarness(stageMax: [0, 1]);
         $ticker = self::ticker($ritual);
         $ticker->tick(0);
         $ticker->tick(2_000);
         $ticker->tick(4_000);
-        $ritual->story->pause(true);
-        $ticker->tick(6_000);
 
         $flies = $ritual->broadcast->ofType('flyer');
         Assert::count($flies, 2);
@@ -261,7 +255,7 @@ final class TickerTest
         Assert::null($ritual->flyers->shoot($flies[1]['flyer'], 'bbbbbbbbbbbbbbbb'));
     }
 
-    public function cursedWorldLaunchesItsOwnSetUntilPaused(): void
+    public function cursedWorldLaunchesItsOwnSet(): void
     {
         $ritual = new RitualHarness(stageMax: [1]);
         $ritual->transitions->scene(1, 1);
@@ -274,8 +268,6 @@ final class TickerTest
         $ticker = self::ticker($ritual);
         $ticker->tick(0);
         $ticker->tick(2_000);
-        $ritual->story->pause(true);
-        $ticker->tick(4_000);
 
         $flyers = \array_values(\array_filter($ritual->broadcast->ofType('flyer'), static fn(array $flyer): bool => $flyer['kind'] !== 'zombie'));
         Assert::count($flyers, 2);

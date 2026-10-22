@@ -65,7 +65,8 @@ final readonly class FlyerService
     }
 
     /**
-     * Launches a flyer of the current scene, or of the cursed world's own set once it has come.
+     * The ticker's launch: a flyer of the current scene, or of the cursed world's own set once it has come. The pause
+     * holds the scene's progress, not the sky.
      *
      * @param int $now Unix time in milliseconds.
      * @return Flyer|null Null when the scene has no flyers and the launch did not turn out its rare one.
@@ -79,21 +80,8 @@ final readonly class FlyerService
     }
 
     /**
-     * The ticker's launch: nothing while the moderator pauses the sky or in a scene without flyers.
-     *
-     * @param int $now Unix time in milliseconds.
-     */
-    public function launchScheduled(int $now): ?Flyer
-    {
-        $ritual = $this->ritual->snapshot();
-        $flyer = $ritual->story->paused ? null : $this->factory->launch($now, $ritual->scene, $ritual->story->cursed(), $ritual->story->dawn());
-
-        return $flyer === null ? null : $this->release($ritual->round, $flyer);
-    }
-
-    /**
-     * The ticker's zombies of the cursed world: they stand up to keep the crowd {@see ZombieCrowd} wants, unless the
-     * sky is paused; out of the cursed world the ones left there are retired. Under the lock of the crowd, which also
+     * The ticker's zombies of the cursed world: they stand up to keep the crowd {@see ZombieCrowd} wants, on a pause
+     * too; out of the cursed world the ones left there are retired. Under the lock of the crowd, which also
      * reads the story, so a zombie never stands up after the dawn has retired the crowd.
      *
      * @param int $now Unix time in milliseconds.
@@ -115,7 +103,7 @@ final readonly class FlyerService
 
         return $this->store->herd(function (array $alive) use ($zombies, $now, $due): array {
             $ritual = $this->ritual->snapshot();
-            if (!$ritual->story->cursed() || $ritual->story->paused) {
+            if (!$ritual->story->cursed()) {
                 return [];
             }
 
@@ -163,7 +151,7 @@ final readonly class FlyerService
     }
 
     /**
-     * The moderator's special flyer, launched even on a pause.
+     * The moderator's special flyer.
      *
      * @param int $now Unix time in milliseconds.
      * @return Flyer|null Null for a kind that is not special.
@@ -184,8 +172,8 @@ final readonly class FlyerService
     }
 
     /**
-     * The moderator's burst: flyers of the current set, the rare one aside, all launched now — even on a pause, as
-     * the moderator asked for them. More figures on the floor, more flyers.
+     * The moderator's burst: flyers of the current set, the rare one aside, all launched now. More figures on the
+     * floor, more flyers.
      *
      * @param int $now Unix time in milliseconds.
      * @return positive-int Flyers launched.

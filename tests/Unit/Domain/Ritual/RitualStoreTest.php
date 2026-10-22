@@ -119,6 +119,17 @@ final class RitualStoreTest
         Assert::same($snapshot->story->lastPumpkin, 'aaaaaaaaaaaaaaaa');
     }
 
+    public function pauseHoldsTheReadinessButNotTheModerator(): void
+    {
+        $store = self::store();
+        $store->updateStory(static fn(Story $story): Story => $story->withPaused(true));
+
+        Assert::false($store->markReady(1, 0, 'aaaaaaaaaaaaaaaa'));
+        Assert::false($store->snapshot()->ready());
+        Assert::true($store->markReady(1, 0, null, evenPaused: true));
+        Assert::true($store->snapshot()->ready());
+    }
+
     public function nextSceneWaitsAgainAndTheFinalOneStartsTheFinale(): void
     {
         $store = self::store();
@@ -132,7 +143,7 @@ final class RitualStoreTest
         Assert::same($store->snapshot()->story->finale, 0);
     }
 
-    public function resetStartsTheStoryOverButKeepsThePause(): void
+    public function resetStartsTheStoryOverAndLiftsThePause(): void
     {
         $store = self::store();
         $store->markReady(1, 0, 'aaaaaaaaaaaaaaaa');
@@ -140,7 +151,7 @@ final class RitualStoreTest
 
         $store->reset(1);
 
-        Assert::equals($store->snapshot()->story, new Story(paused: true));
+        Assert::equals($store->snapshot()->story, new Story());
     }
 
     public function storyChangeReportsBothSides(): void
