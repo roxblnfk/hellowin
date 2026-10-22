@@ -22,6 +22,11 @@ final readonly class PlayMetrics
     public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
     public const WALKERS = 'hellowin_walkers';
     public const RPC_LIMITED = 'hellowin_rpc_rate_limited_total';
+    public const RPC_CALLS = 'hellowin_rpc_calls_total';
+    public const RPC_DURATION = 'hellowin_rpc_duration_seconds';
+
+    /** Seconds: the handlers answer in a few milliseconds, a lock wait or a slow store reaches the top ones. */
+    private const RPC_BUCKETS = [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0];
 
     public function __construct(
         private MetricsInterface $metrics,
@@ -41,6 +46,8 @@ final readonly class PlayMetrics
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
             self::RPC_LIMITED => Collector::counter()->withHelp('RPC calls refused by the rate limit.')->withLabels('group'),
+            self::RPC_CALLS => Collector::counter()->withHelp('RPC calls by method and result: ok or the error code.')->withLabels('method', 'result'),
+            self::RPC_DURATION => Collector::histogram(...self::RPC_BUCKETS)->withHelp('RPC handling time in PHP, seconds.')->withLabels('method'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -72,6 +79,17 @@ final readonly class PlayMetrics
     public function rpcLimited(string $group): void
     {
         $this->safely(fn() => $this->metrics->add(self::RPC_LIMITED, 1, [$group]));
+    }
+
+    /**
+     * @param non-empty-string $method A known method or `unknown`: a client may send any name.
+     * @param non-empty-string $result `ok`, the error code of the answer or `exception`.
+     * @param float $seconds Handling time in PHP.
+     */
+    public function rpc(string $method, string $result, float $seconds): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::RPC_CALLS, 1, [$method, $result]));
+        $this->safely(fn() => $this->metrics->observe(self::RPC_DURATION, $seconds, [$method]));
     }
 
     public function flyerLaunched(Flyer $flyer): void

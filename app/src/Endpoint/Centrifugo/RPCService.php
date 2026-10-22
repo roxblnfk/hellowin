@@ -50,6 +50,8 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  *
  * Every call but the moderator's first takes a token of its player's bucket — of the connection's, when it has no
  * player — for its group of methods ({@see RateLimiter}); an empty bucket answers `rate limited`.
+ *
+ * Every call, refused ones included, is counted by method and result and timed ({@see PlayMetrics::rpc()}).
  */
 final readonly class RPCService implements ServiceInterface
 {
@@ -57,6 +59,9 @@ final readonly class RPCService implements ServiceInterface
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
     private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute'];
+
+    /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
+    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'me'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -83,21 +88,62 @@ final readonly class RPCService implements ServiceInterface
     {
         \assert($request instanceof RPC);
 
+        $started = \hrtime(true);
+        $method = (string) $request->method;
+        $result = 'exception';
+        try {
+            $answer = $this->answer($request, $method);
+            $request->respond(new RPCResponse($answer));
+            $result = self::result($answer);
+        } finally {
+            $this->metrics->rpc(
+                \in_array($method, self::PUBLIC, true) || \in_array($method, self::CONSOLE, true) ? $method : 'unknown',
+                $result,
+                (float) (\hrtime(true) - $started) / 1e9,
+            );
+        }
+    }
+
+    /**
+     * Error codes are literals of this class and of the refusal exceptions, so the label stays a short list.
+     *
+     * @return non-empty-string
+     */
+    private static function result(array $answer): string
+    {
+        /** @var mixed $error */
+        $error = $answer['error'] ?? null;
+
+        return match (true) {
+            ($answer['ok'] ?? null) === true => 'ok',
+            \is_string($error) && $error !== '' => $error,
+            default => 'exception',
+        };
+    }
+
+    /**
+     * @param non-empty-string $error
+     * @return array{ok: false, error: non-empty-string}
+     */
+    private static function fail(string $error): array
+    {
+        return ['ok' => false, 'error' => $error];
+    }
+
+    private function answer(RPC $request, string $method): array
+    {
         $player = PlayerId::isValid($request->user) ? $request->user : null;
         $moderator = ($request->meta[ConnectService::META_MODERATOR] ?? null) === true;
-        $method = (string) $request->method;
 
         if (!$moderator && !$this->withinRate($method, $player ?? $request->client)) {
-            $request->respond(new RPCResponse(self::fail('rate limited')));
-            return;
+            return self::fail('rate limited');
         }
 
         if (\in_array($method, self::CONSOLE, true) && !$moderator) {
-            $request->respond(new RPCResponse(self::fail('forbidden')));
-            return;
+            return self::fail('forbidden');
         }
 
-        $request->respond(new RPCResponse($this->guarded($method, fn(): array => match ($method) {
+        return $this->guarded($method, fn(): array => match ($method) {
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
             // Neither a lock nor the store: the client syncs its clock over several calls and keeps the fastest one
@@ -137,16 +183,7 @@ final readonly class RPCService implements ServiceInterface
                 'moderator' => $moderator,
             ],
             default => self::fail('unknown method'),
-        })));
-    }
-
-    /**
-     * @param non-empty-string $error
-     * @return array{ok: false, error: non-empty-string}
-     */
-    private static function fail(string $error): array
-    {
-        return ['ok' => false, 'error' => $error];
+        });
     }
 
     /**

@@ -16,6 +16,9 @@ final class SpyWorker implements WorkerInterface
     /** @var list<Payload> */
     public array $responses = [];
 
+    /** Makes {@see respond()} throw, as a dropped RoadRunner relay does. */
+    public bool $failing = false;
+
     /**
      * Decodes the last response into the protobuf DTO the request type answers with.
      *
@@ -35,6 +38,7 @@ final class SpyWorker implements WorkerInterface
     #[\Override]
     public function respond(Payload $payload): void
     {
+        $this->failing and throw new \RuntimeException('relay is closed');
         $this->responses[] = $payload;
     }
 

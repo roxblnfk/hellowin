@@ -55,7 +55,7 @@ final class RPCServiceTest
 
         Assert::same($response, ['ok' => false, 'error' => 'unknown element']);
         Assert::blank($ritual->broadcast->published);
-        Assert::blank($ritual->metrics->calls);
+        Assert::blank($this->gameMetrics($ritual));
     }
 
     public function closedBonfireIsLocked(): void
@@ -66,7 +66,7 @@ final class RPCServiceTest
 
         Assert::same($response, ['ok' => false, 'error' => 'locked']);
         Assert::blank($ritual->broadcast->published);
-        Assert::blank($ritual->metrics->calls);
+        Assert::blank($this->gameMetrics($ritual));
     }
 
     public function missingElementIsRejected(): void
@@ -1052,10 +1052,121 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter), ['ok' => true]);
     }
 
+    public function successfulCallIsCountedAsOkAndTimed(): void
+    {
+        $ritual = new RitualHarness();
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1']);
+
+        Assert::same($this->rpcCalls($ritual), [['click', 'ok']]);
+        $durations = $this->rpcDurations($ritual);
+        Assert::count($durations, 1);
+        Assert::same($durations[0][1], ['click']);
+        Assert::true($durations[0][0] >= 0.0 && $durations[0][0] < 1.0);
+    }
+
+    public function failedCallIsCountedByItsErrorCode(): void
+    {
+        $ritual = new RitualHarness();
+
+        $this->call($ritual, 'click', ['element' => 'ghost-42']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK]);
+
+        Assert::same($this->rpcCalls($ritual), [['click', 'unknown element'], ['register', 'anonymous']]);
+    }
+
+    public function unknownMethodIsCountedUnderOneLabel(): void
+    {
+        $ritual = new RitualHarness();
+
+        $this->call($ritual, 'explode', []);
+        $this->call($ritual, 'implode', []);
+
+        Assert::same($this->rpcCalls($ritual), [['unknown', 'unknown method'], ['unknown', 'unknown method']]);
+        Assert::same(\array_column($this->rpcDurations($ritual), 1), [['unknown'], ['unknown']]);
+    }
+
+    public function refusedCallsAreCounted(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['click' => new TokenBucket(1.0, 1), 'other' => new TokenBucket(1.0, 1)]);
+
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'reset', ['round' => 1], self::PLAYER, limiter: $limiter);
+        $this->call($ritual, 'whatever', [], self::PLAYER, limiter: $limiter);
+
+        Assert::same($this->rpcCalls($ritual), [
+            ['click', 'ok'],
+            ['click', 'rate limited'],
+            ['reset', 'forbidden'],
+            ['unknown', 'rate limited'],
+        ]);
+    }
+
+    public function callThatCouldNotAnswerIsCountedAsException(): void
+    {
+        $ritual = new RitualHarness();
+        $this->worker->failing = true;
+
+        try {
+            $this->call($ritual, 'time', []);
+        } catch (\RuntimeException) {
+        }
+
+        Assert::same($this->rpcCalls($ritual), [['time', 'exception']]);
+        Assert::count($this->rpcDurations($ritual), 1);
+    }
+
+    public function everyLabelledMethodIsHandled(): void
+    {
+        $constants = (new \ReflectionClass(RPCService::class))->getConstants();
+        $methods = [...$constants['PUBLIC'], ...$constants['CONSOLE']];
+        $ritual = new RitualHarness();
+
+        foreach ($methods as $method) {
+            $answer = $this->call($ritual, $method, [], self::PLAYER, moderator: true);
+            Assert::true(($answer['error'] ?? null) !== 'unknown method', $method);
+        }
+
+        Assert::same(\array_column($this->rpcCalls($ritual), 0), $methods);
+    }
+
     #[BeforeTest]
     public function createWorker(): void
     {
         $this->worker = new SpyWorker();
+    }
+
+    /**
+     * Metrics the call changed besides the RPC's own count and time.
+     */
+    private function gameMetrics(RitualHarness $ritual): array
+    {
+        return \array_filter(
+            $ritual->metrics->calls,
+            static fn(array $call): bool => !\in_array($call[1], [PlayMetrics::RPC_CALLS, PlayMetrics::RPC_DURATION], true),
+        );
+    }
+
+    /**
+     * @return list<list<string>> method and result of each counted call
+     */
+    private function rpcCalls(RitualHarness $ritual): array
+    {
+        $calls = \array_filter($ritual->metrics->calls, static fn(array $call): bool => $call[1] === PlayMetrics::RPC_CALLS);
+
+        return \array_values(\array_map(static fn(array $call): array => $call[3], $calls));
+    }
+
+    /**
+     * @return list<array{float, list<string>}> observed seconds and labels
+     */
+    private function rpcDurations(RitualHarness $ritual): array
+    {
+        $calls = \array_filter($ritual->metrics->calls, static fn(array $call): bool => $call[1] === PlayMetrics::RPC_DURATION);
+
+        return \array_values(\array_map(static fn(array $call): array => [$call[2], $call[3]], $calls));
     }
 
     /**

@@ -724,6 +724,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 | `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
+| `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл |
+| `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.

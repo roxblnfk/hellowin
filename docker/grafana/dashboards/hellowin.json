@@ -617,11 +617,71 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
+      "id": 39,
+      "type": "row",
+      "title": "RPC in PHP",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
+      "panels": []
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "RPC per second by method",
+      "description": "Every RPC that reached PHP through the Centrifugo proxy, refused ones included. Names the app does not know are counted as unknown.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 73 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (method) (rate(hellowin_rpc_calls_total[1m]))", "legendFormat": "{{method}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "RPC errors by result (per minute)",
+      "description": "RPC answered with an error, by its code: busy (a lock is taken), rate limited, forbidden, anonymous and so on; exception — PHP could not answer at all.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 73 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (result) (increase(hellowin_rpc_calls_total{result!=\"ok\"}[1m]))", "legendFormat": "{{result}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "RPC duration p95 by method",
+      "description": "Handling time inside PHP; the gap to the proxy latency above is the trip through Centrifugo and RoadRunner.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 73 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(hellowin_rpc_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
       "id": 15,
       "type": "row",
       "title": "RoadRunner",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 81 },
       "panels": []
     },
     {
@@ -630,7 +690,7 @@
       "title": "HTTP requests per second by status",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 82 },
       "targets": [
         { "refId": "A", "expr": "sum by (status) (rate(rr_http_request_total[1m]))", "legendFormat": "{{status}}" }
       ],
@@ -646,7 +706,7 @@
       "title": "HTTP latency p95",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 82 },
       "targets": [
         { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(rr_http_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" }
       ],
@@ -661,7 +721,7 @@
       "type": "timeseries",
       "title": "HTTP workers",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 82 },
       "targets": [
         { "refId": "A", "expr": "sum(rr_http_workers_ready)", "legendFormat": "ready" },
         { "refId": "B", "expr": "sum(rr_http_workers_working)", "legendFormat": "working" },
@@ -692,7 +752,7 @@
       "title": "Refused by the rate limits (per minute)",
       "description": "RPC calls refused by the per-player token buckets of the app, by group of methods, and PHP pages refused by the RoadRunner rate_limiter middleware with 429.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 81 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 90 },
       "targets": [
         { "refId": "A", "expr": "sum by (group) (increase(hellowin_rpc_rate_limited_total[1m]))", "legendFormat": "RPC {{group}}" },
         { "refId": "B", "expr": "sum(increase(rr_http_request_total{status=\"429\"}[1m])) or vector(0)", "legendFormat": "HTTP 429" }
