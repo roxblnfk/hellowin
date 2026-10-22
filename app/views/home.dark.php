@@ -95,6 +95,7 @@
         <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
             <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>
             <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
+            <p class="dawn-top__row dawn-top__head" data-dawn-head aria-hidden="true"><span class="dawn-top__place">место</span><span class="dawn-top__name">имя</span><span class="dawn-top__shots">очки</span></p>
             <ol class="dawn-top__list" id="dawn-top-list" data-dawn-list></ol>
             <p class="dawn-top__empty" data-dawn-empty>Сбивайте уток рапирой!</p>
             <p class="dawn-top__row dawn-top__row--mine" data-dawn-mine hidden></p>
@@ -116,6 +117,7 @@
             <span class="hud__item hud__status" data-status="disconnected" role="img" aria-label="Связь: нет" title="Связь: нет"></span>
             <span class="hud__item hud__runner" data-hud-runner hidden></span>
             <span class="hud__item hud__scene-name" data-hud-scene-name></span>
+            <span class="hud__item hud__pause" data-hud-pause role="status" hidden>Пауза</span>
             <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
             <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
             <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>

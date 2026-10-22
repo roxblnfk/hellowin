@@ -116,7 +116,10 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const toggle = el('button', { type: 'button', class: 'console__toggle', 'data-console-toggle': '', 'aria-expanded': 'true' });
     const toggleName = el('span', { class: 'console__name' }, '🦉 Пульт');
     const summary = el('span', { class: 'console__summary', 'data-console-summary': '' });
-    toggle.append(toggleName, summary);
+    // The pause of the progress shows on the folded console too, brighter than the summary.
+    const paused = el('span', { class: 'console__paused', 'data-console-paused': '' }, 'пауза');
+    paused.hidden = true;
+    toggle.append(toggleName, paused, summary);
     const body = el('div', { class: 'console__body', 'data-console-body': '' });
     toggle.setAttribute('aria-controls', body.id = 'console-body');
     panel.append(toggle, body);
@@ -138,6 +141,8 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const next = button(story, { 'data-action': 'scene-next' }, 'Следующая сцена');
     const step = button(story, { 'data-action': 'finale-step' }, 'Шаг финала');
     const reset = button(story, { 'data-action': 'reset' }, 'Заново');
+    // The pause of the progress (protocol.md, «Пауза прогресса»): the scene's task stands still, the flyers fly on.
+    const pause = button(story, { 'data-action': 'pause', 'aria-pressed': 'false', title: 'Задача сцены замирает: клики, кружки, удары и кости не засчитываются; летуны и зомби летают. Снимается и сбросом' }, 'Пауза прогресса: выкл');
     // The service numbers left the HUD for here: the round, the scene's number, the finale step.
     const storyInfo = el('span', { class: 'console__info', 'data-console-story': '' });
     story.append(storyInfo);
@@ -196,7 +201,6 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const runner = button(night, { 'data-action': 'roadrunner' }, 'Бегун');
     // A wave of the current set's flyers at once (protocol.md, `flyers.burst`): only where the set has any.
     const burst = button(night, { 'data-action': 'flyers-burst', title: 'Внеочередная волна летунов: больше игроков — больше летунов' }, 'Пуск летунов');
-    const pause = button(night, { 'data-action': 'pause', 'aria-pressed': 'false', title: 'Летуны и зомби не запускаются' }, 'Пауза');
 
     // The limits shown are the server's, from the model (`limits`): the client does not know the formula's numbers.
     // The players are its n, held for a few seconds — not `online`, which jumps with every walker.
@@ -255,8 +259,8 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
         return false;
     };
 
-    // `done` — «✓» on success, or a function of the reply for the note; `quiet` — an error code that says nothing.
-    async function send(b, method, data, { done = false, quiet = null } = {}) {
+    // `done` — «✓» on success, or a function of the reply for the note.
+    async function send(b, method, data, { done = false } = {}) {
         b.disabled = true;
         try {
             const reply = await call(method, data);
@@ -264,7 +268,6 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             else if (done) note(b, '✓', DONE_MS);
             return reply;
         } catch (error) {
-            if (quiet !== null && error?.message === quiet) return null;
             console.warn(`${method} failed`, error);
             note(b, ERRORS[error?.message] ?? 'Не вышло');
             return null;
@@ -327,12 +330,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     });
     witch.addEventListener('click', () => send(witch, 'flyer.special', { kind: 'witch' }, { done: true }));
     runner.addEventListener('click', () => send(runner, 'flyer.special', { kind: 'roadrunner' }, { done: true }));
-    // `busy` is the cooldown after the last wave — a double press, nothing to tell.
     const launched = (reply) => {
         const n = Number.isInteger(reply?.count) ? reply.count : 0;
         return `+${n} ${plural(n, 'летун', 'летуна', 'летунов')}`;
     };
-    burst.addEventListener('click', () => send(burst, 'flyers.burst', {}, { done: launched, quiet: 'busy' }));
+    burst.addEventListener('click', () => send(burst, 'flyers.burst', {}, { done: launched }));
     pause.addEventListener('click', () => model && send(pause, 'pause', { on: !model.paused }));
     kDown.addEventListener('click', () => model && send(kDown, 'thresholds', { k: clampK(model.k / K_STEP) }));
     kUp.addEventListener('click', () => model && send(kUp, 'thresholds', { k: clampK(model.k * K_STEP) }));
@@ -402,12 +404,13 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             bossGroup.hidden = !(final && current === BOSS_STEP && boss?.hp > 0);
             bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : '';
             // Each one where it works (docs/spec/frontend.md, «Пульт модератора»): the witch anywhere but the bar, the
-            // runner in the day — the rare flyer of HELLOWIN_FLYER_RARE — the wave where the set has flyers; the pause always.
+            // runner in the day — the rare flyer of HELLOWIN_FLYER_RARE — the wave where the set has flyers.
             witch.hidden = bar;
             runner.hidden = model.scene !== SCENE.day;
             burst.hidden = model.limits?.burst !== true;
             pause.setAttribute('aria-pressed', String(model.paused));
-            setLabel(pause, model.paused ? 'Пауза: вкл' : 'Пауза: выкл');
+            setLabel(pause, model.paused ? 'Пауза прогресса: вкл' : 'Пауза прогресса: выкл');
+            paused.hidden = !model.paused;
 
             const k = Number(model.k ?? 1);
             kValue.textContent = `×${formatK(k)}`;
@@ -420,7 +423,6 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             // In the final scene readiness waits for the moderator only at step 0 (the circle), step 1 (the 6-6-6) and
             // step 5 (the goals).
             if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === DICE_STEP || current === CURSED_STEP)) parts.push('готова');
-            if (model.paused) parts.push('пауза');
             if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');
         },

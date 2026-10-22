@@ -522,6 +522,47 @@ body:not([data-final]) .circle,
     color: var(--ok);
 }
 
+/*
+ * «Пауза» (client.js, paintHud): the progress is paused — two pixel bars before the word, in gold. After my action is
+ * refused with `paused` it lights up gold and blinks by steps for a moment (still under reduced motion).
+ */
+.hud__pause {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    color: var(--gold);
+}
+
+.hud__pause::before {
+    content: '';
+    width: 3px;
+    height: 10px;
+    background: currentColor;
+    box-shadow: 5px 0 0 currentColor;
+    margin-right: 5px;
+}
+
+.hud__pause[data-told] {
+    color: var(--outline);
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--soil-dark);
+    animation: pause-told 0.5s steps(1) 3;
+}
+
+@keyframes pause-told {
+    50% {
+        color: var(--gold);
+        background: var(--outline);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hud__pause[data-told] {
+        animation: none;
+    }
+}
+
 @container patch (max-width: 600px) {
     .hud {
         gap: 2px 14px;
@@ -655,6 +696,21 @@ body:not([data-final]) .circle,
 .console__toggle:focus-visible {
     outline: 2px dashed var(--gold);
     outline-offset: -4px;
+}
+
+/* «пауза» in the console's title (debug.js): the progress is paused — a gold pixel badge, seen folded too. */
+.console__paused {
+    padding: 0 5px;
+    color: var(--outline);
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--soil-dark);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+}
+
+.console__paused[hidden] {
+    display: none;
 }
 
 .console__summary {
@@ -1811,6 +1867,28 @@ body:not([data-final]) .circle,
     font-variant-numeric: tabular-nums;
 }
 
+/* The columns' heading «место · имя · очки» over the rows: small and dim, no plate; gone with the empty call and the strip. */
+.dawn-top__head {
+    padding-block: 0;
+    background: none;
+}
+
+/* Small letters in the cells only: the grid keeps the rows' em, so the columns line up. */
+.dawn-top__head > span {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.dawn-top__head,
+.dawn-top__head .dawn-top__place,
+.dawn-top__head .dawn-top__shots {
+    color: var(--sky-light);
+}
+
+.dawn-top:has(.dawn-top__empty:not([hidden])) .dawn-top__head {
+    display: none;
+}
+
 .dawn-top__row[data-dawn-me],
 .dawn-top__row[data-dawn-me] .dawn-top__place,
 .dawn-top__row[data-dawn-me] .dawn-top__shots {
@@ -1882,6 +1960,7 @@ body:not([data-final]) .circle,
 
 .dawn-top[data-compact] .dawn-top__title,
 .dawn-top[data-folded] .dawn-top__list,
+.dawn-top[data-folded] .dawn-top__head,
 .dawn-top[data-folded] .dawn-top__empty,
 .dawn-top[data-folded] .dawn-top__row--mine {
     display: none;

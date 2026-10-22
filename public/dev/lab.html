@@ -51,7 +51,7 @@
   Items in the final scene follow `finale_items`: the red flame at step 0, empty hands on steps 1–4, beer from step 5.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
-  step N (a fake `reveal` from step 4), ?paused=1 starts with the pause on, ?owl=<line id> or
+  step N (a fake `reveal` from step 4), ?paused=1 starts with the pause of the progress on, ?owl=<line id> or
   ?say=<text> has the owl speak at the start, ?specials=1 launches a witch, a road-runner and a zombie at the start
   (?zshot=ms shoots the zombie). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS (worms in the final scene, with
   a small wobble; the cursed world flies worms, bats and fireflies); ?worms=1 sends three worms over the lawn at the start
@@ -60,7 +60,7 @@
   start in any scene, seeded (?flyshot=ms has the first walker shoot the first one);
   zombies wander at finale steps 5–6 (protocol.md, «Бродячие зомби»): ?zmin=N at least (HELLOWIN_ZOMBIE_MIN, default
   5), all of them at once on entering step 5 and a new one at once after a death below it, then one every 4–9 s while
-  fewer than max(zmin, ?zper=N × walkers) live (HELLOWIN_ZOMBIE_PER_PLAYER, default 5); the pause stops that;
+  fewer than max(zmin, ?zper=N × walkers) live (HELLOWIN_ZOMBIE_PER_PLAYER, default 5);
   ?wander=N starts with N already wandering (zmin by default at steps 5–6), ?gone=ms sends
   them away at that moment (as the dawn and a reset do), ?wkill=ms shoots the first one; the scene is ready when every pumpkin is done, and
   waits for «Следующая сцена».
@@ -87,9 +87,13 @@
   console's «Лимиты» (`thresholds`), from 0.1 to 10, kept across a reset; ?k=N starts with it. The engine sends
   `limits {players, k, burst, limits}` with the current context's limits whenever they change, and catches up: a
   pumpkin with clicks enough for a lowered limit goes to its next stage, a bar goal at `drunk` makes the bar ready.
-  «Пуск летунов» (?mod=1, shown while the set has flyers — `burst`) is `flyers.burst`: min(15, ceil(5 + 0.2 × (n − 1)))
-  of the current set at once, `busy` within 3 s of the last wave. `online` is the number of walkers, in the snapshot
-  and in a `leaderboard` event every 5 s (with an empty `top`).
+  «Пуск летунов» (?mod=1, shown while the set has flyers — `burst`) is `flyers.burst`: ceil(5 + 0.2 × (n − 1)) of the
+  current set at once, no cooldown, no ceiling. `online` is the number of walkers, in the snapshot and in a
+  `leaderboard` event every 5 s (with an empty `top`).
+  The pause of the progress (protocol.md, «Пауза прогресса»; the console's «Пауза прогресса», ?paused=1): `click`,
+  `drink`, `strike` and `roll` answer `paused` (my refusal flashes «Пауза» in the HUD), no stage, goal or readiness
+  comes; flyers, wandering zombies and shots go on, a zombie shot then does not count for the cursed world's goal. Its
+  end catches up like a lowered limit; a reset and «В бар» lift it (no `pause` event: `reset` says so).
   Scenes are numbered with the bar first (docs/spec/scenario.md): 0 bar, 1 day, 2 sunset, 3 night, 4 the final scene.
   Bar (the default without ?scene): the ticker pours one mug at a time (?mugs=N at the start, default 5; ?pour=ms per
   mug, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
@@ -130,8 +134,8 @@
   behind the counter is `meep`; ?meep=ms sends one at that frozen moment (?meepflyer=1 — over the first runner flyer).
   ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice);
   ?owlrolls=N — the owl has rolled N times already (`dice.owl` of the snapshot, as after a reload).
-  The dawn's top (docs/spec/frontend.md, «Топ рассвета»): every hit of a player at step 7 counts and sends the whole board
-  (`dawn`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
+  The dawn's top (docs/spec/frontend.md, «Топ рассвета»): every hit of a player at step 7 adds the flyer's points and sends
+  the whole board (`dawn`, rows `{player, points}`), ordered like DawnService. ?finale=7&dawntop=N — N shooters of different aim (the bots first, then shooters off
   the field) fire at thicker flyers; ?dawnboard=15 — a board of 15 at once, me 12th (with ?me=1 — my row under the line);
   ?dawntop=8&freeze=ms — the overtakes of a seeded run at that moment; ?dawnopen=1 — a phone's table unfolded.
   An action stops the walk (docs/spec/frontend.md, «Действие останавливает ход»): ?walkstop=shoot|click|strike|drink|dice
@@ -177,6 +181,7 @@
     <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
         <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>
         <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
+        <p class="dawn-top__row dawn-top__head" data-dawn-head aria-hidden="true"><span class="dawn-top__place">место</span><span class="dawn-top__name">имя</span><span class="dawn-top__shots">очки</span></p>
         <ol class="dawn-top__list" id="dawn-top-list" data-dawn-list></ol>
         <p class="dawn-top__empty" data-dawn-empty>Сбивайте уток рапирой!</p>
         <p class="dawn-top__row dawn-top__row--mine" data-dawn-mine hidden></p>
@@ -205,6 +210,7 @@
         <span class="hud__item hud__status" data-status="connected" role="img" aria-label="Связь: есть" title="Связь: есть"></span>
         <span class="hud__item hud__runner" data-hud-runner hidden></span>
         <span class="hud__item hud__scene-name" data-hud-scene-name></span>
+        <span class="hud__item hud__pause" data-hud-pause role="status" hidden>Пауза</span>
         <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
         <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
         <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
@@ -293,8 +299,8 @@
         zombies: flat('goal') ?? [5, 4],
         boss: [45, 60],
     };
-    // HELLOWIN_FLYER_BURST_BASE, _PER_PLAYER, _MAX, _COOLDOWN_MS: the moderator's wave of flyers, without k.
-    const BURST = { base: 5, perPlayer: 0.2, max: 15, cooldownMs: 3000 };
+    // HELLOWIN_FLYER_BURST_BASE, _PER_PLAYER: the moderator's wave of flyers, without k, no cooldown or ceiling.
+    const BURST = { base: 5, perPlayer: 0.2 };
     // The figures on the floor have to hold this long before the limits follow them (the server's debounce).
     const PLAYERS_HOLD_MS = 3000;
 
@@ -632,6 +638,7 @@
         // A locked bonfire or circle: not counted, not broadcast (protocol.md, `locked`).
         if (isBonfire && !(engine.scene < engine.sceneStages && pumpkinsDone() && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
         if (isCircle && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? 0) === 0 && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
+        if (engine.paused) return { ok: false, error: 'paused' };
         const threshold = own ? p.threshold : engine.threshold;
         const max = own ? p.stageMax : engine.stageMax;
         // Pumpkins and the bonfire stop in the final scene; the circle is drawn only there.
@@ -646,6 +653,8 @@
 
     // The element's next stage once its clicks reach the threshold — after a click, or when the limit drops below them.
     function stageUp(p, by = null) {
+        // The pause of the progress holds the stages; its end catches up (enginePause).
+        if (engine.paused) return;
         const id = p.id;
         const isBonfire = p.type === 'bonfire';
         const isCircle = p.type === 'circle';
@@ -681,6 +690,8 @@
 
     function engineReset({ again = false } = {}) {
         engine.round++;
+        // A reset lifts the pause of the progress; the `reset` event says so, no `pause` comes.
+        engine.paused = false;
         engine.scene = 0;
         engine.stageMax = SCENE_STAGE_MAX[0];
         engine.ready = false;
@@ -842,9 +853,17 @@
         if (engine.paused !== on) {
             engine.paused = on;
             deliver({ type: 'pause', on });
-            if (!on) wanderTopUp();
+            if (!on) catchUp();
         }
         return { ok: true, on };
+    }
+
+    // The end of the pause of the progress: what the clicks and mugs reached meanwhile comes now, like a lowered limit —
+    // the stages, the bar's goal, the cursed world's goals.
+    function catchUp() {
+        if (engine.scene === 0 && engine.bar.drunk >= engine.bar.target) barReady();
+        cursedUpdate();
+        if (!engine.ready) engine.elements.forEach((p) => stageUp(p));
     }
 
     // Like the server: `limits` only when k changes something.
@@ -888,7 +907,7 @@
             engine.bar.target = target;
             if (!silent && engine.scene === 0) {
                 drinksEvent();
-                if (engine.bar.drunk >= engine.bar.target) barReady();
+                if (engine.bar.drunk >= engine.bar.target && !engine.paused) barReady();
             }
         }
         if (engine.cursed) {
@@ -933,13 +952,11 @@
         later(limitsTick, 1000);
     }
 
-    // `flyers.burst`: a wave of the current set at once, without the rare one; the pause does not hold it.
-    let burstAt = -Infinity;
+    // `flyers.burst`: a wave of the current set at once, without the rare one; no cooldown, no ceiling, the pause does
+    // not hold it.
     function engineBurst() {
         if (!kindsNow().length) throw new Error('no flyers');
-        if (serverTime() - burstAt < BURST.cooldownMs) throw new Error('busy');
-        burstAt = serverTime();
-        const count = Math.min(BURST.max, Math.ceil(BURST.base + BURST.perPlayer * (fieldCount() - 1) - 1e-9));
+        const count = Math.ceil(BURST.base + BURST.perPlayer * (fieldCount() - 1) - 1e-9);
         for (let i = 0; i < count; i++) engineFlyer({ kind: pick(kindsNow()) });
         return { ok: true, count };
     }
@@ -1024,13 +1041,13 @@
 
     // The wandering zombies of finale steps 5–6 (protocol.md, «Бродячие зомби»): HELLOWIN_ZOMBIE_MIN (?zmin, 5) at
     // least, topped up at once after a death; one more every HELLOWIN_ZOMBIE_INTERVAL (4–9 s) while fewer than
-    // max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER (?zper, 5) × walkers) live; the pause stops both, its end tops up; the dawn
+    // max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER (?zper, 5) × walkers) live, the pause of the progress or not; the dawn
     // and a reset send them away with `gone`. Seeded under ?freeze, so a frozen screenshot shows the same crowd.
     const ZOMBIE_MIN = Math.max(0, Number.parseInt(params.get('zmin') ?? '5', 10) || 0);
     const ZOMBIE_PER = Math.max(0, Number.parseInt(params.get('zper') ?? '5', 10) || 0);
     let wanderRandom = simulated ? seeded(6150) : Math.random;
     const wandering = () => [...live].filter(([, f]) => f.wander && !f.shot);
-    const wanderOn = () => engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step) && !engine.paused;
+    const wanderOn = () => engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
 
     function engineWanderer(launchedAt = serverTime()) {
         let from;
@@ -1162,10 +1179,10 @@
         stats.shot++;
         const by = playerOf(player);
         deliver({ type: 'shot', flyer: id, points: f.points, ...(by ? { player: by } : {}) });
-        if (by && dawnOn()) dawnHit(by);
+        if (by && dawnOn()) dawnHit(by, f.points);
         if (f.kind === 'witch' && by) deliver({ type: 'owl', line: 'witch-down', params: { player: by } });
-        // A zombie worker slain from step 5 on counts for the cursed world's goal.
-        if (f.kind === 'zombie' && engine.cursed) {
+        // A zombie worker slain from step 5 on counts for the cursed world's goal — not while the progress is paused.
+        if (f.kind === 'zombie' && engine.cursed && !engine.paused) {
             stats.slain++;
             engine.cursed.slain++;
             cursedUpdate();
@@ -1392,6 +1409,7 @@
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
         if (!w.clinked && engine.walkers.length > 1) return { ok: false, error: 'not clinked' };
         if (drinkBusy(id) || serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
+        if (engine.paused) return { ok: false, error: 'paused' };
         w.item = null;
         w.clinked = false;
         drankAt.set(id, serverTime());
@@ -1441,7 +1459,7 @@
         Object.assign(engine.cursed, cursedTargets());
         deliver({ type: 'cursed', ...engine.cursed });
         const c = engine.cursed;
-        if (engine.finale?.step !== CURSED_STEP || cursedReadySaid || c.drunk < c.drinksTarget || c.slain < c.zombiesTarget) return;
+        if (engine.paused || engine.finale?.step !== CURSED_STEP || cursedReadySaid || c.drunk < c.drinksTarget || c.slain < c.zombiesTarget) return;
         cursedReadySaid = true;
         engine.ready = true;
         deliver({ type: 'ready', scene: engine.scene });
@@ -1538,6 +1556,7 @@
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (!engine.boss || engine.boss.hp <= 0 || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
         if (w.item !== 'rapier') return { ok: false, error: 'no rapier' };
+        if (engine.paused) return { ok: false, error: 'paused' };
         engine.boss.hp--;
         stats.damage++;
         deliver({ type: 'strike', player: playerOf(w), hp: engine.boss.hp });
@@ -1634,6 +1653,7 @@
         if (last > 0 && attempt === last) return { ok: true, attempt, dice: diceState.thrown.get(`${id}:${last}`) };
         if (!engine.dice.on) return { ok: false, error: 'not now' };
         if (attempt !== last + 1) return { ok: false, error: 'bad attempt', last };
+        if (engine.paused) return { ok: false, error: 'paused' };
         if (serverTime() - (diceState.at.get(id) ?? -1e12) < DICE_COOLDOWN_MS) return { ok: false, error: 'busy' };
         let faces = facesOf(`${engine.round}:${id}:${attempt}`);
         if (id === ME && forcedRoll) {
@@ -1677,22 +1697,22 @@
         later(diceBots, 100);
     }
 
-    // The dawn's top like DawnService: a player's hit at step 7 counts, and the whole board goes out after the `shot` —
-    // most hits first, of equal ones the earlier, then the id.
+    // The dawn's top like DawnService: a player's hit at step 7 adds the flyer's points, and the whole board goes out after
+    // the `shot` — most points first, of equal ones the earlier, then the id.
     const dawnScores = new Map();
     const dawnOn = () => engine.scene >= engine.sceneStages && engine.finale?.step === LAST_STEP;
     function dawnBoard() {
         return [...dawnScores]
-            .sort(([a, x], [b, y]) => y.shots - x.shots || x.at - y.at || (a < b ? -1 : a > b ? 1 : 0))
-            .map(([id, s]) => ({ player: { id, name: s.name }, shots: s.shots }));
+            .sort(([a, x], [b, y]) => y.points - x.points || x.at - y.at || (a < b ? -1 : a > b ? 1 : 0))
+            .map(([id, s]) => ({ player: { id, name: s.name }, points: s.points }));
     }
-    function dawnHit(player) {
-        dawnScores.set(player.id, { shots: (dawnScores.get(player.id)?.shots ?? 0) + 1, at: serverTime(), name: player.name ?? null });
+    function dawnHit(player, points) {
+        dawnScores.set(player.id, { points: (dawnScores.get(player.id)?.points ?? 0) + points, at: serverTime(), name: player.name ?? null });
         engine.dawn = { board: dawnBoard() };
         deliver({ type: 'dawn', board: structuredClone(engine.dawn.board) });
     }
     const DAWN_NAMES = ['Ann', 'Lilith', 'Vlad', 'Пугало', 'Призрак Оля', 'Gremlin', 'Банши', 'Nosferatu', 'Скелетон', 'Moth', 'Леший', 'Wisp'];
-    // ?dawnboard=N: a board of N shooters at the start of the dawn, me 12th with 4 hits (or last of a shorter one).
+    // ?dawnboard=N: a board of N shooters at the start of the dawn, me 12th with 4 points (or last of a shorter one).
     function dawnSeed() {
         dawnScores.clear();
         if (!dawnOn()) return;
@@ -1701,8 +1721,8 @@
         const mine = Math.min(11, n - 1);
         for (let i = 0, o = 0; i < n; i++) {
             const player = i === mine ? { id: ME, name: 'Я' } : others[o++];
-            const shots = i === mine ? 4 : Math.max(1, 21 - Math.round(i * 1.6));
-            dawnScores.set(player.id, { shots, at: serverTime() - 60000 + i * 1000, name: player.name });
+            const points = i === mine ? 4 : Math.max(1, 21 - Math.round(i * 1.6));
+            dawnScores.set(player.id, { points, at: serverTime() - 60000 + i * 1000, name: player.name });
         }
         engine.dawn = { board: dawnBoard() };
     }
@@ -1716,7 +1736,7 @@
         return [...field, ...off].slice(0, dawnTop).map((player, i) => ({ player, aim: 0.3 + 0.7 * (((i * 7) % dawnTop) + 1) / dawnTop }));
     }
     function dawnBots() {
-        if (dawnTop && dawnOn() && !engine.paused) {
+        if (dawnTop && dawnOn()) {
             const open = [...live].filter(([, f]) => !f.shot && f.kind !== 'roadrunner' && serverTime() < f.until - 600);
             if (open.length < 3) engineFlyer();
             const shooters = dawnShooters();
@@ -2119,10 +2139,10 @@
         const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
         return (list.length ? list : open)[Math.floor(Math.random() * (list.length || open.length))].id;
     };
-    // Your mug RPCs like app.js: none while the mug is busy, a refusal warned unless it is `busy`.
+    // Your mug RPCs like app.js: none while the mug is busy, a refusal warned unless it is `busy` or said (`paused`).
     const mugCall = (method, call) => client.mugRpc(method, () => {
         const reply = call();
-        if (!reply.ok && reply.error !== 'busy') console.warn(`${method} rejected`, reply.error);
+        if (!reply.ok && reply.error !== 'busy' && !client.refused(reply.error)) console.warn(`${method} rejected`, reply.error);
         return reply;
     });
     const labClink = (target) => mugCall('clink', () => engineClink(ME, target));
@@ -2132,7 +2152,7 @@
         if (!el) return;
         if (client.beersPumpkin(el.dataset.element)) mugCall('beer', () => engineBeer(ME, { pumpkin: el.dataset.element }));
         else if (client.clinksPumpkin(el.dataset.element)) labClink({ pumpkin: el.dataset.element });
-        else if (client.clickable(el.dataset.element)) engineClick(el.dataset.element, myClicker());
+        else if (client.clickable(el.dataset.element)) warned(engineClick(el.dataset.element, myClicker()), 'click');
     });
     root.querySelector('[data-lab-click]').addEventListener('click', () => engineClick(randomId(), randomClicker()));
     root.querySelector('[data-lab-duck]').addEventListener('click', () => engineFlyer());
@@ -2149,7 +2169,7 @@
     bindChat(root, client, async (text) => engineSay(ME, { text }));
     // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
     const warned = (reply, method) => {
-        if (!reply.ok) console.warn(`${method} rejected`, reply.error);
+        if (!reply.ok && !client.refused(reply.error)) console.warn(`${method} rejected`, reply.error);
         return reply;
     };
     bindBar(root, client, {
@@ -2173,9 +2193,9 @@
             if (mate) engineClinkAuto(side.id, { walker: mate.id });
         }
     });
-    // A flyer every 3–8 s, like the server's launcher; none while paused.
+    // A flyer every 3–8 s, like the server's launcher; the pause of the progress does not hold them.
     const launchLater = () => setTimeout(() => {
-        if (!engine.paused) engineFlyer();
+        engineFlyer();
         launchLater();
     }, (engine.finale?.step ?? -1) >= LAST_STEP ? 800 + Math.random() * 1600 : 3000 + Math.random() * 5000);
     // ?gone=ms: the wandering zombies sent away at that moment, as at the dawn.
@@ -2255,7 +2275,6 @@
         chatLog.splice(0, chatLog.length, ...structuredClone(chatSeed));
         Object.assign(limitBonus, initialBonus);
         toldLimits = JSON.stringify(engine.limits);
-        burstAt = -Infinity;
         flyerSeq = 0;
         deliveredBy = 0;
         simTime = 0;

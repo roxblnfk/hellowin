@@ -30,6 +30,9 @@ const OWL_TRY = 'Дайте я попробую!';
 // the scene's drink pose) and a pumpkin's hand-over when its `take` carries no `until` (HELLOWIN_BEER_HANDOVER_MS).
 const DRINK_MS = 1200;
 const HANDOVER_MS = 900;
+// A refusal `paused` (protocol.md, «Пауза прогресса») flashes «Пауза» in the HUD this long, over my walker too.
+const PAUSE_TOLD_MS = 2500;
+const PAUSE_TEXT = 'Пауза';
 // The HUD's connection lamp: its words go to its title and aria-label.
 export const STATUS = { connecting: 'Связь: переподключение…', connected: 'Связь: есть', disconnected: 'Связь: нет' };
 
@@ -234,6 +237,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const step = () => (model.scene >= model.sceneStages ? (summon ? 0 : model.finale?.step ?? null) : null);
     // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
     let wordClosed = false;
+    // Until when (our clock) the HUD's «Пауза» flashes after a refusal `paused`; it may come before the `pause` event.
+    let pauseToldUntil = 0;
     // My dice (docs/spec/frontend.md, «Кости»): the attempts of RPC `roll`, my roll drawn big, the attempt whose event
     // has come (a reply without one is a repeat).
     const roller = createRoller((attempt) => (roll ? roll(attempt) : Promise.resolve(null)));
@@ -317,6 +322,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         // scene's readiness are the moderator's (the console).
         const progress = hud('progress');
         if (progress) progress.hidden = isBar(model.scene) || model.scene >= model.sceneStages;
+        // «Пауза» stands while the progress is paused, and flashes for a while after my action is refused with `paused`.
+        const pause = hud('pause');
+        if (pause) {
+            const told = now() < pauseToldUntil;
+            pause.hidden = !(model.paused || told);
+            pause.toggleAttribute('data-told', told);
+        }
     }
 
     function sceneName() {
@@ -983,9 +995,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             root.dataset.online = model.online;
         },
 
-        // The pause and the multiplier are about the room, not the story: they survive a reset (protocol.md, «Снимок»).
+        // The multiplier is about the room, not the story: it survives a reset; the pause of the progress does not, the
+        // event itself lifts it (protocol.md, «Пауза прогресса»: no `pause {on: false}` comes).
         reset(event) {
             model.round = event.round;
+            model.paused = false;
             // A reset leads into the bar: no pumpkin stages, ready again only once the hall has drunk its goal.
             model.scene = SCENE.bar;
             model.finale = null;
@@ -1079,6 +1093,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     function strikes() {
         return step() === RAPIER_STEP && (model.boss?.hp ?? 0) > 0 && canWalk() && myWalker().item === 'rapier';
     }
+    /**
+     * A refusal of my action, said on the page where it has words: `paused` (a click, `drink`, `strike`, `roll` while
+     * the progress is paused) — «Пауза» flashing in the HUD and over my walker. Returns whether it was said; anything
+     * else is the caller's (`console.warn`).
+     */
+    function refused(error) {
+        if (error !== 'paused') return false;
+        pauseToldUntil = now() + PAUSE_TOLD_MS;
+        paintHud();
+        later(paintHud, PAUSE_TOLD_MS + 20);
+        if (myWalker()) scene?.hint?.(model.me, PAUSE_TEXT);
+        return true;
+    }
     /** Whether the word form is open to me: step 6, my walker on the field, no rapier yet, not a zombie. */
     function asksWord() {
         return step() === RAPIER_STEP && canWalk() && myWalker().item !== 'rapier';
@@ -1097,6 +1124,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             return !isBar(model.scene) && !button(id)?.hasAttribute('data-locked');
         },
         resync,
+
+        refused,
 
         /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
         setMe(id) {
@@ -1175,7 +1204,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 console.warn('roll rpc failed', error);
             }
             paintDice();
-            if (reply?.ok === false) console.warn('roll rejected', reply.error);
+            if (reply?.ok === false && !refused(reply.error)) console.warn('roll rejected', reply.error);
             const dice = reply?.ok ? facesOf(reply.dice) : null;
             if (dice && seenAttempt < reply.attempt) {
                 setTimeout(() => {

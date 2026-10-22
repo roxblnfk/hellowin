@@ -249,7 +249,7 @@
                 <li><code>threshold</code> — порог тыквы, лимит <code>pumpkin</code> (<a href="#limits">«Лимиты»</a>); <code>limits</code> — лимиты текущей сцены с числом игроков <code>players</code> и множителем <code>k</code>;</li>
                 <li><code>elements</code> — тыквы: <code>id</code>, <code>type</code>, <code>x</code>, <code>y</code>, <code>size</code>, <code>stage</code> и <code>clicks</code> с момента перехода в текущую стадию; <code>bushes</code> — кусты, из которых взлетают летуны;</li>
                 <li><code>walkers</code> — фигурки игроков на поле с их путями;</li>
-                <li>сюжет: <code>ready</code> — сцена готова и ждёт модератора, <code>finale</code> — шаг финала (с шага разоблачения — и <code>reveal</code>), <code>paused</code> — пауза пульта;</li>
+                <li>сюжет: <code>ready</code> — сцена готова и ждёт модератора, <code>finale</code> — шаг финала (с шага разоблачения — и <code>reveal</code>), <code>paused</code> — пауза прогресса;</li>
                 <li><code>now</code> — серверное время в мс: по нему клиент считает смещение своих часов для летунов и фигурок.</li>
             </ul>
             <p>
@@ -608,9 +608,8 @@
             </p>
             <p>
                 Тем же числом игроков растёт волна летунов, которую модератор запускает кнопкой «Пуск летунов» (RPC
-                <code>flyers.burst</code>): <code>min(HELLOWIN_FLYER_BURST_MAX, ⌈HELLOWIN_FLYER_BURST_BASE +
-                HELLOWIN_FLYER_BURST_PER_PLAYER × (n − 1)⌉)</code> летунов текущего набора разом, не чаще
-                <code>HELLOWIN_FLYER_BURST_COOLDOWN_MS</code>.
+                <code>flyers.burst</code>): <code>⌈HELLOWIN_FLYER_BURST_BASE + HELLOWIN_FLYER_BURST_PER_PLAYER ×
+                (n − 1)⌉</code> летунов текущего набора разом. Ни кулдауна, ни потолка: сколько раз нажал — столько волн.
             </p>
 
             <h3>Зачем лок на тыкву</h3>
@@ -710,7 +709,7 @@
                     <tr><td>переход тыквы, <code>advancePumpkin()</code></td><td><code>pumpkin:{id}</code></td><td><code>round</code> текущий и <code>stage == toStage − 1</code></td></tr>
                     <tr><td>готовность сцены, <code>markReady()</code></td><td><code>scene</code></td><td><code>round</code> и <code>scene</code> текущие, готовность этой сцены ещё не отмечена</td></tr>
                     <tr><td>переход сцены, <code>advanceScene()</code></td><td><code>scene</code></td><td><code>round</code> текущий и <code>scene == toScene − 1</code></td></tr>
-                    <tr><td>пульт: шаг финала, пауза, зомби, <code>updateStory()</code></td><td><code>scene</code></td><td>сюжет до и после: событие — только если изменился</td></tr>
+                    <tr><td>пульт: шаг финала, пауза прогресса, <code>updateStory()</code></td><td><code>scene</code></td><td>сюжет до и после: событие — только если изменился</td></tr>
                     <tr><td>сброс, <code>reset()</code></td><td><code>scene</code> и все <code>pumpkin:{id}</code></td><td><code>round == fromRound</code></td></tr>
                     <tr><td>статистика игрока, <code>PlayerStore</code></td><td><code>player:{id}</code></td><td>ничего: счётчики игрока + 1</td></tr>
                     <tr><td>выстрел, <code>FlyerStore::shoot()</code></td><td><code>flyer:{id}</code></td><td>ключ летуна ещё есть и полёт не кончился — тогда удалить</td></tr>
@@ -765,7 +764,8 @@
             <h3>Раунд и сброс</h3>
             <p>
                 Сброс начинает ритуал заново: сцена 0 (бар), у всех тыкв <code>stage 0</code> и <code>clicks 0</code>,
-                <code>round + 1</code>, сюжет заново (кроме паузы) и событие <code>reset</code> всем. Делает это
+                <code>round + 1</code>, сюжет заново (пауза прогресса снимается, множитель <code>k</code> остаётся) и событие
+                <code>reset</code> всем. Делает это
                 <code>ResetService::reset(?int $fromRound)</code>, его вызывают кнопка «Заново» на пульте модератора
                 (RPC <code>reset {round}</code> — раунд, который модератор видит) и консольная команда
                 <code>hellowin:reset [--round=N]</code>. Сервис берёт лок
@@ -1292,7 +1292,12 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 <code>finale.step</code>, <code>owl.say</code>, <code>flyer.special</code>, <code>flyers.burst</code>, <code>pause</code>,
                 <code>thresholds</code>, <code>reset</code>) без неё отвечает <code>forbidden</code> ещё до разбора данных.
                 <code>thresholds {k}</code> умножает все лимиты на <code>k</code> (<a href="#limits">«Лимиты»</a>) — подогнать ритуал под зал на ходу;
-                <code>k</code> лежит в сюжете и, как пауза, переживает сброс.
+                <code>k</code> лежит в сюжете и переживает сброс.
+                <code>pause {on}</code> — пауза прогресса: задача сцены замирает, а зал живёт дальше. RPC, которые двигают
+                задачу (<code>click</code> по тыквам, костру и кругу, <code>drink</code>, <code>strike</code>,
+                <code>roll</code>), отвечают <code>paused</code> до изменения состояния, готовность сцены не наступает;
+                летунов, зомби и выстрелы пауза не трогает. Снятая пауза догоняет своё тем же пересчётом, что и
+                снизившийся лимит, а сброс снимает её сам.
                 Роль — не в <code>user</code>: модератор может быть и игроком со своим секретом, а <code>user</code> — это
                 публичный id игрока в событиях и presence. Каждый метод пульта безопасно повторить:
                 <code>StoryService</code> меняет сюжет <code>hellowin:story</code> под локом <code>scene</code>, сравнивает
@@ -1482,8 +1487,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 <code>flyer</code> с точками, глубиной, очками и временем <code>launchedAt</code> / <code>expiresAt</code>,
                 а в KV — ключ <code>hellowin:flyer:{id}</code> с TTL и индекс летящих. Зомби проклятого мира — те же
                 летуны (<code>kind: zombie</code>, свой интервал <code>HELLOWIN_ZOMBIE_INTERVAL</code>), только идут по
-                лужайке от края грядки наружу, — поэтому выстрел, очки и метрики у них общие. На паузе модератора тикер
-                никого не запускает.
+                лужайке от края грядки наружу, — поэтому выстрел, очки и метрики у них общие. Пауза прогресса тикер не
+                останавливает: летуны и зомби идут, попадание засчитывается игроку, только подбитый на паузе зомби не
+                идёт в цель проклятого мира.
             </p>
             <p>
                 Клик по летуну — RPC <code>shoot {flyer}</code>. Под локом <code>flyer:{id}</code>: ключ ещё есть, по
