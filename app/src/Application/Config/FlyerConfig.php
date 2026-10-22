@@ -41,8 +41,6 @@ final class FlyerConfig extends InjectableConfig
         'zombie_points' => 2,
         'burst_base' => 5,
         'burst_per_player' => 0.2,
-        'burst_max' => 15,
-        'burst_cooldown_ms' => 3000,
     ];
 
     /**
@@ -265,21 +263,13 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * The moderator's burst of flyers: how many for the room, at most how many, and the pause between two bursts.
+     * The moderator's burst of flyers: how many for the room.
      */
     public function getBurst(): Burst
     {
-        /** @var mixed $cooldown */
-        $cooldown = $this->config['burst_cooldown_ms'] ?? null;
-        \is_string($cooldown) && \preg_match('/^\s*\d+\s*$/', $cooldown) === 1 and $cooldown = (int) $cooldown;
-        \is_int($cooldown) && $cooldown >= 0
-            or throw self::invalid('burst_cooldown_ms', 'HELLOWIN_FLYER_BURST_COOLDOWN_MS', 'a non-negative integer', $cooldown);
-
         return new Burst(
             self::number($this->config['burst_base'] ?? null, 'burst_base', 'HELLOWIN_FLYER_BURST_BASE', true),
             self::number($this->config['burst_per_player'] ?? null, 'burst_per_player', 'HELLOWIN_FLYER_BURST_PER_PLAYER', false),
-            self::positiveInt($this->config['burst_max'] ?? null, 'burst_max', 'HELLOWIN_FLYER_BURST_MAX'),
-            $cooldown,
         );
     }
 

@@ -112,14 +112,14 @@ final class HellowinConfigTest extends TestCase
     #[Env('HELLOWIN_PUMPKIN_BASE', '3')]
     #[Env('HELLOWIN_PUMPKIN_PER_PLAYER', '0.5')]
     #[Env('HELLOWIN_BOSS_HP_PER_PLAYER', '10')]
-    #[Env('HELLOWIN_FLYER_BURST_MAX', '7')]
+    #[Env('HELLOWIN_FLYER_BURST_BASE', '7')]
     public function limitsComeFromEnv(): void
     {
         $config = $this->getContainer()->get(HellowinConfig::class);
 
         Assert::equals($config->getLimit(HellowinConfig::LIMIT_PUMPKIN), new Limit(3, 0.5));
         Assert::equals($config->getLimit(HellowinConfig::LIMIT_BOSS), new Limit(45, 10));
-        Assert::same($this->getContainer()->get(FlyerConfig::class)->getBurst()->max, 7);
+        Assert::same($this->getContainer()->get(FlyerConfig::class)->getBurst()->base, 7.0);
     }
 
     #[Env('HELLOWIN_SCENE_STAGE_MAX', '2,3')]

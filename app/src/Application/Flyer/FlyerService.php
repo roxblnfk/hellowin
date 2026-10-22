@@ -189,7 +189,7 @@ final readonly class FlyerService
      *
      * @param int $now Unix time in milliseconds.
      * @return positive-int Flyers launched.
-     * @throws StoryRefusedException `no flyers` — the set is empty, `busy` — the last burst is too recent.
+     * @throws StoryRefusedException `no flyers` — the set is empty.
      * @throws LockBusyException
      */
     public function burst(int $now): int
@@ -198,7 +198,6 @@ final readonly class FlyerService
         $ritual = $this->ritual->snapshot();
         $story = $ritual->story;
         $this->burstable($ritual->scene, $story) or throw new StoryRefusedException('no flyers');
-        $this->store->claimBurst($now, $burst->cooldown) or throw new StoryRefusedException('busy');
 
         $count = $burst->count(\count($this->walkers?->all() ?? []));
         for ($i = 0; $i < $count; ++$i) {

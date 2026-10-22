@@ -58,9 +58,7 @@ return [
     'zombie_points' => env('HELLOWIN_ZOMBIE_POINTS', 2),
 
     // The moderator's burst (`flyers.burst`): `burst_base` flyers of the current set for one figure on the floor,
-    // `burst_per_player` more for every other one, `burst_max` at most, a new burst not sooner than `burst_cooldown_ms`
+    // `burst_per_player` more for every other one
     'burst_base' => env('HELLOWIN_FLYER_BURST_BASE', 5),
     'burst_per_player' => env('HELLOWIN_FLYER_BURST_PER_PLAYER', 0.2),
-    'burst_max' => env('HELLOWIN_FLYER_BURST_MAX', 15),
-    'burst_cooldown_ms' => env('HELLOWIN_FLYER_BURST_COOLDOWN_MS', 3000),
 ];

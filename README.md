@@ -82,9 +82,7 @@
 | `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены начиная с бара (пусто — нет) |
 | `HELLOWIN_FLYER_RARE_CHANCE` | `0.08` | вероятность, что запуск — редкий летун сцены |
 | `HELLOWIN_FLYER_RARE_POINTS` | `10` | очки за редкого летуна (птица-бегун — всегда 0, её не сбить) |
-| `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | `5`, `0.2` | волна летунов по кнопке модератора: `min(MAX, ceil(BASE + PER_PLAYER × (n − 1)))` летунов текущего набора |
-| `HELLOWIN_FLYER_BURST_MAX` | `15` | летунов в волне, не больше |
-| `HELLOWIN_FLYER_BURST_COOLDOWN_MS` | `3000` | пауза между волнами, мс (`busy`) |
+| `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | `5`, `0.2` | волна летунов по кнопке модератора: `ceil(BASE + PER_PLAYER × (n − 1))` летунов текущего набора, на каждое нажатие |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | пауза, с которой в проклятом мире встают новые бродячие зомби сверх минимума, мс: диапазон или число |
 | `HELLOWIN_ZOMBIE_MIN` | `5` | сколько бродячих зомби в проклятом мире живы всегда: убили — сразу встаёт новый |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | `5` | до скольких зомби на игрока на поле толпа растёт раз в `HELLOWIN_ZOMBIE_INTERVAL` (не меньше `HELLOWIN_ZOMBIE_MIN`) |

@@ -52,9 +52,10 @@ final class LimitTest
 
     #[DataSet([1, 5], 'one figure')]
     #[DataSet([11, 7], 'a fifth more for each other one')]
-    #[DataSet([100, 15], 'the most')]
-    public function burstGrowsWithTheRoomUpToItsMost(int $players, int $expected): void
+    #[DataSet([0, 5], 'none counts as one')]
+    #[DataSet([100, 25], 'a full room, no cap')]
+    public function burstGrowsWithTheRoom(int $players, int $expected): void
     {
-        Assert::same((new Burst(5, 0.2, 15, 3000))->count($players), $expected);
+        Assert::same((new Burst(5, 0.2))->count($players), $expected);
     }
 }

@@ -78,7 +78,6 @@ final class RitualHarness
     public const DICE_SECRET = 'test-dice-secret';
     public const CHAT_MAX = 12;
     public const CHAT_HISTORY = 3;
-    public const BURST_COOLDOWN = 3000;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -233,7 +232,7 @@ final class RitualHarness
             new ZombieCrowd($zombieMin, $zombiesPerPlayer),
             $this->walkerStore,
             $this->stops,
-            new Burst(2, 0.5, 4, self::BURST_COOLDOWN),
+            new Burst(2, 0.5),
         );
         $this->limitsStore = new LimitsStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);

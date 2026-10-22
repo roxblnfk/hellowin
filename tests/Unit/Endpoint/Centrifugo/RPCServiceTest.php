@@ -680,26 +680,30 @@ final class RPCServiceTest
         Assert::blank($ritual->broadcast->published);
     }
 
-    public function burstLaunchesFlyersOfTheSetOnceInACooldown(): void
+    public function burstLaunchesFlyersOfTheSetOnEveryPress(): void
     {
         $ritual = new RitualHarness();
         $ritual->story->pause(true);
         $ritual->broadcast->published = [];
 
-        // One figure on the floor: the base of 2; the pause does not hold a burst
+        // One figure on the floor: the base of 2; the pause does not hold a burst, nor does the burst just launched
         Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 2]);
-        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => false, 'error' => 'busy']);
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 2]);
 
         $flyers = $ritual->broadcast->ofType('flyer');
-        Assert::same(\array_column($flyers, 'kind'), ['duck', 'duck']);
+        Assert::same(\array_column($flyers, 'kind'), ['duck', 'duck', 'duck', 'duck']);
         Assert::same(\array_unique(\array_column($flyers, 'launchedAt')), [$ritual->clock->now]);
+    }
 
-        // Every other figure adds half a flyer, up to the most of 4
-        foreach (['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'] as $id) {
-            $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], $id);
+    public function burstGrowsWithTheRoomWithoutACap(): void
+    {
+        $ritual = new RitualHarness();
+
+        // Every other figure adds half a flyer: nine figures, 2 + 0.5 × 8
+        foreach (\range(1, 9) as $i) {
+            $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], \sprintf('%016x', $i));
         }
-        $ritual->clock->now += RitualHarness::BURST_COOLDOWN;
-        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 3]);
+        Assert::same($this->call($ritual, 'flyers.burst', [], moderator: true), ['ok' => true, 'count' => 6]);
     }
 
     public function burstNeedsFlyersInTheSet(): void

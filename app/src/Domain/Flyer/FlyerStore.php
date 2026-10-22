@@ -28,8 +28,6 @@ final readonly class FlyerStore
     private const LOCK_FLYER = 'flyer:';
     private const LOCK_INDEX = 'flyers';
     private const LOCK_WANDERERS = 'wanderers';
-    private const KEY_BURST = 'hellowin:burst';
-    private const LOCK_BURST = 'burst';
 
     /** Milliseconds a shot may come after the flight: the client starts drawing the flyer only when the event arrives. */
     private const LATENCY = 500;
@@ -45,28 +43,6 @@ final readonly class FlyerStore
         private Locks $locks,
         private int $grace = 10_000,
     ) {}
-
-    /**
-     * Claims the moderator's burst under the lock `burst`: of two presses within the cooldown only the first gets it.
-     *
-     * @param int $now Unix time in milliseconds.
-     * @param int<0, max> $cooldown Milliseconds after the last burst a new one is refused.
-     * @return bool Whether the burst is this call's.
-     * @throws LockBusyException
-     */
-    public function claimBurst(int $now, int $cooldown): bool
-    {
-        return $this->locks->run([self::LOCK_BURST], function () use ($now, $cooldown): bool {
-            /** @var mixed $last */
-            $last = $this->storage->get(self::KEY_BURST);
-            if (\is_int($last) && $now - $last < $cooldown) {
-                return false;
-            }
-            $this->storage->set(self::KEY_BURST, $now);
-
-            return true;
-        });
-    }
 
     /**
      * @throws LockBusyException

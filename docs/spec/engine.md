@@ -607,10 +607,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
   готовность шага 5); `boss` — `RapierService::rescale`: `max` = лимит + `bonus`, `hp = max(1, max − damage)` под локом
   `boss`, событие `boss` при изменении; упавший босс не воскресает.
 - **Волна** (`flyers.burst`, `FlyerService::burst`, `Domain/Balance/Burst`): только модератору. Проверки по порядку: набор
-  пуст — `no flyers`; RR-лок `burst` + ключ `hellowin:burst` (время прошлой волны): меньше
-  `HELLOWIN_FLYER_BURST_COOLDOWN_MS` — `busy`. Иначе `count = min(MAX, ceil(BASE + PER_PLAYER × (n − 1)))`, n — живое
-  число фигурок (минимум 1), и `count` раз `FlyerFactory::launch(now, …, rare: false)` → обычный `release` (ключ, индекс,
-  `flyer`, метрика). Пауза на волну не действует.
+  пуст — `no flyers`. Иначе `count = ceil(BASE + PER_PLAYER × (n − 1))`, n — живое число фигурок (минимум 1), и
+  `count` раз `FlyerFactory::launch(now, …, rare: false)` → обычный `release` (ключ, индекс, `flyer`, метрика). Ни
+  паузы между волнами, ни потолка: модератор жмёт сколько хочет. Пауза сюжета на волну не действует.
 - **Переключатель `zombies` удалён** (RPC, событие, поле снимка, `Story::$zombies`): на сервере он ничего не делал —
   бродячими зомби правит шаг 5–6 и пауза.
 
@@ -625,7 +624,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `drinks` — кружек проклятого мира | `HELLOWIN_CURSED_DRINKS_BASE`, `HELLOWIN_CURSED_DRINKS_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
 | `zombies` — зомби проклятого мира | `HELLOWIN_CURSED_ZOMBIES_BASE`, `HELLOWIN_CURSED_ZOMBIES_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
 | `boss` — здоровье FrankenPHP | `HELLOWIN_BOSS_HP_BASE`, `HELLOWIN_BOSS_HP_PER_PLAYER` | 45 | 60 | 45 | 585 | 2385 |
-| волна летунов (без `k`, не больше MAX = 15) | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5 | 0.2 | 5 | 7 | 13 |
+| волна летунов (без `k`) | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5 | 0.2 | 5 | 7 | 13 |
 
 Заменяют `HELLOWIN_CLICKS_PER_STAGE`, `HELLOWIN_BONFIRE_CLICKS_PER_STAGE`, `HELLOWIN_CIRCLE_CLICKS_PER_STAGE`,
 `HELLOWIN_BAR_DRINKS`, `HELLOWIN_CURSED_PER_PLAYER` (их сервер больше не читает); `HELLOWIN_BOSS_HP_BASE` и
@@ -668,9 +667,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Кости: `hellowin:dice` `{round, …}`, ключ HMAC без env `hellowin:dice:secret` | Valkey | тот же storage `hellowin` |
 | Топ рассвета: `hellowin:dawn` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
-| Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}`, последняя волна летунов `hellowin:burst` | Valkey | тот же storage `hellowin` |
+| Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `burst`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `dice:secret`, `dawn`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
@@ -736,7 +735,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_FLY_POINTS` | 1 | очки за муху |
 | `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
-| `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER`, `HELLOWIN_FLYER_BURST_MAX`, `HELLOWIN_FLYER_BURST_COOLDOWN_MS` | 5, 0.2, 15, 3000 | волна летунов модератора (`flyers.burst`), см. «Лимиты и баланс» (`app/config/flyers.php`) |
+| `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5, 0.2 | волна летунов модератора (`flyers.burst`), см. «Лимиты и баланс» (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между бродячими зомби сверх минимума в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
