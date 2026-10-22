@@ -86,6 +86,15 @@ export const PALETTE = {
     elephantLight: 0xc4c8e8,
     elephant: 0x8892bf,
     elephantDark: 0x5a6198,
+    // The Go gopher: a sky-cyan fur shading toward a deep teal-blue, the beige of its muzzle, paws and feet.
+    gopher: 0x6ccce2,
+    gopherDark: 0x3a94b4,
+    gopherTan: 0xf0d2a2,
+    gopherTanShade: 0xc49a6a,
+    // The tin robot: a chipped turquoise enamel, duller and greener than the gopher, shading toward a slate blue.
+    robotLight: 0x92d2c8,
+    robot: 0x56a4a6,
+    robotDark: 0x366a7c,
     blush: 0xf49482,
     eyeAmber: 0xffa424,
     eyeGreen: 0x7cf064,

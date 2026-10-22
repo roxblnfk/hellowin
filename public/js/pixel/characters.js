@@ -70,6 +70,10 @@ const DARK = {
     crow: 'crowDark',
     elephantLight: 'elephant',
     elephant: 'elephantDark',
+    gopher: 'gopherDark',
+    gopherTan: 'gopherTanShade',
+    robotLight: 'robot',
+    robot: 'robotDark',
 };
 const dark = (key) => DARK[key] ?? key;
 
@@ -337,7 +341,8 @@ function rig(dir, pose, frame) {
 // sleeve(i, n, dx): step along the arm. hair(c, r, dir, inHead): head-box coordinates, may reach one pixel outside.
 // Optional: headPaint(g, x0, y0, dir, ears) paints over the head under the face (ears — no hat on), whiskers(r)
 // returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back), snout(r)
-// returns a finished layer laid over the face, zombie maps the skin's other tones for a zombie player (zombieKeys).
+// returns a finished layer laid over the face, zombie maps the skin's other tones for a zombie player (zombieKeys),
+// bigHand rings the hands one pixel bigger.
 
 const pick = (s, i) => PICK[s[i]] ?? null;
 const PICK = {
@@ -453,19 +458,25 @@ const ELEPHANT_TRUNK = {
     side: { at: [12, 6], rows: ['TT..', 'tTT.', '.tT.', '.tT.', '.tTT', '..tT'] },
 };
 
-function elephantTrunk(r) {
+/**
+ * A body's own features over the face slot: { at, rows } per direction, at — the top-left in head-box coordinates.
+ * Outlined only where it sticks out of the head, so it grows out of the face; outline pixels drawn on purpose stay.
+ */
+function faceLayer(r, defs, legend) {
     const g = blank();
-    const trunk = ELEPHANT_TRUNK[r.dir];
-    if (!trunk) return g;
+    const def = defs[r.dir];
+    if (!def) return g;
     const { x: x0, y: y0 } = r.head;
-    stamp(g, x0 + trunk.at[0], y0 + trunk.at[1], trunk.rows, { L: 'elephantLight', T: 'elephant', t: 'elephantDark', w: 'cream' });
+    stamp(g, x0 + def.at[0], y0 + def.at[1], def.rows, legend);
     const out = outlined(g);
     HEAD_MASK.forEach((row, rr) => [...row].forEach((ch, c) => {
         const i = (AY + y0 + rr) * W + AX + x0 + c;
-        if (ch === '#' && out[i] === 'outline') out[i] = null;
+        if (ch === '#' && out[i] === 'outline' && !g[i]) out[i] = null;
     }));
     return out;
 }
+
+const elephantTrunk = (r) => faceLayer(r, ELEPHANT_TRUNK, { L: 'elephantLight', T: 'elephant', t: 'elephantDark', w: 'cream' });
 
 // A thin tail from the rump ending in a dark tuft, local coordinates per direction; the tuft swings with the pose.
 // From the front the body hides it: peeking out beside the feet, the tuft reads as a third foot.
@@ -486,6 +497,176 @@ function elephantTail(g, r) {
     const [tx, ty] = pts[pts.length - 1];
     [[0, 1], [-1, 1], [0, 2], [1, 2], [-1, 2]].forEach(([dx, dy]) => put(g, tx + dx, ty + dy, 'elephantDark'));
 }
+
+// The gopher's small round ears, bare-headed only like the cat's, rows from a pixel above the head box.
+const GOPHER_EARS = {
+    front: ['.FF......FF.', 'FFF......FFF'],
+    side: ['..FF........', '.FFF........'],
+    back: ['.FF......FF.', 'FFF......FFF'],
+};
+
+function gopherHead(g, x0, y0, dir, ears) {
+    if (ears) stamp(g, x0, y0 - 1, GOPHER_EARS[dir], { F: 'gopher' });
+}
+
+// Its face over the face slot: the big white eyes with black pupils, set wide apart at the top of the head, the beige
+// muzzle with the dark nose between them and the two buck teeth under it. From the side the muzzle sticks out ahead.
+const GOPHER_FACE = {
+    front: {
+        at: [0, 2],
+        rows: [
+            '.WWW....WWW.',
+            'WWWWW..WWWWW',
+            'WWKKW..WKKWW',
+            'WWKKW..WKKWW',
+            '.WWWtnntWWW.',
+            '...tttttt...',
+            '....tttt....',
+            '.....wg.....',
+            '.....wg.....',
+        ],
+    },
+    side: {
+        at: [5, 2],
+        rows: [
+            '..WWW....',
+            '.WWWWW...',
+            '.WWWKK...',
+            '.WWWKK...',
+            '..WWWttnn',
+            '....ttttt',
+            '.....tttt',
+            '.....wg..',
+            '.....wg..',
+        ],
+    },
+};
+
+const gopherFace = (r) => faceLayer(r, GOPHER_FACE, { W: 'white', K: 'crowDark', t: 'gopherTan', n: 'barkDark', w: 'white', g: 'grayLight' });
+
+// The tin robot. Its head is a square plate, not the round head box: headPaint repaints it whole — the enamel lit
+// from the top left, rust only at the back, a short neck — with the round brass speakers on both sides and the two
+// antennae with red knobs (bare-headed only: a hat sits where they stand). The far antenna rises by the ear.
+const ROBOT_LEGEND = {
+    l: 'robotLight', m: 'robot', M: 'robotDark', r: 'copper', R: 'pumpkinDeep', h: 'hay', H: 'hayDark', c: 'comb',
+    C: 'crimson', L: 'eyeRed', a: 'gray', g: 'grayLight', e: 'cream', W: 'white', K: 'outline',
+};
+const ROBOT_HEAD = {
+    front: [
+        'llllllllllll',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'MMMMMMMMMMMM',
+        '....aaaa....',
+    ],
+    side: [
+        'llllllllllll',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'MMMMMMMMMMMM',
+        '...aaaa.....',
+    ],
+    back: [
+        'llllllllllll',
+        'lgmmmmmmmmgM',
+        'lmmmmmmmmmmM',
+        'lmmmmmmmmmmM',
+        'lmmMMMMMMmmM',
+        'lmmmmmmmmmmM',
+        'lmmMMMMMMmmM',
+        'lmrmmmmmmmmM',
+        'lgRmmmmmmmgM',
+        'MMMMMMMMMMMM',
+        '....aaaa....',
+    ],
+};
+// Speakers: [column, row] of the top-left in head-box coordinates and their rows; antennae: the stick's column and
+// rows, the knob on top of it.
+const ROBOT_SPEAKER = ['.h.', 'hcH', '.H.'];
+const ROBOT_SPEAKERS = {
+    front: [[-2, 4, ROBOT_SPEAKER], [11, 4, ROBOT_SPEAKER]],
+    side: [[2, 3, ['.hh.', 'hMMh', 'hMch', '.hh.']]],
+    back: [[-2, 4, ROBOT_SPEAKER], [11, 4, ROBOT_SPEAKER]],
+};
+const ROBOT_ANTENNAE = {
+    front: [[3, -3, -1], [13, 1, 3]],
+    side: [[4, -2, -1], [8, -3, -1]],
+    back: [[8, -3, -1], [-2, 1, 3]],
+};
+
+function robotHead(g, x0, y0, dir, bare) {
+    for (let rr = 0; rr < 11; rr++) {
+        for (let c = 0; c < 12; c++) {
+            const cx = AX + x0 + c;
+            const cy = AY + y0 + rr;
+            if (cx >= 0 && cx < W && cy >= 0 && cy < H) g[cy * W + cx] = null;
+        }
+    }
+    stamp(g, x0, y0, ROBOT_HEAD[dir], ROBOT_LEGEND);
+    ROBOT_SPEAKERS[dir].forEach(([c, rr, rows]) => stamp(g, x0 + c, y0 + rr, rows, ROBOT_LEGEND));
+    if (!bare) return;
+    ROBOT_ANTENNAE[dir].forEach(([c, from, to]) => {
+        for (let rr = from; rr <= to; rr++) put(g, x0 + c, y0 + rr, 'gray');
+        stamp(g, x0 + c, y0 + from - 2, ['cc', 'cC'], ROBOT_LEGEND);
+    });
+}
+
+// Its face plate over the face slot, which it hides: round brass rims with red lenses (always red, the eye slot does
+// not tint them), a rivet for a nose and a grille of square teeth in a thin brass frame.
+const ROBOT_FACE = {
+    front: {
+        at: [0, 1],
+        rows: [
+            '.mhhmmmmhhm.',
+            '.hLLhmmhLLh.',
+            '.hLLhmmhLLh.',
+            '.mhhmmmmhhm.',
+            '.mmmmmgmmmm.',
+            '.hhhhhhhhhh.',
+            '.hWWKWWKWWh.',
+            '.hWWKWWKWWh.',
+            '.hhhhhhhhhh.',
+        ],
+    },
+    side: {
+        at: [6, 1],
+        rows: [
+            'mmmhhm',
+            'mmhLLh',
+            'mmhLLh',
+            'mmmhhm',
+            'mmmmmmg',
+            'mmhhhh',
+            'mmhWKW',
+            'mmhWKW',
+            'mmhhhh',
+        ],
+    },
+};
+
+const robotFace = (r) => faceLayer(r, ROBOT_FACE, ROBOT_LEGEND);
+
+/** Torso rows keyed by local y in ROBOT_LEGEND chars; rows missing from the map are plain enamel. */
+const robotPattern = (map) => (i, y) => ROBOT_LEGEND[map[y]?.[i]] ?? 'robot';
+
+// The chest panel: a cream dial with a red needle and two red buttons under it.
+const ROBOT_TORSO = {
+    front: robotPattern({ [-11]: 'llllllllll', [-10]: 'lmmmmmmmrm', [-9]: 'lmmeecemmm', [-8]: 'lmmeeeemmm', [-7]: 'lmmcmmcmmm', [-6]: 'MgMMMMMMgM' }),
+    side: robotPattern({ [-11]: 'lllllll', [-10]: 'lmmmmmm', [-9]: 'lmmmmme', [-8]: 'lmrmmme', [-7]: 'lmmmmmc', [-6]: 'MMMMMMM' }),
+    back: robotPattern({ [-11]: 'llllllllll', [-10]: 'lgmmmmmmgm', [-9]: 'lmMMMMMMmm', [-8]: 'lmmmmmmrmm', [-7]: 'lmMMMMMMRm', [-6]: 'MgMMMMMMgM' }),
+};
 
 const BODIES = {
     skeleton: {
@@ -661,6 +842,68 @@ const BODIES = {
         snout: elephantTrunk,
         tail: elephantTail,
         zombie: { elephantLight: 'hazeLight' },
+    },
+    // The Go gopher: a pudgy cyan blob whose eyes, muzzle and buck teeth carry the shape, so they stay on under every
+    // face (the face slot shows only round them); its pupils stay black whatever the eye colour.
+    gopher: {
+        label: 'Go-гофер',
+        skin: 'gopher',
+        torso: () => 'gopher',
+        skirt: { hem: -5, flare: [1] },
+        sleeve: () => 'gopher',
+        leg: () => 'gopher',
+        shoe: 'gopherTan',
+        hand: 'gopherTan',
+        headPaint: gopherHead,
+        snout: gopherFace,
+        // A zombie gopher's pupils go blank like everyone's eyes.
+        zombie: { crowDark: 'ghost' },
+    },
+    // A priest in a floor-length black cassock (the crow ramp, a step above the outline) with a white clerical collar
+    // and a golden pectoral cross on a chain; the hem hides the legs, only the shoes step out from under it.
+    priest: {
+        label: 'Священник',
+        skin: 'pale',
+        torso: (i, y, dir) => {
+            if (dir === 'front') {
+                if (y === -9 && (i === 4 || i === 5)) return 'white';
+                if (y === -8 && (i === 3 || i === 5)) return 'gray';
+                if ((y === -7 || y === -5 || y === -4) && i === 4) return 'gold';
+                if (y === -6 && i >= 3 && i <= 5) return 'gold';
+            }
+            if (dir === 'side' && y === -9 && i >= 5) return 'white';
+            if (dir === 'side' && y === -6 && i === 6) return 'gold';
+            if (y >= -5 && i === 0) return 'crowLight';
+            return 'crow';
+        },
+        skirt: { hem: -3, flare: [1, 1, 1] },
+        sleeve: (i, n) => (i >= n - 1 ? 'crowDark' : 'crow'),
+        leg: () => 'crowDark',
+        shoe: 'barkDark',
+        hand: 'pale',
+        hair: (c, r, dir, inHead) => {
+            if (!inHead) return false;
+            if (dir === 'front') return r <= 1 || (r === 2 && (c <= 2 || c >= 9));
+            if (dir === 'side') return r <= 1 || (c <= 3 && r <= 5);
+            return r <= 6;
+        },
+        hairColor: 'gray',
+    },
+    // The tin robot: a square head with its own face, speakers and antennae (see robotHead), a chest panel, ribbed
+    // arms and big round hands.
+    robot: {
+        label: 'Робот',
+        skin: 'robot',
+        torso: (i, y, dir) => ROBOT_TORSO[dir](i, y),
+        sleeve: (i) => (i % 2 ? 'robotDark' : 'robot'),
+        leg: (i, yy) => (yy === 1 ? 'robotDark' : 'robot'),
+        shoe: 'gray',
+        hand: 'grayLight',
+        bigHand: true,
+        headPaint: robotHead,
+        snout: robotFace,
+        // A zombie robot's red lenses go blank like everyone's eyes.
+        zombie: { robotLight: 'hazeLight', eyeRed: 'ghost' },
     },
 };
 
@@ -1367,7 +1610,13 @@ function drawArm(g, body, arm) {
             put(g, arm.hand[0] + dx, arm.hand[1] + dy, arm.far || dx === 1 && dy === 1 ? dark(hand) : hand);
         }
     }
+    // A big round hand (the robot's) rings the 2×2 one, shaded on the right and below.
+    if (body.bigHand) {
+        BIG_HAND.forEach(([dx, dy]) => put(g, arm.hand[0] + dx, arm.hand[1] + dy, arm.far || dx > 1 || dy > 1 ? dark(hand) : hand));
+    }
 }
+
+const BIG_HAND = [[0, -1], [1, -1], [-1, 0], [2, 0], [-1, 1], [2, 1], [0, 2], [1, 2]];
 
 function drawHead(body, face, r, ears) {
     const g = blank();
