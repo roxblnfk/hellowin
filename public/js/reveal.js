@@ -11,9 +11,9 @@ const NUMBER = new Intl.NumberFormat('ru-RU');
 // Noun forms for 1, 2–4 and 5+ (accusative: the number is always the object), the rest of the caption, and a short
 // note on the mechanism behind the number.
 const CARDS = [
-    ['clicks', ['клик', 'клика', 'кликов'], 'обработал RoadRunner', 'каждый — через WebSocket и RPC'],
+    ['clicks', ['действие', 'действия', 'действий'], 'игроков обработал RoadRunner', 'клики, шаги, выстрелы, кружки — каждое через WebSocket и RPC'],
     ['jobs', ['задачу', 'задачи', 'задач'], 'выполнила очередь', 'каждая — шаг тыквы, костра, круга или сцены'],
-    ['burned', ['лишний клик', 'лишних клика', 'лишних кликов'], 'он отбросил', 'тыква не проскочила ни одной стадии'],
+    ['burned', ['повтор', 'повтора', 'повторов'], 'отбросила идемпотентность', 'лишние клики, дубли переходов, повторы бросков — ничего не случилось дважды'],
     ['shot', ['летуна', 'летунов', 'летунов'], 'сбили', 'каждого — первый успевший, под локом'],
     ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили за вечер', 'последнюю — первый дошедший до стойки'],
     ['slain', ['зомби-воркера', 'зомби-воркера', 'зомби-воркеров'], 'упокоили', 'каждого — первый успевший, под локом'],
@@ -22,6 +22,8 @@ const CARDS = [
 ];
 // The rapier's and the dice's numbers: their cards show only once there is something to count.
 const SKIP_ZERO = new Set(['slain', 'damage', 'rolls']);
+// The card «обработал RoadRunner» counts every action (`calls`); a server without it gives the accepted clicks.
+const valueOf = (reveal, key) => (key === 'clicks' ? reveal.calls ?? reveal.clicks : reveal[key]);
 
 function plural(n, [one, few, many]) {
     const tens = n % 100;
@@ -129,8 +131,9 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
         const reveal = fresh ?? finale.reveal;
         for (const [key, forms, caption, note] of CARDS) {
             // A server without the bar sends no `drinks`: its card stays out.
-            panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined || (SKIP_ZERO.has(key) && !(Number(reveal[key]) > 0));
-            const n = Math.max(0, Math.trunc(Number(reveal[key]) || 0));
+            const value = valueOf(reveal, key);
+            panel.querySelector(`[data-reveal-card="${key}"]`).hidden = value === undefined || (SKIP_ZERO.has(key) && !(Number(value) > 0));
+            const n = Math.max(0, Math.trunc(Number(value) || 0));
             panel.querySelector(`[data-reveal-${key}]`).textContent = NUMBER.format(n);
             panel.querySelector(`[data-reveal-label="${key}"]`).textContent = `${plural(n, forms)} ${caption}`;
             panel.querySelector(`[data-reveal-note="${key}"]`).textContent = note;

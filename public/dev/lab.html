@@ -2126,7 +2126,8 @@
     }
     const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line) });
     // RPC `reveal` of the panel: the engine's numbers now, on the lab's clock.
-    const reveal = createReveal(root, { request: async () => structuredClone(stats), later });
+    // `calls` — every player action on the server; the lab counts only the ones it keeps numbers of.
+    const reveal = createReveal(root, { request: async () => ({ ...structuredClone(stats), calls: stats.clicks + stats.shot + stats.drinks + stats.damage + stats.rolls }), later });
     // The lab shows the console when it plays the moderator (?mod=1); the fake engine answers like the server would.
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
         open: params.get('ui') !== '0' ? undefined : false,
