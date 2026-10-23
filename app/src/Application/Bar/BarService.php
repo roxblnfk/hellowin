@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Bar;
 
 use App\Application\Hellowin\ChannelPublisher;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
@@ -61,6 +62,7 @@ final readonly class BarService
         private Randomizer $random = new Randomizer(),
         private ?CursedService $cursed = null,
         private int $drinkMs = 1200,
+        private ?PlayMetrics $metrics = null,
     ) {}
 
     /**
@@ -211,6 +213,7 @@ final readonly class BarService
         $round = $this->ritual->round();
         $stopped === null or $this->publisher->move($round, $stopped, ActionStop::DRINK);
         $this->players->drank($id);
+        $this->metrics?->mug($inBar ? PlayMetrics::PLACE_BAR : PlayMetrics::PLACE_CURSED);
         if (!$inBar) {
             $this->publisher->drink($round, $id);
             $this->cursed?->drank($round);

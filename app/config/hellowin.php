@@ -48,12 +48,13 @@ return [
     // The bar of scene 0: one full mug per player on the floor, up to the `mugs` the counter has room for; the owl
     // pours one in `pour_ms` milliseconds and mutters a rumour over every pour with the chance `rumor_chance`.
     // A sip plays `drink_ms` milliseconds, in the bar and in the cursed world: the server takes no mug and lets none be
-    // drunk meanwhile, so a click never skips the animation
+    // drunk meanwhile, so a click never skips the animation. A mug holds `mug_litres` litres for the beer statistics
     'bar' => [
         'mugs' => env('HELLOWIN_BAR_MUGS', 12),
         'pour_ms' => env('HELLOWIN_BAR_POUR_MS', 2500),
         'rumor_chance' => env('HELLOWIN_BAR_RUMOR_CHANCE', 0.33),
         'drink_ms' => env('HELLOWIN_DRINK_MS', 1200),
+        'mug_litres' => env('HELLOWIN_MUG_LITRES', 0.5),
     ],
 
     // The end of the night (docs/spec/scenario.md, «Рапира»): a pumpkin hands its beer over for `beer_handover_ms`

@@ -283,6 +283,7 @@ final class BarServiceTest
         Assert::same($ritual->broadcast->ofType('drink'), [['type' => 'drink', 'round' => 1, 'player' => ['id' => self::A]]]);
         Assert::same($ritual->broadcast->ofType('drinks'), [['type' => 'drinks', 'round' => 1, 'drunk' => 1, 'target' => 4]]);
         Assert::same($ritual->playerStore->find(self::A)?->drinks, 1);
+        Assert::equals($ritual->counters()['hellowin_beer_mugs_total{bar}'] ?? null, 1);
         Assert::same($ritual->snapshot->create()['bar']['drunk'], 1);
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'no beer');
         // The sip plays before the next mug

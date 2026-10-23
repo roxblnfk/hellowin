@@ -380,7 +380,7 @@
       "title": "Players",
       "description": "Browsers known by their secret, named or not. The ticker counts them every 5 seconds.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 40 },
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 40 },
       "targets": [{ "refId": "A", "expr": "max(hellowin_players)", "instant": true, "range": false }],
       "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
       "options": {
@@ -398,7 +398,7 @@
       "title": "Registered (named)",
       "description": "Players who sent RPC register with a name.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 40 },
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 40 },
       "targets": [{ "refId": "A", "expr": "max(hellowin_players_registered)", "instant": true, "range": false }],
       "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
       "options": {
@@ -415,7 +415,7 @@
       "type": "timeseries",
       "title": "Players over time",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 40 },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 40 },
       "targets": [
         { "refId": "A", "expr": "max(hellowin_players)", "legendFormat": "players" },
         { "refId": "B", "expr": "max(hellowin_players_registered)", "legendFormat": "registered" }
@@ -425,6 +425,41 @@
           "min": 0,
           "decimals": 0,
           "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Beer drunk, L",
+      "description": "Mugs drunk by all players ever, in the bar and in the cursed world, times HELLOWIN_MUG_LITRES. Summed from the player records in Valkey, so a restart keeps it.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 40 },
+      "targets": [{ "refId": "A", "expr": "max(hellowin_beer_litres)", "instant": true, "range": false }],
+      "fieldConfig": { "defaults": { "unit": "litre", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Mugs per minute by place",
+      "description": "RPC drink: bar is scene 0, cursed is the cursed world of the finale.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 40 },
+      "targets": [{ "refId": "A", "expr": "sum by (place) (increase(hellowin_beer_mugs_total[1m]))", "legendFormat": "{{place}}" }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
         },
         "overrides": []
       },

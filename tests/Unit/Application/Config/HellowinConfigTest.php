@@ -332,6 +332,19 @@ final class HellowinConfigTest
         (new HellowinConfig(['bar' => ['drink_ms' => '0']]))->getDrinkMs();
     }
 
+    public function mugVolumeComesFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getMugLitres(), 0.5);
+        Assert::same((new HellowinConfig(['bar' => ['mug_litres' => '0.33']]))->getMugLitres(), 0.33);
+    }
+
+    public function rejectsAnEmptyMug(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_MUG_LITRES');
+
+        (new HellowinConfig(['bar' => ['mug_litres' => '0']]))->getMugLitres();
+    }
+
     public function rejectsAnEmptyTopBoard(): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_TOP_BOARD');

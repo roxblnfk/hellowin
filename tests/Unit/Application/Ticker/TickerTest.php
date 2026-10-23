@@ -82,6 +82,19 @@ final class TickerTest
         Assert::equals($ritual->counters()['hellowin_players{}'] ?? null, 1);
     }
 
+    public function censusPoursTheLitresOfAllTheMugsEverDrunk(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->players->register('aaaaaaaaaaaaaaaa', 'Jack');
+        $ritual->players->drank('aaaaaaaaaaaaaaaa');
+        $ritual->players->drank('aaaaaaaaaaaaaaaa');
+        $ritual->players->drank('bbbbbbbbbbbbbbbb');
+
+        self::ticker($ritual)->tick(1_000);
+
+        Assert::equals($ritual->counters()['hellowin_beer_litres{}'] ?? null, 1.5, 'three half-litre mugs');
+    }
+
     public function flyerIsLaunchedOncePerInterval(): void
     {
         $ritual = new RitualHarness();

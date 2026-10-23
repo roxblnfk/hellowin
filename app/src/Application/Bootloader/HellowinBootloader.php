@@ -292,6 +292,7 @@ final class HellowinBootloader extends Bootloader
                 PlayerService $players,
                 Clock $clock,
                 CursedService $cursed,
+                PlayMetrics $metrics,
             ): BarService => new BarService(
                 $bar,
                 $walkers,
@@ -306,7 +307,10 @@ final class HellowinBootloader extends Bootloader
                 $config->getBarRumorChance(),
                 cursed: $cursed,
                 drinkMs: $config->getDrinkMs(),
+                metrics: $metrics,
             ),
+            PlayerCensus::class => static fn(HellowinConfig $config, PlayerStore $players, PlayMetrics $metrics): PlayerCensus
+                => new PlayerCensus($players, $metrics, $config->getMugLitres()),
             WalkerStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

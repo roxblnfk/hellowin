@@ -79,7 +79,7 @@
 | Лимиты | раз в секунду, после фигурок | `LimitsService::follow`: число фигурок продержалось `LimitsService::DEBOUNCE` (3 с) → `Story::$players`; лимиты разошлись с последним `limits` → догон прогресса и событие `limits`; см. «Лимиты и баланс» |
 | Цели проклятого мира | раз в секунду, после лимитов | `CursedService::follow`: цели разошлись с последними сказанными (`drinksTold`, `zombiesTold`) → новое `cursed` и проверка готовности |
 | Топ стрелков | раз в `HELLOWIN_TOP_INTERVAL` мс | `TopService::tell`: доска `hellowin:top` (не больше `HELLOWIN_TOP_BOARD` строк) сравнивается с последней опубликованной этим тикером (в памяти тикера; после перезапуска — одна публикация сразу) → изменилась — событие `top {board}` |
-| Счёт игроков | раз в 5 с (`PlayerCensus::INTERVAL`) | игроки по индексу → gauge `hellowin_players`, `hellowin_players_registered` |
+| Счёт игроков | раз в 5 с (`PlayerCensus::INTERVAL`) | игроки по индексу → gauge `hellowin_players`, `hellowin_players_registered`, `hellowin_beer_litres` |
 
 Ранжирование — очки за летунов, затем «добитые» тыквы, затем клики; игроки без единого действия не попадают. Событие
 публикуется на каждой сборке, даже без изменений: новый клиент получает таблицу в пределах интервала, а сразу —
@@ -719,6 +719,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_circle_stage` | gauge | стадия магического круга (по той же причине) |
 | `hellowin_players` | gauge | известные игроки (с секретом, с именем и без); выставляет тикер (`PlayerCensus`) раз в 5 с |
 | `hellowin_players_registered` | gauge | игроки с именем; там же |
+| `hellowin_beer_litres` | gauge | пива выпито за всё время, литры: сумма `drinks` всех записей игроков × `HELLOWIN_MUG_LITRES`; там же — записи в Valkey, поэтому рестарт её не обнуляет |
+| `hellowin_beer_mugs_total{place}` | counter | выпитые кружки (успешный RPC `drink`); `place` = `bar` (сцена 0) / `cursed` (проклятый мир финала) |
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
@@ -744,6 +746,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_BAR_POUR_MS` | 2500 | мс розлива одной кружки |
 | `HELLOWIN_BAR_RUMOR_CHANCE` | 0.33 | вероятность `rumor` у розлива: случайное 0…2³¹−1 в `pour` и `pouring` |
 | `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
+| `HELLOWIN_MUG_LITRES` | 0.5 | литров в кружке, число > 0: `hellowin_beer_litres` = кружки × объём (`hellowin.bar.mug_litres`) |
 | `HELLOWIN_BEER_HANDOVER_MS` | 900 | мс передачи пива тыквой: `until` события `take` и `busyUntil` (`hellowin.rapier.beer_handover_ms`) |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_DURATION` | `16000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |

@@ -125,6 +125,8 @@ final class RapierTest
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['drink', 'cursed']);
         Assert::same($ritual->broadcast->ofType('cursed')[0]['drunk'], 1);
         Assert::same($ritual->playerStore->find(self::JACK)?->drinks, 1);
+        Assert::equals($ritual->counters()['hellowin_beer_mugs_total{cursed}'] ?? null, 1);
+        Assert::null($ritual->counters()['hellowin_beer_mugs_total{bar}'] ?? null);
 
         // The sip plays: no second mug, however fast the clicks
         self::refill($ritual, self::JACK);

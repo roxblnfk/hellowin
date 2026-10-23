@@ -194,7 +194,8 @@ final class RitualHarness
         $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $publisher, new Limit(2, 2), new Limit(2, 2));
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops);
-        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed);
+        $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
+        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();
@@ -205,7 +206,6 @@ final class RitualHarness
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore);
         $this->publisher = $publisher;
-        $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->census = new PlayerCensus($this->playerStore, $this->playMetrics);
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
         $this->flyers = new FlyerService(

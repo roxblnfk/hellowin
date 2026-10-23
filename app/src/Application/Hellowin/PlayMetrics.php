@@ -24,6 +24,10 @@ final readonly class PlayMetrics
     public const RPC_LIMITED = 'hellowin_rpc_rate_limited_total';
     public const RPC_CALLS = 'hellowin_rpc_calls_total';
     public const RPC_DURATION = 'hellowin_rpc_duration_seconds';
+    public const BEER_MUGS = 'hellowin_beer_mugs_total';
+    public const BEER_LITRES = 'hellowin_beer_litres';
+    public const PLACE_BAR = 'bar';
+    public const PLACE_CURSED = 'cursed';
 
     /** Seconds: the handlers answer in a few milliseconds, a lock wait or a slow store reaches the top ones. */
     private const RPC_BUCKETS = [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0];
@@ -48,6 +52,8 @@ final readonly class PlayMetrics
             self::RPC_LIMITED => Collector::counter()->withHelp('RPC calls refused by the rate limit.')->withLabels('group'),
             self::RPC_CALLS => Collector::counter()->withHelp('RPC calls by method and result: ok or the error code.')->withLabels('method', 'result'),
             self::RPC_DURATION => Collector::histogram(...self::RPC_BUCKETS)->withHelp('RPC handling time in PHP, seconds.')->withLabels('method'),
+            self::BEER_MUGS => Collector::counter()->withHelp('Mugs drunk since the RoadRunner start, by place: bar or cursed.')->withLabels('place'),
+            self::BEER_LITRES => Collector::gauge()->withHelp('Litres of beer drunk by all players ever.'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -63,6 +69,23 @@ final readonly class PlayMetrics
     {
         $this->safely(fn() => $this->metrics->set(self::PLAYERS, $known));
         $this->safely(fn() => $this->metrics->set(self::PLAYERS_REGISTERED, $registered));
+    }
+
+    /**
+     * @param int<0, max> $mugs Mugs in all the player records: they outlive a restart, unlike {@see BEER_MUGS}.
+     * @param float $mugLitres Litres in one mug.
+     */
+    public function beer(int $mugs, float $mugLitres): void
+    {
+        $this->safely(fn() => $this->metrics->set(self::BEER_LITRES, (float) $mugs * $mugLitres));
+    }
+
+    /**
+     * @param self::PLACE_* $place
+     */
+    public function mug(string $place): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::BEER_MUGS, 1, [$place]));
     }
 
     /**

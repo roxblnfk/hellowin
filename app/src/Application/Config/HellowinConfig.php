@@ -62,7 +62,7 @@ final class HellowinConfig extends InjectableConfig
             self::LIMIT_BOSS => ['base' => 45, 'per_player' => 60],
         ],
         'valkey_dsn' => 'tcp://valkey:6379',
-        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200],
+        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200, 'mug_litres' => 0.5],
         'rapier' => ['beer_handover_ms' => 900],
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
@@ -302,6 +302,21 @@ final class HellowinConfig extends InjectableConfig
     public function getDrinkMs(): int
     {
         return self::positiveInt($this->bar()['drink_ms'] ?? null, 'bar.drink_ms', 'HELLOWIN_DRINK_MS');
+    }
+
+    /**
+     * @return float Litres in one mug, for the beer statistics.
+     */
+    public function getMugLitres(): float
+    {
+        /** @var mixed $value */
+        $value = $this->bar()['mug_litres'] ?? null;
+        \is_string($value) && \is_numeric(\trim($value)) and $value = (float) \trim($value);
+        \is_int($value) and $value = (float) $value;
+
+        return \is_float($value) && $value > 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.bar.mug_litres" (env HELLOWIN_MUG_LITRES) must be a positive number.');
     }
 
     /**
