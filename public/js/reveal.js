@@ -1,7 +1,7 @@
 // The reveal of finale step 4 (docs/spec/scenario.md, «Финал»): the evening's real numbers from the engine, the
 // server's uptime and the way to «Как это работает».
 
-import { formatUptime } from './client.js';
+import { AFTER_STORY, formatUptime } from './client.js';
 
 const STEP = 4;
 // While the panel is open its numbers are asked for afresh this often (RPC `reveal`, docs/spec/protocol.md).
@@ -34,9 +34,10 @@ function plural(n, [one, few, many]) {
 }
 
 /**
- * The panel opens by itself on step 4 and stays until closed; from step 5 on it is closed, and the HUD button
- * `[data-reveal-open]` brings it back. While open it asks `request` for fresh numbers on opening and every
- * REFRESH_MS after the previous answer; a refusal or an error keeps the numbers it shows.
+ * The panel opens by itself on step 4 and stays until closed; from step 5 on, and in the bar after the story
+ * (AFTER_STORY), it is closed, and the HUD button `[data-reveal-open]` brings it back. While open it asks `request`
+ * for fresh numbers on opening and every REFRESH_MS after the previous answer; a refusal or an error keeps the numbers
+ * it shows.
  *
  * @param {HTMLElement} root  #app
  * @param {object} [options]
@@ -141,14 +142,15 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
         uptimeCard.hidden = uptime === null;
         panel.querySelector('[data-reveal-uptime]').textContent = uptime === null ? '' : formatUptime(uptime);
         const name = reveal.lastPumpkin?.name;
-        panel.querySelector('[data-reveal-last]').textContent = reveal.lastPumpkin
+        // Not known yet: the bar after the story waits for its first answer.
+        panel.querySelector('[data-reveal-last]').textContent = reveal.lastPumpkin === undefined ? '' : reveal.lastPumpkin
             ? `Последний элемент ритуала добил ${name || 'кто-то без имени'}.`
             : 'Последний элемент ритуала добил кто-то неизвестный.';
     }
 
     return {
         update(next, up = null) {
-            shown = Boolean(next?.reveal) && (next?.step ?? 0) >= STEP;
+            shown = next === AFTER_STORY || (Boolean(next?.reveal) && (next?.step ?? 0) >= STEP);
             if (!shown) {
                 step = null;
                 open = false;

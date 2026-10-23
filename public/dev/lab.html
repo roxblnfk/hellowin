@@ -710,7 +710,8 @@
         engine.stageMax = SCENE_STAGE_MAX[0];
         engine.ready = false;
         engine.finale = null;
-        Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, rolls: 0, lastPumpkin: null });
+        // The evening's numbers: «В бар» keeps them, only the moderator's reset zeroes them.
+        if (!again) Object.assign(stats, { clicks: 0, jobs: 0, burned: 0, shot: 0, drinks: 0, slain: 0, damage: 0, rolls: 0, lastPumpkin: null });
         engine.cursed = null;
         engine.dice = null;
         diceForget();

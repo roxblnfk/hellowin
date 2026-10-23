@@ -10,6 +10,9 @@ import { SUMMON_MS } from './pixel/finale-timeline.js';
 
 const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
 const DEFAULT_STAGE_MAX = 4;
+// The reveal panel's finale in the bar after the dawn's «В бар» (`bar.roadrunner`): none there, the numbers come only
+// from RPC `reveal`.
+export const AFTER_STORY = Object.freeze({ step: 'bar', reveal: Object.freeze({}) });
 // The counter outside the bar (protocol.md, `bar` in the snapshot); `drunk` and `target` — the hall's goal.
 const NO_BAR = Object.freeze({ mugs: 0, max: 0, pouring: null, drunk: 0, target: 0, roadrunner: false });
 // The finale steps of docs/spec/scenario.md, «Рапира»: the cursed world with its goal (5), the owl's rapier and the boss
@@ -330,7 +333,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         body.toggleAttribute('data-ready', model.ready);
         if (model.finale) body.dataset.finaleStep = model.finale.step;
         else delete body.dataset.finaleStep;
-        reveal?.update(model.finale, uptime());
+        reveal?.update(revealOf(), uptime());
         paintStatus();
         paintHud();
     }
@@ -1069,6 +1072,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     /** Whether the story is in the cursed world (finale step 5+), where a click may clink glasses. */
     const cursed = () => (step() ?? -1) >= CURSED_STEP;
     const inBar = () => isBar(model.scene);
+    // The reveal panel's finale: the story's, or in the bar after the dawn the evening's numbers without one.
+    const revealOf = () => model.finale ?? (inBar() && model.bar.roadrunner ? AFTER_STORY : null);
     const beerOf = (id) => model.walkers.find((w) => w.id === id)?.item === 'beer';
     const zombieOf = (id) => model.walkers.find((w) => w.id === id)?.zombie === true;
     /** Whether a click on RoadRunner behind the counter is RPC `clink {roadrunner: true}`: he stands there, beer in my hand. */
@@ -1375,7 +1380,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 if (minute === shown) return;
                 shown = minute;
                 paintStatus();
-                reveal?.update(model.finale, up);
+                reveal?.update(revealOf(), up);
             }, 1000);
         },
     };
