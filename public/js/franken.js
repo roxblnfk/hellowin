@@ -36,8 +36,8 @@ export const PHRASES = [
     'Не нравлюсь? Поставьте php-fpm и плачьте.',
 ];
 
-/** Time slots of this length; FrankenPHP speaks in about half of them. */
-export const SLOT_MS = 10000;
+/** Time slots of this length; FrankenPHP speaks in most of them. */
+export const SLOT_MS = 7000;
 // The line starts this far into its slot and leaves at least END_GAP of the slot empty.
 const START_MS = 900;
 const END_GAP = 1200;
@@ -70,7 +70,7 @@ function pickAt(now, list, slotMs, share, seed) {
 }
 
 /** The phrase FrankenPHP is saying at server time `now`: { text, at, until } in server ms, or null when he is silent. */
-export const phraseAt = (now) => pickAt(now, PHRASES, SLOT_MS, 50, SEED);
+export const phraseAt = (now) => pickAt(now, PHRASES, SLOT_MS, 85, SEED);
 
 /**
  * The boss's phrases (docs/spec/scenario.md, «Шаг 6 — босс FrankenPHP»): while the boss stands they replace PHRASES and
@@ -94,8 +94,8 @@ export const BOSS_PHRASES = [
     'Я не падаю. У меня graceful shutdown!',
 ];
 
-/** Time slots of the boss's phrases; he speaks in about two thirds of them. */
-export const BOSS_SLOT_MS = 7000;
+/** Time slots of the boss's phrases; he speaks in almost all of them. */
+export const BOSS_SLOT_MS = 6500;
 
 /** The boss's phrase at server time `now`, like phraseAt: { text, at, until } or null. */
-export const bossPhraseAt = (now) => pickAt(now, BOSS_PHRASES, BOSS_SLOT_MS, 67, BOSS_SEED);
+export const bossPhraseAt = (now) => pickAt(now, BOSS_PHRASES, BOSS_SLOT_MS, 90, BOSS_SEED);
