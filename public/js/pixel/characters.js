@@ -473,6 +473,11 @@ function faceLayer(r, defs, legend) {
     if (!def) return g;
     const { x: x0, y: y0 } = r.head;
     stamp(g, x0 + def.at[0], y0 + def.at[1], def.rows, legend);
+    return outlinedOffHead(g, x0, y0);
+}
+
+/** The layer outlined only off the head box at (x0, y0): over the head it grows out of it instead of sitting on it. */
+function outlinedOffHead(g, x0, y0) {
     const out = outlined(g);
     HEAD_MASK.forEach((row, rr) => [...row].forEach((ch, c) => {
         const i = (AY + y0 + rr) * W + AX + x0 + c;
@@ -1096,6 +1101,64 @@ function tricorn(g, x0, y0, dir) {
     stamp(g, x0 - (dir === 'side' ? 1 : 2), y0 - 5, TRICORN[dir], HAT_LEGEND);
 }
 
+// The punk mohawk: a tall crest of spiky strands from the forehead to the nape, the sides shaved (the head under it
+// shows as the body has it). Its colour runs from the root outward: R — the hot pink root, M — halfway to the eyes,
+// T — the strand tips in the eye colour (crestMid and crestTip, filled in per look), S — the root's shade and the
+// partings between strands. From the front it is a narrow strip with tips poking out on both sides, from the side a
+// fin of spikes fanning out over the head; from the back it also runs down the back of the head. It grows out of the
+// head, so it has no outline over it (grown).
+const MOHAWK_LEGEND = { R: 'mohawk', S: 'mohawkShade', M: 'crestMid', T: 'crestTip' };
+const MOHAWK = {
+    front: [
+        '.T..T.',
+        '.TTTT.',
+        'TTMMTT',
+        '.MMMM.',
+        'TMMMMT',
+        '.RRSS.',
+        'TRRSST',
+        '.RRSS.',
+        '.RRSS.',
+        '.RRSS.',
+    ],
+    side: [
+        '.......T....',
+        '...T...T....',
+        '...TT.TT....',
+        '...TT.MT...T',
+        'T...MMMMM.TT',
+        'MM..MMMMMMMM',
+        '.MSRRSRRRSM.',
+        '.RRRRSRRRSR.',
+        '..RRRRRRRR..',
+        '..SSSSSSSS..',
+        '.RS.........',
+        'RS..........',
+        'RS..........',
+    ],
+    back: [
+        '.T..T.',
+        '.TTTT.',
+        'TTMMTT',
+        '.MMMM.',
+        'TMMMMT',
+        '.RRSS.',
+        'TRRSST',
+        '.RRSS.',
+        '.RRSS.',
+        '.RRSS.',
+        '..RS..',
+        '..RS..',
+        '..RS..',
+        '..RS..',
+        '..RS..',
+    ],
+};
+
+function mohawk(g, x0, y0, dir) {
+    stamp(g, x0 + (dir === 'side' ? 0 : 3), y0 - 9, MOHAWK[dir], MOHAWK_LEGEND);
+}
+
 // Cultist hood: a pointed cowl; the face shows through the opening, the outline rings it like a shadow.
 function hoodPainter(g, x0, y0, dir) {
     const half = [1, 2, 3, 4, 5, 6];
@@ -1220,6 +1283,7 @@ const HATS = {
     },
     'cat-ears': { label: 'Ушки', paint: catEarsHat },
     tricorn: { label: 'Треуголка', paint: tricorn },
+    mohawk: { label: 'Ирокез', paint: mohawk, grown: true },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1873,7 +1937,15 @@ function compose(look, dir, pose, frame, item) {
     if (body.whiskers) over(out, body.whiskers(r));
     if (body.snout) over(out, body.snout(r));
     layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
-    layer((g) => HATS[look.hat].paint(g, r.head.x, r.head.y, dir));
+    const hat = HATS[look.hat];
+    if (hat.grown) {
+        // Hair grows out of the head: no outline where it lies on it.
+        const g = blank();
+        hat.paint(g, r.head.x, r.head.y, dir);
+        over(out, outlinedOffHead(g, r.head.x, r.head.y));
+    } else {
+        layer((g) => hat.paint(g, r.head.x, r.head.y, dir));
+    }
     layer((g) => cloak.paint(g, r, 'front'));
 
     if ((shoot || holding) && !behindHead) holdLayer();
@@ -1923,8 +1995,9 @@ const EYES = [
     { id: 'violet', label: 'Фиолетовые', key: 'eyeViolet' },
     { id: 'white', label: 'Светящиеся', key: 'white' },
     // Black eyes would melt into the outline round them: a white glint in each carries them, and the ritual's palm
-    // lights, which take the eye colour, glow a pale ghostly blue instead of black.
-    { id: 'black', label: 'Чёрные', key: 'eyeBlack', glint: true, palm: 'ghostShade' },
+    // lights, which take the eye colour, glow a pale ghostly blue instead of black. The mohawk's tips, black too, would
+    // melt into its outline: they take the cat's fur, a step above it.
+    { id: 'black', label: 'Чёрные', key: 'eyeBlack', glint: true, palm: 'ghostShade', crest: 'crow' },
 ];
 
 /**
@@ -2040,6 +2113,36 @@ const mixWhite = (c, t) => [16, 8, 0].reduce((acc, sh) => {
     return acc | (Math.round(v + (255 - v) * t) << sh);
 }, 0);
 
+const toHsl = (c) => {
+    const [r, g, b] = [16, 8, 0].map((sh) => ((c >> sh) & 0xff) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (!d) return [0, 0, l];
+    const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, d / (1 - Math.abs(2 * l - 1)), l];
+};
+
+const fromHsl = ([h, s, l]) => {
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return [0, 8, 4].reduce((acc, n, i) => acc | (Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))) << (16 - 8 * i)), 0);
+};
+
+/**
+ * The colour halfway from a to b along the hue circle (the short way round), so a pink and a green meet in orange,
+ * not in grey-brown; a grey end takes the other end's hue.
+ */
+function mixHue(a, b) {
+    const [ha, sa, la] = toHsl(a);
+    const [hb, sb, lb] = toHsl(b);
+    const h1 = sa ? ha : hb;
+    const h2 = sb ? hb : ha;
+    const dh = ((h2 - h1 + 540) % 360) - 180;
+    return fromHsl([(h1 + dh / 2 + 360) % 360, (sa + sb) / 2, (la + lb) / 2]);
+}
+
 function paintGrid(grid, colorOf) {
     const canvas = makeCanvas();
     const ctx = canvas.getContext('2d');
@@ -2071,7 +2174,7 @@ function paintGrid(grid, colorOf) {
  * once) always tips the beer to the mouth whatever the item, its `beer` the part not hidden by the head; the shrug
  * (`shrug`, 2 frames) shows empty palms whatever the item. A held rapier has its blade in the glow: `flames` — its
  * shimmer frames, `flame` — the middle of the blade, `muzzle` (aimed or raised) — its tip. `zombie` recolours the
- * skin and hands green and blanks the eyes; the zombie's own poses — `shamble` (4 walk frames) and `lurch` (2 standing) — hold the hands
+ * skin and hands green and blanks the eyes (and the mohawk's tips); the zombie's own poses — `shamble` (4 walk frames) and `lurch` (2 standing) — hold the hands
  * out empty whatever the item.
  */
 export function characterFrame(look, { dir, pose, frame = 0, item = null, zombie = false } = {}) {
@@ -2093,7 +2196,10 @@ export function characterFrame(look, { dir, pose, frame = 0, item = null, zombie
     const light = zombie || !eyes.palm ? eye : PALETTE[eyes.palm];
     const palm = { fxPalm: light, fxPalmCore: mixWhite(light, 0.6) };
     const skin = zombie ? zombieKeys(BODIES[full.body]) : {};
-    const colorOf = (k) => (k === 'eye' ? eye : k === 'eyeGlint' ? PALETTE.white : palm[k] ?? FX_COLORS[k] ?? PALETTE[skin[k] ?? k]);
+    // The mohawk's strand tips take the eye colour, its middle the hue halfway from the pink root.
+    const tip = zombie || !eyes.crest ? eye : PALETTE[eyes.crest];
+    const crest = { crestTip: tip, crestMid: mixHue(PALETTE.mohawk, tip) };
+    const colorOf = (k) => (k === 'eye' ? eye : k === 'eyeGlint' ? PALETTE.white : palm[k] ?? crest[k] ?? FX_COLORS[k] ?? PALETTE[skin[k] ?? k]);
     const result = { canvas: paintGrid(composed.out, colorOf), anchor: { x: AX, y: AY } };
     const toCanvas = ([x, y]) => [AX + x, AY + y];
     if (composed.glow) result.glow = paintGrid(composed.glow, colorOf);

@@ -241,4 +241,7 @@ export const PALETTE = {
     khakiDark: 0x50542e,
     // Black eyes: a step under the outline, so the eye reads as black against it; the glint carries the shape.
     eyeBlack: 0x140c12,
+    // The punk mohawk's root: a hot pink that stands apart from every eye colour its tips take, and its shade.
+    mohawk: 0xff3c9a,
+    mohawkShade: 0xb81e6a,
 };

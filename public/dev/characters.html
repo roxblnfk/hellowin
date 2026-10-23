@@ -135,6 +135,9 @@
         // The gopher's pupils and the robot's lenses take the eye colour too.
         [null, CATALOG.eyes.flatMap((e) => ['gopher', 'robot', 'cat'].map((body) =>
             cell(() => ({ look: { ...base, body, hat: 'none', eyes: e.id }, dir: 'front', pose: 'idle' }), `${e.id} ${body}`))), 'bodies'],
+        // So do the mohawk's strand tips; a zombie's turn white with its eyes.
+        [null, CATALOG.eyes.flatMap((e) => [false, true].flatMap((zombie) => ['front', 'side'].map((dir) =>
+            cell(() => ({ look: { ...base, hat: 'mohawk', eyes: e.id }, dir, pose: 'idle', zombie }), `${e.id} ${dir}${zombie ? ' z' : ''}`)))), 'mohawk'],
     ]);
     section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat', 'elephant', 'gopher', 'priest', 'robot', 'bodybuilder'].flatMap((body) => DIRS.map((dir) =>
         cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
@@ -161,9 +164,9 @@
 
     function draw(t) {
         for (const { ctx, spec } of cells) {
-            const { look, dir, pose, item = null, frame } = spec(t);
+            const { look, dir, pose, item = null, frame, zombie = false } = spec(t);
             const p = POSES[pose];
-            const { canvas, flames } = characterFrame(look, { dir, pose, frame: frame ?? Math.floor(t / p.ms) % p.frames, item });
+            const { canvas, flames } = characterFrame(look, { dir, pose, frame: frame ?? Math.floor(t / p.ms) % p.frames, item, zombie });
             ctx.clearRect(0, 0, FRAME.w, FRAME.h);
             ctx.drawImage(canvas, 0, 0);
             // The candle flame lives only in the light layer; it flickers on its own clock.
