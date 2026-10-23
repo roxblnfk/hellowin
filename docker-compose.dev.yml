@@ -11,6 +11,9 @@ services:
     environment:
       APP_ENV: local
       DEBUG: "true"
+      # PHP boots ~15s from a Windows bind mount: the prod pool timeouts would kill the workers before they are up
+      RR_HTTP_ALLOCATE_TIMEOUT: 60s
+      RR_CENTRIFUGE_ALLOCATE_TIMEOUT: 60s
     user: root
     volumes:
       - ./:/app
