@@ -92,9 +92,13 @@
   current set at once, no cooldown, no ceiling. `online` is the number of walkers, in the snapshot and in a
   `leaderboard` event every 5 s (a removed event the client only reads `online` from).
   The pause of the progress (protocol.md, «Пауза прогресса»; the console's «Пауза прогресса», ?paused=1): `click`,
-  `drink`, `strike` and `roll` answer `paused` (my refusal flashes «Пауза» in the HUD), no stage, goal or readiness
-  comes; flyers, wandering zombies and shots go on, a zombie shot then does not count for the cursed world's goal. Its
+  `drink`, `strike` and `roll` go through with `counted: false` in the reply and the event, and the task stands
+  still — a click keeps the element's clicks and stage, a drink grows no goal (no `drinks`), a strike keeps the hp, a
+  6-6-6 does not win; no readiness comes. The page shows players nothing of it, only the console has the button and its
+  badge. Flyers, wandering zombies and shots go on, a zombie shot then does not count for the cursed world's goal. Its
   end catches up like a lowered limit; a reset and «В бар» lift it (no `pause` event: `reset` says so).
+  The goals' numbers («Готово 3 из 8», «Выпито 12 из 30», «HP 57 / 90») are the moderator's (?mod=1): a player sees
+  the bars alone (scenario.md, «Цифры прогресса»).
   Scenes are numbered with the bar first (docs/spec/scenario.md): 0 bar, 1 day, 2 sunset, 3 night, 4 the final scene.
   Bar (the default without ?scene): the ticker pours one mug at a time (?mugs=N at the start, default 5; ?pour=ms per
   mug, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
@@ -215,11 +219,10 @@
         <span class="hud__item hud__status" data-status="connected" role="img" aria-label="Связь: есть" title="Связь: есть"></span>
         <span class="hud__item hud__runner" data-hud-runner hidden></span>
         <span class="hud__item hud__scene-name" data-hud-scene-name></span>
-        <span class="hud__item hud__pause" data-hud-pause role="status" hidden>Пауза</span>
         <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
         <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
         <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
-        <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>0</b></span>
+        <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="Готово тыкв" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>Готово</span></span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
@@ -646,17 +649,20 @@
         // A locked bonfire or circle: not counted, not broadcast (protocol.md, `locked`).
         if (isBonfire && !(engine.scene < engine.sceneStages && pumpkinsDone() && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
         if (isCircle && !(engine.scene >= engine.sceneStages && (engine.finale?.step ?? 0) === 0 && p.stage < p.stageMax)) return { ok: false, error: 'locked' };
-        if (engine.paused) return { ok: false, error: 'paused' };
         const threshold = own ? p.threshold : engine.threshold;
         const max = own ? p.stageMax : engine.stageMax;
         // Pumpkins and the bonfire stop in the final scene; the circle is drawn only there.
         const moving = isCircle || engine.scene < engine.sceneStages;
         stats.clicks++;
-        if (moving && p.stage < max && p.clicks < threshold) p.clicks++;
-        else stats.burned++;
-        deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage, ...(by ? { player: by } : {}) });
+        // On the pause of the progress the click goes through uncounted: the element keeps its clicks and stage.
+        const uncounted = engine.paused ? { counted: false } : {};
+        if (!engine.paused) {
+            if (moving && p.stage < max && p.clicks < threshold) p.clicks++;
+            else stats.burned++;
+        }
+        deliver({ type: 'click', element: id, emoji: isBonfire ? '🔥' : isCircle ? '⭕' : '🎃', clicks: p.clicks, threshold, stage: p.stage, ...(by ? { player: by } : {}), ...uncounted });
         stageUp(p, by);
-        return { ok: true };
+        return { ok: true, ...uncounted };
     }
 
     // The element's next stage once its clicks reach the threshold — after a click, or when the limit drops below them.
@@ -1413,11 +1419,15 @@
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
         if (!w.clinked && engine.walkers.length > 1) return { ok: false, error: 'not clinked' };
         if (drinkBusy(id) || serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
-        if (engine.paused) return { ok: false, error: 'paused' };
         w.item = null;
         w.clinked = false;
         drankAt.set(id, serverTime());
         stats.drinks++;
+        // On the pause the beer is drunk, but no goal grows.
+        if (engine.paused) {
+            deliver({ type: 'drink', player: { id }, counted: false });
+            return { ok: true, counted: false };
+        }
         deliver({ type: 'drink', player: { id } });
         if (engine.scene !== 0) {
             if (engine.cursed) {
@@ -1560,9 +1570,13 @@
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (!engine.boss || engine.boss.hp <= 0 || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
         if (w.item !== 'rapier') return { ok: false, error: 'no rapier' };
-        if (engine.paused) return { ok: false, error: 'paused' };
-        engine.boss.hp--;
         stats.damage++;
+        // On the pause the lightning strikes, the health stays.
+        if (engine.paused) {
+            deliver({ type: 'strike', player: playerOf(w), hp: engine.boss.hp, counted: false });
+            return { ok: true, hp: engine.boss.hp, counted: false };
+        }
+        engine.boss.hp--;
         deliver({ type: 'strike', player: playerOf(w), hp: engine.boss.hp });
         if (engine.boss.hp === 0) {
             deliver({ type: 'owl', line: 'boss-down', params: { player: playerOf(w) } });
@@ -1610,7 +1624,7 @@
     // ?bots666 bend some of them).
     const DICE_COOLDOWN_MS = 1800;
     const SIX = [6, 6, 6];
-    const diceState = { last: new Map(), at: new Map(), thrown: new Map(), owl: 0, botAt: new Map() };
+    const diceState = { last: new Map(), at: new Map(), thrown: new Map(), uncounted: new Map(), owl: 0, botAt: new Map() };
     const rollParam = (params.get('roll') ?? '').split(',').map((n) => Number.parseInt(n, 10));
     let forcedRoll = rollParam.length === 3 && rollParam.every((n) => n >= 1 && n <= 6) ? rollParam : null;
     const bots666 = Math.max(0, Number.parseInt(params.get('bots666') ?? '0', 10) || 0);
@@ -1627,6 +1641,7 @@
         diceState.last.clear();
         diceState.at.clear();
         diceState.thrown.clear();
+        diceState.uncounted.clear();
         diceState.botAt.clear();
         diceState.owl = 0;
     }
@@ -1654,10 +1669,9 @@
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (!(engine.scene >= engine.sceneStages && engine.finale?.step === 1 && engine.dice)) return { ok: false, error: 'not now' };
         const last = diceState.last.get(id) ?? 0;
-        if (last > 0 && attempt === last) return { ok: true, attempt, dice: diceState.thrown.get(`${id}:${last}`) };
+        if (last > 0 && attempt === last) return { ok: true, attempt, dice: diceState.thrown.get(`${id}:${last}`), ...diceState.uncounted.get(`${id}:${last}`) };
         if (!engine.dice.on) return { ok: false, error: 'not now' };
         if (attempt !== last + 1) return { ok: false, error: 'bad attempt', last };
-        if (engine.paused) return { ok: false, error: 'paused' };
         if (serverTime() - (diceState.at.get(id) ?? -1e12) < DICE_COOLDOWN_MS) return { ok: false, error: 'busy' };
         let faces = facesOf(`${engine.round}:${id}:${attempt}`);
         if (id === ME && forcedRoll) {
@@ -1670,10 +1684,13 @@
         diceState.last.set(id, attempt);
         diceState.at.set(id, serverTime());
         diceState.thrown.set(`${id}:${attempt}`, faces);
+        // On the pause the attempt is spent, but a 6-6-6 does not win; a repeat answers with the same `counted`.
+        const uncounted = engine.paused ? { counted: false } : {};
+        diceState.uncounted.set(`${id}:${attempt}`, uncounted);
         stats.rolls++;
-        deliver({ type: 'roll', player: playerOf(w), attempt, dice: faces, at: serverTime() });
-        if (isSix(faces)) diceWin({ player: playerOf(w), attempt });
-        return { ok: true, attempt, dice: faces };
+        deliver({ type: 'roll', player: playerOf(w), attempt, dice: faces, at: serverTime(), ...uncounted });
+        if (isSix(faces) && !engine.paused) diceWin({ player: playerOf(w), attempt });
+        return { ok: true, attempt, dice: faces, ...uncounted };
     }
 
     // «Сова бросает»: anything but 6-6-6 twice, then 6-6-6.
@@ -2157,10 +2174,10 @@
         const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
         return (list.length ? list : open)[Math.floor(Math.random() * (list.length || open.length))].id;
     };
-    // Your mug RPCs like app.js: none while the mug is busy, a refusal warned unless it is `busy` or said (`paused`).
+    // Your mug RPCs like app.js: none while the mug is busy, a refusal warned unless it is `busy`.
     const mugCall = (method, call) => client.mugRpc(method, () => {
         const reply = call();
-        if (!reply.ok && reply.error !== 'busy' && !client.refused(reply.error)) console.warn(`${method} rejected`, reply.error);
+        if (!reply.ok && reply.error !== 'busy') console.warn(`${method} rejected`, reply.error);
         return reply;
     });
     const labClink = (target) => mugCall('clink', () => engineClink(ME, target));
@@ -2187,7 +2204,7 @@
     bindChat(root, client, async (text) => engineSay(ME, { text }));
     // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
     const warned = (reply, method) => {
-        if (!reply.ok && !client.refused(reply.error)) console.warn(`${method} rejected`, reply.error);
+        if (!reply.ok) console.warn(`${method} rejected`, reply.error);
         return reply;
     };
     bindBar(root, client, {

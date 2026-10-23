@@ -117,11 +117,11 @@
             <span class="hud__item hud__status" data-status="disconnected" role="img" aria-label="Связь: нет" title="Связь: нет"></span>
             <span class="hud__item hud__runner" data-hud-runner hidden></span>
             <span class="hud__item hud__scene-name" data-hud-scene-name></span>
-            <span class="hud__item hud__pause" data-hud-pause role="status" hidden>Пауза</span>
             <span class="hud__item hud__drinks" data-hud-drinks role="progressbar" aria-label="Выпито в баре" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-drinks-text></span></span>
             <span class="hud__item hud__drinks hud__goal" data-hud-goal="drinks" role="progressbar" aria-label="Выпито в проклятом мире" aria-valuemin="0" hidden><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
             <span class="hud__item hud__drinks hud__goal hud__goal--zombies" data-hud-goal="zombies" role="progressbar" aria-label="Упокоено зомби" aria-valuemin="0" hidden><span class="hud__skull" aria-hidden="true"></span><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-goal-text></span></span>
-            <span class="hud__item" data-hud-progress>Готово <b data-hud-done>0</b> из <b data-hud-total>{{ count(array_filter($elements, static fn(array $e): bool => $e['type'] === 'pumpkin')) }}</b></span>            <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
+            <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="Готово тыкв" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>Готово</span></span>
+            <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
             <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
             <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
             <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>

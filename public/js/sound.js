@@ -8,7 +8,7 @@ import { T } from './pixel/finale-timeline.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar, shownItem } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
-import { ROLL_LAND_MS, ROLL_TUMBLE_MS, isSix } from './dice.js';
+import { ROLL_LAND_MS, ROLL_TUMBLE_MS, winsRoll } from './dice.js';
 // A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
 import * as FLYER_ART from './pixel/flyers.js';
 
@@ -364,7 +364,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             // Mine starts as its event arrives, the little dice over the others at the event's `at`.
             const land = mine ? ROLL_LAND_MS / 1000 : Math.max(0, (ROLL_TUMBLE_MS - late) / 1000);
             play('dice.land', { ...options, delay: land });
-            if (isSix(event.dice)) play('dice.666', { delay: land });
+            if (winsRoll(event)) play('dice.666', { delay: land });
         },
         // The moderator's click on RoadRunner: his «мип-мип», wherever he stands on screen; silent when he is not there.
         meep(model, event) {

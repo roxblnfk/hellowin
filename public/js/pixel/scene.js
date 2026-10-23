@@ -16,7 +16,7 @@ import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
-import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, isSix } from '../dice.js';
+import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
 import { RISE_MS, wanderAt } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
@@ -3923,7 +3923,7 @@ export async function createScene(rootEl, snapshot) {
             return sprite;
         });
         labelLayer.addChild(node);
-        rolls.set(key, { dice: event.dice, at: event.at, node, sprites, seed: seedOf(key) ^ (event.attempt | 0) });
+        rolls.set(key, { dice: event.dice, win: winsRoll(event), at: event.at, node, sprites, seed: seedOf(key) ^ (event.attempt | 0) });
     }
 
     function dropRoll(key) {
@@ -3952,7 +3952,7 @@ export async function createScene(rootEl, snapshot) {
             // Blinks out instead of fading, like the particles.
             r.node.visible = Boolean(head) && t >= 0 && (t < ROLL_SHOW_MS - ROLL_BLINK_MS || Math.floor(t / 100) % 2 === 0);
             if (!r.node.visible) continue;
-            const win = isSix(r.dice);
+            const { win } = r;
             r.sprites.forEach((sprite, i) => {
                 let def;
                 let hop = 0;

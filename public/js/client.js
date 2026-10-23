@@ -2,7 +2,7 @@
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
-import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf } from './dice.js';
+import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf, winsRoll } from './dice.js';
 import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
 import { CLINK } from './pixel/clink.js';
@@ -30,9 +30,6 @@ const OWL_TRY = 'Дайте я попробую!';
 // the scene's drink pose) and a pumpkin's hand-over when its `take` carries no `until` (HELLOWIN_BEER_HANDOVER_MS).
 const DRINK_MS = 1200;
 const HANDOVER_MS = 900;
-// A refusal `paused` (protocol.md, «Пауза прогресса») flashes «Пауза» in the HUD this long, over my walker too.
-const PAUSE_TOLD_MS = 2500;
-const PAUSE_TEXT = 'Пауза';
 // The HUD's connection lamp: its words go to its title and aria-label.
 export const STATUS = { connecting: 'Связь: переподключение…', connected: 'Связь: есть', disconnected: 'Связь: нет' };
 
@@ -77,12 +74,17 @@ export function barOf(bar) {
     return { mugs: bar.mugs, max: count(bar.max), pouring: bar.pouring ?? null, drunk: count(bar.drunk), target: count(bar.target), roadrunner: bar.roadrunner === true };
 }
 
-/** «Выпито 12 из 30» and how full the meter is, 0–1 (full once the goal is reached). */
-export function drinksOf(bar) {
-    const target = bar?.target ?? 0;
-    const drunk = bar?.drunk ?? 0;
-    return { text: `Выпито ${drunk} из ${target}`, fill: target > 0 ? Math.min(1, drunk / target) : 0 };
-}
+/**
+ * A meter of the scene's goal: `label` alone is the player's, `text` with the numbers the moderator's (scenario.md,
+ * «Цифры прогресса»); `fill` — how full it is, 0–1 (full once the goal is reached).
+ */
+const meterOf = (label, n, target) => ({ label, n, target, text: `${label} ${n} из ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
+
+/** The bar's meter: «Выпито 12 из 30». */
+export const drinksOf = (bar) => meterOf('Выпито', bar?.drunk ?? 0, bar?.target ?? 0);
+
+/** The pumpkins' meter of scenes 1–3: «Готово 3 из 8» — the pumpkins at their last stage. */
+export const pumpkinsDoneOf = (pumpkins, stageMax) => meterOf('Готово', pumpkins.filter((e) => e.stage >= stageMax).length, pumpkins.length);
 
 const count = (n, fallback = 0) => (Number.isInteger(n) && n >= 0 ? n : fallback);
 
@@ -113,12 +115,11 @@ export function limitsOf(limits) {
 /** How many times the owl has rolled this round (`dice.owl` of the snapshot, 0–3). */
 const owlRollsOf = (dice) => count(dice?.owl);
 
-/** The two meters of step 5: «Выпито 7 из 20» and «Зомби 3 из 20», each with how full it is, 0–1. */
+/** The two meters of step 5: «Выпито 7 из 20» and «Зомби 3 из 20». */
 export function goalsOf(cursed) {
-    const meter = (label, n, target) => ({ n, target, text: `${label} ${n} из ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
     return {
-        drinks: meter('Выпито', cursed?.drunk ?? 0, cursed?.drinksTarget ?? 0),
-        zombies: meter('Зомби', cursed?.slain ?? 0, cursed?.zombiesTarget ?? 0),
+        drinks: meterOf('Выпито', cursed?.drunk ?? 0, cursed?.drinksTarget ?? 0),
+        zombies: meterOf('Зомби', cursed?.slain ?? 0, cursed?.zombiesTarget ?? 0),
     };
 }
 
@@ -238,8 +239,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const step = () => (model.scene >= model.sceneStages ? (summon ? 0 : model.finale?.step ?? null) : null);
     // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
     let wordClosed = false;
-    // Until when (our clock) the HUD's «Пауза» flashes after a refusal `paused`; it may come before the `pause` event.
-    let pauseToldUntil = 0;
     // My dice (docs/spec/frontend.md, «Кости»): the attempts of RPC `roll`, my roll drawn big, the attempt whose event
     // has come (a reply without one is a repeat).
     const roller = createRoller((attempt) => (roll ? roll(attempt) : Promise.resolve(null)));
@@ -311,25 +310,12 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     }
 
     function paintHud() {
-        const set = (name, value) => {
-            const node = hud(name);
-            if (node) node.textContent = value;
-        };
-        set('scene-name', sceneName());
-        set('done', pumpkinsOf().filter((e) => e.stage >= model.stageMax).length);
-        set('total', pumpkinsOf().length);
-        // «Готово N из M» is the pumpkins' goal, scenes 1–3: the bar has its meter of mugs, step 5 its two goals, the rest
-        // of the finale its own panels (the circle, the dice, the boss's health). The round, the scene's number and the
-        // scene's readiness are the moderator's (the console).
-        const progress = hud('progress');
-        if (progress) progress.hidden = isBar(model.scene) || model.scene >= model.sceneStages;
-        // «Пауза» stands while the progress is paused, and flashes for a while after my action is refused with `paused`.
-        const pause = hud('pause');
-        if (pause) {
-            const told = now() < pauseToldUntil;
-            pause.hidden = !(model.paused || told);
-            pause.toggleAttribute('data-told', told);
-        }
+        const name = hud('scene-name');
+        if (name) name.textContent = sceneName();
+        // «Готово» is the pumpkins' goal, scenes 1–3: the bar has its meter of mugs, step 5 its two goals, the rest of the
+        // finale its own panels (the circle, the dice, the boss's health). The round, the scene's number and the scene's
+        // readiness are the moderator's (the console).
+        paintMeter(hud('progress'), hud('progress-text'), { shown: !isBar(model.scene) && model.scene < model.sceneStages, ...pumpkinsDoneOf(pumpkinsOf(), model.stageMax) });
     }
 
     function sceneName() {
@@ -344,7 +330,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         body.toggleAttribute('data-ready', model.ready);
         if (model.finale) body.dataset.finaleStep = model.finale.step;
         else delete body.dataset.finaleStep;
-        body.toggleAttribute('data-paused', model.paused);
         reveal?.update(model.finale, uptime());
         paintStatus();
         paintHud();
@@ -393,20 +378,27 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             drink.hidden = !(drinks() && (model.clinked || model.walkers.length <= 1));
             drink.disabled = mugBusy();
         }
-        const { text, fill } = drinksOf(model.bar);
-        paintMeter(hud('drinks'), root.querySelector('[data-hud-drinks-text]'), { shown: bar, text, fill, n: model.bar.drunk, target: model.bar.target });
+        paintMeter(hud('drinks'), root.querySelector('[data-hud-drinks-text]'), { shown: bar, ...drinksOf(model.bar) });
     }
 
-    // A pixel meter of the HUD (role="progressbar"): the bar's mugs, the cursed world's goals.
-    function paintMeter(meter, label, { shown, text, fill, n, target }) {
+    // The numbers of the scene's goal are the moderator's (scenario.md, «Цифры прогресса»): a player gets the bar alone,
+    // and its screen reader the share in percent.
+    function paintProgress(bar, { n, target, text, fill }) {
+        const numbers = model.moderator;
+        bar.setAttribute('aria-valuenow', String(numbers ? n : Math.round(fill * 100)));
+        bar.setAttribute('aria-valuemax', String(numbers ? target : 100));
+        if (numbers) bar.setAttribute('aria-valuetext', text);
+        else bar.removeAttribute('aria-valuetext');
+    }
+
+    // A pixel meter of the HUD (role="progressbar"): the pumpkins, the bar's mugs, the cursed world's goals.
+    function paintMeter(meter, label, { shown, ...goal }) {
         if (!meter) return;
         meter.hidden = !shown;
-        meter.toggleAttribute('data-full', fill >= 1);
-        meter.setAttribute('aria-valuenow', String(n));
-        meter.setAttribute('aria-valuemax', String(target));
-        meter.setAttribute('aria-valuetext', text);
-        meter.style.setProperty('--fill', String(fill));
-        if (label) label.textContent = text;
+        meter.toggleAttribute('data-full', goal.fill >= 1);
+        paintProgress(meter, goal);
+        meter.style.setProperty('--fill', String(goal.fill));
+        if (label) label.textContent = model.moderator ? goal.text : goal.label;
     }
 
     // The rapier's part of the page (docs/spec/frontend.md, «Рапира»): the goals of step 5, FrankenPHP's health and the
@@ -427,13 +419,17 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (hp) {
             hp.hidden = !alive || step() !== RAPIER_STEP;
             if (alive) {
-                const text = `HP ${model.boss.hp} / ${model.boss.max}`;
-                hp.setAttribute('aria-valuenow', String(model.boss.hp));
-                hp.setAttribute('aria-valuemax', String(model.boss.max));
-                hp.setAttribute('aria-valuetext', text);
-                hp.style.setProperty('--hp', String(model.boss.max > 0 ? model.boss.hp / model.boss.max : 0));
+                const { hp: n, max } = model.boss;
+                const text = `HP ${n} / ${max}`;
+                const fill = max > 0 ? n / max : 0;
+                paintProgress(hp, { n, target: max, text, fill });
+                hp.style.setProperty('--hp', String(fill));
+                // A player sees the bar alone, without a word under it.
                 const label = hp.querySelector('[data-boss-hp-text]');
-                if (label) label.textContent = text;
+                if (label) {
+                    label.textContent = model.moderator ? text : '';
+                    label.hidden = !model.moderator;
+                }
             }
         }
         const franken = root.querySelector('[data-franken]');
@@ -878,8 +874,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.roll?.(event);
             if (model.me !== null && event.player?.id === model.me) {
                 seenAttempt = Math.max(seenAttempt, event.attempt);
-                if (fresh) dicePanel.start(dice, event.attempt);
-                else dicePanel.settle(dice);
+                if (fresh) dicePanel.start(dice, event.attempt, winsRoll(event));
+                else dicePanel.settle(dice, winsRoll(event));
                 startDiceLoop();
             }
             paintDice();
@@ -967,9 +963,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             onSay(event);
         },
 
+        // The pause of the progress is the console's only (protocol.md, «Пауза прогресса»): a player's actions go on as
+        // usual, and `counted: false` changes nothing on the page but a 6-6-6 that does not win (winsRoll).
         pause(event) {
             model.paused = Boolean(event.on);
-            paintStory();
         },
 
         // The limits of the current context, counted by the server (protocol.md, «Лимиты и баланс»: the multiplier, the
@@ -1097,19 +1094,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     function strikes() {
         return step() === RAPIER_STEP && (model.boss?.hp ?? 0) > 0 && canWalk() && myWalker().item === 'rapier';
     }
-    /**
-     * A refusal of my action, said on the page where it has words: `paused` (a click, `drink`, `strike`, `roll` while
-     * the progress is paused) — «Пауза» flashing in the HUD and over my walker. Returns whether it was said; anything
-     * else is the caller's (`console.warn`).
-     */
-    function refused(error) {
-        if (error !== 'paused') return false;
-        pauseToldUntil = now() + PAUSE_TOLD_MS;
-        paintHud();
-        later(paintHud, PAUSE_TOLD_MS + 20);
-        if (myWalker()) scene?.hint?.(model.me, PAUSE_TEXT);
-        return true;
-    }
     /** Whether the word form is open to me: step 6, my walker on the field, no rapier yet, not a zombie. */
     function asksWord() {
         return step() === RAPIER_STEP && canWalk() && myWalker().item !== 'rapier';
@@ -1128,8 +1112,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             return !isBar(model.scene) && !button(id)?.hasAttribute('data-locked');
         },
         resync,
-
-        refused,
 
         /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
         setMe(id) {
@@ -1208,13 +1190,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 console.warn('roll rpc failed', error);
             }
             paintDice();
-            if (reply?.ok === false && !refused(reply.error)) console.warn('roll rejected', reply.error);
+            if (reply?.ok === false) console.warn('roll rejected', reply.error);
             const dice = reply?.ok ? facesOf(reply.dice) : null;
             if (dice && seenAttempt < reply.attempt) {
                 setTimeout(() => {
                     if (seenAttempt >= reply.attempt) return;
                     seenAttempt = reply.attempt;
-                    dicePanel.settle(dice);
+                    dicePanel.settle(dice, winsRoll(reply));
                     paintDice();
                 }, REPEAT_WAIT_MS);
             }
@@ -1362,10 +1344,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintStatus();
         },
 
-        /** Whether this connection is the moderator's (RPC `me`, `moderator`); it decides whether the console shows. */
+        /**
+         * Whether this connection is the moderator's (RPC `me`, `moderator`); it decides whether the console shows and
+         * whether the goals' meters carry their numbers.
+         */
         setModerator(on) {
             model.moderator = Boolean(on);
+            paintHud();
             paintBar();
+            paintRapier();
             paintMeep();
             onChange(model);
         },

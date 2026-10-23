@@ -32,6 +32,9 @@ export const REPEAT_WAIT_MS = 800;
 /** Whether three dice are 6-6-6. */
 export const isSix = (dice) => Array.isArray(dice) && dice.length === 3 && dice.every((d) => d === 6);
 
+/** Whether a `roll` event or reply is the win: 6-6-6 counted — on the pause of the progress it is not (`counted: false`). */
+export const winsRoll = (roll) => isSix(roll?.dice) && roll?.counted !== false;
+
 const isFace = (d) => Number.isInteger(d) && d >= 1 && d <= 6;
 
 /** Three faces of an event or a reply, or null when they are not three numbers 1–6. */
@@ -205,7 +208,7 @@ export function dieSvg(art, flared = false) {
 
 /**
  * My roll, big, in `[data-dice]`: three `[data-dice-face]` (`data-value` — the face) tumbling and landing from the
- * moment the client calls `start`, `[data-dice-rolling]` on their row while they roll, `data-dice-win` for 6-6-6.
+ * moment the client calls `start`, `[data-dice-rolling]` on their row while they roll, `data-dice-win` for a 6-6-6 that wins.
  * Time comes from `now` (the client's clock), so the lab's frozen clock drives it too; `frame()` repaints.
  *
  * @param {HTMLElement} root  #app
@@ -224,7 +227,7 @@ export function createDicePanel(root, { now, reduced = () => false }) {
         row.hidden = roll === null;
         if (!roll) return false;
         const t = reduced() ? ROLL_HOLD_MS : now() - roll.at;
-        const win = isSix(roll.dice);
+        const { win } = roll;
         const landed = t >= ROLL_LAND_MS;
         faces.forEach((el, i) => {
             const die = bigDieAt(roll.dice, i, t, roll.seed);
@@ -246,14 +249,14 @@ export function createDicePanel(root, { now, reduced = () => false }) {
 
     paint();
     return {
-        /** My `roll` event: the dice start rolling now. */
-        start(dice, seed = 0) {
-            roll = { dice, at: now(), seed };
+        /** My `roll` event: the dice start rolling now; `win` — a counted 6-6-6 (winsRoll). */
+        start(dice, seed = 0, win = isSix(dice)) {
+            roll = { dice, at: now(), seed, win };
             return paint();
         },
         /** A repeat answered without an event: the same dice, already landed. */
-        settle(dice) {
-            roll = { dice, at: now() - ROLL_HOLD_MS, seed: 0 };
+        settle(dice, win = isSix(dice)) {
+            roll = { dice, at: now() - ROLL_HOLD_MS, seed: 0, win };
             return paint();
         },
         /** Whether my dice are still rolling (the button waits for them). */

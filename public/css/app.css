@@ -522,47 +522,6 @@ body:not([data-final]) .circle,
     color: var(--ok);
 }
 
-/*
- * «Пауза» (client.js, paintHud): the progress is paused — two pixel bars before the word, in gold. After my action is
- * refused with `paused` it lights up gold and blinks by steps for a moment (still under reduced motion).
- */
-.hud__pause {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 6px;
-    color: var(--gold);
-}
-
-.hud__pause::before {
-    content: '';
-    width: 3px;
-    height: 10px;
-    background: currentColor;
-    box-shadow: 5px 0 0 currentColor;
-    margin-right: 5px;
-}
-
-.hud__pause[data-told] {
-    color: var(--outline);
-    background: var(--gold);
-    box-shadow: 0 0 0 2px var(--soil-dark);
-    animation: pause-told 0.5s steps(1) 3;
-}
-
-@keyframes pause-told {
-    50% {
-        color: var(--gold);
-        background: var(--outline);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .hud__pause[data-told] {
-        animation: none;
-    }
-}
-
 @container patch (max-width: 600px) {
     .hud {
         gap: 2px 14px;
@@ -1357,8 +1316,8 @@ body:not([data-final]) .circle,
 }
 
 /*
- * The bar's meter in the HUD (scene 0): «Выпито 12 из 30» beside a pixel glass filling with beer, a foam head on the
- * level; --fill (0–1) comes from client.js. Full — the foam runs over.
+ * The bar's meter in the HUD (scene 0): a pixel glass filling with beer, a foam head on the level, and «Выпито» beside
+ * it («Выпито 12 из 30» for the moderator); --fill (0–1) comes from client.js. Full — the foam runs over.
  */
 .hud__drinks {
     display: inline-flex;
@@ -1405,6 +1364,16 @@ body:not([data-final]) .circle,
 }
 
 .hud__goal--zombies[data-full] .hud__meter-fill {
+    box-shadow: none;
+}
+
+/* The pumpkins' meter of scenes 1–3 fills orange under a gold rim. */
+.hud__goal--pumpkins .hud__meter-fill {
+    background: linear-gradient(180deg, var(--gold) 0 3px, var(--accent) 3px);
+    box-shadow: 2px 0 0 var(--gold);
+}
+
+.hud__goal--pumpkins[data-full] .hud__meter-fill {
     box-shadow: none;
 }
 
@@ -1475,7 +1444,7 @@ body:not([data-final]) .circle,
 
 /*
  * FrankenPHP's health over his head (--boss-x / --boss-y from the scene, CSS pixels; without them at the top in the
- * middle): a pixel frame, the fill going from lime to red as it drains, crisp «HP 57 / 90» under it.
+ * middle): a pixel frame, the fill going from lime to red as it drains; the moderator gets a crisp «HP 57 / 90» under it.
  */
 .boss-hp {
     --hp: 1;

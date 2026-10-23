@@ -1209,7 +1209,7 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 <strong>AtLeastOnce</strong>. Первый вызов с ключом бросает и сохраняет ответ
                 <code>{attempt, dice}</code> на <code>HELLOWIN_DICE_IDEMPOTENCY_TTL</code> с. Повтор того же ключа —
                 двойной клик, переподключение, ретрай после потерянного ответа — получает сохранённый ответ: нового
-                броска нет, события и счёта тоже. Отказ (<code>busy</code>, <code>paused</code>, <code>not now</code>,
+                броска нет, события и счёта тоже. Отказ (<code>busy</code>, <code>not now</code>,
                 <code>bad attempt</code>) — не ответ: <code>FailurePolicy::Release</code> освобождает ключ, и попытку
                 можно бросить, когда отказ уйдёт.
             </p>
@@ -1321,7 +1321,9 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 <code>k</code> лежит в сюжете и переживает сброс.
                 <code>pause {on}</code> — пауза прогресса: задача сцены замирает, а зал живёт дальше. RPC, которые двигают
                 задачу (<code>click</code> по тыквам, костру и кругу, <code>drink</code>, <code>strike</code>,
-                <code>roll</code>), отвечают <code>paused</code> до изменения состояния, готовность сцены не наступает;
+                <code>roll</code>), не отказывают: действие проходит, событие уходит всем, но с <code>counted: false</code> —
+                клики и стадии стоят, кружки не идут в цель, здоровье босса прежнее, 6-6-6 не выигрывает, готовность сцены
+                не наступает. Игроки паузу не видят — она только на пульте;
                 летунов, зомби и выстрелы пауза не трогает. Снятая пауза догоняет своё тем же пересчётом, что и
                 снизившийся лимит, а сброс снимает её сам.
                 Роль — не в <code>user</code>: модератор может быть и игроком со своим секретом, а <code>user</code> — это

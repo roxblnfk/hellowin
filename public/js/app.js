@@ -185,23 +185,21 @@ async function main() {
     });
 
     // Nothing is drawn locally on click: the effect appears when the server broadcasts the `click` event. A locked
-    // bonfire is not asked at all: the server would only answer `locked`. A refusal with words (`paused`: «Пауза» in
-    // the HUD) is the client's, the rest only warned.
+    // bonfire is not asked at all: the server would only answer `locked`. A refusal is only warned.
     const click = (id) => client.clickable(id) && centrifuge.rpc('click', { element: id })
         .then(({ data }) => {
-            if (data?.ok === false && !client.refused(data.error)) console.warn('click rejected', data.error);
+            if (data?.ok === false) console.warn('click rejected', data.error);
         })
         .catch((error) => console.warn('click rpc failed', error));
-    // An RPC whose result comes back as channel events; a refusal (`zombified`, `not now`, `no rapier`…) is only warned,
-    // `paused` of `strike` is «Пауза».
+    // An RPC whose result comes back as channel events; a refusal (`zombified`, `not now`, `no rapier`…) is only warned.
     const rpc = (method, params = {}) => centrifuge.rpc(method, params).then(({ data }) => {
-        if (data?.ok === false && !client.refused(data.error)) console.warn(`${method} rejected`, data.error);
+        if (data?.ok === false) console.warn(`${method} rejected`, data.error);
         return data;
     }).catch((error) => console.warn(`${method} rpc failed`, error));
     // A mug RPC (`drink`, `beer`, `bar.take`, `clink`): not sent while my mug is busy, one at a time; the server's
-    // `busy` is the same rule seen from its side and stays quiet; `paused` of `drink` is «Пауза».
+    // `busy` is the same rule seen from its side and stays quiet.
     const mugRpc = (method, params = {}) => client.mugRpc(method, () => centrifuge.rpc(method, params).then(({ data }) => {
-        if (data?.ok === false && data.error !== 'busy' && !client.refused(data.error)) console.warn(`${method} rejected`, data.error);
+        if (data?.ok === false && data.error !== 'busy') console.warn(`${method} rejected`, data.error);
         return data;
     })).catch((error) => console.warn(`${method} rpc failed`, error));
     // In the cursed world a reachable pumpkin takes a clink instead: the walk comes as `move`, the glasses as `clink`.
