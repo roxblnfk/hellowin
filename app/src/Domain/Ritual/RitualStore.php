@@ -62,7 +62,7 @@ final readonly class RitualStore
     }
 
     /**
-     * Counts a click on a pumpkin or a centrepiece.
+     * Counts a click on a pumpkin or a centrepiece; on a pause of the progress the element keeps its clicks.
      *
      * @param \Closure(RitualSnapshot): bool|null $accepts Decides on the whole ritual, read under the element lock,
      *        whether the click counts at all.
@@ -83,13 +83,14 @@ final readonly class RitualStore
                 return null;
             }
 
+            // On a pause the click is still accepted, so the reveal counts it, but it brings no transition nearer
+            $story = $this->readStory();
             $current = $this->readPumpkin($id);
-            $pumpkin = new Pumpkin($id, $current->stage, $current->clicks + 1, $current->accepted + 1, $current->spent);
+            $clicks = $story->paused ? $current->clicks : $current->clicks + 1;
+            $pumpkin = new Pumpkin($id, $current->stage, $clicks, $current->accepted + 1, $current->spent);
             $this->writePumpkin($pumpkin);
 
-            $story = $this->readStory();
-
-            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin, $story->k, $story->players);
+            return new ClickOutcome($this->readRound(), $this->readScene(), $pumpkin, $story->k, $story->players, !$story->paused);
         });
     }
 

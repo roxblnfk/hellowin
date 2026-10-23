@@ -6,6 +6,7 @@ namespace Tests\Unit\Application\Story;
 
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarRefusedException;
+use App\Application\Hellowin\ElementLockedException;
 use App\Application\Hellowin\UnknownElementException;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
@@ -18,8 +19,8 @@ use Tests\Fake\RitualHarness;
 
 /**
  * The pause of the scene's progress (docs/spec/protocol.md, «Пауза прогресса»): the room's clicks, sips, strikes and
- * throws are refused after their own checks, no goal makes a scene ready, the sky goes on, and lifting the pause catches
- * up with what the room reached.
+ * throws go through after their own checks but do not count toward the scene's task, no goal makes a scene ready, the
+ * sky goes on, and lifting the pause catches up with what the room reached.
  */
 #[Test]
 #[Covers(StoryService::class)]
@@ -29,41 +30,81 @@ final class PauseTest
     private const JACK = 'aaaaaaaaaaaaaaaa';
     private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
 
-    public function clickIsRefusedAfterTheElementCheckAndTheWalkGoesOn(): void
+    public function clickGoesThroughUncountedAndStopsTheWalk(): void
     {
         $ritual = self::walking(new RitualHarness());
-        $walk = $ritual->walkerStore->all()[self::JACK]->walk;
+        $ritual->click('pumpkin-1');
         $ritual->story->pause(true);
         $ritual->broadcast->published = [];
+        $ritual->queue->pushed = [];
 
         Assert::same(self::refusal(static fn() => $ritual->clicks->click('ghost-42', self::JACK)), UnknownElementException::class);
-        Assert::same(self::refusal(static fn() => $ritual->clicks->click('pumpkin-1', self::JACK)), 'paused');
-        Assert::same(self::refusal(static fn() => $ritual->clicks->click('pumpkin-1')), 'paused');
+        $outcome = $ritual->clicks->click('pumpkin-1', self::JACK);
+        $ritual->click('pumpkin-1', 2);
 
-        Assert::blank($ritual->broadcast->published);
+        Assert::false($outcome->counted);
+        $pumpkin = $ritual->store->snapshot()->pumpkins[0];
+        Assert::same([$pumpkin->stage, $pumpkin->clicks, $pumpkin->accepted], [0, 1, 4]);
         Assert::blank($ritual->queue->pushed);
-        Assert::same($ritual->store->snapshot()->pumpkins[0]->clicks, 0);
-        Assert::equals($ritual->walkerStore->all()[self::JACK]->walk, $walk);
+        $click = $ritual->broadcast->ofType('click')[0];
+        Assert::same([$click['clicks'], $click['stage'], $click['counted'] ?? null], [1, 0, false]);
+        Assert::same(\array_column($ritual->broadcast->ofType('click'), 'counted'), [false, false, false]);
+        Assert::same($ritual->broadcast->ofType('move')[0]['stop'] ?? null, 'click');
+        Assert::same($ritual->playerStore->find(self::JACK)?->clicks, 1);
+
+        $ritual->story->pause(false);
+        $ritual->broadcast->published = [];
+        Assert::true($ritual->clicks->click('pumpkin-1', self::JACK)->counted);
+
+        Assert::false(\array_key_exists('counted', $ritual->broadcast->ofType('click')[0]));
+        Assert::notBlank($ritual->queue->pushed);
     }
 
-    public function drinkIsRefusedAfterItsOwnChecksAndKeepsTheMug(): void
+    public function lockedClickIsRefusedOnAPauseToo(): void
+    {
+        $ritual = new RitualHarness(bonfire: [1, 1]);
+        $ritual->story->pause(true);
+
+        Assert::same(self::refusal(static fn() => $ritual->clicks->click(RitualHarness::BONFIRE)), ElementLockedException::class);
+        Assert::blank($ritual->broadcast->ofType('click'));
+    }
+
+    public function drinkInTheBarGoesThroughWithoutMovingTheGoal(): void
     {
         $ritual = self::walking(self::bar());
         $ritual->story->pause(true);
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'no beer');
         self::give($ritual);
-        $walk = $ritual->walkerStore->all()[self::JACK]->walk;
         $ritual->broadcast->published = [];
 
-        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JACK)), 'paused');
+        Assert::false($ritual->bar->drink(self::JACK));
 
-        Assert::blank($ritual->broadcast->published);
-        Assert::same($ritual->walkerStore->all()[self::JACK]->item, 'beer');
-        Assert::equals($ritual->walkerStore->all()[self::JACK]->walk, $walk);
+        Assert::null($ritual->walkerStore->all()[self::JACK]->item);
+        Assert::same($ritual->broadcast->ofType('move')[0]['stop'] ?? null, 'drink');
+        Assert::same($ritual->broadcast->ofType('drink'), [['type' => 'drink', 'round' => 1, 'player' => ['id' => self::JACK], 'counted' => false]]);
+        Assert::blank($ritual->broadcast->ofType('drinks'));
         Assert::same($ritual->barStore->drinks(1), 0);
+        Assert::same($ritual->playerStore->find(self::JACK)?->drinks, 1);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->drinks, 1);
     }
 
-    public function strikeIsRefusedAfterItsOwnChecks(): void
+    public function drinkInTheCursedWorldGoesThroughWithoutMovingTheGoal(): void
+    {
+        $ritual = self::cursed();
+        $ritual->story->pause(true);
+        self::give($ritual);
+        $ritual->broadcast->published = [];
+
+        Assert::false($ritual->bar->drink(self::JACK));
+
+        Assert::same($ritual->broadcast->ofType('drink')[0]['counted'] ?? null, false);
+        Assert::blank($ritual->broadcast->ofType('cursed'));
+        Assert::same($ritual->cursed->state(1, $ritual->store->story())['drunk'] ?? null, 0);
+        Assert::same($ritual->playerStore->find(self::JACK)?->drinks, 1);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->drinks, 1);
+    }
+
+    public function strikeGoesThroughAndTheHealthStays(): void
     {
         $ritual = new RitualHarness(stageMax: [1], circle: 1);
         $ritual->transitions->scene(1, 1);
@@ -75,32 +116,52 @@ final class PauseTest
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike('bbbbbbbbbbbbbbbb')), NoCharacterException::class);
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JACK)), 'not now');
         Assert::true($ritual->rapier->word(self::JACK, 'Рапира'));
-        $hp = $ritual->rapier->state(1)['hp'] ?? null;
+        $hp = $ritual->rapier->state(1)['hp'] ?? 0;
+        $ritual->rapier->tune(1 - $hp);
         $ritual->broadcast->published = [];
 
-        Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JACK)), 'paused');
+        Assert::same($ritual->rapier->strike(self::JACK), ['hp' => 1, 'counted' => false]);
 
-        Assert::blank($ritual->broadcast->ofType('strike'));
-        Assert::same($ritual->rapier->state(1)['hp'] ?? null, $hp);
+        Assert::same($ritual->broadcast->ofType('strike'), [['type' => 'strike', 'round' => 1, 'player' => ['id' => self::JACK, 'name' => 'Jack'], 'hp' => 1, 'counted' => false]]);
+        Assert::blank($ritual->broadcast->ofType('owl'));
+        Assert::blank($ritual->queue->pushed);
+        Assert::same($ritual->rapier->state(1)['hp'] ?? null, 1);
+        Assert::same($ritual->playerStore->find(self::JACK)?->damage, 1);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->damage, 1);
     }
 
-    public function newThrowIsRefusedWhileARepeatStillAnswers(): void
+    public function sixesOnAPauseRollButDoNotWin(): void
     {
         $ritual = new RitualHarness(stageMax: [1], circle: 1);
         $ritual->transitions->scene(1, 1);
         self::place($ritual);
         $ritual->story->finaleStep(1, force: true);
         $ritual->clock->now += 10_000;
-        $first = $ritual->dice->roll(self::JACK, 1);
-        $ritual->clock->now += 10_000;
         $ritual->story->pause(true);
         $ritual->broadcast->published = [];
+        $ritual->diceFaces->faces = [6, 6, 6];
 
+        $first = $ritual->dice->roll(self::JACK, 1);
+
+        Assert::same($first, ['attempt' => 1, 'dice' => [6, 6, 6], 'counted' => false]);
+        Assert::same($ritual->broadcast->ofType('roll')[0]['counted'] ?? null, false);
+        Assert::blank($ritual->broadcast->ofType('dice'));
+        Assert::null($ritual->diceStore->get(1)->winner);
+        Assert::same($ritual->snapshot->create()['dice']['on'] ?? null, true);
+        Assert::same([$ritual->diceStore->get(1)->rolls, $ritual->playerStore->find(self::JACK)?->rolls], [1, 1]);
+
+        // A repeat answers the same, from the kept answer and, once it is lost, from the record
         Assert::same($ritual->dice->roll(self::JACK, 1), $first);
-        Assert::same(self::refusal(static fn() => $ritual->dice->roll(self::JACK, 2)), 'paused');
+        $ritual->diceReplies->kept = [];
+        Assert::same($ritual->dice->roll(self::JACK, 1), $first);
+        Assert::count($ritual->broadcast->ofType('roll'), 1);
 
-        Assert::blank($ritual->broadcast->published);
-        Assert::same($ritual->diceStore->get(1)->last(self::JACK), 1);
+        $ritual->story->pause(false);
+        $ritual->clock->now += 10_000;
+        $ritual->diceFaces->faces = [6, 6, 6];
+
+        Assert::same($ritual->dice->roll(self::JACK, 2), ['attempt' => 2, 'dice' => [6, 6, 6]]);
+        Assert::count($ritual->broadcast->ofType('dice'), 1);
     }
 
     public function burstAndSpecialsFlyOnAPause(): void
@@ -226,6 +287,21 @@ final class PauseTest
     private static function bar(): RitualHarness
     {
         return new RitualHarness(stageMax: [0, 1, 2]);
+    }
+
+    /**
+     * Jack stands in the cursed world, finale step 5.
+     */
+    private static function cursed(): RitualHarness
+    {
+        $ritual = new RitualHarness(stageMax: [1], circle: 1);
+        $ritual->transitions->scene(1, 1);
+        self::place($ritual);
+        for ($step = 1; $step <= 5; ++$step) {
+            $ritual->story->finaleStep($step, force: true);
+        }
+
+        return $ritual;
     }
 
     private static function place(RitualHarness $ritual): void

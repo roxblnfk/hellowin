@@ -9,7 +9,6 @@ use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\OwlLine;
-use App\Application\Story\StoryRefusedException;
 use App\Application\Walk\ActionStop;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
@@ -22,6 +21,7 @@ use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Story;
+use App\Domain\Story\UncountedTally;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
 use Random\Randomizer;
@@ -63,6 +63,7 @@ final readonly class BarService
         private ?CursedService $cursed = null,
         private int $drinkMs = 1200,
         private ?PlayMetrics $metrics = null,
+        private ?UncountedTally $uncounted = null,
     ) {}
 
     /**
@@ -174,22 +175,23 @@ final readonly class BarService
      * Drinks the clinked mug in hand: the hands are empty again, the player and the room count one more mug, and the
      * bar is ready once the room has drunk its goal. A player alone on the floor has no one to clink with and drinks
      * the mug as it is. The cursed world drinks the same way and counts the mug towards its own goal. A walking
-     * character stops where it is to drink.
+     * character stops where it is to drink. On a pause of the progress the mug is drunk all the same, but the goal of
+     * the bar or of the cursed world does not move.
      *
      * @param non-empty-string $id
+     * @return bool False when the pause did not count the mug toward the goal.
      * @throws NoCharacterException
      * @throws ZombifiedException
      * @throws BarRefusedException `not bar` — neither the bar nor the cursed world, `no beer`, `not clinked` or `busy`:
      *         the clink of the mug, the last sip or the hand-over of a pumpkin is still playing, so a click never skips
      *         an animation.
-     * @throws StoryRefusedException `paused` — the moderator holds the progress: the mug stays in hand.
      * @throws LockBusyException
      * @throws RitualBusyException
      */
-    public function drink(string $id): void
+    public function drink(string $id): bool
     {
         $now = $this->clock->now();
-        [$inBar, $stopped] = $this->walkers->update(
+        [$inBar, $stopped, $paused] = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($id, $now): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
@@ -201,12 +203,11 @@ final readonly class BarService
                 $walker->busyAt($now) and throw new BarRefusedException('busy');
                 $walker->clinked || count($walkers) === 1 or throw new BarRefusedException('not clinked');
                 $walker->mugClinking($now) and throw new BarRefusedException('busy');
-                $story->paused and throw new StoryRefusedException('paused');
                 // Not through ActionStop: the walk is cut in the same write as the sip, under the lock held here
                 $stopped = $walker->stoppedAt($now);
                 $walkers[$id] = ($stopped ?? $walker)->drank($now + $this->drinkMs);
 
-                return [$walkers, [$inBar, $stopped]];
+                return [$walkers, [$inBar, $stopped, $story->paused]];
             },
         );
 
@@ -214,18 +215,24 @@ final readonly class BarService
         $stopped === null or $this->publisher->move($round, $stopped, ActionStop::DRINK);
         $this->players->drank($id);
         $this->metrics?->mug($inBar ? PlayMetrics::PLACE_BAR : PlayMetrics::PLACE_CURSED);
+        $this->publisher->drink($round, $id, !$paused);
+        if ($paused) {
+            $this->uncounted?->add($round, UncountedTally::DRINKS);
+
+            return false;
+        }
         if (!$inBar) {
-            $this->publisher->drink($round, $id);
             $this->cursed?->drank($round);
 
-            return;
+            return true;
         }
 
         $drunk = $this->bar->drank($round);
         $target = $this->target($this->ritual->story());
-        $this->publisher->drink($round, $id);
         $this->publisher->drinks($round, $drunk, $target);
         $drunk >= $target and $this->ready($round);
+
+        return true;
     }
 
     /**

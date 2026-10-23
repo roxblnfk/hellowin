@@ -20,6 +20,7 @@ use App\Domain\Story\Boss;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\MagicWord;
 use App\Domain\Story\Story;
+use App\Domain\Story\UncountedTally;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
@@ -61,6 +62,7 @@ final readonly class RapierService
         private Limit $hp,
         private Randomizer $random = new Randomizer(),
         private ?ActionStop $stops = null,
+        private ?UncountedTally $uncounted = null,
     ) {}
 
     /**
@@ -146,40 +148,45 @@ final readonly class RapierService
 
     /**
      * A strike of the rapier at FrankenPHP: one point of health under the boss's lock. The strike that takes the last
-     * point fells it — the owl names the player, and the dawn comes by the transition queue.
+     * point fells it — the owl names the player, and the dawn comes by the transition queue. On a pause of the progress
+     * the lightning strikes all the same, but the health stays.
      *
      * @param non-empty-string $id
-     * @return int<0, max> The health after the strike.
+     * @return array{hp: int<0, max>, counted?: false} The health after the strike; `counted` — the pause held it.
      * @throws NoCharacterException
      * @throws ZombifiedException
-     * @throws StoryRefusedException `not now` — no boss or it is down, `no rapier`, `paused`.
+     * @throws StoryRefusedException `not now` — no boss or it is down, `no rapier`.
      * @throws LockBusyException
      */
-    public function strike(string $id): int
+    public function strike(string $id): array
     {
         $walker = $this->walkers->all()[$id] ?? throw new NoCharacterException('no character');
         $walker->zombie() and throw new ZombifiedException();
         $ritual = $this->ritual->snapshot();
         $round = $ritual->round;
-        $ritual->story->rapier() && $this->boss->get($round)?->down() === false or throw new StoryRefusedException('not now');
+        $boss = $this->boss->get($round);
+        $ritual->story->rapier() && $boss !== null && !$boss->down() or throw new StoryRefusedException('not now');
         $walker->hasRapier() or throw new StoryRefusedException('no rapier');
-        $ritual->story->paused and throw new StoryRefusedException('paused');
 
-        [$before, $after] = $this->boss->update(
-            $round,
-            static fn(?Boss $boss): ?Boss => $boss === null || $boss->down() ? $boss : $boss->struck(),
-        );
-        $before !== null && !$before->down() && $after !== null or throw new StoryRefusedException('not now');
+        $counted = !$ritual->story->paused;
+        if ($counted) {
+            [$before, $boss] = $this->boss->update(
+                $round,
+                static fn(?Boss $boss): ?Boss => $boss === null || $boss->down() ? $boss : $boss->struck(),
+            );
+            $before !== null && !$before->down() && $boss !== null or throw new StoryRefusedException('not now');
+        }
 
         $this->stops?->stop($id, ActionStop::STRIKE);
         $player = $this->players->struck($id) ?? self::player($walker);
-        $this->publisher->strike($round, $player, $after->hp);
-        if ($after->down()) {
+        $counted or $this->uncounted?->add($round, UncountedTally::DAMAGE);
+        $this->publisher->strike($round, $player, $boss->hp, $counted);
+        if ($boss->down()) {
             $this->publisher->owl($round, OwlLine::BOSS_DOWN, ['player' => $player->ref()]);
             $this->queue->finale($round, Story::DAWN_STEP);
         }
 
-        return $after->hp;
+        return $counted ? ['hp' => $boss->hp] : ['hp' => $boss->hp, 'counted' => false];
     }
 
     /**

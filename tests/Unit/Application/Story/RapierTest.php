@@ -348,7 +348,7 @@ final class RapierTest
         $ritual->rapier->word(self::JILL, 'пиво');
         $ritual->broadcast->published = [];
 
-        Assert::same($ritual->rapier->strike(self::JACK), 0);
+        Assert::same($ritual->rapier->strike(self::JACK), ['hp' => 0]);
 
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['strike', 'owl']);
         Assert::same($ritual->broadcast->ofType('strike')[0], ['type' => 'strike', 'round' => 1, 'player' => ['id' => self::JACK, 'name' => 'Jack'], 'hp' => 0]);

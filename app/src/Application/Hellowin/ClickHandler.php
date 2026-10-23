@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Application\Hellowin;
 
 use App\Application\Player\PlayerService;
-use App\Application\Story\StoryRefusedException;
 use App\Application\Walk\ActionStop;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Ritual\ClickOutcome;
@@ -32,11 +31,11 @@ final readonly class ClickHandler
     /**
      * Counts the click, tells every client about it and, when the policy lets the element move, queues its
      * transition. Every click past the threshold queues one again until the transition is done: the job deduplicates
-     * by its idempotency key, and the player of the job that runs finished the element.
+     * by its idempotency key, and the player of the job that runs finished the element. On a pause of the progress the
+     * click goes through as usual, but the element keeps its clicks and moves nowhere ({@see ClickOutcome::$counted}).
      *
      * @param non-empty-string|null $player Public id of the clicking player, null for an anonymous connection.
      * @throws UnknownElementException
-     * @throws StoryRefusedException `paused` — the moderator holds the scene's progress: not counted, not published.
      * @throws ElementLockedException A click on a closed centrepiece or on a pumpkin in the bar: not counted, not published.
      * @throws RitualBusyException
      */
@@ -45,7 +44,6 @@ final readonly class ClickHandler
         $element = $this->elements->find($elementId)
             ?? throw new UnknownElementException(\sprintf('Unknown element "%s".', $elementId));
         $type = $element->type;
-        $this->store->story()->paused and throw new StoryRefusedException('paused');
 
         // A centrepiece reads the whole ritual under its own lock, so a reset cannot slip between the check and the count
         // A pumpkin only checks the scene: there are no pumpkins to click in the bar
@@ -65,7 +63,10 @@ final readonly class ClickHandler
 
         $emoji = $element->emojis[$this->randomizer->getInt(0, \count($element->emojis) - 1)];
         $threshold = $this->policy->threshold($type, $outcome->k, $outcome->players);
-        $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $threshold, $stats);
+        $this->publisher->click($outcome->round, $outcome->pumpkin, $emoji, $threshold, $stats, $outcome->counted);
+        if (!$outcome->counted) {
+            return $outcome;
+        }
 
         // Clicks gathered before the threshold came down count: the next click moves the element
         $toStage = $element->centrepiece()

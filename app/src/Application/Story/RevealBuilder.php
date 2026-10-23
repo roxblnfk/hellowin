@@ -13,6 +13,7 @@ use App\Domain\Story\CursedStore;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\Reveal;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\UncountedTally;
 
 /**
  * The finale as clients see it: the step and, from the reveal step on, the numbers of the round.
@@ -27,6 +28,7 @@ final readonly class RevealBuilder
         private ?CursedStore $cursed = null,
         private ?BossStore $boss = null,
         private ?DiceStore $dice = null,
+        private ?UncountedTally $uncounted = null,
     ) {}
 
     /**
@@ -55,9 +57,9 @@ final readonly class RevealBuilder
             $this->policy,
             $this->shots->count($ritual->round),
             $lastPumpkin,
-            ($this->bar?->drinks($ritual->round) ?? 0) + ($cursed?->drunk ?? 0),
+            ($this->bar?->drinks($ritual->round) ?? 0) + ($cursed?->drunk ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::DRINKS) ?? 0),
             $cursed?->slain ?? 0,
-            $this->boss?->get($ritual->round)?->damage ?? 0,
+            ($this->boss?->get($ritual->round)?->damage ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::DAMAGE) ?? 0),
             $this->dice?->get($ritual->round)->rolls ?? 0,
         );
     }

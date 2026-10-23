@@ -168,7 +168,7 @@ final readonly class RPCService implements ServiceInterface
             'beer' => $this->beer($request->getData(), $player),
             'word' => $player === null ? self::fail('anonymous') : ['ok' => true, 'correct' => $this->rapierService()->word($player, $request->getData()['text'] ?? null)],
             'cure' => $this->cure($request->getData(), $player),
-            'strike' => $player === null ? self::fail('anonymous') : ['ok' => true, 'hp' => $this->rapierService()->strike($player)],
+            'strike' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->rapierService()->strike($player),
             'cursed.target' => $this->settled(['ok' => true, 'target' => $this->cursedService()->moveTarget($request->getData()['goal'] ?? null, $request->getData()['delta'] ?? null)]),
             'boss.hp' => $this->settled(['ok' => true] + $this->rapierService()->tune($request->getData()['delta'] ?? null)),
             'roll' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->diceService()->roll($player, $request->getData()['attempt'] ?? null),
@@ -249,8 +249,7 @@ final readonly class RPCService implements ServiceInterface
         }
 
         try {
-            $this->clicks->click($element, $player);
-            return ['ok' => true];
+            return $this->clicks->click($element, $player)->counted ? ['ok' => true] : ['ok' => true, 'counted' => false];
         } catch (UnknownElementException) {
             return self::fail('unknown element');
         } catch (ElementLockedException) {
@@ -426,9 +425,7 @@ final readonly class RPCService implements ServiceInterface
             return self::fail('anonymous');
         }
 
-        $this->barService()->drink($player);
-
-        return ['ok' => true];
+        return $this->barService()->drink($player) ? ['ok' => true] : ['ok' => true, 'counted' => false];
     }
 
     /**

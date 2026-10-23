@@ -52,6 +52,7 @@ use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\TopStore;
+use App\Domain\Story\UncountedTally;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -154,6 +155,11 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): ShotTally => new ShotTally($cache->storage($config->getStorage()), new Locks($lock)),
+            UncountedTally::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): UncountedTally => new UncountedTally($cache->storage($config->getStorage()), new Locks($lock)),
             RevealBuilder::class => static fn(
                 ShotTally $shots,
                 PlayerStore $players,
@@ -162,7 +168,8 @@ final class HellowinBootloader extends Bootloader
                 CursedStore $cursed,
                 BossStore $boss,
                 DiceStore $dice,
-            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice),
+                UncountedTally $uncounted,
+            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice, $uncounted),
             CursedStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -264,6 +271,7 @@ final class HellowinBootloader extends Bootloader
                 TransitionQueue $queue,
                 Clock $clock,
                 ActionStop $stops,
+                UncountedTally $uncounted,
             ): RapierService => new RapierService(
                 $walkers,
                 $ritual,
@@ -276,6 +284,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getWalkSpeed(),
                 $config->getLimit(HellowinConfig::LIMIT_BOSS),
                 stops: $stops,
+                uncounted: $uncounted,
             ),
             BarStore::class => static fn(
                 HellowinConfig $config,
@@ -293,6 +302,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 CursedService $cursed,
                 PlayMetrics $metrics,
+                UncountedTally $uncounted,
             ): BarService => new BarService(
                 $bar,
                 $walkers,
@@ -308,6 +318,7 @@ final class HellowinBootloader extends Bootloader
                 cursed: $cursed,
                 drinkMs: $config->getDrinkMs(),
                 metrics: $metrics,
+                uncounted: $uncounted,
             ),
             PlayerCensus::class => static fn(HellowinConfig $config, PlayerStore $players, PlayMetrics $metrics): PlayerCensus
                 => new PlayerCensus($players, $metrics, $config->getMugLitres()),

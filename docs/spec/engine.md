@@ -392,26 +392,27 @@
 - **Грани** — настоящий случайный выбор: `DiceRoller` берёт три раза `Randomizer::getInt(1, 6)`; по умолчанию движок —
   системный CSPRNG (как `random_int`), в тестах — подставной. Предсказать, на какой попытке выпадет 6-6-6, не может никто,
   и сервер тоже; поэтому бросок тянется один раз, а повтор отвечает сохранённым.
-- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at, dice}}, winner, owl, rolls}` под RR-локом `dice`
+- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at, dice, counted?}}, winner, owl, rolls}` под RR-локом `dice`
   (`DiceStore`); запись другого раунда читается как пустая — сброс её не трогает. У игрока — последняя попытка, время
-  его последнего нового броска и её грани, записанные одной записью с номером попытки.
+  его последнего нового броска и её грани, записанные одной записью с номером попытки; `counted: false` — попытка брошена на паузе прогресса.
 - **Бросок** (`roll {attempt}`, `DiceService::roll`): без лока — фигурка (`no character`), не зомби, шаг 1 (`not now`).
   Целое `attempt` ≥ 1 идёт через хранилище идемпотентности `dice` (ниже); под локом `dice` по порядку: `attempt` =
-  последней — повтор: грани из записи, без события, счёта и паузы (отвечает и после победы — ответ на победный бросок мог
-  потеряться); есть победитель — `not now`; не последняя + 1 — `bad attempt` с `last`; с прошлого нового броска меньше
-  `HELLOWIN_DICE_COOLDOWN_MS` — `busy`; пауза прогресса — `paused`; иначе грани, запись `{attempt, at, dice}`,
-  `rolls + 1`, а при 6-6-6 — `winner`. После лока: `rolls + 1` игроку, событие `roll`; победа — `dice {on: false, winner}`,
-  `RitualStore::markReady(round, финальная, step: 1)` → `ready`, реплика `dice-win`.
+  последней — повтор: грани и `counted` из записи, без события и счёта (отвечает и после победы — ответ на победный бросок
+  мог потеряться); есть победитель — `not now`; не последняя + 1 — `bad attempt` с `last`; с прошлого нового броска меньше
+  `HELLOWIN_DICE_COOLDOWN_MS` — `busy`; иначе грани, запись `{attempt, at, dice}` (на паузе прогресса — с
+  `counted: false`), `rolls + 1`, а при 6-6-6 не на паузе — `winner`. Пауза читается снимком до лока, как шаг. После
+  лока: `rolls + 1` игроку, событие `roll` (на паузе — с `counted: false`, и ответ `{attempt, dice, counted: false}`);
+  победа — `dice {on: false, winner}`, `RitualStore::markReady(round, финальная, step: 1)` → `ready`, реплика `dice-win`.
 - **Почему повтор не перебрасывает.** Ключ попытки — `{round}:roll:{player}:{attempt}` в хранилище `dice` пакета
   `spiral/idempotency` (`app/config/idempotency.php`): `RedisLeaseConfig`, гарантия **AtLeastOnce** — лизинг с локом
-  (`lockTtl` 5 с) и сохранённым ответом `{attempt, dice}`, префикс `hellowin:lease:`, хранится
+  (`lockTtl` 5 с) и сохранённым ответом `{attempt, dice}` (на паузе — и `counted: false`), префикс `hellowin:lease:`, хранится
   `HELLOWIN_DICE_IDEMPOTENCY_TTL` с (900, передаётся в `ExecuteOptions::$ttl`). Повтор той же попытки (двойной клик,
   переподключение, потерянный ответ) получает сохранённый ответ, броска не происходит: ни события, ни счёта. Не
-  AtMostOnce (`hellowin:amo:`): тот отказывает дубликату, а повтору нужны грани. Отказ (`busy`, `paused`, `not now`,
+  AtMostOnce (`hellowin:amo:`): тот отказывает дубликату, а повтору нужны грани. Отказ (`busy`, `not now`,
   `bad attempt`) — не ответ: `FailurePolicy::Release` освобождает ключ, попытку можно бросить, когда отказ уйдёт. Ключ
   занят другим запросом той же попытки (`LockedException`) — `busy`.
 - **Если сохранённого ответа нет.** AtLeastOnce допускает второй прогон: воркер упал между записью броска и сохранением
-  ответа, ответ истёк или потерян. Тогда прогон доходит до лока `dice` и видит свою попытку в записи — отдаёт её грани,
+  ответа, ответ истёк или потерян. Тогда прогон доходит до лока `dice` и видит свою попытку в записи — отдаёт её грани и `counted`,
   не бросая заново, без события и счёта. Так запись под локом — источник правды о бросках, а ответ в хранилище — быстрый
   повтор без лока; вместе они дают эффект ровно один раз: грани попытки не меняются, событие `roll` — не больше одного
   (между записью и событием упавший воркер событие теряет, бросок остаётся). Новая попытка — только следующая по номеру и
@@ -468,12 +469,23 @@
   `scene` (`ClickOutcome`), по ним же решает о переходе и шлёт `threshold` в `click`; снимок считает `threshold` из того
   же `getMultiple`. Порог, упавший до накопленных `clicks`, двигает элемент сам: `LimitsService` ставит ту же задачу,
   что клик, — с тем же ключом `{round}:{id}:{toStage}`, один переход на стадию; излишек сгорает, как обычно.
-- **Пауза прогресса** (`Story::$paused`, [`protocol.md`](protocol.md), «Пауза прогресса»). Отказ `paused`
-  (`StoryRefusedException`) — последняя проверка метода перед изменением состояния, после всех его собственных отказов:
-  `ClickHandler::click` — после `unknown element`, до `locked` (сюжет читается отдельно, до лока элемента);
-  `BarService::drink` — под локом `walkers` после `not bar`, `no beer`, `not clinked`, `busy`; `RapierService::strike` —
-  после `not now`, `no rapier`; `DiceService::roll` — под локом `dice` после повтора (повтор отвечает и на паузе),
-  `not now`, `bad attempt`, `busy`. Отказ — не действие: `ActionStop` не зовётся, фигурка идёт дальше.
+- **Пауза прогресса** (`Story::$paused`, [`protocol.md`](protocol.md), «Пауза прогресса»; без отказов — решение
+  пользователя от 2026-10-23, ошибки `paused` больше нет). `click`, `drink`, `strike`, `roll` проходят все свои проверки
+  как обычно и принимаются: `ActionStop` останавливает фигурку, счётчики игрока, метрики и события идут, в ответе и
+  событии — `counted: false` (без паузы поля нет, `ChannelPublisher::counted`). Не двигается только задача сцены:
+  - `ClickHandler::click` — `RitualStore::click` читает сюжет под локом элемента после `locked`: на паузе `clicks` и
+    `stage` прежние, `accepted + 1` (клик принят — разоблачение его считает, он уходит в `burned`),
+    `ClickOutcome::$counted = false`; событие `click` несёт прежние числа, задача перехода не ставится, даже если
+    `clicks` уже дотянули до порога (это догонит снятие паузы);
+  - `BarService::drink` — пауза читается под локом `walkers` вместе с проверками: пиво выпито, `drink` с
+    `counted: false`, но ни `BarStore::drank` (и события `drinks`), ни `CursedService::drank`;
+  - `RapierService::strike` — после `not now`, `no rapier` на паузе лок `boss` не берётся: `strike` с текущим `hp`,
+    `boss-down` и задачи рассвета нет;
+  - `DiceService::roll` — см. «Кости»: бросок и событие `roll` есть, `winner` на паузе не пишется.
+  Разоблачение считает и незасчитанное: `accepted` у кликов, `rolls` у костей растут всегда, а кружки и удары паузы —
+  в `hellowin:uncounted` `{round, drinks, damage}` под RR-локом `uncounted` (`Domain/Story/UncountedTally`, как
+  `hellowin:shot`), `RevealBuilder` прибавляет их к выпитому и урону. Подбитый на паузе бродячий зомби в `slain`
+  разоблачения не идёт — как и раньше.
   Готовность держит один замок: `RitualStore::markReady` на паузе отвечает `false` под локом `scene` — переход тыквы,
   цель бара, проклятого мира, 6-6-6 не делают сцену готовой. Исключение — решения модератора: отмашка бара
   (`bar.ready`) и бросок совы (`dice.owl`) передают `evenPaused`. Переход, поставленный кликом до паузы, на паузе всё
@@ -506,7 +518,8 @@
   и записями: их `accepted` — в `clicks`, стадии — в `jobs`, сгоревшие — в `burned`; клики
   `locked` не принимаются и не считаются нигде. Сбитые летуны — ключ `hellowin:shot`
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
-  читается как 0, так что сброс его не трогает. Выпитые в баре — `hellowin:drinks` так же (`drinks`, см. «Бар»).
+  читается как 0, так что сброс его не трогает. Выпитые в баре — `hellowin:drinks` так же (`drinks`, см. «Бар»);
+  кружки и удары, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
   `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
   (тыквы, костра или круга); анонимная задача отметки прежнего игрока не стирает;
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
@@ -514,8 +527,8 @@
 ## Поток клика
 
 1. RPC `click {element}` → `RPCService` проверяет элемент по реестру; игрок — `user` подключения (`publicId` или пусто).
-2. Под RR-локом `pumpkin:{id}` (у костра — `bonfire`, у круга — `circle`): `clicks + 1` в KV; под тем же локом читаются
-   `round` и `scene`. Клик по костру или кругу (центральный элемент, `Element::centrepiece()`) сначала, под тем же
+2. Под RR-локом `pumpkin:{id}` (у костра — `bonfire`, у круга — `circle`): `clicks + 1` в KV (на паузе прогресса — только `accepted + 1`,
+   см. «Пауза прогресса»); под тем же локом читаются `round`, `scene` и сюжет. Клик по костру или кругу (центральный элемент, `Element::centrepiece()`) сначала, под тем же
    локом, читает весь ритуал одним `getMultiple` и спрашивает `RitualPolicy::centrepieceOpen` (костёр — тыквы сцены
    готовы; круг — финальная сцена на шаге 0; оба — ниже своей последней стадии сцены); закрыт — ничего не пишет, ответ `locked`, дальше шаги не идут. Проверка под локом
    элемента, а не по снимку до него: сброс берёт и этот лок, так что между проверкой и счётом он не вклинится. Шаг
@@ -524,7 +537,7 @@
 3. Метрика `hellowin_clicks_total{type,element}` — после принятого клика: `busy` и `locked` её не увеличивают.
 4. Статистика игрока: под RR-локом `player:{id}` `clicks + 1` (анонимный клик — пропуск). Сбой статистики пишется
    в лог и не ломает клик.
-5. Публикация `click` в канал (с `player`, если он есть).
+5. Публикация `click` в канал (с `player`, если он есть; на паузе — с `counted: false`, и дальше шаги не идут).
 6. Если политика разрешает переход (`clicks >=` действующий порог тыквы — лимит `pumpkin` — и
    `stage < stageMax(scene)`; у костра и круга — их порог и потолок, `RitualPolicy::threshold($type, $k, $players)`,
    `stageMax($scene, $type)`) — задача
@@ -682,7 +695,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Что | Где | Через |
 |---|---|---|
 | Бар: стойка `hellowin:bar`, выпитые за раунд `hellowin:drinks` | Valkey | тот же storage `hellowin` |
-| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot`, незасчитанные паузой `hellowin:uncounted` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |

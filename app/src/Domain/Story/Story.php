@@ -42,7 +42,8 @@ final readonly class Story
     /**
      * @param int<0, max>|null $ready Scene that is done, its centrepiece included; it waits for the moderator.
      * @param int<0, 7>|null $finale Finale step; null outside the final scene.
-     * @param bool $paused The scene's progress is held: its tasks refuse the room, and no goal makes it ready.
+     * @param bool $paused The scene's progress is held: the room acts as usual, but nothing counts toward its task, and
+     *        no goal makes it ready.
      * @param non-empty-string|null $lastPumpkin Player who finished the last element of a ready scene: the last
      *        pumpkin, or the centrepiece in a scene that has one: the bonfire or the circle.
      * @param int<0, max>|null $bonfire Scene whose pumpkins are all done while its bonfire is not yet: the bonfire is open.

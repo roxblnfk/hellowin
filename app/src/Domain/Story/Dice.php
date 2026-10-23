@@ -18,7 +18,7 @@ use App\Domain\Player\PlayerId;
 final readonly class Dice
 {
     /**
-     * @param array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces}> $players
+     * @param array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces, counted?: false}> $players
      * @param Winner|null $winner
      * @param int<0, max> $owl The owl's throws.
      * @param int<0, max> $rolls New throws of the players: the reveal's number.
@@ -50,6 +50,7 @@ final readonly class Dice
             $dice = self::faces(\is_array($last) ? $last['dice'] ?? null : null);
             if (PlayerId::isValid($id) && \is_int($attempt) && $attempt > 0 && \is_int($at) && $dice !== null) {
                 $players[$id] = ['attempt' => $attempt, 'at' => $at, 'dice' => $dice];
+                \is_array($last) && ($last['counted'] ?? null) === false and $players[$id]['counted'] = false;
             }
         }
 
@@ -78,14 +79,24 @@ final readonly class Dice
     }
 
     /**
+     * Whether the player's last attempt counted: false — thrown on a pause of the progress, so it could not win.
+     */
+    public function lastCounted(string $player): bool
+    {
+        return $this->players[$player]['counted'] ?? true;
+    }
+
+    /**
      * @param non-empty-string $player
      * @param positive-int $attempt
      * @param Faces $dice
+     * @param bool $counted False on a pause of the progress: the throw cannot win.
      */
-    public function rolled(string $player, int $attempt, int $at, array $dice): self
+    public function rolled(string $player, int $attempt, int $at, array $dice, bool $counted = true): self
     {
         $players = $this->players;
         $players[$player] = ['attempt' => $attempt, 'at' => $at, 'dice' => $dice];
+        $counted or $players[$player]['counted'] = false;
 
         return new self($players, $this->winner, $this->owl, $this->rolls + 1);
     }
@@ -104,7 +115,7 @@ final readonly class Dice
     }
 
     /**
-     * @return array{players: array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces}>, winner: Winner|null, owl: int<0, max>, rolls: int<0, max>}
+     * @return array{players: array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces, counted?: false}>, winner: Winner|null, owl: int<0, max>, rolls: int<0, max>}
      */
     public function toArray(): array
     {

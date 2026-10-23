@@ -28,10 +28,11 @@ final readonly class ChannelPublisher
 
     /**
      * @param positive-int $threshold
+     * @param bool $counted False on a pause of the progress: the action went through, the scene's task did not move.
      */
-    public function click(int $round, Pumpkin $pumpkin, string $emoji, int $threshold, ?Player $player = null): void
+    public function click(int $round, Pumpkin $pumpkin, string $emoji, int $threshold, ?Player $player = null, bool $counted = true): void
     {
-        $this->publish(self::withPlayer([
+        $this->publish(self::counted(self::withPlayer([
             'type' => 'click',
             'round' => $round,
             'element' => $pumpkin->id,
@@ -39,7 +40,7 @@ final readonly class ChannelPublisher
             'clicks' => $pumpkin->clicks,
             'threshold' => $threshold,
             'stage' => $pumpkin->stage,
-        ], $player));
+        ], $player), $counted));
     }
 
     public function pumpkin(int $round, Pumpkin $pumpkin, ?Player $player = null): void
@@ -134,9 +135,12 @@ final readonly class ChannelPublisher
     /**
      * @param non-empty-string $player
      */
-    public function drink(int $round, string $player): void
+    /**
+     * @param bool $counted False on a pause of the progress: the mug is drunk, the goal did not move.
+     */
+    public function drink(int $round, string $player, bool $counted = true): void
     {
-        $this->publish(['type' => 'drink', 'round' => $round, 'player' => ['id' => $player]]);
+        $this->publish(self::counted(['type' => 'drink', 'round' => $round, 'player' => ['id' => $player]], $counted));
     }
 
     /**
@@ -299,10 +303,11 @@ final readonly class ChannelPublisher
 
     /**
      * @param int<0, max> $hp FrankenPHP's health after the strike.
+     * @param bool $counted False on a pause of the progress: the lightning strikes, the health stays.
      */
-    public function strike(int $round, Player $player, int $hp): void
+    public function strike(int $round, Player $player, int $hp, bool $counted = true): void
     {
-        $this->publish(['type' => 'strike', 'round' => $round, 'player' => $player->ref(), 'hp' => $hp]);
+        $this->publish(self::counted(['type' => 'strike', 'round' => $round, 'player' => $player->ref(), 'hp' => $hp], $counted));
     }
 
     /**
@@ -324,13 +329,14 @@ final readonly class ChannelPublisher
      * @param positive-int $attempt
      * @param array{int, int, int} $dice
      * @param int $at Unix time in milliseconds of the throw.
+     * @param bool $counted False on a pause of the progress: a 6-6-6 then wins nothing.
      */
-    public function roll(int $round, ?Player $player, int $attempt, array $dice, int $at): void
+    public function roll(int $round, ?Player $player, int $attempt, array $dice, int $at, bool $counted = true): void
     {
         $message = ['type' => 'roll', 'round' => $round];
         $message += $player === null ? ['owl' => true] : ['player' => $player->ref()];
 
-        $this->publish($message + ['attempt' => $attempt, 'dice' => $dice, 'at' => $at]);
+        $this->publish(self::counted($message + ['attempt' => $attempt, 'dice' => $dice, 'at' => $at], $counted));
     }
 
     /**
@@ -416,6 +422,16 @@ final readonly class ChannelPublisher
     private static function withPlayer(array $message, ?Player $player): array
     {
         $player === null or $message['player'] = $player->ref();
+
+        return $message;
+    }
+
+    /**
+     * Only an action the pause did not count says so: `counted` is absent otherwise.
+     */
+    private static function counted(array $message, bool $counted): array
+    {
+        $counted or $message['counted'] = false;
 
         return $message;
     }
