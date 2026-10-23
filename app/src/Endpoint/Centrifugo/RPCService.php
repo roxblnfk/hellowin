@@ -61,7 +61,7 @@ final readonly class RPCService implements ServiceInterface
     private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
-    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'me'];
+    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'me', 'reveal'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -146,6 +146,7 @@ final readonly class RPCService implements ServiceInterface
         return $this->guarded($method, fn(): array => match ($method) {
             'click' => $this->click($request->getData(), $player),
             'state' => ['ok' => true, 'state' => $this->snapshot->create()],
+            'reveal' => ['ok' => true, 'reveal' => $this->snapshot->reveal() ?? throw new StoryRefusedException('not now')],
             // Neither a lock nor the store: the client syncs its clock over several calls and keeps the fastest one
             'time' => ['ok' => true, 'now' => $this->clock->now()],
             'register' => $this->register($request->getData(), $player),

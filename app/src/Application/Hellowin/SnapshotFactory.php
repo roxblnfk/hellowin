@@ -77,6 +77,17 @@ final readonly class SnapshotFactory
     ) {}
 
     /**
+     * The evening's numbers counted now, in any scene: the same `reveal` the snapshot and the finale carry from the
+     * reveal step on.
+     *
+     * @return array|null Null without the reveal builder.
+     */
+    public function reveal(): ?array
+    {
+        return $this->reveal?->reveal($this->store->snapshot())->toArray();
+    }
+
+    /**
      * @return Snapshot
      */
     public function create(): array

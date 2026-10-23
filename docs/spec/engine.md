@@ -23,7 +23,7 @@
 | Постановка задач | `Application/Hellowin/TransitionQueue` |
 | Задачи и их обработка | `Application/Hellowin/Job/TransitionPumpkin`, `Job/TransitionScene` → `TransitionHandler` |
 | Сброс | `Application/Hellowin/ResetService`, консоль `hellowin:reset` (`Endpoint/Console/ResetCommand`) |
-| Снимок для страницы и RPC `state` | `Application/Hellowin/SnapshotFactory` |
+| Снимок для страницы, RPC `state` и `reveal` | `Application/Hellowin/SnapshotFactory` |
 | События канала | `Application/Hellowin/ChannelPublisher` |
 | Игроки: id из секрета, имя, запись в KV | `Domain/Player/PlayerId`, `PlayerName`, `PlayerStore`, `Application/Player/PlayerService` |
 | Локи нескольких ресурсов | `Domain/Lock/Locks` |
@@ -521,7 +521,9 @@
   кружки, удары и бродячие зомби, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
   `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
   (тыквы, костра или круга); анонимная задача отметки прежнего игрока не стирает;
-  имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
+  имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4,
+  а RPC `reveal` (`SnapshotFactory::reveal`) — в любой сцене, по одному снимку `RitualStore::snapshot` и счётчикам раунда, без событий:
+  панель «Числа вечера» зовёт его при открытии и раз в 2 с. Пустое хранилище читается как раунд 1, сцена 0 и нули — ответ всё равно полный.
 
 ## Поток клика
 
@@ -687,7 +689,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
   него ([`infra.md`](infra.md)).
 
 Значения по умолчанию (`HELLOWIN_RPC_RATE_*`, «Env») рассчитаны так, чтобы быстрые клики (10–15 в секунду) не
-резались никогда, а поток из скрипта упирался в `burst` и дальше шёл не быстрее `rate`.
+резались никогда, а поток из скрипта упирался в `burst` и дальше шёл не быстрее `rate`. `reveal` своего ведра не имеет: опрос панели — 0,5 вызова в секунду, это малая доля `other`.
 
 ## Хранилища
 
@@ -796,7 +798,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_RPC_RATE_SHOOT` | `20,40` | то же для `shoot` |
 | `HELLOWIN_RPC_RATE_MOVE` | `10,20` | то же для `move` |
 | `HELLOWIN_RPC_RATE_SAY` | `1,3` | то же для `say` (чат) |
-| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`…) |
+| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `reveal`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`…) |
 | `CENTRIFUGO_WS_URL` | `:8000/connection/websocket` | URL WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL или путь — как есть |
 | `GRAFANA_URL` | `:3000/` | ссылка на дашборд со страниц, в тех же формах |
 | `CENTRIFUGO_GRPC_API` | `centrifugo:10000` | gRPC API Centrifugo для публикации |

@@ -1077,6 +1077,51 @@ final class RPCServiceTest
         Assert::same($this->rpcCalls($ritual), [['click', 'unknown element'], ['register', 'anonymous']]);
     }
 
+    public function revealAnswersTheEveningNumbersOfAFreshRitualToAnyone(): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'reveal', []);
+
+        Assert::same($response, ['ok' => true, 'reveal' => [
+            'clicks' => 0,
+            'jobs' => 0,
+            'burned' => 0,
+            'shot' => 0,
+            'drinks' => 0,
+            'slain' => 0,
+            'damage' => 0,
+            'rolls' => 0,
+            'lastPumpkin' => null,
+        ]]);
+        Assert::blank($ritual->broadcast->published);
+        Assert::same($this->rpcCalls($ritual), [['reveal', 'ok']]);
+    }
+
+    public function revealCountsNowOutsideTheFinaleWithoutEvents(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->click('pumpkin-1', 3, self::PLAYER);
+        $ritual->runJobs();
+        $ritual->broadcast->published = [];
+
+        $reveal = $this->call($ritual, 'reveal', [], self::PLAYER)['reveal'] ?? [];
+
+        Assert::same([$reveal['clicks'] ?? null, $reveal['jobs'] ?? null], [3, 1]);
+        Assert::same($reveal, $ritual->reveal->reveal($ritual->store->snapshot())->toArray());
+        Assert::null($this->call($ritual, 'state', [])['state']['finale']);
+        Assert::blank($ritual->broadcast->published);
+    }
+
+    public function revealTakesATokenOfOther(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['other' => new TokenBucket(1.0, 1)]);
+
+        Assert::true($this->call($ritual, 'reveal', [], limiter: $limiter)['ok']);
+        Assert::same($this->call($ritual, 'reveal', [], limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+    }
+
     public function unknownMethodIsCountedUnderOneLabel(): void
     {
         $ritual = new RitualHarness();
