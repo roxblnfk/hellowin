@@ -1699,6 +1699,8 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                     <tr><td><code>hellowin_rpc_calls_total{method, result}</code></td><td>RPCService</td><td>counter: каждый RPC через вебсокет; <code>method</code> — имя метода или <code>unknown</code>, <code>result</code> — <code>ok</code> или код ошибки</td></tr>
                     <tr><td><code>hellowin_rpc_duration_seconds{method}</code></td><td>RPCService</td><td>histogram: сколько PHP обрабатывал RPC</td></tr>
                     <tr><td><code>hellowin_rpc_rate_limited_total{group}</code></td><td>RPCService</td><td>counter: вызовы, отклонённые лимитом (<code>rate limited</code>), по группе ведра</td></tr>
+                    <tr><td><code>hellowin_beer_mugs_total{place}</code></td><td>BarService</td><td>counter: выпитые кружки; <code>place</code> — <code>bar</code> или <code>cursed</code> (проклятый мир)</td></tr>
+                    <tr><td><code>hellowin_beer_litres</code></td><td>тикер, счёт игроков <code>PlayerCensus</code></td><td>gauge: выпито за вечер, литров — кружки игроков × <code>HELLOWIN_MUG_LITRES</code></td></tr>
                     <tr><td><code>rr_http_request_total</code>, <code>rr_http_request_duration_seconds</code>, <code>rr_http_workers_*</code></td><td>RoadRunner http</td><td>HTTP-запросы, задержка, воркеры</td></tr>
                     <tr><td><code>centrifugo_node_num_clients</code>, <code>centrifugo_transport_messages_sent</code>, <code>centrifugo_proxy_duration_seconds_histogram</code></td><td>Centrifugo</td><td>подключения, отправленные сообщения, задержка proxy-вызовов в RoadRunner</td></tr>
                     </tbody>
