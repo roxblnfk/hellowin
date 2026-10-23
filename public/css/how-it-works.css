@@ -7,9 +7,11 @@ body:has(.how) {
     min-height: 100%;
 }
 
-/* Not auto: a scrolling body would become the scroll container of the sticky tab bar and never let it stick. */
+/* Not auto: a scrolling body would become the scroll container of the sticky tab bar and never let it stick. Clip, not
+   hidden, for the same reason: it cuts the full-width tab bar at the scrollbar without becoming a scroll container. */
 body:has(.how) {
     overflow: visible;
+    overflow-x: clip;
 }
 
 .how {
@@ -130,24 +132,27 @@ body:has(.how) {
     }
 }
 
-/* Section tabs. The bar sticks to the top so the tabs stay reachable in long panels; without JS it is a plain table of contents. */
+/* Section tabs. The bar sticks to the top so the tabs stay reachable in long panels; without JS it is a plain table of contents.
+   It spans the whole window, out of the text column, so the tabs wrap only when the window is full. */
 
 .tabs {
     position: sticky;
     top: 0;
     z-index: 2;
-    margin: 28px -16px 0;
+    margin: 28px calc(50% - 50vw) 0;
     padding: 8px 16px;
     border-bottom: 1px solid var(--d-faint);
     background: rgba(11, 8, 32, 0.9);
     backdrop-filter: blur(8px);
 }
 
-/* Wraps into more rows instead of scrolling: every tab stays in sight, on a phone too. */
-.tabs__list {
+/* Wraps into more rows instead of scrolling: every tab stays in sight, on a phone too. Not the text column's 72ch. */
+.how .tabs__list {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 4px;
+    max-width: none;
     margin: 0;
     padding: 0;
     list-style: none;
