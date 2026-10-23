@@ -107,7 +107,9 @@ async function main() {
     let client = null;
     const sound = await startSound(soundModules, scene, () => client?.serverNow() ?? Date.now());
     const owl = createOwl(root, scene, { onShow: (line) => sound?.owl(line) });
-    const reveal = createReveal(root);
+    // The panel's fresh numbers come over the connection made below; until then (and without one) it keeps its own.
+    let requestReveal = () => Promise.reject(new Error('no connection'));
+    const reveal = createReveal(root, { request: () => requestReveal() });
 
     if (typeof Centrifuge === 'undefined') {
         scene?.onCue?.((cue) => sound?.cue(cue));
@@ -118,6 +120,7 @@ async function main() {
     const secret = moderatorSecret();
     const data = secret ? { playerSecret: playerSecret(), moderatorSecret: secret } : { playerSecret: playerSecret() };
     const centrifuge = new Centrifuge(websocketUrl(root.dataset.centrifugoUrl), { data });
+    requestReveal = () => centrifuge.rpc('reveal', {}).then(answer).then((reply) => reply.reveal);
     // The console's buttons draw nothing either: their effects come back as channel events.
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
         call: (method, params) => centrifuge.rpc(method, params).then(answer),

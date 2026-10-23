@@ -4,6 +4,8 @@
 import { formatUptime } from './client.js';
 
 const STEP = 4;
+// While the panel is open its numbers are asked for afresh this often (RPC `reveal`, docs/spec/protocol.md).
+const REFRESH_MS = 2000;
 const NUMBER = new Intl.NumberFormat('ru-RU');
 
 // Noun forms for 1, 2–4 and 5+ (accusative: the number is always the object), the rest of the caption, and a short
@@ -16,7 +18,7 @@ const CARDS = [
     ['drinks', ['кружку', 'кружки', 'кружек'], 'выпили за вечер', 'последнюю — первый дошедший до стойки'],
     ['slain', ['зомби-воркера', 'зомби-воркера', 'зомби-воркеров'], 'упокоили', 'каждого — первый успевший, под локом'],
     ['damage', ['урона', 'урона', 'урона'], 'FrankenPHP нанесли рапирами', 'весь зал бьёт в один элемент под одним локом'],
-    ['rolls', ['попытку', 'попытки', 'попыток'], 'выбросить PHP 6', 'повтор попытки не перебросит: кости — HMAC её ключа'],
+    ['rolls', ['попытку', 'попытки', 'попыток'], 'выбросить PHP 6', 'кости случайны, повтор попытки получит сохранённый ответ'],
 ];
 // The rapier's and the dice's numbers: their cards show only once there is something to count.
 const SKIP_ZERO = new Set(['slain', 'damage', 'rolls']);
@@ -31,12 +33,16 @@ function plural(n, [one, few, many]) {
 
 /**
  * The panel opens by itself on step 4 and stays until closed; from step 5 on it is closed, and the HUD button
- * `[data-reveal-open]` brings it back.
+ * `[data-reveal-open]` brings it back. While open it asks `request` for fresh numbers on opening and every
+ * REFRESH_MS after the previous answer; a refusal or an error keeps the numbers it shows.
  *
  * @param {HTMLElement} root  #app
+ * @param {object} [options]
+ * @param {(() => Promise<object>)|null} [options.request]  the evening's numbers now, like `reveal` of the snapshot
+ * @param {(fn: Function, ms: number) => void} [options.later]  timer (the lab's frozen clock)
  * @returns {{update: (finale: {step: number, reveal?: object}|null, uptime?: number|null) => void}}
  */
-export function createReveal(root) {
+export function createReveal(root, { request = null, later = (fn, ms) => setTimeout(fn, ms) } = {}) {
     const panel = document.createElement('section');
     panel.className = 'reveal';
     panel.dataset.reveal = '';
@@ -69,10 +75,43 @@ export function createReveal(root) {
     let step = null;
     let open = false;
     let shown = false;
+    let finale = null;
+    let uptime = null;
+    // Numbers of the `reveal` RPC for this step; a step's own event or snapshot brings newer ones and drops them.
+    let fresh = null;
+    // One refresh loop per opening: `loop` numbers them, so a timer of an earlier opening finds itself stale.
+    let loop = 0;
+    let live = false;
+    let asking = false;
 
     function paint() {
         panel.hidden = !shown || !open;
         if (opener) opener.hidden = !shown || open;
+        const wanted = shown && open && request !== null;
+        if (wanted === live) return;
+        live = wanted;
+        loop++;
+        if (live) refresh(loop);
+    }
+
+    // A request still out when the panel reopens is waited for, not doubled: its end starts the new loop at once.
+    function refresh(mine) {
+        if (mine !== loop || asking) return;
+        asking = true;
+        const asked = step;
+        new Promise((resolve) => resolve(request()))
+            .then((reveal) => {
+                if (!reveal || typeof reveal !== 'object' || asked !== step || !shown) return;
+                fresh = reveal;
+                draw();
+            })
+            .catch(() => {})
+            .finally(() => {
+                asking = false;
+                if (!live) return;
+                const current = loop;
+                later(() => refresh(current), mine === current ? REFRESH_MS : 0);
+            });
     }
 
     closer.addEventListener('click', () => {
@@ -86,35 +125,44 @@ export function createReveal(root) {
         closer.focus();
     });
 
+    function draw() {
+        const reveal = fresh ?? finale.reveal;
+        for (const [key, forms, caption, note] of CARDS) {
+            // A server without the bar sends no `drinks`: its card stays out.
+            panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined || (SKIP_ZERO.has(key) && !(Number(reveal[key]) > 0));
+            const n = Math.max(0, Math.trunc(Number(reveal[key]) || 0));
+            panel.querySelector(`[data-reveal-${key}]`).textContent = NUMBER.format(n);
+            panel.querySelector(`[data-reveal-label="${key}"]`).textContent = `${plural(n, forms)} ${caption}`;
+            panel.querySelector(`[data-reveal-note="${key}"]`).textContent = note;
+        }
+        uptimeCard.hidden = uptime === null;
+        panel.querySelector('[data-reveal-uptime]').textContent = uptime === null ? '' : formatUptime(uptime);
+        const name = reveal.lastPumpkin?.name;
+        panel.querySelector('[data-reveal-last]').textContent = reveal.lastPumpkin
+            ? `Последний элемент ритуала добил ${name || 'кто-то без имени'}.`
+            : 'Последний элемент ритуала добил кто-то неизвестный.';
+    }
+
     return {
-        update(finale, uptime = null) {
-            const reveal = finale?.reveal;
-            shown = Boolean(reveal) && (finale?.step ?? 0) >= STEP;
+        update(next, up = null) {
+            shown = Boolean(next?.reveal) && (next?.step ?? 0) >= STEP;
             if (!shown) {
                 step = null;
                 open = false;
+                fresh = null;
                 paint();
                 return;
             }
             // A new step decides afresh: open on the reveal itself, closed in the cursed world.
-            if (finale.step !== step) {
-                step = finale.step;
+            if (next.step !== step) {
+                step = next.step;
                 open = step === STEP;
             }
-            for (const [key, forms, caption, note] of CARDS) {
-                // A server without the bar sends no `drinks`: its card stays out.
-                panel.querySelector(`[data-reveal-card="${key}"]`).hidden = reveal[key] === undefined || (SKIP_ZERO.has(key) && !(Number(reveal[key]) > 0));
-                const n = Math.max(0, Math.trunc(Number(reveal[key]) || 0));
-                panel.querySelector(`[data-reveal-${key}]`).textContent = NUMBER.format(n);
-                panel.querySelector(`[data-reveal-label="${key}"]`).textContent = `${plural(n, forms)} ${caption}`;
-                panel.querySelector(`[data-reveal-note="${key}"]`).textContent = note;
-            }
-            uptimeCard.hidden = uptime === null;
-            panel.querySelector('[data-reveal-uptime]').textContent = uptime === null ? '' : formatUptime(uptime);
-            const name = reveal.lastPumpkin?.name;
-            panel.querySelector('[data-reveal-last]').textContent = reveal.lastPumpkin
-                ? `Последний элемент ритуала добил ${name || 'кто-то без имени'}.`
-                : 'Последний элемент ритуала добил кто-то неизвестный.';
+            // A new step or snapshot carries its own numbers; the uptime tick hands back the same object.
+            if (next !== finale && next.reveal !== finale?.reveal) fresh = null;
+            finale = next;
+            uptime = up;
+            draw();
             paint();
         },
     };

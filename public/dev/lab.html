@@ -130,9 +130,9 @@
   there (the console's reset sends him away, «В бар» brings him back); ?rrclink=1 — and the first bot, beer in hand,
   clinks with him at the start (?toast=N — its toast). With ?me=1 and beer a click on him is `clink {roadrunner: true}`.
   Dice (docs/spec/frontend.md, «Кости»; finale step 1): entering step 1 turns the dice on; ?finale=1&dice=1 starts there.
-  The engine throws like DiceService — the faces a hash of (round, player, attempt) (FNV for the server's HMAC), a repeat
-  the same throw, `bad attempt` with `last`, 1800 ms between throws (`busy`), the first 6-6-6 wins (`dice`, `ready`,
-  `dice-win`). ?roll=a,b,c — my next throw falls so; ?bots666=N — the first bot rolls 6-6-6 on its N-th attempt (else the
+  The engine throws like DiceService, but seeded — the faces a hash of (round, player, attempt) where the server rolls
+  random_int and stores the answer; a repeat the same throw, `bad attempt` with `last`, 1800 ms between throws
+  (`busy`), the first 6-6-6 wins (`dice`, `ready`, `dice-win`). ?roll=a,b,c — my next throw falls so; ?bots666=N — the first bot rolls 6-6-6 on its N-th attempt (else the
   bots throw every 2–4 s and never win); «Сова бросает» (?mod=1) — the owl's 1st and 2nd throws anything but 6-6-6, the
   3rd 6-6-6. With ?me=1 and ?freeze my «Бросить» is pressed at the start: ?finale=1&dice=1&me=1&freeze=900 — the dice
   rolling, 1800 — landed. Meep (?mod=1): a click on a runner on the horizon, on RoadRunner of the finale (step 3+) or
@@ -2125,7 +2125,8 @@
         window.audio = audio;
     }
     const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line) });
-    const reveal = createReveal(root);
+    // RPC `reveal` of the panel: the engine's numbers now, on the lab's clock.
+    const reveal = createReveal(root, { request: async () => structuredClone(stats), later });
     // The lab shows the console when it plays the moderator (?mod=1); the fake engine answers like the server would.
     const moderatorConsole = initDebugPanel(root.querySelector('[data-debug-panel]'), {
         open: params.get('ui') !== '0' ? undefined : false,

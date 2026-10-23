@@ -18,7 +18,7 @@ import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf,
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
-import { RISE_MS, wanderAt } from './wander.js';
+import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
@@ -1951,10 +1951,28 @@ export async function createScene(rootEl, snapshot) {
     const IDLE_MS = 420;
     const SINK_MS = 800;
 
+    // Where the bottom controls (the HUD, the shooters' strip docked under the lawn on a phone) begin, percent of the
+    // height: read from the DOM at most every UI_FLOOR_MS, since they wrap and fold on their own.
+    const UI_FLOOR_MS = 500;
+    const UI_FLOOR_GAP = 4;
+    let uiFloor = { at: -1e9, y: 100 };
+    function uiFloorAt() {
+        if (clock - uiFloor.at < UI_FLOOR_MS) return uiFloor.y;
+        const top = rootEl.getBoundingClientRect().top;
+        let y = layout.height;
+        for (const el of rootEl.querySelectorAll('.hud, [data-dawn-top]')) {
+            const r = el.getBoundingClientRect();
+            if (r.height > 0 && r.top - top > layout.height / 2) y = Math.min(y, r.top - top - UI_FLOOR_GAP);
+        }
+        uiFloor = { at: clock, y: (y / layout.height) * 100 };
+        return uiFloor.y;
+    }
+
     /** A wanderer's point and frame at `local` ms after its launch; clods fly off the mound as it breaks out. */
     function wandererAt(id, f, set, local) {
         const w = wanderAt(id, f.from, local, f.wander);
-        const pos = walkerArt(w);
+        const at = wanderOnScreen(w, { width: layout.width, spread: spreadX(layout.width), margin: WALKER_MARGIN * layout.cssPx, floor: uiFloorAt() });
+        const pos = { x: Math.round(((at.x / 100) * layout.width) / layout.cssPx), y: Math.round(((at.y / 100) * layout.height) / layout.cssPx) };
         if (w.phase === 'rise') {
             if (w.since >= RISE_FRAME_MS * 2 && !f.clods) {
                 f.clods = true;
@@ -4063,6 +4081,9 @@ export async function createScene(rootEl, snapshot) {
     settleFinale(snapshot.finale?.step ?? null, snapshot.ready);
     for (const w of snapshot.walkers ?? []) setWalker(w);
     rebuild();
+    // The page's snapshot reaches the scene only here: the client renders a whole state again on a resync or a reset,
+    // not on start, so the wandering zombies of `flyers` must rise here or a reloaded page never shows them.
+    for (const event of Array.isArray(snapshot.flyers) ? snapshot.flyers : []) if (event?.wander === true) launch(event);
     app.ticker.add(tick);
 
     function layoutChanged() {

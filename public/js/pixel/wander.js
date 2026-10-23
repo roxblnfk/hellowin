@@ -5,6 +5,8 @@
  * DOM: sound.js and the Node tests use it too.
  */
 
+import { ROOT } from '../layout.js';
+
 // The walk zone in config percents: the lawn and the scorched patch (app/config/hellowin.php, `walk.area`) a little
 // inside its edges, without the circle in the middle where FrankenPHP stands.
 export const WANDER_AREA = { x1: 5, y1: 46, x2: 95, y2: 95 };
@@ -85,4 +87,22 @@ export function wanderAt(id, from, local, memo = null) {
     // Now and then it turns round halfway through the pause.
     const left = l.turn && since >= l.pause / 2 ? !l.left : l.left;
     return { ...l.to, left, phase: 'pause', since };
+}
+
+/**
+ * Where route point `p` (config percents) stands on a screen `width` CSS px wide: screen percents { x, y }. The zone
+ * spreads round the root by `spread` like the characters' patch (layout.js, `spreadX`) while its sides stay `margin` px
+ * inside the edges, and narrower when they would not; its bottom is squeezed above `floor` (percent of the height,
+ * where the bottom controls begin). A phone otherwise shows a third of the zone at its edges and hides the bottom
+ * under the HUD, where a zombie cannot be shot.
+ */
+export function wanderOnScreen(p, { width, spread = 1, margin = 0, floor = 100 }) {
+    const m = (margin / Math.max(1, width)) * 100;
+    const fit = Math.min((ROOT.x - m) / (ROOT.x - WANDER_AREA.x1), (100 - m - ROOT.x) / (WANDER_AREA.x2 - ROOT.x));
+    const bottom = clamp(floor, WANDER_AREA.y1, WANDER_AREA.y2);
+    const y = clamp(p.y, WANDER_AREA.y1, WANDER_AREA.y2);
+    return {
+        x: ROOT.x + (p.x - ROOT.x) * Math.max(0, Math.min(spread, fit)),
+        y: WANDER_AREA.y1 + ((y - WANDER_AREA.y1) * (bottom - WANDER_AREA.y1)) / (WANDER_AREA.y2 - WANDER_AREA.y1),
+    };
 }
