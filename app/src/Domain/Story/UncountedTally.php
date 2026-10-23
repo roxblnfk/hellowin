@@ -9,15 +9,16 @@ use App\Domain\Lock\Locks;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * Mugs and strikes a pause of the progress let through without counting them toward the scene's task, for the finale
- * reveal: the bar's, the cursed world's and the boss's own counters stood still, the evening's numbers did not.
- * `hellowin:uncounted` — `{round, drinks, damage}`, changed under the lock `uncounted`. Counts of an earlier round read
- * as zero, so a reset needs not touch it.
+ * Mugs, strikes and slain zombies a pause of the progress let through without counting them toward the scene's task,
+ * for the finale reveal: the bar's, the cursed world's and the boss's own counters stood still, the evening's numbers
+ * did not. `hellowin:uncounted` — `{round, drinks, damage, slain}`, changed under the lock `uncounted`. Counts of an
+ * earlier round read as zero, so a reset needs not touch it.
  */
 final readonly class UncountedTally
 {
     public const DRINKS = 'drinks';
     public const DAMAGE = 'damage';
+    public const SLAIN = 'slain';
     private const KEY = 'hellowin:uncounted';
     private const LOCK = 'uncounted';
 
@@ -27,20 +28,23 @@ final readonly class UncountedTally
     ) {}
 
     /**
-     * @param self::DRINKS|self::DAMAGE $what
+     * @param self::DRINKS|self::DAMAGE|self::SLAIN $what
      * @throws LockBusyException
      */
     public function add(int $round, string $what): void
     {
         $this->locks->run([self::LOCK], function () use ($round, $what): void {
-            $counts = [self::DRINKS => $this->count($round, self::DRINKS), self::DAMAGE => $this->count($round, self::DAMAGE)];
+            $counts = [];
+            foreach ([self::DRINKS, self::DAMAGE, self::SLAIN] as $kind) {
+                $counts[$kind] = $this->count($round, $kind);
+            }
             ++$counts[$what];
             $this->storage->set(self::KEY, ['round' => $round] + $counts);
         });
     }
 
     /**
-     * @param self::DRINKS|self::DAMAGE $what
+     * @param self::DRINKS|self::DAMAGE|self::SLAIN $what
      * @return int<0, max>
      */
     public function count(int $round, string $what): int

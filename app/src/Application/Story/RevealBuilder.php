@@ -58,7 +58,7 @@ final readonly class RevealBuilder
             $this->shots->count($ritual->round),
             $lastPumpkin,
             ($this->bar?->drinks($ritual->round) ?? 0) + ($cursed?->drunk ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::DRINKS) ?? 0),
-            $cursed?->slain ?? 0,
+            ($cursed?->slain ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::SLAIN) ?? 0),
             ($this->boss?->get($ritual->round)?->damage ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::DAMAGE) ?? 0),
             $this->dice?->get($ritual->round)->rolls ?? 0,
         );

@@ -176,7 +176,7 @@ final class PauseTest
         Assert::count($ritual->broadcast->ofType('flyer'), 4);
     }
 
-    public function zombieShotOnAPauseCountsForThePlayerButNotForTheGoal(): void
+    public function zombieShotOnAPauseCountsForThePlayerAndTheRevealButNotForTheGoal(): void
     {
         $ritual = new RitualHarness(stageMax: [1], circle: 1);
         $ritual->transitions->scene(1, 1);
@@ -192,7 +192,15 @@ final class PauseTest
         Assert::same($points, 2);
         Assert::same($ritual->players->find(self::JACK)?->flyers, 1);
         Assert::same($ritual->cursed->state(1, $ritual->store->story())['slain'] ?? null, 0);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->slain, 1);
         Assert::count($ritual->broadcast->ofType('shot'), 1);
+
+        // Unpaused, the hit goes to the goal and is counted once
+        $ritual->story->pause(false);
+        $ritual->flyers->shoot($ritual->broadcast->ofType('flyer')[1]['flyer'] ?? '', self::JACK);
+
+        Assert::same($ritual->cursed->state(1, $ritual->store->story())['slain'] ?? null, 1);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->slain, 2);
     }
 
     public function sceneIsNotReadyOnAPauseAndCatchesUpOnRelease(): void

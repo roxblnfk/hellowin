@@ -253,6 +253,7 @@ final class HellowinBootloader extends Bootloader
                 RitualStore $ritual,
                 RitualPolicy $policy,
                 ChannelPublisher $publisher,
+                UncountedTally $uncounted,
             ): CursedService => new CursedService(
                 $store,
                 $ritual,
@@ -260,6 +261,7 @@ final class HellowinBootloader extends Bootloader
                 $publisher,
                 $config->getLimit(HellowinConfig::LIMIT_DRINKS),
                 $config->getLimit(HellowinConfig::LIMIT_ZOMBIES),
+                $uncounted,
             ),
             RapierService::class => static fn(
                 HellowinConfig $config,

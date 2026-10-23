@@ -194,7 +194,7 @@ final class RitualHarness
         $this->uncounted = new UncountedTally($this->storage, new Locks($this->lock));
         $this->barStore = new BarStore($this->storage, new Locks($this->lock));
         $this->cursedStore = new CursedStore($this->storage, new Locks($this->lock));
-        $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $publisher, new Limit(2, 2), new Limit(2, 2));
+        $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $publisher, new Limit(2, 2), new Limit(2, 2), $this->uncounted);
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted);
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());

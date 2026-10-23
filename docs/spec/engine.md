@@ -482,16 +482,15 @@
   - `RapierService::strike` — после `not now`, `no rapier` на паузе лок `boss` не берётся: `strike` с текущим `hp`,
     `boss-down` и задачи рассвета нет;
   - `DiceService::roll` — см. «Кости»: бросок и событие `roll` есть, `winner` на паузе не пишется.
-  Разоблачение считает и незасчитанное: `accepted` у кликов, `rolls` у костей растут всегда, а кружки и удары паузы —
-  в `hellowin:uncounted` `{round, drinks, damage}` под RR-локом `uncounted` (`Domain/Story/UncountedTally`, как
-  `hellowin:shot`), `RevealBuilder` прибавляет их к выпитому и урону. Подбитый на паузе бродячий зомби в `slain`
-  разоблачения не идёт — как и раньше.
+  Разоблачение считает и незасчитанное: `accepted` у кликов, `rolls` у костей растут всегда, а кружки, удары и
+  подбитые бродячие зомби паузы — в `hellowin:uncounted` `{round, drinks, damage, slain}` под RR-локом `uncounted`
+  (`Domain/Story/UncountedTally`, как `hellowin:shot`), `RevealBuilder` прибавляет их к выпитому, урону и `slain`.
   Готовность держит один замок: `RitualStore::markReady` на паузе отвечает `false` под локом `scene` — переход тыквы,
   цель бара, проклятого мира, 6-6-6 не делают сцену готовой. Исключение — решения модератора: отмашка бара
   (`bar.ready`) и бросок совы (`dice.owl`) передают `evenPaused`. Переход, поставленный кликом до паузы, на паузе всё
   же выполняется (стадия растёт), но без готовности; догон по сниженному лимиту (`LimitsService::apply`) на паузе
-  пропускается. Попадание по бродячему зомби на паузе идёт игроку (`shot`, очки, таблица рассвета, `shot` в `reveal`),
-  но `CursedService::slew` цель «зомби» не растит. Снятие (`StoryService::pause(false)`, на каждый вызов — повтор
+  пропускается. Попадание по бродячему зомби на паузе идёт игроку (`shot`, очки, таблица рассвета, `shot` и `slain` в
+  `reveal`), но `CursedService::slew` цель «зомби» не растит — пишет `+1` в `hellowin:uncounted`. Снятие (`StoryService::pause(false)`, на каждый вызов — повтор
   безопасен и догоняет после `busy`): `LimitsService::resume` — тот же `catchUp` с теми же ключами задач, `BarService::follow`,
   `CursedService::resume` (готовность шага 5 по текущим целям) и готовность сцены по `RitualPolicy::sceneReady` (событие
   `ready`, реплика `scene-ready`); `DiceService::resume` — готовность шага 1, если 6-6-6 уже выпало.
@@ -519,7 +518,7 @@
   `locked` не принимаются и не считаются нигде. Сбитые летуны — ключ `hellowin:shot`
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
   читается как 0, так что сброс его не трогает. Выпитые в баре — `hellowin:drinks` так же (`drinks`, см. «Бар»);
-  кружки и удары, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
+  кружки, удары и бродячие зомби, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
   `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
   (тыквы, костра или круга); анонимная задача отметки прежнего игрока не стирает;
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4.
@@ -695,7 +694,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Что | Где | Через |
 |---|---|---|
 | Бар: стойка `hellowin:bar`, выпитые за раунд `hellowin:drinks` | Valkey | тот же storage `hellowin` |
-| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot`, незасчитанные паузой `hellowin:uncounted` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
+| Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot`, незасчитанные паузой кружки, удары и зомби `hellowin:uncounted` `{round, drinks, damage, slain}` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |

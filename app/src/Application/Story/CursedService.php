@@ -13,6 +13,7 @@ use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Cursed;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\Story;
+use App\Domain\Story\UncountedTally;
 
 /**
  * The goal of the cursed world (docs/spec/scenario.md, «Шаг 5 — цель проклятого мира»): mugs drunk and zombies slain,
@@ -34,6 +35,7 @@ final readonly class CursedService
         private ChannelPublisher $publisher,
         private Limit $drinks,
         private Limit $zombies,
+        private ?UncountedTally $uncounted = null,
     ) {}
 
     /**
@@ -59,8 +61,8 @@ final readonly class CursedService
     }
 
     /**
-     * A zombie slain in the cursed world, from the goal step on. On a pause the hit is the player's alone: the goal
-     * does not grow.
+     * A zombie slain in the cursed world, from the goal step on. On a pause the goal does not grow: the hit goes to the
+     * player and to the reveal alone.
      *
      * @throws LockBusyException
      * @throws RitualBusyException
@@ -68,7 +70,13 @@ final readonly class CursedService
     public function slew(int $round): void
     {
         $story = $this->ritual->story();
-        $story->cursed() && !$story->paused and $this->settle($round, static fn(Cursed $cursed): Cursed => $cursed->slew(), true);
+        if (!$story->cursed()) {
+            return;
+        }
+
+        $story->paused
+            ? $this->uncounted?->add($round, UncountedTally::SLAIN)
+            : $this->settle($round, static fn(Cursed $cursed): Cursed => $cursed->slew(), true);
     }
 
     /**
