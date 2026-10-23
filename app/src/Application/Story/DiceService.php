@@ -64,6 +64,7 @@ final readonly class DiceService
         private Idempotency $replies,
         private int $replyTtl,
         private ?ActionStop $stops = null,
+        private ?EveningTally $tally = null,
     ) {}
 
     /**
@@ -95,7 +96,14 @@ final readonly class DiceService
         $round = $ritual->round;
         $ritual->story->dice() or throw new StoryRefusedException('not now');
 
-        $throw = fn(): array => $this->throw($round, $id, $attempt, $walker->name, !$ritual->story->paused);
+        // A repeat is answered from the lease without the throw, or by the throw from the record
+        $repeat = true;
+        $throw = function () use (&$repeat, $round, $id, $attempt, $walker, $ritual): array {
+            [$answer, $new] = $this->throw($round, $id, $attempt, $walker->name, !$ritual->story->paused);
+            $repeat = !$new;
+
+            return $answer;
+        };
         // Not a number of an attempt: nothing to keep, the throw refuses it with the last one
         if (!\is_int($attempt) || $attempt < 1) {
             return $throw();
@@ -103,7 +111,7 @@ final readonly class DiceService
 
         try {
             // A refusal is not an answer: released, so the attempt throws once the refusal is gone
-            return $this->replies->execute(
+            $answer = $this->replies->execute(
                 self::key($round, $id, $attempt),
                 $throw,
                 new ExecuteOptions(lockTtl: self::LOCK_TTL, ttl: $this->replyTtl, failurePolicy: FailurePolicy::Release),
@@ -111,6 +119,9 @@ final readonly class DiceService
         } catch (LockedException) {
             throw new StoryRefusedException('busy');
         }
+        $repeat and $this->tally?->add(EveningTally::DROPPED);
+
+        return $answer;
     }
 
     /**
@@ -228,7 +239,8 @@ final readonly class DiceService
      * @param non-empty-string $id
      * @param non-empty-string|null $name
      * @param bool $counted False on a pause of the progress: a new throw cannot win.
-     * @return array{attempt: positive-int, dice: Faces, counted?: false}
+     * @return array{array{attempt: positive-int, dice: Faces, counted?: false}, bool} The answer, and whether the throw is
+     *         new rather than a repeat.
      * @throws StoryRefusedException
      * @throws BadAttemptException
      * @throws LockBusyException
@@ -269,6 +281,6 @@ final readonly class DiceService
             $won and $this->win($round, ['player' => $player->ref(), 'attempt' => $attempt]);
         }
 
-        return $counted ? ['attempt' => $attempt, 'dice' => $faces] : ['attempt' => $attempt, 'dice' => $faces, 'counted' => false];
+        return [$counted ? ['attempt' => $attempt, 'dice' => $faces] : ['attempt' => $attempt, 'dice' => $faces, 'counted' => false], $new];
     }
 }

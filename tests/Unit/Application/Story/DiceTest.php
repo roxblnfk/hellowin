@@ -6,6 +6,7 @@ namespace Tests\Unit\Application\Story;
 
 use App\Application\Story\BadAttemptException;
 use App\Application\Story\DiceService;
+use App\Application\Story\EveningTally;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Application\Walk\NoCharacterException;
@@ -325,6 +326,21 @@ final class DiceTest
         $finale = $ritual->broadcast->ofType('finale');
         Assert::same(end($finale)['reveal']['rolls'] ?? null, 2);
         Assert::same($ritual->snapshot->create()['finale']['reveal']['rolls'] ?? null, 2);
+    }
+
+    public function everyRepeatIsBurnedOnceWhetherTheLeaseOrTheRecordAnswersIt(): void
+    {
+        $ritual = self::dice();
+        $ritual->dice->roll(self::JACK, 1);
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 0);
+
+        $ritual->dice->roll(self::JACK, 1);
+        $ritual->diceReplies->kept = [];
+        $ritual->dice->roll(self::JACK, 1);
+        self::badAttempt(static fn() => $ritual->dice->roll(self::JACK, 5));
+
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 2);
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->burned, 2);
     }
 
     public function resetForgetsTheDice(): void

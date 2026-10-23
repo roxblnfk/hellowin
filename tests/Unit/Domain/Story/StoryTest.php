@@ -88,7 +88,16 @@ final class StoryTest
         $reveal = Reveal::of($ritual, new LockstepPolicy(new Limit(5), [4, 8]), 3, null);
 
         // 24 accepted: 15 went into 3 transitions, 5 + 1 wait for the next ones
-        Assert::same($reveal->toArray(), ['clicks' => 24, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => null]);
+        Assert::same($reveal->toArray(), ['clicks' => 24, 'calls' => 0, 'jobs' => 4, 'burned' => 3, 'shot' => 3, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => null]);
+    }
+
+    public function droppedRepeatsAreBurnedWithTheClicks(): void
+    {
+        $ritual = new RitualSnapshot(1, 1, [new Pumpkin('a', 2, 7, 20, 10), new Pumpkin('b', 1, 1, 4, 5)]);
+
+        $reveal = Reveal::of($ritual, new LockstepPolicy(new Limit(5), [4, 8]), 0, null, calls: 40, dropped: 2);
+
+        Assert::same([$reveal->burned, $reveal->calls, $reveal->clicks], [5, 40, 24]);
     }
 
     public function burnedClicksFollowTheThresholdOfEachTransition(): void

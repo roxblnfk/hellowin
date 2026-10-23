@@ -7,6 +7,7 @@ namespace Tests\Feature\Job;
 use App\Application\Hellowin\Job\TransitionPumpkin;
 use App\Application\Hellowin\Job\TransitionScene;
 use App\Application\Hellowin\TransitionQueue;
+use App\Application\Story\EveningTally;
 use App\Domain\Element\ElementRegistry;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Broadcasting\BroadcastInterface;
@@ -94,6 +95,22 @@ final class TransitionJobTest extends TestCase
 
         Assert::same($this->stored('hellowin:scene'), 1);
         Assert::same($this->broadcast->ofType('scene'), [['type' => 'scene', 'round' => 1, 'scene' => 1, 'stageMax' => 3, 'bonfireStageMax' => 0, 'circleStageMax' => 0, 'item' => 'pistol']]);
+    }
+
+    public function droppedSceneJobIsBurnedAndADroppedPumpkinJobIsLeftToItsClick(): void
+    {
+        $tally = $this->getContainer()->get(EveningTally::class);
+        $scene = ['key' => TransitionQueue::sceneKey(1, 1), 'round' => 1, 'toScene' => 1];
+        $pumpkin = self::pumpkinPayload(1, 'pumpkin-1', 1);
+
+        $this->consume(TransitionScene::class, $scene);
+        $this->consume(TransitionPumpkin::class, $pumpkin);
+        Assert::same($tally->count(EveningTally::DROPPED), 0);
+
+        $this->consume(TransitionScene::class, $scene);
+        $this->consume(TransitionPumpkin::class, $pumpkin);
+
+        Assert::same($tally->count(EveningTally::DROPPED), 1);
     }
 
     #[BeforeTest]

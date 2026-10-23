@@ -6,6 +6,7 @@ namespace Tests\Unit\Endpoint\Centrifugo;
 
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\SnapshotFactory;
+use App\Application\Story\EveningTally;
 use App\Domain\Balance\Limit;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Lock\Locks;
@@ -513,9 +514,10 @@ final class RPCServiceTest
             $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
 
-        $reveal = ['clicks' => 5, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
-        Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal]);
-        Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal]);
+        // The step that reveals is counted once it has answered: five calls before it, six after it
+        $reveal = static fn(int $calls): array => ['clicks' => 5, 'calls' => $calls, 'jobs' => 3, 'burned' => 1, 'shot' => 1, 'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => ['id' => self::PLAYER, 'name' => null]];
+        Assert::same($ritual->broadcast->ofType('finale')[4], ['type' => 'finale', 'round' => 1, 'step' => 4, 'item' => 'torch', 'reveal' => $reveal(5)]);
+        Assert::same($this->call($ritual, 'state', [])['state']['finale'], ['step' => 4, 'reveal' => $reveal(6)]);
     }
 
     public function resetEndsTheFinale(): void
@@ -1085,6 +1087,7 @@ final class RPCServiceTest
 
         Assert::same($response, ['ok' => true, 'reveal' => [
             'clicks' => 0,
+            'calls' => 0,
             'jobs' => 0,
             'burned' => 0,
             'shot' => 0,
@@ -1111,6 +1114,74 @@ final class RPCServiceTest
         Assert::same($reveal, $ritual->reveal->reveal($ritual->store->snapshot())->toArray());
         Assert::null($this->call($ritual, 'state', [])['state']['finale']);
         Assert::blank($ritual->broadcast->published);
+    }
+
+    public function everyActionCountsTowardTheCallsWhateverTheAnswer(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1']);
+        $this->call($ritual, 'click', ['element' => 'ghost-42']);
+        $this->call($ritual, 'move', ['x' => 10, 'y' => 90]);
+        $this->call($ritual, 'shoot', ['flyer' => 'nobody']);
+        $this->call($ritual, 'reset', ['round' => 1]);
+        $this->call($ritual, 'flyers.burst', [], moderator: true);
+        foreach (['time', 'state', 'me', 'reveal'] as $read) {
+            $this->call($ritual, $read, [], self::PLAYER);
+        }
+        $this->call($ritual, 'chat.history', [], moderator: true);
+        $this->call($ritual, 'explode', []);
+
+        Assert::same($ritual->tally->count(EveningTally::CALLS), 6);
+        Assert::same($this->call($ritual, 'reveal', [])['reveal']['calls'] ?? null, 6);
+    }
+
+    public function rateLimitedCallCountsToo(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['move' => new TokenBucket(1.0, 1)]);
+
+        $this->call($ritual, 'move', ['x' => 10, 'y' => 90], self::PLAYER, limiter: $limiter);
+        $limited = $this->call($ritual, 'move', ['x' => 10, 'y' => 90], self::PLAYER, limiter: $limiter);
+
+        Assert::same($limited, ['ok' => false, 'error' => 'rate limited']);
+        Assert::same($ritual->tally->count(EveningTally::CALLS), 2);
+    }
+
+    public function unavailableValkeyFailsNoCall(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->valkey->down = true;
+
+        Assert::same($this->call($ritual, 'click', ['element' => 'pumpkin-1']), ['ok' => true]);
+        Assert::same($this->call($ritual, 'reset', ['round' => 1], moderator: true), ['ok' => true, 'round' => 2]);
+        Assert::same($this->call($ritual, 'reveal', [])['reveal']['calls'] ?? null, 0);
+    }
+
+    public function resetStartsTheCallsOverAndBurnsItsRepeat(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1']);
+
+        $this->call($ritual, 'reset', ['round' => 1], moderator: true);
+        $this->call($ritual, 'reset', ['round' => 1], moderator: true);
+
+        $reveal = $this->call($ritual, 'reveal', [])['reveal'] ?? [];
+        Assert::same([$reveal['calls'] ?? null, $reveal['burned'] ?? null], [2, 1]);
+    }
+
+    public function pressOfTheModeratorFindingItsStateReachedIsBurned(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $this->call($ritual, 'scene.next', ['scene' => 0, 'force' => true], moderator: true);
+        $ritual->runJobs();
+        $this->call($ritual, 'finale.step', ['step' => 1, 'force' => true], moderator: true);
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 0);
+
+        $this->call($ritual, 'scene.next', ['scene' => 0, 'force' => true], moderator: true);
+        $this->call($ritual, 'finale.step', ['step' => 1, 'force' => true], moderator: true);
+        $this->call($ritual, 'finale.step', ['step' => 0], moderator: true);
+
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 3);
     }
 
     public function revealTakesATokenOfOther(): void
@@ -1251,6 +1322,7 @@ final class RPCServiceTest
             $ritual->dice,
             $ritual->chat,
             $ritual->limits,
+            $ritual->tally,
         );
         $service->handle(new RPC(
             worker: $this->worker,

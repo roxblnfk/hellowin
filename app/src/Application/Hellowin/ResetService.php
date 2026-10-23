@@ -7,6 +7,7 @@ namespace App\Application\Hellowin;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
+use App\Application\Story\EveningTally;
 use App\Application\Story\OwlLine;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
@@ -18,7 +19,8 @@ use App\Domain\Walk\Walker;
  * Starts the ritual over in a new round.
  *
  * Idempotent per round (`reset:{round}`): the store compares the round under the scene and pumpkin
- * locks, so of two resets of the same round only the first one acts.
+ * locks, so of two resets of the same round only the first one acts; the other is a dropped repeat of the round's
+ * tally. The first one starts the tally of the new round ({@see EveningTally}).
  */
 final readonly class ResetService
 {
@@ -30,6 +32,7 @@ final readonly class ResetService
         private ?BarService $bar = null,
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
+        private ?EveningTally $tally = null,
     ) {}
 
     /**
@@ -44,8 +47,10 @@ final readonly class ResetService
     {
         $round = $this->store->reset($fromRound ?? $this->store->snapshot()->round, $again);
         if ($round === null) {
+            $this->tally?->add(EveningTally::DROPPED);
             return null;
         }
+        $this->tally?->clear();
 
         $inBar = $this->walks?->barIn(0) === true;
         $inBar or $this->lift();

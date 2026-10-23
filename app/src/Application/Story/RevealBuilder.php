@@ -29,6 +29,7 @@ final readonly class RevealBuilder
         private ?BossStore $boss = null,
         private ?DiceStore $dice = null,
         private ?UncountedTally $uncounted = null,
+        private ?EveningTally $tally = null,
     ) {}
 
     /**
@@ -61,6 +62,8 @@ final readonly class RevealBuilder
             ($cursed?->slain ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::SLAIN) ?? 0),
             ($this->boss?->get($ritual->round)?->damage ?? 0) + ($this->uncounted?->count($ritual->round, UncountedTally::DAMAGE) ?? 0),
             $this->dice?->get($ritual->round)->rolls ?? 0,
+            $this->tally?->count(EveningTally::CALLS) ?? 0,
+            $this->tally?->count(EveningTally::DROPPED) ?? 0,
         );
     }
 }

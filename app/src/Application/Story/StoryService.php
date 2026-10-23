@@ -43,6 +43,7 @@ final readonly class StoryService
         private Clock $clock = new SystemClock(),
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
+        private ?EveningTally $tally = null,
     ) {}
 
     /**
@@ -51,6 +52,9 @@ final readonly class StoryService
      *
      * At dawn the next scene is the bar again: a new cycle of the evening is the reset of the round, which compares
      * the round under its locks — so a repeated press finds the round over and changes nothing.
+     *
+     * A press that finds its scene gone, like a repeat of a finale step taken, is a dropped repeat of the round's tally
+     * ({@see EveningTally}); one that comes before the move pushes a job the idempotency drops, and counts there.
      *
      * @param bool $force Move on even if not every pumpkin is done: the room got stuck.
      * @return array{scene: int<0, max>, round?: positive-int} The scene the moderator will see: the next one, or the
@@ -64,6 +68,7 @@ final readonly class StoryService
         $ritual = $this->store->snapshot();
         $final = $this->policy->finalScene();
         if ($scene !== $ritual->scene) {
+            $this->tally?->add(EveningTally::DROPPED);
             return $scene === $final ? ['scene' => $ritual->scene, 'round' => $ritual->round] : ['scene' => $ritual->scene];
         }
         if ($ritual->scene === $final && $ritual->story->dawn() && $this->reset !== null) {
@@ -97,7 +102,11 @@ final readonly class StoryService
         $after->finale === null and throw new StoryRefusedException('not final');
         !$force && $before->awaitsReady($step) and throw new StoryRefusedException('not ready');
 
-        $after->finale === $before->finale or $this->entered($before, $after, false);
+        if ($after->finale !== $before->finale) {
+            $this->entered($before, $after, false);
+        } elseif ($step <= $before->finale) {
+            $this->tally?->add(EveningTally::DROPPED);
+        }
 
         return $after->finale;
     }

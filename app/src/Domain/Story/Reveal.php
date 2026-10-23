@@ -18,13 +18,16 @@ use App\Domain\Ritual\RitualSnapshot;
  * while the transition was in flight, or after the pumpkin reached the last stage of its scene. The limits may
  * change mid-round, so each element keeps the clicks its transitions took, and only the clicks
  * gathered toward the next stage are measured by the threshold in force now.
+ *
+ * Burned are also the other repeats the idempotency dropped, counted where they are dropped: the clicks are already
+ * here, so those exclude the transition jobs of the elements that the clicks pushed.
  */
 final readonly class Reveal
 {
     /**
      * @param int<0, max> $clicks Accepted clicks.
      * @param int<0, max> $jobs Transition jobs that ran.
-     * @param int<0, max> $burned Clicks that moved nothing.
+     * @param int<0, max> $burned Clicks that moved nothing and other repeats the idempotency dropped.
      * @param int<0, max> $shot Flyers shot down.
      * @param int<0, max> $drinks Mugs drunk in the evening: in the bar and in the cursed world.
      * @param array{id: non-empty-string, name: non-empty-string|null}|null $lastPumpkin Who finished the last element of
@@ -32,6 +35,7 @@ final readonly class Reveal
      * @param int<0, max> $slain Zombies slain in the cursed world.
      * @param int<0, max> $damage Strikes FrankenPHP took.
      * @param int<0, max> $rolls New throws of the dice by the players.
+     * @param int<0, max> $calls Player and moderator actions that reached the RPC handler, whatever the answer.
      */
     public function __construct(
         public int $clicks,
@@ -43,6 +47,7 @@ final readonly class Reveal
         public int $slain = 0,
         public int $damage = 0,
         public int $rolls = 0,
+        public int $calls = 0,
     ) {}
 
     /**
@@ -53,8 +58,10 @@ final readonly class Reveal
      * @param int<0, max> $slain
      * @param int<0, max> $damage
      * @param int<0, max> $rolls
+     * @param int<0, max> $calls
+     * @param int<0, max> $dropped Repeats the idempotency dropped, but for the clicks and the jobs they pushed.
      */
-    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin, int $drinks = 0, int $slain = 0, int $damage = 0, int $rolls = 0): self
+    public static function of(RitualSnapshot $ritual, RitualPolicy $policy, int $shot, ?array $lastPumpkin, int $drinks = 0, int $slain = 0, int $damage = 0, int $rolls = 0, int $calls = 0, int $dropped = 0): self
     {
         $k = $ritual->story->k;
         $players = $ritual->story->players;
@@ -76,16 +83,17 @@ final readonly class Reveal
             $spent += $element->spent + \min($element->clicks, $cost);
         }
 
-        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent), $shot, $lastPumpkin, $drinks, $slain, $damage, $rolls);
+        return new self($clicks, $stages + $ritual->scene, \max(0, $clicks - $spent) + $dropped, $shot, $lastPumpkin, $drinks, $slain, $damage, $rolls, $calls);
     }
 
     /**
-     * @return array{clicks: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, slain: int<0, max>, damage: int<0, max>, rolls: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
+     * @return array{clicks: int<0, max>, calls: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, slain: int<0, max>, damage: int<0, max>, rolls: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
      */
     public function toArray(): array
     {
         return [
             'clicks' => $this->clicks,
+            'calls' => $this->calls,
             'jobs' => $this->jobs,
             'burned' => $this->burned,
             'shot' => $this->shot,

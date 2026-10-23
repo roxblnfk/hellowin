@@ -23,6 +23,7 @@ use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
+use App\Application\Story\EveningTally;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryService;
@@ -122,6 +123,8 @@ final class RitualHarness
     public readonly ChatService $chat;
     public readonly LimitsStore $limitsStore;
     public readonly LimitsService $limits;
+    public readonly FakeValkey $valkey;
+    public readonly EveningTally $tally;
 
     /**
      * @param positive-int $threshold
@@ -160,6 +163,8 @@ final class RitualHarness
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
         $this->metrics = new SpyMetrics();
+        $this->valkey = new FakeValkey();
+        $this->tally = new EveningTally($this->valkey);
 
         $elements = new ElementRegistry([
             ...\array_map(
@@ -202,12 +207,12 @@ final class RitualHarness
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();
-        $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops);
+        $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops, $this->tally);
         $this->topStore = new TopStore($this->storage, new Locks($this->lock));
         $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore, $this->uncounted);
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore, $this->uncounted, $this->tally);
         $this->publisher = $publisher;
         $this->census = new PlayerCensus($this->playerStore, $this->playMetrics);
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
@@ -267,8 +272,8 @@ final class RitualHarness
             policy: $policy,
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
-        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally);
     }
 
     /**

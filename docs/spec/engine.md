@@ -510,7 +510,7 @@
   локом `pumpkin:{id}`, что и `clicks`, и `spent` — сколько кликов взяли её выполненные переходы: задача перехода
   прибавляет min(`clicks`, порог) по `k`, действующему, когда она выполняется. Отсюда: `clicks` = Σ `accepted`; `jobs` =
   Σ `stage` + `scene` (каждая стадия и каждая сцена — ровно одна выполненная задача перехода); `burned` = `clicks` −
-  Σ `spent` − Σ min(`clicks`, действующий порог) — переход тратит ровно порог, остальное сгорело на идемпотентности или
+  Σ `spent` − Σ min(`clicks`, действующий порог) + `dropped` — переход тратит ровно порог, остальное сгорело на идемпотентности или
   после готовности тыквы, кроме кликов, ещё копящихся к следующему переходу. `spent` в записи, а не `stage` × порог:
   модератор меняет `k` посреди раунда, и каждая стадия стоила свой порог. Запись без `spent` (до появления поля)
   читается как 0 — до сброса `burned` такого раунда завышен. Костёр и круг входят во все три суммы со своими порогами
@@ -519,6 +519,11 @@
   `{round, count}` под RR-локом `shot` (`Domain/Story/ShotTally`): выстрелы редки, лок не мешает; счёт другого раунда
   читается как 0, так что сброс его не трогает. Выпитые в баре — `hellowin:drinks` так же (`drinks`, см. «Бар»);
   кружки, удары и бродячие зомби, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
+  `calls` — действия игроков и модератора, дошедшие до PHP за раунд, с любым ответом (`ok`, отказ, `rate limited`,
+  `forbidden`, пауза): все известные методы `RPCService`, кроме чтений `state`, `time`, `me`, `reveal` и
+  `chat.history`; неизвестный метод — не действие. Это `clicks` и ходы, выстрелы, `clink`, `clink.auto`, `say` и всё прочее
+  (`Application/Story/EveningTally`, «Счётчики вечера»). К `burned` прибавляются повторы, отброшенные идемпотентностью
+  вне кликов по элементам, — `dropped` того же счётчика (см. «Переходы», «Отброшенные повторы»).
   `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
   (тыквы, костра или круга); анонимная задача отметки прежнего игрока не стирает;
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4,
@@ -604,11 +609,35 @@
 после истечения следующий клик снова запускает переход, а от двойного перехода защищает доменная проверка `stage`.
 
 Очередь подключена по скиллу пакета: `QueueIdempotencyBootloader`, `transports.queue` = `QueueRetryMiddleware`,
-`QueueKeyMiddleware`; в `app/config/queue.php` `interceptors.consume` — `ErrorHandlerInterceptor`,
+`QueueKeyMiddleware`, `DroppedJobMiddleware` (счёт отброшенных, см. «Отброшенные повторы»); в `app/config/queue.php` `interceptors.consume` — `ErrorHandlerInterceptor`,
 `RetryPolicyInterceptor`, `IdempotencyInterceptor` (retry снаружи). У AtMostOnce-хранилища занятый ключ — это дубль:
 claim возвращает nil, обработчик не вызывается, задача подтверждается. Путь `LockedException` →
 `RetryableLockException` → повтор с задержкой относится к lease-хранилищам (AtLeastOnce) и сработает, только если
 alias `transitions` переключить обратно на `RedisLeaseConfig`.
+
+**Отброшенные повторы** (`dropped` в `hellowin:tally:dropped`, в `reveal` — часть `burned`). Каждый повтор,
+который идемпотентность проекта отбросила, считается один раз, там, где его отбросили:
+
+- задача `TransitionScene` или `TransitionFinale`, которую отсекло хранилище `transitions`: `DroppedJobMiddleware`
+  последним в `transports.queue` оборачивает операцию флагом, и вызов, вернувшийся без запуска обработчика, — дубль;
+  упавший вызов дублем не считается;
+- повтор попытки `roll`: ответ из лизинга `dice` без броска или бросок, нашедший попытку в записи `hellowin:dice`;
+- сброс, нашедший раунд уже сменившимся (`ResetService::reset` вернул `null`);
+- `scene.next` со сценой, которой уже нет, и `finale.step` с шагом не дальше текущего, если шаг не сдвинулся.
+
+Дубли `TransitionPumpkin` (тыквы, костёр, круг) не считаются: каждый такой дубль поставил клик сверх порога, пока
+переход в полёте, а этот клик уже в `burned` арифметикой `accepted` − `spent`. Посчитать их ещё раз — двойной счёт;
+дубли тех же задач от пересчёта лимитов (`LimitsService`) — не повтор игрока. Повторное нажатие «следующая сцена» до
+перехода ставит дубль задачи и считается в middleware, после перехода — находит сцену сменившейся и считается в
+`StoryService`: одно нажатие — один счёт.
+
+**Счётчики вечера** (`Application/Story/EveningTally`): `hellowin:tally:calls` и `hellowin:tally:dropped` — простые
+целые в Valkey через predis (`ClientInterface` из `ValkeyBootloader`), мимо KV-плагина и без лока: ход приходит
+часто, а `INCR` атомарен и стоит один запрос; `EXPIRE` (2 суток, страховка для забытого стенда) — только на первый
+счёт ключа. Ключи без номера раунда: обработчик RPC раунда не знает, а его чтение — лишний запрос в KV на каждый ход.
+Поэтому успешный сброс (и `again`) удаляет оба ключа, а счёт после него — уже новый раунд; вызов, начатый до сброса
+и досчитанный после, попадает в новый раунд. Счёт идёт в `finally` `RPCService::handle` — после отправки ответа.
+Недоступный Valkey вызов не роняет: ошибка проглатывается, разоблачение покажет меньше.
 
 ## Лимиты и баланс
 
@@ -708,6 +737,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Топ стрелков: `hellowin:top` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
+| Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
 | Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
@@ -740,7 +770,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 | `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
-| `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл |
+| `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл. Тот же вызов, если это действие, — `+1` в `hellowin:tally:calls` (`reveal.calls`): метрика живёт до рестарта RR и раунда не знает |
 | `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут

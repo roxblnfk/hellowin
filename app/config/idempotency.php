@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Application\Hellowin\DroppedJobMiddleware;
 use Spiral\Idempotency\Driver\Redis\RedisAtMostOnceConfig;
 use Spiral\Idempotency\Driver\Redis\RedisLeaseConfig;
 use Spiral\Idempotency\Queue\QueueKeyMiddleware;
@@ -14,9 +15,10 @@ return [
     'default' => 'transitions',
 
     // Resolution middleware per transport, outer → inner. Transition jobs take the key from the payload
-    // (`#[Idempotent(key: 'payload.key')]`), so QueueKeyMiddleware only passes it through.
+    // (`#[Idempotent(key: 'payload.key')]`), so QueueKeyMiddleware only passes it through. DroppedJobMiddleware counts
+    // the duplicates the storage drops for the finale reveal.
     'transports' => [
-        'queue' => [QueueRetryMiddleware::class, QueueKeyMiddleware::class],
+        'queue' => [QueueRetryMiddleware::class, QueueKeyMiddleware::class, DroppedJobMiddleware::class],
     ],
 
     'storages' => [

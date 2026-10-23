@@ -19,6 +19,7 @@ use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
+use App\Application\Story\EveningTally;
 use App\Application\Story\RapierService;
 use App\Application\Story\RevealBuilder;
 use App\Application\Story\TopService;
@@ -169,7 +170,8 @@ final class HellowinBootloader extends Bootloader
                 BossStore $boss,
                 DiceStore $dice,
                 UncountedTally $uncounted,
-            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice, $uncounted),
+                EveningTally $tally,
+            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice, $uncounted, $tally),
             CursedStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -228,6 +230,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 ActionStop $stops,
                 IdempotencyRegistry $idempotency,
+                EveningTally $tally,
             ): DiceService => new DiceService(
                 $store,
                 $roller,
@@ -241,6 +244,7 @@ final class HellowinBootloader extends Bootloader
                 $idempotency->get(DiceService::STORAGE),
                 $config->getDiceIdempotencyTtl(),
                 $stops,
+                $tally,
             ),
             BossStore::class => static fn(
                 HellowinConfig $config,

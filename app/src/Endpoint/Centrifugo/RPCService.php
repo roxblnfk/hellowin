@@ -22,6 +22,7 @@ use App\Application\Player\PlayerService;
 use App\Application\Story\BadAttemptException;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
+use App\Application\Story\EveningTally;
 use App\Application\Story\RapierService;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
@@ -51,7 +52,8 @@ use Spiral\RoadRunnerBridge\Centrifugo\ServiceInterface;
  * Every call but the moderator's first takes a token of its player's bucket — of the connection's, when it has no
  * player — for its group of methods ({@see RateLimiter}); an empty bucket answers `rate limited`.
  *
- * Every call, refused ones included, is counted by method and result and timed ({@see PlayMetrics::rpc()}).
+ * Every call, refused ones included, is counted by method and result and timed ({@see PlayMetrics::rpc()}); every
+ * player action of them, and the moderator's, also goes into the round's tally for the reveal ({@see EveningTally}).
  */
 final readonly class RPCService implements ServiceInterface
 {
@@ -62,6 +64,9 @@ final readonly class RPCService implements ServiceInterface
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
     private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'me', 'reveal'];
+
+    /** Reads the page and the console poll for themselves, not actions: the tally of the calls leaves them out. */
+    private const READS = ['state', 'time', 'me', 'reveal', 'chat.history'];
 
     public function __construct(
         private ClickHandler $clicks,
@@ -81,6 +86,7 @@ final readonly class RPCService implements ServiceInterface
         private ?DiceService $dice = null,
         private ?ChatService $chat = null,
         private ?LimitsService $limits = null,
+        private ?EveningTally $tally = null,
     ) {}
 
     #[\Override]
@@ -96,11 +102,9 @@ final readonly class RPCService implements ServiceInterface
             $request->respond(new RPCResponse($answer));
             $result = self::result($answer);
         } finally {
-            $this->metrics->rpc(
-                \in_array($method, self::PUBLIC, true) || \in_array($method, self::CONSOLE, true) ? $method : 'unknown',
-                $result,
-                (float) (\hrtime(true) - $started) / 1e9,
-            );
+            $known = \in_array($method, self::PUBLIC, true) || \in_array($method, self::CONSOLE, true);
+            $this->metrics->rpc($known ? $method : 'unknown', $result, (float) (\hrtime(true) - $started) / 1e9);
+            $known && !\in_array($method, self::READS, true) and $this->tally?->add(EveningTally::CALLS);
         }
     }
 

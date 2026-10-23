@@ -11,4 +11,10 @@ use Spiral\Testing\Traits\TestableKernel;
 final class TestKernel extends Kernel implements TestableKernelInterface
 {
     use TestableKernel;
+
+    #[\Override]
+    public function defineAppBootloaders(): array
+    {
+        return [...parent::defineAppBootloaders(), FakeValkeyBootloader::class];
+    }
 }
