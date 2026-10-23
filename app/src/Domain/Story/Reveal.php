@@ -87,6 +87,25 @@ final readonly class Reveal
     }
 
     /**
+     * The numbers of both together; the last pumpkin is this one's when it has one: the newer side goes first.
+     */
+    public function plus(self $other): self
+    {
+        return new self(
+            $this->clicks + $other->clicks,
+            $this->jobs + $other->jobs,
+            $this->burned + $other->burned,
+            $this->shot + $other->shot,
+            $this->lastPumpkin ?? $other->lastPumpkin,
+            $this->drinks + $other->drinks,
+            $this->slain + $other->slain,
+            $this->damage + $other->damage,
+            $this->rolls + $other->rolls,
+            $this->calls + $other->calls,
+        );
+    }
+
+    /**
      * @return array{clicks: int<0, max>, calls: int<0, max>, jobs: int<0, max>, burned: int<0, max>, shot: int<0, max>, drinks: int<0, max>, slain: int<0, max>, damage: int<0, max>, rolls: int<0, max>, lastPumpkin: array{id: non-empty-string, name: non-empty-string|null}|null}
      */
     public function toArray(): array

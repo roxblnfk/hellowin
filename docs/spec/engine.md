@@ -529,6 +529,16 @@
   имя берётся из записи игрока при сборке. `reveal` считается при каждой сборке снимка и событии `finale` с шага 4,
   а RPC `reveal` (`SnapshotFactory::reveal`) — в любой сцене, по одному снимку `RitualStore::snapshot` и счётчикам раунда, без событий:
   панель «Числа вечера» зовёт его при открытии и раз в 2 с. Пустое хранилище читается как раунд 1, сцена 0 и нули — ответ всё равно полный.
+  Числа — **за вечер**, а не за раунд (бриф №26): «В бар» (`reset` с `again`) их не обнуляет, обнуляет только сброс
+  модератора. Перед сбросом `again` `ResetService` читает снимок и числа раунда без счётчиков вечера
+  (`RevealBuilder::round`); если сброс именно этого раунда прошёл, числа прибавляются к `hellowin:evening`
+  (`Domain/Story/EveningStore`, RR-лок `evening`) — `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls,
+  lastPumpkin}`, где `through` — последний сложенный раунд: раунд складывается один раз, повтор `again` (раунд уже сменился,
+  `reset` вернул `null`) ничего не складывает. `RevealBuilder::reveal` = числа текущего раунда + `calls` и `dropped`
+  счётчиков вечера + перенос, если `through` < текущего раунда; `lastPumpkin` — текущего раунда, иначе перенесённый.
+  `calls` и `dropped` в перенос не входят: их ключи `again` не трогает, они копятся весь вечер сами — так их не
+  посчитать дважды. Сброс модератора удаляет и `hellowin:evening`, и ключи `hellowin:tally:*`. Цена: то, что раунд набрал
+  между чтением и сбросом (миллисекунды), в перенос не попадает; занятый лок `evening` теряет перенос раунда, не сброс.
 
 ## Поток клика
 
@@ -597,7 +607,7 @@
 - **Снова в бар.** `scene.next {scene}` на шаге финала 7 (`Story::dawn`, `StoryService::nextScene`) — тот же
   `ResetService::reset(round, again: true)`: раунд из снимка сравнивается под локами сброса, поэтому повторное нажатие
   (и второй модератор) находит раунд уже сменившимся и ничего не делает. Отличие от пульта — `again: true` в `reset` и
-  реплика `bar-again` следом.
+  реплика `bar-again` следом, а числа разоблачения не обнуляются, а переносятся в вечер (см. «Сюжет», «Разоблачение»).
 
 Ключи идемпотентности в Valkey: `hellowin:amo:` + область (`Класс::handle`) + ключ из payload, например
 `hellowin:amo:App\Application\Hellowin\Job\TransitionPumpkin::handle:1:pumpkin-3:2`. `round` в ключе обязателен:
@@ -635,8 +645,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 целые в Valkey через predis (`ClientInterface` из `ValkeyBootloader`), мимо KV-плагина и без лока: ход приходит
 часто, а `INCR` атомарен и стоит один запрос; `EXPIRE` (2 суток, страховка для забытого стенда) — только на первый
 счёт ключа. Ключи без номера раунда: обработчик RPC раунда не знает, а его чтение — лишний запрос в KV на каждый ход.
-Поэтому успешный сброс (и `again`) удаляет оба ключа, а счёт после него — уже новый раунд; вызов, начатый до сброса
-и досчитанный после, попадает в новый раунд. Счёт идёт в `finally` `RPCService::handle` — после отправки ответа.
+Числа — за вечер (см. «Сюжет», «Разоблачение»), поэтому ключи удаляет только успешный сброс модератора, а `again` (возврат
+в бар) их не трогает; вызов, начатый до сброса и досчитанный после, попадает в новый вечер. Счёт идёт в `finally` `RPCService::handle` — после отправки ответа.
 Недоступный Valkey вызов не роняет: ошибка проглатывается, разоблачение покажет меньше.
 
 ## Лимиты и баланс
@@ -737,9 +747,10 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Топ стрелков: `hellowin:top` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
-| Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
+| Числа прошлых циклов вечера `hellowin:evening` `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls, lastPumpkin}` | Valkey | тот же storage `hellowin`, лок `evening` |
+| Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза

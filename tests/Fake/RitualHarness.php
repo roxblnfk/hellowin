@@ -55,6 +55,7 @@ use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
+use App\Domain\Story\EveningStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\Story;
 use App\Domain\Story\TopStore;
@@ -104,6 +105,7 @@ final class RitualHarness
     public readonly FakePresence $presence;
     public readonly ShotTally $shots;
     public readonly UncountedTally $uncounted;
+    public readonly EveningStore $evening;
     public readonly RevealBuilder $reveal;
     public readonly StoryService $story;
     public readonly StartTime $startTime;
@@ -212,7 +214,7 @@ final class RitualHarness
         $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
-        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore, $this->uncounted, $this->tally);
+        $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore, $this->uncounted, $this->tally, $this->evening = new EveningStore($this->storage, new Locks($this->lock)));
         $this->publisher = $publisher;
         $this->census = new PlayerCensus($this->playerStore, $this->playMetrics);
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
@@ -272,7 +274,7 @@ final class RitualHarness
             policy: $policy,
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
-        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally);
+        $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally, $this->reveal);
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally);
     }
 

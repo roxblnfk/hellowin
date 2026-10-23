@@ -51,6 +51,7 @@ use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
+use App\Domain\Story\EveningStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
@@ -161,6 +162,11 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): UncountedTally => new UncountedTally($cache->storage($config->getStorage()), new Locks($lock)),
+            EveningStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): EveningStore => new EveningStore($cache->storage($config->getStorage()), new Locks($lock)),
             RevealBuilder::class => static fn(
                 ShotTally $shots,
                 PlayerStore $players,
@@ -171,7 +177,8 @@ final class HellowinBootloader extends Bootloader
                 DiceStore $dice,
                 UncountedTally $uncounted,
                 EveningTally $tally,
-            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice, $uncounted, $tally),
+                EveningStore $evening,
+            ): RevealBuilder => new RevealBuilder($shots, $players, $policy, $bar, $cursed, $boss, $dice, $uncounted, $tally, $evening),
             CursedStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,

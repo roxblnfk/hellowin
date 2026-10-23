@@ -9,10 +9,12 @@ use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Story\EveningTally;
 use App\Application\Story\OwlLine;
+use App\Application\Story\RevealBuilder;
 use App\Application\Walk\WalkService;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Reveal;
 use App\Domain\Walk\Walker;
 
 /**
@@ -20,7 +22,8 @@ use App\Domain\Walk\Walker;
  *
  * Idempotent per round (`reset:{round}`): the store compares the round under the scene and pumpkin
  * locks, so of two resets of the same round only the first one acts; the other is a dropped repeat of the round's
- * tally. The first one starts the tally of the new round ({@see EveningTally}).
+ * tally ({@see EveningTally}). The moderator's reset starts the evening's numbers over; a return to the bar (`again`)
+ * carries the finished round into them ({@see RevealBuilder::carry()}), so the numbers live through the cycles.
  */
 final readonly class ResetService
 {
@@ -33,6 +36,7 @@ final readonly class ResetService
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
         private ?EveningTally $tally = null,
+        private ?RevealBuilder $reveal = null,
     ) {}
 
     /**
@@ -45,12 +49,21 @@ final readonly class ResetService
      */
     public function reset(?int $fromRound = null, bool $again = false): ?int
     {
-        $round = $this->store->reset($fromRound ?? $this->store->snapshot()->round, $again);
+        // Read before the reset zeroes the elements: what the round gains between the read and the reset is lost
+        $finished = $again && $this->reveal !== null ? $this->store->snapshot() : null;
+        $numbers = $finished === null ? null : $this->reveal?->round($finished);
+
+        $round = $this->store->reset($fromRound ?? $finished?->round ?? $this->store->snapshot()->round, $again);
         if ($round === null) {
             $this->tally?->add(EveningTally::DROPPED);
             return null;
         }
-        $this->tally?->clear();
+        if (!$again) {
+            $this->tally?->clear();
+            $this->reveal?->forget();
+        } elseif ($finished !== null && $numbers !== null && $finished->round === $round - 1) {
+            $this->carry($finished->round, $numbers);
+        }
 
         $inBar = $this->walks?->barIn(0) === true;
         $inBar or $this->lift();
@@ -101,6 +114,17 @@ final readonly class ResetService
     {
         try {
             $this->flyers?->retire();
+        } catch (LockBusyException) {
+        }
+    }
+
+    /**
+     * The round has started over already: a busy evening loses the finished round's numbers, not the reset.
+     */
+    private function carry(int $round, Reveal $numbers): void
+    {
+        try {
+            $this->reveal?->carry($round, $numbers);
         } catch (LockBusyException) {
         }
     }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Unit\Application\Story;
 
 use App\Application\Hellowin\ResetService;
+use App\Application\Story\EveningTally;
+use App\Application\Story\RevealBuilder;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Domain\Story\Story;
@@ -21,6 +23,7 @@ use Tests\Fake\RitualHarness;
 #[Test]
 #[Covers(StoryService::class)]
 #[Covers(ResetService::class)]
+#[Covers(RevealBuilder::class)]
 final class DawnTest
 {
     private const JACK = 'aaaaaaaaaaaaaaaa';
@@ -76,6 +79,64 @@ final class DawnTest
 
         Assert::false(\array_key_exists('again', $ritual->broadcast->ofType('reset')[0]));
         Assert::blank($ritual->broadcast->ofType('owl'));
+    }
+
+    public function eveningNumbersLiveThroughTheReturnToTheBar(): void
+    {
+        $ritual = self::atDawn();
+        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: $story->finale, lastPumpkin: self::JACK, k: $story->k, players: $story->players));
+        $ritual->shots->add(1);
+        $ritual->tally->add(EveningTally::CALLS);
+        $ritual->tally->add(EveningTally::DROPPED);
+        $before = $ritual->reveal->reveal($ritual->store->snapshot())->toArray();
+
+        $ritual->story->nextScene(3, false);
+
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->toArray(), $before);
+        Assert::same([$before['jobs'], $before['shot'], $before['calls'], $before['burned']], [3, 1, 1, 1]);
+        Assert::same($before['lastPumpkin'], ['id' => self::JACK, 'name' => 'Jack']);
+    }
+
+    public function newCycleAddsToTheCarriedNumbers(): void
+    {
+        $ritual = self::atDawn();
+        $ritual->shots->add(1);
+        $ritual->story->nextScene(3, false);
+
+        $ritual->shots->add(2);
+        $ritual->tally->add(EveningTally::CALLS);
+
+        $reveal = $ritual->reveal->reveal($ritual->store->snapshot());
+        Assert::same([$reveal->shot, $reveal->jobs, $reveal->calls], [2, 3, 1]);
+    }
+
+    public function repeatedReturnCarriesTheRoundOnce(): void
+    {
+        $ritual = self::atDawn();
+        $ritual->shots->add(1);
+        $ritual->story->nextScene(3, false);
+
+        Assert::null($ritual->reset->reset(1, again: true));
+        $ritual->reveal->carry(1, $ritual->reveal->round($ritual->store->snapshot()));
+        $ritual->story->nextScene(3, false);
+
+        $reveal = $ritual->reveal->reveal($ritual->store->snapshot());
+        Assert::same([$reveal->shot, $reveal->jobs, $reveal->burned], [1, 3, 2]);
+    }
+
+    public function consoleResetZeroesTheEvening(): void
+    {
+        $ritual = self::atDawn();
+        $ritual->shots->add(1);
+        $ritual->tally->add(EveningTally::CALLS);
+        $ritual->story->nextScene(3, false);
+
+        $ritual->reset->reset();
+
+        Assert::same($ritual->reveal->reveal($ritual->store->snapshot())->toArray(), [
+            'clicks' => 0, 'calls' => 0, 'jobs' => 0, 'burned' => 0, 'shot' => 0,
+            'drinks' => 0, 'slain' => 0, 'damage' => 0, 'rolls' => 0, 'lastPumpkin' => null,
+        ]);
     }
 
     public function beforeTheDawnTheFinalSceneHasNoNextOne(): void
