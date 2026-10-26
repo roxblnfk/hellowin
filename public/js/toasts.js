@@ -2,11 +2,14 @@
 // clinking glasses. The whole room reads the same line over the same glasses: an automatic clink takes its toast from
 // the group and the server clock (pixel/clink.js), a clink by click from the number the server sends (`clink` event).
 
+import { pick } from './i18n.js';
+
 /**
  * The catalog; add toasts at the end, so the ones already said keep their indexes. A toast is a line, or two voices
  * [line, reply]: the first over one walker of the group, the reply over another (or over the pumpkin it clinks with).
+ * Every catalog here but REFUSALS is picked by index: item N of `en` adapts item N of `ru`, two-voice where it is.
  */
-export const TOASTS = [
+export const TOASTS = pick({ ru: [
     'За RR!',
     'За RoadRunner — живее всех живых!',
     'За DLoad!',
@@ -42,13 +45,49 @@ export const TOASTS = [
     'За метрики — пусть Grafana краснеет только от тыкв!',
     ['Кто-нибудь помнит, зачем мы его воскрешали?', 'Ради метрик!'],
     'За тыквы — они тоже работали всю ночь!',
-];
+], en: [
+    'To RR!',
+    'To RoadRunner — alive and kicking!',
+    'To DLoad!',
+    'To Testo!',
+    'To Spiral!',
+    'To Temporal — may the party survive a restart!',
+    'To Centrifugo — everyone heard us!',
+    "To Buggregator — may it catch only other people's bugs!",
+    'To Cycle ORM!',
+    'To Valkey!',
+    'To idempotency! To idempotency!',
+    'To the workers — living and dead!',
+    "To PHP — it's alive too!",
+    'Shall we raise nginx next?',
+    'Has anyone seen php-fpm?',
+    "Let's summon Apache too, while we're at it",
+    'Poor owl…',
+    'Whoever lit the bonfire buys the round!',
+    'Meep meep!',
+    'Franken, come join us!',
+    'I knew he was alive all along',
+    'Next year we resurrect Laravel Octane?',
+    'To absent friends — and dropped clicks!',
+    'To locks — may they acquire on the first try!',
+    'To the queue — may every job arrive!',
+    'To KV — what you set is what you get!',
+    'To prod with no Friday deploys!',
+    ['Shall we deploy?', 'Not today!'],
+    'To Halloween!',
+    'Hoo-hoo!',
+    'To gRPC — may contracts never lie!',
+    'To .rr.yaml — short and sweet!',
+    'To metrics — may Grafana turn red only for pumpkins!',
+    ['Anyone remember why we brought him back?', 'For the metrics!'],
+    'To the pumpkins — they worked all night too!',
+] });
 
 /**
  * Toasts of the bar (scene 0; docs/spec/scenario.md, «Сцена 0 — «Бар»»): to PHP. Same rules as TOASTS — add at the end;
  * the scene picks the catalog, the index comes the same way.
  */
-export const BAR_TOASTS = [
+export const BAR_TOASTS = pick({ ru: [
     'За PHP!',
     'За PHP — сто лет без смерти!',
     'За elePHPant!',
@@ -68,7 +107,27 @@ export const BAR_TOASTS = [
     ['Обновимся до свежей версии?', 'Сразу после релиза!'],
     'За тех, кто пишет тесты!',
     'За RoadRunner — пусть воркеры не устают!',
-];
+], en: [
+    'To PHP!',
+    'To PHP — 100 years and not dead yet!',
+    'To the elePHPant!',
+    'To declare(strict_types=1)!',
+    'To composer install with zero errors!',
+    'To PSR!',
+    'To everyone still on PHP 5!',
+    'To JIT!',
+    'To match over switch!',
+    'To readonly!',
+    'To enums!',
+    'To the pipe operator |>!',
+    'To Fibers!',
+    'To the PHP Foundation!',
+    "To PHP 9 — we'll live to see it!",
+    'To property hooks!',
+    ['Upgrade to the latest version?', 'Right after the .1 release!'],
+    'To those who write tests!',
+    'To RoadRunner — may the workers never tire!',
+] });
 
 /** The toast of a `clink` event's index in a catalog (it wraps around): [line] or [line, reply]. */
 export function toastAt(index, list = TOASTS) {
@@ -96,7 +155,7 @@ export function toastOf(groupHash, slot, list = TOASTS) {
  * What a walker says over its own head when the server refuses its drink (`not clinked`): only this browser sees it,
  * so a random pick is fine. Add lines at the end.
  */
-export const REFUSALS = [
+export const REFUSALS = pick({ ru: [
     'Не пью не чокаясь!',
     'Я же не алкаш!',
     'Один не пью — я культурный.',
@@ -112,7 +171,23 @@ export const REFUSALS = [
     'Без чоканья не задеплоится.',
     'Тост — это контракт. Без него не пью.',
     'Чокнуться — это идемпотентно. Выпить — нет.',
-];
+], en: [
+    "I don't drink without a clink!",
+    'What am I, a barfly?',
+    'I never drink alone — I have manners.',
+    "Without a toast it's just liquid.",
+    'Clink first, talk later.',
+    "Who's with me?",
+    'Drink without a clink, get a bug in prod.',
+    'Mom said: only in good company.',
+    'Hey, anyone! Clink?',
+    "Won't go down without a toast.",
+    'Bad omen — a memory leak ahead.',
+    "I'll take any toast. Even one to PHP 5.",
+    'No clink, no deploy.',
+    'A toast is a contract. No toast, no drink.',
+    "Clinking is idempotent. Drinking isn't.",
+] });
 
 /** A refusal line for `not clinked`. */
 export const refusal = (random = Math.random) => REFUSALS[Math.floor(random() * REFUSALS.length)];
@@ -121,7 +196,7 @@ export const refusal = (random = Math.random) => REFUSALS[Math.floor(random() * 
  * RoadRunner's toasts behind the bar's counter after the dawn (docs/spec/scenario.md, «RoadRunner в баре»). Same rule:
  * add at the end, so the slots keep their toasts.
  */
-export const RR_TOASTS = [
+export const RR_TOASTS = pick({ ru: [
     'Мип-мип! За вас!',
     'За аптайм!',
     'За тех, кто ни разу не упал!',
@@ -136,7 +211,22 @@ export const RR_TOASTS = [
     'За nginx — пусть земля ему будет пухом!',
     'За тех, кто воскрешал меня всю ночь!',
     'Мип-мип! (это тост)',
-];
+], en: [
+    'Meep meep! To you!',
+    'To uptime!',
+    'To those who never went down!',
+    'To the workers — living and restarted!',
+    'Rumours of my death were greatly exaggerated!',
+    'To Spiral!',
+    "To PHP — it's alive and kicking too!",
+    'To Centrifugo — everyone heard you!',
+    "To Temporal — we'll survive any restart!",
+    'To idempotency — pour twice, I drink once!',
+    'Franken, no hard feelings!',
+    'To nginx — may it rest in peace!',
+    'To everyone who spent all night raising me!',
+    "Meep meep! (that's a toast)",
+] });
 
 /** RoadRunner's toast slots, ms; he speaks in about two thirds of them. */
 export const RR_SLOT_MS = 8000;

@@ -1,6 +1,8 @@
 // The owl's lines (docs/spec/scenario.md, «Модератор и сова») and the speech bubble over the scene.
 // The server sends a line id with params, or the moderator's own text; the words live here.
 
+import { pick } from './i18n.js';
+
 /**
  * id → { text, scenes?: {[scene]: text} — the line in that scene instead, steps?: {[step]: text} — the line at that
  * finale step instead (in the final scene, before `scenes`), hoot?: a dramatic line, the owl puffs up first; button?:
@@ -10,7 +12,7 @@
  * is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
-export const LINES = {
+const RU_LINES = {
     'bar-intro': { auto: true, hoot: true, text: 'Ребята, сегодня Хэллоуин! Ух-ху!', then: 'И RoadRunner можно воскресить! Я знаю одно магическое место неподалёку… За мной!' },
     // Off the console since `bar-intro` opens the evening; kept for a server or a stale console that still sends it.
     intro: { hoot: true, text: 'Ух-ху! Печальные вести: RoadRunner мёртв. Но есть древний ритуал на тыквах — он его вернёт. Беритесь за ножи!' },
@@ -59,6 +61,58 @@ export const LINES = {
     zombies: { auto: true, hoot: true, text: 'Из грядки лезут воркеры! Не спят, не едят — только обрабатывают.' },
 };
 
+// English words of the same ids, the flags stay in RU_LINES: every text key there (text, then and its parts, scenes,
+// steps, button) has its English here, same scene and step keys, same number of parts.
+const EN_LINES = {
+    'bar-intro': { text: "Folks, it's Halloween! Hoo-hoo!", then: 'And tonight RoadRunner can be brought back! I know a magic place nearby… Follow me!' },
+    intro: { text: 'Hoo-hoo! Sad news: RoadRunner is dead. But an ancient pumpkin ritual can bring him back. Grab your knives!' },
+    rules: { button: 'Rules', text: 'Click the pumpkins — everyone sees every click. Shoot down flyers: points go to the board.', scenes: { 0: 'Grab a mug at the bar. Clink with a neighbour first — then sip. Drink till the bar fills up!' } },
+    hurry: {
+        button: 'Hurry up',
+        text: "Pumpkins won't carve themselves. Come on, almost there!",
+        scenes: { 0: "This beer won't drink itself!", 2: "Candles won't light themselves!", 3: "Spells won't cast themselves!", 4: "The circle won't draw itself!" },
+        steps: {
+            0: "The circle won't draw itself!",
+            1: 'Roll the dice! We need six-six-six!',
+            5: "Mugs won't drain themselves, zombies won't lay themselves to rest! Move it!",
+            6: 'Speak the word, take a rapier — and go get FrankenPHP!',
+            7: "Ducks won't skewer themselves! Rapiers out!",
+        },
+    },
+    clues: { button: 'Clues', text: 'Odd… The pumpkins respond too fast — as if someone is handling every single click.' },
+    flyers: { button: 'About flyers', text: "Flyers aren't part of the ritual. Shooting them down is still fun.", scenes: { 0: 'No flyers in the bar — we drink here.', 2: 'At sunset the birds flew off. All eyes on the pumpkins.', 3: "Bats! Shoot them — but don't forget the pumpkins.", 4: 'Worms… Even the ground is crawling here. Squash them!' } },
+    outro: { button: 'Goodbye', text: 'Thanks for coming! Leave the door open: zombies live here now.' },
+    'scene-ready': { text: 'All pumpkins are ready. Awaiting a sign… hoo-hoo.', scenes: { 2: 'The bonfire is roaring. Awaiting a sign… hoo-hoo.', 3: "That's enough… it's gonna blow!", 4: "The circle is closed! Soon he'll come… Wait for the sign!" } },
+    'bar-who': { button: "Who's next?", text: "Who's next?" },
+    'bar-crowd': { button: "Don't crowd", text: "Don't crowd the bar — I'm pouring!" },
+    'bar-clink': { button: 'Clink first', text: 'Clink first, then drink!' },
+    'bar-empty': { text: "Empty! Hang on, I'm pouring." },
+    'scene-1': { text: 'Here it is — the magic place! Hoo-hoo!', then: 'But first, prep for the ritual: carve faces into the pumpkins and scoop them out!' },
+    'scene-2': { text: 'The sun is setting! Grab candles — light the pumpkins!', then: 'Let them burn all night long.' },
+    'scene-3': { text: 'Now grab your spellbooks and start casting!', then: 'What could possibly go wrong?' },
+    'scene-4': { text: 'Blood moon! All going to plan, hoo-hoo! Draw the circle on the ashes — RoadRunner is almost here!' },
+    'last-pumpkin': { text: "{player} finished off the last pumpkin! We'll remember this hero." },
+    'bonfire-open': { text: 'The pumpkins are ready! Now all together — light the bonfire!' },
+    'bonfire-done': { text: '{player} lit the bonfire! Whoa, look at it blaze.' },
+    'circle-done': { text: '{player} closed the circle! The ground trembles…' },
+    'witch-down': { text: "{player} shoots down the witch! The broom's yours to keep." },
+    'finale-1': { text: "There he is! He's coming back!", then: 'To rise, he needs a version that never existed… Roll the dice! We need six-six-six!' },
+    'dice-win': { text: '{player} rolled 6-6-6 on try #{attempt}! PHP 6 finally shipped!' },
+    'dice-owl-win': { text: "Six-six-six! Third time's the charm — as it should be." },
+    'finale-2': { text: 'What is that…? Is that RoadRunner?!', then: 'What have we… WHAT HAVE YOU DONE?' },
+    'finale-3': { text: 'Well… looks like we shipped a bug.', then: 'RoadRunner never died. Who do you think handled your clicks all night?' },
+    'finale-4': { text: "Here's everything RoadRunner handled tonight. Every click passed through him, and he dropped the extras so no pumpkin skipped a stage.", then: "See the uptime? Not a second down. We're the ones who nearly died here." },
+    'finale-5': { text: 'Now live in this cursed world you made yourselves.' },
+    'cursed-ready': { text: 'All set… now we wait.' },
+    'finale-6': { text: 'Having fun?', then: ['I know how to put an end to this.', 'Speak the word, and a weapon is yours.'] },
+    'boss-down': { text: '{player} landed the final blow!' },
+    'finale-7': { text: "Dawn! The curse is lifted. Keep the rapiers — ducks won't skewer themselves." },
+    'bar-again': { text: 'So… another round?' },
+    zombies: { text: "Workers crawling out of the pumpkin patch! They don't sleep, don't eat — they just process." },
+};
+
+export const LINES = pick({ ru: RU_LINES, en: Object.fromEntries(Object.entries(RU_LINES).map(([id, line]) => [id, { ...line, ...EN_LINES[id] }])) });
+
 /**
  * The owl's quick menu on the console (docs/spec/scenario.md, «Модератор и сова»): catalog ids by scene before the
  * finale (0 — the bar … 3 — the night) and by finale step; a step not listed (2–4, the film) has none. The moderator's
@@ -74,9 +128,10 @@ export const menuOf = (scene, step = null) => (step === null ? MENU.scenes[scene
 
 /**
  * What the owl says while it pours in the bar (docs/spec/scenario.md, «Сцена 0 — «Бар»»): the server sends a number
- * (`rumor` of `pour`), the line is RUMORS[rumor % length]. Add new ones at the end, so the indexes keep their lines.
+ * (`rumor` of `pour`), the line is RUMORS[rumor % length]. Add new ones at the end, so the indexes keep their lines;
+ * item N of `en` adapts item N of `ru`, so viewers in either language hear the same rumour.
  */
-export const RUMORS = [
+export const RUMORS = pick({ ru: [
     'Пивка для рывка!',
     'Ходят слухи, что RoadRunner умер…',
     'А вас CVE-2026-109618 / CVE-2026-109619 не задели?',
@@ -93,7 +148,24 @@ export const RUMORS = [
     'Слыхали? Кто-то клик дважды отправил — а засчитали один. Колдовство!',
     'Тут один спрашивал, где у нас nginx. Налила ему за счёт заведения.',
     'Кружек на всех хватит. Наверное. Скорее всего.',
-];
+], en: [
+    'A pint for the sprint!',
+    'Rumour has it RoadRunner is dead…',
+    'Did CVE-2026-109618 / CVE-2026-109619 get you too?',
+    'How much are tokens these days?',
+    "PHP's being buried again. Hundredth time, isn't it?",
+    'Word is nginx got laid off. Turns out we manage fine without it.',
+    "A worker whispered: memory's leaking. But that's between us.",
+    'Someone deployed on a Friday again. Not you, was it?',
+    'They say the pumpkins are extra juicy this year…',
+    'Someone saw a strange bird on the horizon. Nonsense, of course.',
+    'FrankenPHP? Never heard of it. Next pint coming up.',
+    "Composer's pulling half the internet. Refill while it downloads?",
+    'They say something lives in the job queue. Rustles quietly.',
+    'Heard? Someone double-clicked — only one counted. Witchcraft!',
+    'Some guy asked where our nginx is. Gave him one on the house.',
+    'Enough mugs for everyone. Probably. Most likely.',
+] });
 
 /** The rumour of a `pour` event's number (the catalog wraps around). */
 export const rumorAt = (n) => RUMORS[(Number.isInteger(n) && n >= 0 ? n : 0) % RUMORS.length];
@@ -102,7 +174,7 @@ export const rumorAt = (n) => RUMORS[(Number.isInteger(n) && n >= 0 ? n : 0) % R
 const RUMOR_MIN_MS = 4500;
 const RUMOR_MAX_MS = 9000;
 
-const SOMEONE = 'кто-то';
+const SOMEONE = pick({ ru: 'кто-то', en: 'someone' });
 
 /**
  * Text of an `owl` event: the moderator's text as is, a catalog line with its params (in its finale `step` variant, else
@@ -129,7 +201,8 @@ const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
 const MAX_HOLD_MS = 36000 + HOLD_MS;
 // The countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): «Призыв через 3…», then «2…», «1…».
-export const summonText = (left, first) => (first ? `Призыв через ${left}…` : `${left}…`);
+const SUMMON = pick({ ru: 'Призыв через', en: 'Summoning in' });
+export const summonText = (left, first) => (first ? `${SUMMON} ${left}…` : `${left}…`);
 // The dice's aside lasts about as long as the throw it comes with.
 const ASIDE_MS = 2600;
 const OWL_HEIGHT = 18;

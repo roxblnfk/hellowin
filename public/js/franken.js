@@ -1,8 +1,13 @@
 // FrankenPHP's phrases in the cursed world (docs/spec/scenario.md, «Проклятый мир»): his only voice. No message comes
 // from the server: the phrase and its moment follow from the server clock, so the whole room sees the same line.
 
-/** The catalog; add lines at the end, so the ones already said keep their slots' indexes for long. */
-export const PHRASES = [
+import { pick } from './i18n.js';
+
+/**
+ * The catalog; add lines at the end, so the ones already said keep their slots' indexes for long. Item N of `en` adapts
+ * item N of `ru`: one slot, one joke in either language.
+ */
+export const PHRASES = pick({ ru: [
     'Познай мощь CGO!',
     'Я официальный!',
     'Почему вы меня не любите?',
@@ -34,7 +39,39 @@ export const PHRASES = [
     'Перезапуск воркеров? Не слышал. Я не перезапускаюсь, я перерождаюсь.',
     'Сова улетела. Совы всегда улетают, когда начинается прод.',
     'Не нравлюсь? Поставьте php-fpm и плачьте.',
-];
+], en: [
+    'Behold the power of CGO!',
+    "I'm official!",
+    "Why don't you love me?",
+    'One binary — the server, PHP, and me.',
+    'Worker mode: I pull all-nighters too.',
+    'Caddy inside. Automatic HTTPS. Automatic ritual next?',
+    "103 Early Hints… Here's a hint: I'm already here.",
+    'You called? I came just in case.',
+    'Green is my color. The pumpkins seem to agree.',
+    'Who said "just a Go wrapper"? I hear everything.',
+    'PHP lives. I live. Everyone lives — except your plans.',
+    "Bolts in. Current on. IT'S ALIVE! (It's me.)",
+    "Don't be scared, I only handle requests.",
+    'RoadRunner? The one with the workers? Cute.',
+    "Meep meep? Seriously? That's his whole marketing?",
+    "I don't need a .rr.yaml. I don't need anything.",
+    'Starting me: one command. Your ritual: six plugins. Do the math.',
+    "You clicked pumpkins for six hours. I'd do it in one request.",
+    'RoadRunner fooled you. So did I, but officially.',
+    "I'm not a monster. I'm a SAPI.",
+    'Your pumpkins run on my runtime now.',
+    "Star me on GitHub. Or I'll visit you at night.",
+    "Dead? Me? I'm the liveliest thing here.",
+    'Stitched from Caddy, Go and PHP. Handsome, right?',
+    "Plain PHP died after every request. I don't. Now neither do you.",
+    "Locks, queue, KV… All for one pumpkin? I'd just keep it in memory.",
+    'Nice idempotency key. I never do anything twice — key or no key.',
+    'Duck hunt over WebSocket? I do Mercure. Out of the box.',
+    "Restart workers? Never heard of it. I don't restart, I reincarnate.",
+    'The owl flew off. Owls always fly off when it hits prod.',
+    "Don't like me? Install php-fpm and weep.",
+] });
 
 /** Time slots of this length; FrankenPHP speaks in most of them. */
 export const SLOT_MS = 7000;
@@ -76,7 +113,7 @@ export const phraseAt = (now) => pickAt(now, PHRASES, SLOT_MS, 85, SEED);
  * The boss's phrases (docs/spec/scenario.md, «Шаг 6 — босс FrankenPHP»): while the boss stands they replace PHRASES and
  * come more often. Add lines at the end, like PHRASES.
  */
-export const BOSS_PHRASES = [
+export const BOSS_PHRASES = pick({ ru: [
     'Я единственный!',
     'Я официальный!',
     'Без меня PHP умрёт!',
@@ -92,7 +129,23 @@ export const BOSS_PHRASES = [
     'Один удар — один лок. Я считал!',
     'Ваши рапиры не проходят мой health check!',
     'Я не падаю. У меня graceful shutdown!',
-];
+], en: [
+    "I'm the only one!",
+    "I'm official!",
+    'Without me PHP dies!',
+    "You can't stop me!",
+    'A rapier? Seriously? Against a Go binary?',
+    'The Foundation backs me!',
+    'I restart faster than you click!',
+    "That's not a vulnerability, it's a feature!",
+    "Shades? So I can't see your RoadRunner.",
+    "Worker mode isn't zombies, it's architecture!",
+    'Caddy, cover me!',
+    "I'm in every Docker image!",
+    'One hit, one lock. I counted!',
+    'Your rapiers fail my health check!',
+    "I don't fall. I shut down gracefully!",
+] });
 
 /** Time slots of the boss's phrases; he speaks in almost all of them. */
 export const BOSS_SLOT_MS = 6500;
