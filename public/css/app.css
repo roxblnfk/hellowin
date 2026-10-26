@@ -1088,6 +1088,11 @@ body:not([data-final]) .circle,
     background: var(--cream);
 }
 
+/* The language switch is a link to `?lang=`, drawn as a HUD button. */
+.hud__button--lang {
+    text-decoration: none;
+}
+
 .hud__button:hover {
     background: var(--cream);
 }

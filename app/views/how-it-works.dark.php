@@ -14,6 +14,7 @@
             <div class="how__nav">
                 <a href="/">← к тыквам</a>
                 <a href="{{ $grafanaUrl }}">Дашборд в Grafana →</a>
+                <a href="?lang=en" data-lang-switch hreflang="en" lang="en">EN</a>
             </div>
             <h1>Как это работает</h1>
             <p class="how__lead">

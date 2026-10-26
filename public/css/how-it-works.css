@@ -97,6 +97,11 @@ body:has(.how) {
     gap: 8px 16px;
 }
 
+/* The way back on the left; Grafana and the language switch together on the right. */
+.how__nav > :first-child {
+    margin-right: auto;
+}
+
 .how__lead {
     color: var(--d-muted);
 }
