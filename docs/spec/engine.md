@@ -35,7 +35,7 @@
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
 | Фигурки: вид, путь, зона, KV, чоканье | `Domain/Player/Look`, `Domain/Walk/Walk`, `WalkZone`, `Walker`, `Clink`, `WalkerStore`, `Application/Walk/WalkService` (RPC `move`, `clink`, `register`, тикер) |
-| Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo) |
+| Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo), `Online` (игроки и подключения одного чтения), `Domain/Walk/PresenceStore` (сказанные клиентам числа) |
 | Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
 | Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
@@ -74,6 +74,7 @@
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая кружка с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
+| Кто онлайн | раз в секунду, тем же чтением presence | `WalkService::sync`: `players` — уникальные валидные id игроков, `connections` — все записи presence (вкладки, анонимы с пустым `user` включительно) → gauge `hellowin_online_players`, `hellowin_online_connections` на каждом проходе; числа разошлись с `hellowin:presence` → событие `presence {round, players, connections}` и запись ключа. Снимок несёт `presence` из того же ключа (до первого счёта — нули) |
 | Пиво из тыкв | каждый тик | `WalkService::beers`: фигурки с наступившим `takeAt` у тыквы (`takeFrom`) под локом `walkers` получают пиво, если мир всё ещё на шаге 5 → событие `take` с `pumpkin`; см. «Рапира» |
 | Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
 | Лимиты | раз в секунду, после фигурок | `LimitsService::follow`: число фигурок продержалось `LimitsService::DEBOUNCE` (3 с) → `Story::$players`; лимиты разошлись с последним `limits` → догон прогресса и событие `limits`; см. «Лимиты и баланс» |
@@ -449,6 +450,9 @@
   игрока в событиях и presence.
 - **Мип-мип** (`meep {flyer?}`, `StoryService::meep`): только публикация `meep {flyer?, at}` — ни лока, ни записи; `flyer`,
   не похожий на id, отбрасывается. Виден ли RoadRunner, решает фронтенд.
+- **Онлайн для пульта** (**реализовано**): событие `presence {players, connections}` и `presence` в снимке — кто
+  подключён к каналу вообще, а не стоит на поле (`online` снимка и `players` в `limits` — фигурки); считает тикер,
+  см. «Периодический процесс (тикер)», «Кто онлайн». Событие идёт всем: числа не секретны, отдельного канала ради них нет.
 
 ## Сюжет
 
@@ -747,6 +751,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Топ стрелков: `hellowin:top` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
 | Чат: история `hellowin:chat` `{seq, messages}`, заглушённые `hellowin:chat:muted`, оба на весь вечер | Valkey | тот же storage `hellowin` |
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
+| Кто онлайн, как сказано клиентам последним: `hellowin:presence` `{players, connections}`; пишет только тикер, без лока | Valkey | тот же storage `hellowin` |
 | Числа прошлых циклов вечера `hellowin:evening` `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls, lastPumpkin}` | Valkey | тот же storage `hellowin`, лок `evening` |
 | Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
@@ -780,6 +785,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
+| `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
+| `hellowin_online_connections` | gauge | все подключения к каналу сейчас: вкладки и анонимы; там же |
 | `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
 | `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл. Тот же вызов, если это действие, — `+1` в `hellowin:tally:calls` (`reveal.calls`): метрика живёт до рестарта RR и раунда не знает |
 | `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |

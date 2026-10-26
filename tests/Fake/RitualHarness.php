@@ -63,6 +63,7 @@ use App\Domain\Story\UncountedTally;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
+use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\WalkerStore;
 use App\Domain\Walk\WalkZone;
 use Psr\Log\NullLogger;
@@ -124,6 +125,7 @@ final class RitualHarness
     public readonly ChatStore $chatStore;
     public readonly ChatService $chat;
     public readonly LimitsStore $limitsStore;
+    public readonly PresenceStore $presenceStore;
     public readonly LimitsService $limits;
     public readonly FakeValkey $valkey;
     public readonly EveningTally $tally;
@@ -249,8 +251,9 @@ final class RitualHarness
             new Burst(2, 0.5),
         );
         $this->limitsStore = new LimitsStore($this->storage);
+        $this->presenceStore = new PresenceStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,
@@ -272,6 +275,7 @@ final class RitualHarness
             new Randomizer(new Mt19937(7)),
             bar: ($stageMax[0] ?? null) === 0 ? self::barLayout($door) : null,
             policy: $policy,
+            told: $this->presenceStore,
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally, $this->reveal);

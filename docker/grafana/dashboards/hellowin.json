@@ -431,6 +431,27 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
     },
     {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Онлайн",
+      "description": "Кто подключён к каналу сейчас, по presence Centrifugo: уникальные игроки и все подключения (вкладки, анонимы включительно). Тикер выставляет раз в секунду.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 46 },
+      "targets": [
+        { "refId": "A", "expr": "max(hellowin_online_players)", "legendFormat": "игроки" },
+        { "refId": "B", "expr": "max(hellowin_online_connections)", "legendFormat": "подключения" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
       "id": 43,
       "type": "stat",
       "title": "Beer drunk, L",
@@ -470,7 +491,7 @@
       "type": "row",
       "title": "Flyers: launched, shot, escaped",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 52 },
       "panels": []
     },
     {
@@ -479,7 +500,7 @@
       "title": "Flyers per minute",
       "description": "The ticker launches flyers and counts the ones that left the screen; RPC shoot counts hits. Every flyer ends exactly once: launched = shot + escaped + still in the sky.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 53 },
       "targets": [
         { "refId": "A", "expr": "sum(increase(hellowin_flyers_launched_total[1m]))", "legendFormat": "launched" },
         { "refId": "B", "expr": "sum(increase(hellowin_flyers_shot_total[1m]))", "legendFormat": "shot" },
@@ -500,7 +521,7 @@
       "title": "Flyers by depth (total)",
       "description": "Depth 0 is the farthest: slowest and worth the most points.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 47 },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 53 },
       "targets": [
         { "refId": "A", "expr": "sum by (depth) (hellowin_flyers_launched_total)", "legendFormat": "launched, depth {{depth}}", "instant": true, "range": false },
         { "refId": "B", "expr": "sum by (depth) (hellowin_flyers_shot_total)", "legendFormat": "shot, depth {{depth}}", "instant": true, "range": false },
@@ -520,7 +541,7 @@
       "title": "Hit rate",
       "description": "Shot flyers out of the flyers that are over: shot / (shot + escaped).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 47 },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 53 },
       "targets": [
         {
           "refId": "A",
@@ -554,7 +575,7 @@
       "type": "row",
       "title": "Centrifugo (WebSockets)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 },
       "panels": []
     },
     {
@@ -562,7 +583,7 @@
       "type": "timeseries",
       "title": "Connections and subscriptions",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 56 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 62 },
       "targets": [
         { "refId": "A", "expr": "sum(centrifugo_node_num_clients)", "legendFormat": "clients" },
         { "refId": "B", "expr": "sum(centrifugo_node_num_subscriptions)", "legendFormat": "subscriptions" },
@@ -585,7 +606,7 @@
       "title": "Messages sent to clients per second",
       "description": "Frames written to client transports (publications fan-out, RPC replies, pings…).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 56 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 62 },
       "targets": [
         { "refId": "A", "expr": "sum by (frame_type) (rate(centrifugo_transport_messages_sent[1m]))", "legendFormat": "{{frame_type}}" }
       ],
@@ -600,7 +621,7 @@
       "type": "timeseries",
       "title": "Publications and server API calls per second",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 56 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 62 },
       "targets": [
         { "refId": "A", "expr": "sum by (type) (rate(centrifugo_node_messages_sent_count[1m]))", "legendFormat": "broker: {{type}}" },
         {
@@ -621,7 +642,7 @@
       "title": "Proxy calls to RoadRunner per second",
       "description": "Connect and RPC events proxied from Centrifugo to RoadRunner over gRPC.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
       "targets": [
         { "refId": "A", "expr": "sum by (type) (rate(centrifugo_proxy_duration_seconds_histogram_count[1m]))", "legendFormat": "{{type}}" },
         { "refId": "B", "expr": "sum by (type) (rate(centrifugo_proxy_errors[1m]))", "legendFormat": "{{type}} errors" }
@@ -637,7 +658,7 @@
       "type": "timeseries",
       "title": "Proxy latency p95",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
       "targets": [
         {
           "refId": "A",
@@ -656,7 +677,7 @@
       "type": "row",
       "title": "RPC in PHP",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 78 },
       "panels": []
     },
     {
@@ -665,7 +686,7 @@
       "title": "RPC per second by method",
       "description": "Every RPC that reached PHP through the Centrifugo proxy, refused ones included. Names the app does not know are counted as unknown.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 79 },
       "targets": [
         { "refId": "A", "expr": "sum by (method) (rate(hellowin_rpc_calls_total[1m]))", "legendFormat": "{{method}}" }
       ],
@@ -681,7 +702,7 @@
       "title": "RPC errors by result (per minute)",
       "description": "RPC answered with an error, by its code: busy (a lock is taken), rate limited, forbidden, anonymous and so on; exception — PHP could not answer at all.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 79 },
       "targets": [
         { "refId": "A", "expr": "sum by (result) (increase(hellowin_rpc_calls_total{result!=\"ok\"}[1m]))", "legendFormat": "{{result}}" }
       ],
@@ -697,7 +718,7 @@
       "title": "RPC duration p95 by method",
       "description": "Handling time inside PHP; the gap to the proxy latency above is the trip through Centrifugo and RoadRunner.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 73 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 79 },
       "targets": [
         {
           "refId": "A",
@@ -716,7 +737,7 @@
       "type": "row",
       "title": "RoadRunner",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 81 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 87 },
       "panels": []
     },
     {
@@ -725,7 +746,7 @@
       "title": "HTTP requests per second by status",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 82 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 88 },
       "targets": [
         { "refId": "A", "expr": "sum by (status) (rate(rr_http_request_total[1m]))", "legendFormat": "{{status}}" }
       ],
@@ -741,7 +762,7 @@
       "title": "HTTP latency p95",
       "description": "Requires the http_metrics middleware in .rr.yaml.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 82 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 88 },
       "targets": [
         { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(rr_http_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" }
       ],
@@ -756,7 +777,7 @@
       "type": "timeseries",
       "title": "HTTP workers",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 82 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 88 },
       "targets": [
         { "refId": "A", "expr": "sum(rr_http_workers_ready)", "legendFormat": "ready" },
         { "refId": "B", "expr": "sum(rr_http_workers_working)", "legendFormat": "working" },
@@ -787,7 +808,7 @@
       "title": "Refused by the rate limits (per minute)",
       "description": "RPC calls refused by the per-player token buckets of the app, by group of methods, and PHP pages refused by the RoadRunner rate_limiter middleware with 429.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 90 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 96 },
       "targets": [
         { "refId": "A", "expr": "sum by (group) (increase(hellowin_rpc_rate_limited_total[1m]))", "legendFormat": "RPC {{group}}" },
         { "refId": "B", "expr": "sum(increase(rr_http_request_total{status=\"429\"}[1m])) or vector(0)", "legendFormat": "HTTP 429" }

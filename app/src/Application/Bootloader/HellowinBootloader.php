@@ -55,6 +55,7 @@ use App\Domain\Story\EveningStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
+use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -120,6 +121,7 @@ final class HellowinBootloader extends Bootloader
                 TopService $top,
                 FlyerService $flyerService,
                 LimitsService $limits,
+                PresenceStore $presence,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -137,7 +139,10 @@ final class HellowinBootloader extends Bootloader
                 $top,
                 $flyerService,
                 $limits,
+                $presence,
             ),
+            PresenceStore::class => static fn(HellowinConfig $config, CacheStorageProviderInterface $cache): PresenceStore
+                => new PresenceStore($cache->storage($config->getStorage())),
             StartTime::class => static fn(CacheStorageProviderInterface $cache, LockInterface $lock, Clock $clock): StartTime
                 => new StartTime($cache->storage('process'), new Locks($lock), $clock),
             // Wait under a second for a bucket's lock: it is held for one read and one write
@@ -353,6 +358,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 ElementRegistry $elements,
                 RitualPolicy $policy,
+                PresenceStore $told,
             ): WalkService => new WalkService(
                 $walkers,
                 $config->getWalkZone(),
@@ -373,6 +379,7 @@ final class HellowinBootloader extends Bootloader
                 bar: $config->getBarLayout(),
                 policy: $policy,
                 handover: $config->getBeerHandoverMs(),
+                told: $told,
             ),
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,

@@ -378,7 +378,17 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * A line of the owl's catalogue; the frontend holds the texts and fills the params in.
+     * The counts of the channel presence, once they have changed.
+     *
+     * @param array{players: int<0, max>, connections: int<0, max>} $counts
+     */
+    public function presence(int $round, array $counts): void
+    {
+        $this->publish(['type' => 'presence', 'round' => $round] + $counts);
+    }
+
+    /**
+     * A line of the owl's catalogue;the frontend holds the texts and fills the params in.
      *
      * @param non-empty-string $line
      * @param array<non-empty-string, mixed> $params

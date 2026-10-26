@@ -21,6 +21,7 @@ use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Story;
 use App\Domain\Walk\Items;
+use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
 
@@ -42,6 +43,7 @@ use App\Domain\Walk\WalkerStore;
  *     paused: bool,
  *     k: float,
  *     online: int<0, max>,
+ *     presence: array{players: int<0, max>, connections: int<0, max>},
  *     limits: array{players: positive-int, k: float, burst: bool, limits: array|\stdClass}|null,
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
  *     boss: array{hp: int<0, max>, max: positive-int}|null,
@@ -74,6 +76,7 @@ final readonly class SnapshotFactory
         private ?TopService $top = null,
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
+        private ?PresenceStore $presence = null,
     ) {}
 
     /**
@@ -131,6 +134,8 @@ final readonly class SnapshotFactory
             'paused' => $ritual->story->paused,
             'k' => $k,
             'online' => \count($walkers),
+            // Who is connected, as the ticker counted it last; zeros before its first count
+            'presence' => $this->presence?->told() ?? ['players' => 0, 'connections' => 0],
             'limits' => $this->limits === null ? null : LimitsService::toClient($this->limits->state($ritual)),
             'cursed' => $this->cursed?->state($ritual->round, $ritual->story),
             'boss' => ($ritual->story->finale ?? 0) >= Story::RAPIER_STEP ? $this->rapier?->state($ritual->round) : null,

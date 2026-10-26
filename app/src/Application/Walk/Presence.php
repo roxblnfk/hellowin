@@ -9,8 +9,5 @@ namespace App\Application\Walk;
  */
 interface Presence
 {
-    /**
-     * @return list<non-empty-string> Public ids of the players with at least one connection, each once.
-     */
-    public function players(): array;
+    public function online(): Online;
 }

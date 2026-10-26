@@ -21,6 +21,8 @@ final readonly class PlayMetrics
     public const FLYERS_SHOT = 'hellowin_flyers_shot_total';
     public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
     public const WALKERS = 'hellowin_walkers';
+    public const ONLINE_PLAYERS = 'hellowin_online_players';
+    public const ONLINE_CONNECTIONS = 'hellowin_online_connections';
     public const RPC_LIMITED = 'hellowin_rpc_rate_limited_total';
     public const RPC_CALLS = 'hellowin_rpc_calls_total';
     public const RPC_DURATION = 'hellowin_rpc_duration_seconds';
@@ -49,6 +51,8 @@ final readonly class PlayMetrics
             self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
+            self::ONLINE_PLAYERS => Collector::gauge()->withHelp('Players connected to the channel now, each once.'),
+            self::ONLINE_CONNECTIONS => Collector::gauge()->withHelp('Connections to the channel now: every tab, anonymous ones included.'),
             self::RPC_LIMITED => Collector::counter()->withHelp('RPC calls refused by the rate limit.')->withLabels('group'),
             self::RPC_CALLS => Collector::counter()->withHelp('RPC calls by method and result: ok or the error code.')->withLabels('method', 'result'),
             self::RPC_DURATION => Collector::histogram(...self::RPC_BUCKETS)->withHelp('RPC handling time in PHP, seconds.')->withLabels('method'),
@@ -94,6 +98,16 @@ final readonly class PlayMetrics
     public function walkers(int $count): void
     {
         $this->safely(fn() => $this->metrics->set(self::WALKERS, $count));
+    }
+
+    /**
+     * @param int<0, max> $players
+     * @param int<0, max> $connections
+     */
+    public function online(int $players, int $connections): void
+    {
+        $this->safely(fn() => $this->metrics->set(self::ONLINE_PLAYERS, $players));
+        $this->safely(fn() => $this->metrics->set(self::ONLINE_CONNECTIONS, $connections));
     }
 
     /**

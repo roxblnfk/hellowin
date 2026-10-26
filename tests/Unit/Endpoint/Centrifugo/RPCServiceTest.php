@@ -132,6 +132,7 @@ final class RPCServiceTest
             'paused' => false,
             'k' => 1.0,
             'online' => 0,
+            'presence' => ['players' => 0, 'connections' => 0],
             'limits' => ['players' => 1, 'k' => 1, 'burst' => true, 'limits' => ['pumpkin' => 4]],
             'cursed' => null,
             'boss' => null,

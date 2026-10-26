@@ -9,6 +9,7 @@ use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
 use App\Domain\Story\Story;
+use App\Domain\Walk\PresenceStore;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Testing\Attribute\Config;
@@ -77,6 +78,17 @@ final class HomeControllerTest extends TestCase
         Assert::same(\preg_match('/data-limits="([^"]*)"/', $body, $match), 1);
         $limits = \json_decode(\htmlspecialchars_decode($match[1]), true, flags: \JSON_THROW_ON_ERROR);
         Assert::array($limits)->hasKeys('players', 'limits');
+    }
+
+    public function homePageCarriesWhoIsOnline(): void
+    {
+        $this->getContainer()->get(PresenceStore::class)->tell(['players' => 2, 'connections' => 3]);
+
+        $body = (string) $this->fakeHttp()->get('/')->assertOk()->getOriginalResponse()->getBody();
+
+        Assert::same(\preg_match('/data-presence="([^"]*)"/', $body, $match), 1);
+        $presence = \json_decode(\htmlspecialchars_decode($match[1]), true, flags: \JSON_THROW_ON_ERROR);
+        Assert::same($presence, ['players' => 2, 'connections' => 3]);
     }
 
     public function homePageCarriesNoWanderingZombiesOutOfTheCursedWorld(): void

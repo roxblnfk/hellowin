@@ -9,6 +9,7 @@ use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
 use App\Domain\Flyer\Point;
 use App\Domain\Player\Player;
+use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\WalkerStore;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -19,6 +20,7 @@ use Tests\Fake\RitualHarness;
 #[Test]
 #[Covers(WalkService::class)]
 #[Covers(WalkerStore::class)]
+#[Covers(PresenceStore::class)]
 final class WalkServiceTest
 {
     private const A = 'aaaaaaaaaaaaaaaa';
@@ -129,6 +131,33 @@ final class WalkServiceTest
         Assert::same(\array_column(\array_column($ritual->broadcast->ofType('walker'), 'walker'), 'id'), [self::A]);
         Assert::same(\array_keys($ritual->walkerStore->all()), [self::A]);
         Assert::equals($ritual->counters()[PlayMetrics::WALKERS . '{}'] ?? null, 1);
+    }
+
+    public function onlineCountsGoOutOnlyOnChange(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->presence->online = [self::A, self::B];
+        $ritual->presence->connections = 3;
+
+        $ritual->walks->sync();
+        $ritual->walks->sync();
+        $ritual->presence->connections = 4;
+        $ritual->walks->sync();
+
+        Assert::same($ritual->broadcast->ofType('presence'), [
+            ['type' => 'presence', 'round' => 1, 'players' => 2, 'connections' => 3],
+            ['type' => 'presence', 'round' => 1, 'players' => 2, 'connections' => 4],
+        ]);
+        Assert::same($ritual->snapshot->create()['presence'], ['players' => 2, 'connections' => 4]);
+        Assert::equals($ritual->counters()[PlayMetrics::ONLINE_PLAYERS . '{}'] ?? null, 2);
+        Assert::equals($ritual->counters()[PlayMetrics::ONLINE_CONNECTIONS . '{}'] ?? null, 4);
+    }
+
+    public function snapshotCountsNobodyBeforeTheFirstSync(): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($ritual->snapshot->create()['presence'], ['players' => 0, 'connections' => 0]);
     }
 
     public function characterLeavesOnceItsPlayerIsGoneLongEnough(): void

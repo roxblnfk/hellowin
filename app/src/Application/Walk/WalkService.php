@@ -22,6 +22,7 @@ use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Story;
 use App\Domain\Walk\Clink;
 use App\Domain\Walk\Items;
+use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
@@ -72,6 +73,7 @@ final readonly class WalkService
         private ?BarLayout $bar = null,
         private ?RitualPolicy $policy = null,
         private int $handover = 900,
+        private ?PresenceStore $told = null,
     ) {}
 
     /**
@@ -527,13 +529,16 @@ final readonly class WalkService
 
     /**
      * Matches the lawn to the presence: players with a look who connected enter, characters whose players have been
-     * gone for `$leaveAfter` leave.
+     * gone for `$leaveAfter` leave. The same read counts who is online: the gauges and, once the counts change, the
+     * `presence` event.
      *
      * @throws LockBusyException
      */
     public function sync(): void
     {
-        $players = $this->presence->players();
+        $presence = $this->presence->online();
+        $this->countOnline($presence);
+        $players = $presence->players;
         $online = \array_fill_keys($players, true);
         $now = $this->clock->now();
 
@@ -616,6 +621,18 @@ final readonly class WalkService
     private static function rounded(Point $point): Point
     {
         return new Point(\round($point->x, 2), \round($point->y, 2));
+    }
+
+    private function countOnline(Online $online): void
+    {
+        $counts = $online->toArray();
+        $this->metrics->online($counts['players'], $counts['connections']);
+        if ($this->told === null || $this->told->told() === $counts) {
+            return;
+        }
+
+        $this->publisher->presence($this->ritual->round(), $counts);
+        $this->told->tell($counts);
     }
 
     /**

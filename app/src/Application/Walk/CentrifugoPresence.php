@@ -10,7 +10,7 @@ use RoadRunner\Centrifugo\CentrifugoApiInterface;
 /**
  * Presence of the game channel in Centrifugo, asked through its API. Every connection is subscribed to the channel
  * server-side, so the channel presence lists every connection: one entry per tab, with the player as the user.
- * Centrifugo drops the entry as soon as the connection closes.
+ * Centrifugo drops the entry as soon as the connection closes. An anonymous connection is listed with an empty user.
  */
 final readonly class CentrifugoPresence implements Presence
 {
@@ -23,14 +23,15 @@ final readonly class CentrifugoPresence implements Presence
     ) {}
 
     #[\Override]
-    public function players(): array
+    public function online(): Online
     {
+        $clients = $this->api->presence($this->channel);
         $players = [];
-        foreach ($this->api->presence($this->channel) as $client) {
+        foreach ($clients as $client) {
             $user = $client['user'];
             PlayerId::isValid($user) and $players[$user] = $user;
         }
 
-        return \array_values($players);
+        return new Online(\array_values($players), \count($clients));
     }
 }
