@@ -433,13 +433,13 @@
     {
       "id": 45,
       "type": "timeseries",
-      "title": "Онлайн",
+      "title": "Online",
       "description": "Кто подключён к каналу сейчас, по presence Centrifugo: уникальные игроки и все подключения (вкладки, анонимы включительно). Тикер выставляет раз в секунду.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 46 },
       "targets": [
-        { "refId": "A", "expr": "max(hellowin_online_players)", "legendFormat": "игроки" },
-        { "refId": "B", "expr": "max(hellowin_online_connections)", "legendFormat": "подключения" }
+        { "refId": "A", "expr": "max(hellowin_online_players)", "legendFormat": "players" },
+        { "refId": "B", "expr": "max(hellowin_online_connections)", "legendFormat": "connections" }
       ],
       "fieldConfig": {
         "defaults": {
