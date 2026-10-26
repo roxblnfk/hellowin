@@ -151,7 +151,7 @@ scene.say(id, text, until);          // бабл реплики над нари�
 | `#app` | `data-centrifugo-url`, `data-round`, `data-scene-stages`, `data-stage-max`, `data-threshold` | из снимка |
 | `#app` | `data-k`, `data-online` | `k` (множитель лимитов, `$k ?? 1`) и `online` (`$online ?? 0`) снимка; клиент держит их в модели и обновляет атрибуты по `limits` / `leaderboard` |
 | `#app` | `data-limits` | JSON `limits` снимка (`$limits ?? null`): `{players, k, burst, limits}`; клиент обновляет по событию `limits` |
-| `#app` | `data-presence` | JSON `presence` снимка (`$presence ?? null`): `{players, connections}` — кто онлайн; клиент держит в модели (`presenceOf`) и обновляет по событию `presence`, показывает только пульт (**реализовано** на фронтенде, backend — **в работе**) |
+| `#app` | `data-presence` | JSON `presence` снимка (`$presence ?? null`): `{players, connections}` — кто онлайн; клиент держит в модели (`presenceOf`) и обновляет по событию `presence`, показывает только пульт (**реализовано**) |
 | `#app` | `data-bushes`, `data-walkers` | JSON `bushes` и `walkers` снимка (`$walkers ?? []`) |
 | `#app` | `data-chat-max` | `HELLOWIN_CHAT_MAX` — шаблонная переменная `chatMax` (`$chatMax ?? 120`); ею же `maxlength` поля чата |
 | `#app` | `data-now` | `now` снимка: первая оценка смещения серверных часов (дальше — замеры RPC `time`) |
