@@ -3,6 +3,7 @@ import { PALETTE } from './palette.js';
 import { EMISSIVE, LIGHTINGS, keepHueColor, litColor } from './night.js';
 import { BAR_HIDE, OWL_BAR } from './owl.js';
 import { paintFlames } from './sprites.js';
+import { pick } from '../i18n.js';
 
 /**
  * The bar (scene 0, docs/spec/frontend.md «Бар и сдвиг номеров сцен»): a Viking mead hall in pixel art — log walls
@@ -808,10 +809,15 @@ const GLYPHS = {
     М: ['X...X', 'XX.XX', 'X.X.X', 'X...X', 'X...X'],
     Ё: ['X.X', '...', 'XXX', 'X..', 'XX.', 'X..', 'XXX'],
     Д: ['.XXX.', '.X.X.', '.X.X.', 'XXXXX', 'X...X'],
+    M: ['X...X', 'XX.XX', 'X.X.X', 'X...X', 'X...X'],
+    E: ['XXX', 'X..', 'XX.', 'X..', 'XXX'],
+    A: ['.X.', 'X.X', 'XXX', 'X.X', 'X.X'],
+    D: ['XX.', 'X.X', 'X.X', 'X.X', 'XX.'],
 };
+const SIGN = pick({ ru: ['М', 'Ё', 'Д'], en: ['M', 'E', 'A', 'D'] });
 
 function paintSign(px, cx, y, L) {
-    const word = ['М', 'Ё', 'Д'];
+    const word = SIGN;
     const w = word.reduce((s, ch) => s + GLYPHS[ch][0].length + 1, -1) + 6;
     const h = 11;
     const x0 = Math.round(cx - w / 2);

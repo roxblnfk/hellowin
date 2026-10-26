@@ -2,15 +2,16 @@
 // server's uptime and the way to «Как это работает».
 
 import { AFTER_STORY, formatUptime } from './client.js';
+import { lang, pick } from './i18n.js';
 
 const STEP = 4;
 // While the panel is open its numbers are asked for afresh this often (RPC `reveal`, docs/spec/protocol.md).
 const REFRESH_MS = 2000;
-const NUMBER = new Intl.NumberFormat('ru-RU');
+const NUMBER = new Intl.NumberFormat(lang);
 
-// Noun forms for 1, 2–4 and 5+ (accusative: the number is always the object), the rest of the caption, and a short
-// note on the mechanism behind the number.
-const CARDS = [
+// Noun forms (ru: 1, 2–4 and 5+, accusative: the number is always the object; en: 1 and the rest), the rest of the
+// caption, and a short note on the mechanism behind the number.
+const CARDS = pick({ ru: [
     ['clicks', ['действие', 'действия', 'действий'], 'игроков обработал RoadRunner', 'клики, шаги, выстрелы, кружки — каждое через WebSocket и RPC'],
     ['jobs', ['задачу', 'задачи', 'задач'], 'выполнила очередь', 'каждая — шаг тыквы, костра, круга или сцены'],
     ['burned', ['повтор', 'повтора', 'повторов'], 'отбросила идемпотентность', 'лишние клики, дубли переходов, повторы бросков — ничего не случилось дважды'],
@@ -19,13 +20,48 @@ const CARDS = [
     ['slain', ['зомби-воркера', 'зомби-воркера', 'зомби-воркеров'], 'упокоили', 'каждого — первый успевший, под локом'],
     ['damage', ['урона', 'урона', 'урона'], 'FrankenPHP нанесли рапирами', 'весь зал бьёт в один элемент под одним локом'],
     ['rolls', ['попытку', 'попытки', 'попыток'], 'выбросить PHP 6', 'кости случайны, повтор попытки получит сохранённый ответ'],
-];
+], en: [
+    ['clicks', ['player action', 'player actions'], 'handled by RoadRunner', 'clicks, steps, shots, mugs — each over WebSocket and RPC'],
+    ['jobs', ['job', 'jobs'], 'run by the queue', 'each one a step of a pumpkin, the bonfire, the circle or a scene'],
+    ['burned', ['repeat', 'repeats'], 'dropped by idempotency', 'extra clicks, doubled transitions, repeated rolls — nothing happened twice'],
+    ['shot', ['flyer', 'flyers'], 'shot down', 'each by whoever was first, under a lock'],
+    ['drinks', ['mug', 'mugs'], 'drunk tonight', 'the last one by whoever reached the counter first'],
+    ['slain', ['zombie worker', 'zombie workers'], 'laid to rest', 'each by whoever was first, under a lock'],
+    ['damage', ['damage', 'damage'], 'dealt to FrankenPHP with rapiers', 'the whole hall hits one element under one lock'],
+    ['rolls', ['try', 'tries'], 'to roll PHP 6', 'the dice are random, a retried roll gets the saved answer'],
+] });
+const TEXT = pick({
+    ru: {
+        close: 'Закрыть',
+        kicker: 'Разоблачение',
+        title: 'RoadRunner не умирал',
+        lead: 'Весь вечер RoadRunner обеспечивал инфраструктуру вашего ритуала. Вот что через него прошло:',
+        link: 'Как это работает →',
+        uptime: 'аптайм RoadRunner',
+        uptimeNote: 'он не умирал ни на секунду',
+        last: (name) => `Последний элемент ритуала добил ${name || 'кто-то без имени'}.`,
+        lastUnknown: 'Последний элемент ритуала добил кто-то неизвестный.',
+    },
+    en: {
+        close: 'Close',
+        kicker: 'The reveal',
+        title: 'RoadRunner never died',
+        lead: 'All evening RoadRunner ran the infrastructure of your ritual. Here is what went through it:',
+        link: 'How it works →',
+        uptime: 'RoadRunner uptime',
+        uptimeNote: 'not a second of downtime',
+        last: (name) => `The last element of the ritual was finished by ${name || 'someone nameless'}.`,
+        lastUnknown: 'The last element of the ritual was finished by someone unknown.',
+    },
+});
 // The rapier's and the dice's numbers: their cards show only once there is something to count.
 const SKIP_ZERO = new Set(['slain', 'damage', 'rolls']);
 // The card «обработал RoadRunner» counts every action (`calls`); a server without it gives the accepted clicks.
 const valueOf = (reveal, key) => (key === 'clicks' ? reveal.calls ?? reveal.clicks : reveal[key]);
 
-function plural(n, [one, few, many]) {
+const plural = pick({ ru: pluralRu, en: (n, [one, many]) => (n === 1 ? one : many) });
+
+function pluralRu(n, [one, few, many]) {
     const tens = n % 100;
     const units = n % 10;
     if (tens >= 11 && tens <= 14) return many;
@@ -52,13 +88,13 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
     panel.setAttribute('aria-labelledby', 'reveal-title');
     panel.hidden = true;
     panel.innerHTML = `
-        <button type="button" class="reveal__close" data-reveal-close aria-label="Закрыть">×</button>
-        <p class="reveal__kicker">Разоблачение</p>
-        <h2 class="reveal__title" id="reveal-title">RoadRunner не умирал</h2>
-        <p class="reveal__lead">Весь вечер RoadRunner обеспечивал инфраструктуру вашего ритуала. Вот что через него прошло:</p>
+        <button type="button" class="reveal__close" data-reveal-close aria-label="${TEXT.close}">×</button>
+        <p class="reveal__kicker">${TEXT.kicker}</p>
+        <h2 class="reveal__title" id="reveal-title">${TEXT.title}</h2>
+        <p class="reveal__lead">${TEXT.lead}</p>
         <dl class="reveal__grid"></dl>
         <p class="reveal__last" data-reveal-last></p>
-        <a class="reveal__link" href="/how-it-works" target="_blank" rel="noopener">Как это работает →</a>`;
+        <a class="reveal__link" href="/how-it-works" target="_blank" rel="noopener">${TEXT.link}</a>`;
     const grid = panel.querySelector('.reveal__grid');
     for (const [key] of CARDS) {
         const card = document.createElement('div');
@@ -69,7 +105,7 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
     }
     const uptimeCard = document.createElement('div');
     uptimeCard.className = 'reveal__card reveal__card--uptime';
-    uptimeCard.innerHTML = '<dt class="reveal__label">аптайм RoadRunner</dt><dd class="reveal__number" data-reveal-uptime></dd><dd class="reveal__note">он не умирал ни на секунду</dd>';
+    uptimeCard.innerHTML = `<dt class="reveal__label">${TEXT.uptime}</dt><dd class="reveal__number" data-reveal-uptime></dd><dd class="reveal__note">${TEXT.uptimeNote}</dd>`;
     grid.append(uptimeCard);
     root.append(panel);
     const opener = root.querySelector('[data-reveal-open]');
@@ -144,8 +180,8 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
         const name = reveal.lastPumpkin?.name;
         // Not known yet: the bar after the story waits for its first answer.
         panel.querySelector('[data-reveal-last]').textContent = reveal.lastPumpkin === undefined ? '' : reveal.lastPumpkin
-            ? `Последний элемент ритуала добил ${name || 'кто-то без имени'}.`
-            : 'Последний элемент ритуала добил кто-то неизвестный.';
+            ? TEXT.last(name)
+            : TEXT.lastUnknown;
     }
 
     return {

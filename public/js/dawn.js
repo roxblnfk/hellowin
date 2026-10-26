@@ -2,6 +2,8 @@
 // server before the rename), my place in the board, and the pixel table at the side with rows that slide when someone is
 // overtaken. No PixiJS here: client.js and the node tests load it.
 
+import { pick } from './i18n.js';
+
 /** Rows of the unfolded table on a wide screen. */
 export const DAWN_TOP = 10;
 /** Rows of the unfolded table on a phone at the dawn. */
@@ -12,7 +14,11 @@ export const DAWN_FOLDED = 3;
 export const DAWN_MOVE_MS = 300;
 const FLASH_MS = 600;
 const STORAGE_KEY = 'hellowin:dawn-top';
-export const DAWN_EMPTY = 'Сбивайте уток рапирой!';
+const TEXT = pick({
+    ru: { empty: 'Сбивайте уток рапирой!', someone: 'кто-то', me: 'ты', top: 'топ', title: 'Топ стрелков', all: 'весь топ', fold: 'свернуть' },
+    en: { empty: 'Knock the ducks down with the rapier!', someone: 'someone', me: 'you', top: 'top', title: 'Top shooters', all: 'show all', fold: 'fold' },
+});
+export const DAWN_EMPTY = TEXT.empty;
 
 /**
  * `top` (or the older `dawn`) of the snapshot or the event: {board} with the rows in the server's order, or null without
@@ -27,7 +33,7 @@ export function dawnOf(dawn) {
 }
 
 /** A shooter's name as the table prints it. */
-export const nameOf = (name) => (typeof name === 'string' && name.trim()) || 'кто-то';
+export const nameOf = (name) => (typeof name === 'string' && name.trim()) || TEXT.someone;
 
 /**
  * The table's rows: the first `top` of the board, mine marked. When I am in the board but below the top, `mine` is my
@@ -50,8 +56,8 @@ export function shapeOf({ compact, folded, atDawn }) {
 /** The folded strip of a phone: «#3 · ты · 7 · топ», or a plain call when I am not in the board. */
 export function stripText(board, me) {
     const index = me === null || me === undefined ? -1 : board.findIndex((row) => row.player.id === me);
-    if (index >= 0) return `#${index + 1} · ты · ${board[index].shots} · топ`;
-    return board.length ? 'Топ стрелков' : DAWN_EMPTY;
+    if (index >= 0) return `#${index + 1} · ${TEXT.me} · ${board[index].shots} · ${TEXT.top}`;
+    return board.length ? TEXT.title : DAWN_EMPTY;
 }
 
 function readFolded(storage) {
@@ -197,7 +203,7 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
         mineBox.toggleAttribute('data-dawn-me', mine !== null);
         if (!mine) return;
         mineBox.dataset.place = mine.place;
-        fill(mineBox, { place: `#${mine.place}`, name: 'ты', shots: mine.shots });
+        fill(mineBox, { place: `#${mine.place}`, name: TEXT.me, shots: mine.shots });
     }
 
     // The toggle: a phone's strip «#3 · ты · 7 · топ ▾»; on a wide screen «весь топ ▾» / «свернуть ▴» under the rows,
@@ -206,7 +212,7 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
         if (!toggle) return;
         toggle.hidden = !compact && board.length <= DAWN_FOLDED;
         toggle.setAttribute('aria-expanded', String(!folded));
-        if (strip) strip.textContent = compact ? stripText(board, me) : folded ? 'весь топ' : 'свернуть';
+        if (strip) strip.textContent = compact ? stripText(board, me) : folded ? TEXT.all : TEXT.fold;
     }
 
     toggle?.addEventListener('click', (event) => {

@@ -5,6 +5,7 @@
 import { LINES, lineText, menuOf } from './owl.js';
 import { createChatConsole } from './chat.js';
 import { SCENE, isBar } from './layout.js';
+import { pick } from './i18n.js';
 
 const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
@@ -22,32 +23,6 @@ const LAST_STEP = 7;
 const K_MIN = 0.1;
 const K_MAX = 10;
 const K_STEP = 1.25;
-// The moderator's additions on top of the formula (protocol.md, «Лимиты и баланс») live until the round ends.
-const BONUS = 'надбавка до конца раунда';
-// The current context's limits as the console says them, in this order; only the keys the server sent show.
-const LIMIT_TEXTS = [
-    ['pumpkin', (n) => `тыква ${n} кл./стадию`],
-    ['bonfire', (n) => `костёр ${n} кл./стадию`],
-    ['circle', (n) => `круг ${n} кл./стадию`],
-    ['bar', (n) => `бар ${n} ${plural(n, 'кружка', 'кружки', 'кружек')}`],
-    ['drinks', (n) => `кружки ${n}`],
-    ['zombies', (n) => `зомби ${n}`],
-    ['boss', (n) => `HP босса ${n}`],
-];
-const ERRORS = {
-    forbidden: 'Нет прав',
-    'not ready': 'Не готово',
-    'final scene': 'Уже финал',
-    'not final': 'Не финал',
-    'unknown kind': 'Нет такого',
-    'invalid text': 'Пустой текст',
-    busy: 'Занято',
-    'invalid k': '0,1–10',
-    'not bar': 'Не бар',
-    'not cursed': 'Не шаг 5',
-    'not now': 'Не сейчас',
-    'no flyers': 'Нет летунов',
-};
 
 /** Russian plural: 1 кружка, 2 кружки, 5 кружек. */
 function plural(n, one, few, many) {
@@ -57,16 +32,188 @@ function plural(n, one, few, many) {
     return last === 1 ? one : last >= 2 && last <= 4 ? few : many;
 }
 
+const TEXT = pick({
+    ru: {
+        // The moderator's additions on top of the formula (protocol.md, «Лимиты и баланс») live until the round ends.
+        bonus: 'надбавка до конца раунда',
+        bar: (n) => `бар ${n} ${plural(n, 'кружка', 'кружки', 'кружек')}`,
+        perStage: (what, n) => `${{ pumpkin: 'тыква', bonfire: 'костёр', circle: 'круг' }[what]} ${n} кл./стадию`,
+        drinks: 'кружки',
+        zombies: 'зомби',
+        bossHp: 'HP босса',
+        errors: {
+            forbidden: 'Нет прав',
+            'not ready': 'Не готово',
+            'final scene': 'Уже финал',
+            'not final': 'Не финал',
+            'unknown kind': 'Нет такого',
+            'invalid text': 'Пустой текст',
+            busy: 'Занято',
+            'invalid k': '0,1–10',
+            'not bar': 'Не бар',
+            'not cursed': 'Не шаг 5',
+            'not now': 'Не сейчас',
+            'no flyers': 'Нет летунов',
+        },
+        failed: 'Не вышло',
+        decimal: ',',
+        noLimits: 'в этой сцене лимитов нет',
+        console: '🦉 Пульт',
+        paused: 'пауза',
+        groups: { story: 'Сюжет', bar: 'Бар', cursed: 'Проклятый мир', boss: 'Босс', dice: 'Кости', owl: 'Сова', night: 'Нечисть', limits: 'Лимиты', chat: 'Чат', tools: 'Отладка' },
+        next: 'Следующая сцена',
+        nextReady: 'Следующая сцена ›',
+        toBar: 'В бар',
+        step: 'Шаг финала',
+        reset: 'Заново',
+        pauseTitle: 'Задача сцены замирает: клики, кружки, удары и кости не засчитываются; летуны и зомби летают. Снимается и сбросом',
+        pauseOn: 'Пауза прогресса: вкл',
+        pauseOff: 'Пауза прогресса: выкл',
+        barGoal: (up) => `Цель бара ${up ? 'больше' : 'меньше'}`,
+        glasses: 'бокалов',
+        nudgeTitle: 'Бар готов, не дожидаясь шкалы',
+        nudge: 'Отмашка',
+        mugs: 'кружек',
+        cursedGoal: (goal, up) => `Цель «${goal === 'drinks' ? 'кружки' : 'зомби'}» ${up ? 'больше' : 'меньше'}`,
+        bossGoal: (up) => `Здоровье FrankenPHP ${up ? 'больше' : 'меньше'}`,
+        owlDiceTitle: 'Третий бросок совы — 6-6-6',
+        owlDice: 'Сова бросает',
+        owlText: 'Свой текст совы',
+        say: 'Сказать',
+        witch: 'Ведьма',
+        runner: 'Бегун',
+        burstTitle: 'Внеочередная волна летунов: больше игроков — больше летунов',
+        burst: 'Пуск летунов',
+        kDown: 'Множитель меньше: все лимиты меньше',
+        k: 'Множитель лимитов',
+        kUp: 'Множитель больше: все лимиты больше',
+        kInput: 'Множитель лимитов, от 0,1 до 10',
+        clickAll: 'Клик по всем',
+        sure: 'Точно?',
+        notReady: 'Не готово. Точно?',
+        circleOpen: 'Круг не замкнут. Точно?',
+        noSix: 'Нет 6-6-6. Точно?',
+        goalsOpen: 'Цели не выполнены. Точно?',
+        bossAlive: 'Босс жив. Точно?',
+        launched: (n) => `+${n} ${plural(n, 'летун', 'летуна', 'летунов')}`,
+        round: 'раунд',
+        scene: 'сцена',
+        stepWord: 'шаг',
+        pub: (target, drunk) => `цель ${target} · выпито ${drunk}`,
+        noGoals: 'целей ещё нет',
+        online: (players, connections) => `онлайн: ${players} · подключений: ${connections}`,
+        offline: 'онлайн: —',
+        field: (n) => `на поле: ${n}`,
+        noLimitsYet: 'лимиты ещё не пришли',
+        dawn: 'рассвет',
+        rapier: 'рапира',
+        cursed: 'проклятый мир',
+        finale: 'финал',
+        barName: 'бар',
+        ready: 'готова',
+    },
+    en: {
+        bonus: 'bonus until the round ends',
+        bar: (n) => `bar ${n} ${n === 1 ? 'mug' : 'mugs'}`,
+        perStage: (what, n) => `${what} ${n} clicks/stage`,
+        drinks: 'mugs',
+        zombies: 'zombies',
+        bossHp: 'boss HP',
+        errors: {
+            forbidden: 'Not allowed',
+            'not ready': 'Not ready',
+            'final scene': 'Already the finale',
+            'not final': 'Not the finale',
+            'unknown kind': 'No such thing',
+            'invalid text': 'Empty text',
+            busy: 'Busy',
+            'invalid k': '0.1–10',
+            'not bar': 'Not the bar',
+            'not cursed': 'Not step 5',
+            'not now': 'Not now',
+            'no flyers': 'No flyers',
+        },
+        failed: 'Failed',
+        decimal: '.',
+        noLimits: 'no limits in this scene',
+        console: '🦉 Console',
+        paused: 'paused',
+        groups: { story: 'Story', bar: 'Bar', cursed: 'Cursed world', boss: 'Boss', dice: 'Dice', owl: 'Owl', night: 'Creatures', limits: 'Limits', chat: 'Chat', tools: 'Debug' },
+        next: 'Next scene',
+        nextReady: 'Next scene ›',
+        toBar: 'To the bar',
+        step: 'Finale step',
+        reset: 'Start over',
+        pauseTitle: 'The scene\'s task freezes: clicks, mugs, hits and dice do not count; flyers and zombies keep flying. A reset lifts it too',
+        pauseOn: 'Progress pause: on',
+        pauseOff: 'Progress pause: off',
+        barGoal: (up) => `Bar goal ${up ? 'up' : 'down'}`,
+        glasses: 'glasses',
+        nudgeTitle: 'The bar is ready without waiting for the meter',
+        nudge: 'Go ahead',
+        mugs: 'mugs',
+        cursedGoal: (goal, up) => `“${goal === 'drinks' ? 'Mugs' : 'Zombies'}” goal ${up ? 'up' : 'down'}`,
+        bossGoal: (up) => `FrankenPHP health ${up ? 'up' : 'down'}`,
+        owlDiceTitle: 'The owl\'s third roll is 6-6-6',
+        owlDice: 'Owl rolls',
+        owlText: 'The owl\'s own text',
+        say: 'Say',
+        witch: 'Witch',
+        runner: 'Runner',
+        burstTitle: 'An extra wave of flyers: more players, more flyers',
+        burst: 'Launch flyers',
+        kDown: 'Smaller multiplier: all limits lower',
+        k: 'Limits multiplier',
+        kUp: 'Bigger multiplier: all limits higher',
+        kInput: 'Limits multiplier, 0.1 to 10',
+        clickAll: 'Click everything',
+        sure: 'Sure?',
+        notReady: 'Not ready. Sure?',
+        circleOpen: 'Circle not closed. Sure?',
+        noSix: 'No 6-6-6. Sure?',
+        goalsOpen: 'Goals not met. Sure?',
+        bossAlive: 'Boss is alive. Sure?',
+        launched: (n) => `+${n} ${n === 1 ? 'flyer' : 'flyers'}`,
+        round: 'round',
+        scene: 'scene',
+        stepWord: 'step',
+        pub: (target, drunk) => `goal ${target} · drunk ${drunk}`,
+        noGoals: 'no goals yet',
+        online: (players, connections) => `online: ${players} · connections: ${connections}`,
+        offline: 'online: —',
+        field: (n) => `on the field: ${n}`,
+        noLimitsYet: 'no limits yet',
+        dawn: 'dawn',
+        rapier: 'rapier',
+        cursed: 'cursed world',
+        finale: 'finale',
+        barName: 'bar',
+        ready: 'ready',
+    },
+});
+const BONUS = TEXT.bonus;
+// The current context's limits as the console says them, in this order; only the keys the server sent show.
+const LIMIT_TEXTS = [
+    ['pumpkin', (n) => TEXT.perStage('pumpkin', n)],
+    ['bonfire', (n) => TEXT.perStage('bonfire', n)],
+    ['circle', (n) => TEXT.perStage('circle', n)],
+    ['bar', TEXT.bar],
+    ['drinks', (n) => `${TEXT.drinks} ${n}`],
+    ['zombies', (n) => `${TEXT.zombies} ${n}`],
+    ['boss', (n) => `${TEXT.bossHp} ${n}`],
+];
+const ERRORS = TEXT.errors;
+
 /** «тыква 12 кл./стадию · костёр 59 кл./стадию» from `limits` of the model; null — the server has not said. */
 export function limitsText(limits) {
     if (!limits) return null;
     const parts = LIMIT_TEXTS.filter(([key]) => Number.isInteger(limits.limits?.[key])).map(([key, text]) => text(limits.limits[key]));
-    return parts.length ? parts.join(' · ') : 'в этой сцене лимитов нет';
+    return parts.length ? parts.join(' · ') : TEXT.noLimits;
 }
 
 const roundK = (k) => Math.round(k * 100) / 100;
 const clampK = (k) => Math.min(K_MAX, Math.max(K_MIN, roundK(k)));
-const formatK = (k) => k.toFixed(2).replace('.', ',');
+const formatK = (k) => k.toFixed(2).replace('.', TEXT.decimal);
 
 function rememberedOpen() {
     const param = new URLSearchParams(location.search).get('debug');
@@ -114,10 +261,10 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     let model = null;
 
     const toggle = el('button', { type: 'button', class: 'console__toggle', 'data-console-toggle': '', 'aria-expanded': 'true' });
-    const toggleName = el('span', { class: 'console__name' }, '🦉 Пульт');
+    const toggleName = el('span', { class: 'console__name' }, TEXT.console);
     const summary = el('span', { class: 'console__summary', 'data-console-summary': '' });
     // The pause of the progress shows on the folded console too, brighter than the summary.
-    const paused = el('span', { class: 'console__paused', 'data-console-paused': '' }, 'пауза');
+    const paused = el('span', { class: 'console__paused', 'data-console-paused': '' }, TEXT.paused);
     paused.hidden = true;
     toggle.append(toggleName, paused, summary);
     const body = el('div', { class: 'console__body', 'data-console-body': '' });
@@ -137,29 +284,29 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
         return b;
     };
 
-    const story = group('Сюжет');
-    const next = button(story, { 'data-action': 'scene-next' }, 'Следующая сцена');
-    const step = button(story, { 'data-action': 'finale-step' }, 'Шаг финала');
-    const reset = button(story, { 'data-action': 'reset' }, 'Заново');
+    const story = group(TEXT.groups.story);
+    const next = button(story, { 'data-action': 'scene-next' }, TEXT.next);
+    const step = button(story, { 'data-action': 'finale-step' }, TEXT.step);
+    const reset = button(story, { 'data-action': 'reset' }, TEXT.reset);
     // The pause of the progress (protocol.md, «Пауза прогресса»): the scene's task stands still, the flyers fly on.
-    const pause = button(story, { 'data-action': 'pause', 'aria-pressed': 'false', title: 'Задача сцены замирает: клики, кружки, удары и кости не засчитываются; летуны и зомби летают. Снимается и сбросом' }, 'Пауза прогресса: выкл');
+    const pause = button(story, { 'data-action': 'pause', 'aria-pressed': 'false', title: TEXT.pauseTitle }, TEXT.pauseOff);
     // The service numbers left the HUD for here: the round, the scene's number, the finale step.
     const storyInfo = el('span', { class: 'console__info', 'data-console-story': '' });
     story.append(storyInfo);
 
     // The bar's goal (scenario.md, «Сцена 0 — «Бар»»): mugs the hall drinks before going out; the nudge goes without it.
-    const pub = group('Бар');
-    const more = button(pub, { 'data-action': 'bar-more', title: `Цель бара больше: ${BONUS}` }, '+5 бокалов');
-    const less = button(pub, { 'data-action': 'bar-less', title: `Цель бара меньше: ${BONUS}` }, '−5 бокалов');
-    const nudge = button(pub, { 'data-action': 'bar-ready', title: 'Бар готов, не дожидаясь шкалы' }, 'Отмашка');
+    const pub = group(TEXT.groups.bar);
+    const more = button(pub, { 'data-action': 'bar-more', title: `${TEXT.barGoal(true)}: ${BONUS}` }, `+5 ${TEXT.glasses}`);
+    const less = button(pub, { 'data-action': 'bar-less', title: `${TEXT.barGoal(false)}: ${BONUS}` }, `−5 ${TEXT.glasses}`);
+    const nudge = button(pub, { 'data-action': 'bar-ready', title: TEXT.nudgeTitle }, TEXT.nudge);
     const pubInfo = el('span', { class: 'console__info', 'data-console-bar': '' });
     pub.append(pubInfo);
     pub.hidden = true;
 
     // The cursed world's goal (scenario.md, «Шаг 5»): the moderator's addition to each target, ±5.
-    const cursedGroup = group('Проклятый мир');
-    for (const [goal, delta, text] of [['drinks', 5, '+5 кружек'], ['drinks', -5, '−5 кружек'], ['zombies', 5, '+5 зомби'], ['zombies', -5, '−5 зомби']]) {
-        const title = `Цель «${goal === 'drinks' ? 'кружки' : 'зомби'}» ${delta > 0 ? 'больше' : 'меньше'}: ${BONUS}`;
+    const cursedGroup = group(TEXT.groups.cursed);
+    for (const [goal, delta, text] of [['drinks', 5, `+5 ${TEXT.mugs}`], ['drinks', -5, `−5 ${TEXT.mugs}`], ['zombies', 5, `+5 ${TEXT.zombies}`], ['zombies', -5, `−5 ${TEXT.zombies}`]]) {
+        const title = `${TEXT.cursedGoal(goal, delta > 0)}: ${BONUS}`;
         const b = button(cursedGroup, { 'data-action': `cursed-${goal}-${delta > 0 ? 'up' : 'down'}`, title }, text);
         b.addEventListener('click', () => send(b, 'cursed.target', { goal, delta }, { done: true }));
     }
@@ -168,9 +315,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     cursedGroup.hidden = true;
 
     // FrankenPHP's health (scenario.md, «Шаг 6 — босс FrankenPHP»), ±10; nothing to change before he wakes up.
-    const bossGroup = group('Босс');
+    const bossGroup = group(TEXT.groups.boss);
     for (const [delta, text] of [[10, 'HP +10'], [-10, 'HP −10']]) {
-        const b = button(bossGroup, { 'data-action': `boss-hp-${delta > 0 ? 'up' : 'down'}`, title: `Здоровье FrankenPHP ${delta > 0 ? 'больше' : 'меньше'}: ${BONUS}` }, text);
+        const b = button(bossGroup, { 'data-action': `boss-hp-${delta > 0 ? 'up' : 'down'}`, title: `${TEXT.bossGoal(delta > 0)}: ${BONUS}` }, text);
         b.addEventListener('click', () => send(b, 'boss.hp', { delta }, { done: true }));
     }
     const bossInfo = el('span', { class: 'console__info', 'data-console-boss': '' });
@@ -178,40 +325,40 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     bossGroup.hidden = true;
 
     // The dice of step 1: the moderator's way out — the owl rolls, and its third roll is the 6-6-6.
-    const diceGroup = group('Кости');
-    const owlDice = button(diceGroup, { 'data-console-dice': '', 'data-action': 'dice-owl', title: 'Третий бросок совы — 6-6-6' }, 'Сова бросает');
+    const diceGroup = group(TEXT.groups.dice);
+    const owlDice = button(diceGroup, { 'data-console-dice': '', 'data-action': 'dice-owl', title: TEXT.owlDiceTitle }, TEXT.owlDice);
     owlDice.addEventListener('click', () => send(owlDice, 'dice.owl', {}, { done: true }));
     diceGroup.hidden = true;
 
     // The quick menu follows the scene or the finale step (owl.js, MENU), rebuilt when that changes; the title is the
     // text every viewer gets right now. The own text is always there.
-    const owl = group('Сова');
+    const owl = group(TEXT.groups.owl);
     const owlLines = el('div', { class: 'console__lines', 'data-owl-lines': '' });
     owl.append(owlLines);
     let menuKey = null;
     const form = el('form', { class: 'console__say', 'data-owl-form': '' });
-    const input = el('input', { class: 'console__input', 'data-owl-input': '', maxlength: '200', placeholder: 'Свой текст совы', 'aria-label': 'Свой текст совы', autocomplete: 'off' });
-    const say = el('button', { type: 'submit', class: 'debug__button', 'data-action': 'owl-text' }, 'Сказать');
-    say.dataset.label = 'Сказать';
+    const input = el('input', { class: 'console__input', 'data-owl-input': '', maxlength: '200', placeholder: TEXT.owlText, 'aria-label': TEXT.owlText, autocomplete: 'off' });
+    const say = el('button', { type: 'submit', class: 'debug__button', 'data-action': 'owl-text' }, TEXT.say);
+    say.dataset.label = TEXT.say;
     form.append(input, say);
     owl.append(form);
 
-    const night = group('Нечисть');
-    const witch = button(night, { 'data-action': 'witch' }, 'Ведьма');
-    const runner = button(night, { 'data-action': 'roadrunner' }, 'Бегун');
+    const night = group(TEXT.groups.night);
+    const witch = button(night, { 'data-action': 'witch' }, TEXT.witch);
+    const runner = button(night, { 'data-action': 'roadrunner' }, TEXT.runner);
     // A wave of the current set's flyers at once (protocol.md, `flyers.burst`): only where the set has any.
-    const burst = button(night, { 'data-action': 'flyers-burst', title: 'Внеочередная волна летунов: больше игроков — больше летунов' }, 'Пуск летунов');
+    const burst = button(night, { 'data-action': 'flyers-burst', title: TEXT.burstTitle }, TEXT.burst);
 
     // The limits shown are the server's, from the model (`limits`): the client does not know the formula's numbers.
     // The players are its n, held for a few seconds — not `online`, which jumps with every walker.
-    const limits = group('Лимиты');
+    const limits = group(TEXT.groups.limits);
     const kForm = el('form', { class: 'console__k', 'data-k-form': '', novalidate: '' });
-    const kDown = button(kForm, { 'data-action': 'k-down', title: 'Множитель меньше: все лимиты меньше' }, `÷${formatK(K_STEP)}`);
-    const kValue = el('output', { class: 'console__value', 'data-k-value': '', 'aria-label': 'Множитель лимитов', title: 'Множитель лимитов' });
+    const kDown = button(kForm, { 'data-action': 'k-down', title: TEXT.kDown }, `÷${formatK(K_STEP)}`);
+    const kValue = el('output', { class: 'console__value', 'data-k-value': '', 'aria-label': TEXT.k, title: TEXT.k });
     kForm.append(kValue);
-    const kUp = button(kForm, { 'data-action': 'k-up', title: 'Множитель больше: все лимиты больше' }, `×${formatK(K_STEP)}`);
+    const kUp = button(kForm, { 'data-action': 'k-up', title: TEXT.kUp }, `×${formatK(K_STEP)}`);
     // Text, not number: a comma is typed on a phone, and an out-of-range value goes to the server, which says no.
-    const kInput = el('input', { class: 'console__input console__input--k', 'data-k-input': '', inputmode: 'decimal', 'aria-label': 'Множитель лимитов, от 0,1 до 10', autocomplete: 'off' });
+    const kInput = el('input', { class: 'console__input console__input--k', 'data-k-input': '', inputmode: 'decimal', 'aria-label': TEXT.kInput, autocomplete: 'off' });
     const kSet = el('button', { type: 'submit', class: 'debug__button', 'data-action': 'k-set' }, 'OK');
     kSet.dataset.label = 'OK';
     kForm.append(kInput, kSet);
@@ -222,12 +369,12 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     limits.append(online, players, limitsInfo);
 
     // The players' chat (docs/spec/frontend.md, «Чат»): the log, re-read whenever the console opens, and the mutes.
-    const chatGroup = group('Чат');
+    const chatGroup = group(TEXT.groups.chat);
     const chat = createChatConsole(call);
     chatGroup.append(chat.node);
 
-    const tools = group('Отладка');
-    button(tools, { 'data-action': 'click-all' }, 'Клик по всем').addEventListener('click', () => clickAll());
+    const tools = group(TEXT.groups.tools);
+    button(tools, { 'data-action': 'click-all' }, TEXT.clickAll).addEventListener('click', () => clickAll());
 
     // Labels change with the state, but a note on a button (an error, «Точно?») holds until it times out.
     const setLabel = (b, text) => {
@@ -270,7 +417,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             return reply;
         } catch (error) {
             console.warn(`${method} failed`, error);
-            note(b, ERRORS[error?.message] ?? 'Не вышло');
+            note(b, ERRORS[error?.message] ?? TEXT.failed);
             return null;
         } finally {
             b.disabled = false;
@@ -285,7 +432,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             return;
         }
         // Forcing an unready scene is for a room that got stuck: it asks first.
-        if (!model.ready && !armed(next, 'Не готово. Точно?')) return;
+        if (!model.ready && !armed(next, TEXT.notReady)) return;
         send(next, 'scene.next', model.ready ? { scene: model.scene } : { scene: model.scene, force: true });
     });
     step.addEventListener('click', () => {
@@ -293,16 +440,16 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
         if (!model || current >= LAST_STEP) return;
         // Step 1 waits for the closed circle, step 6 for the cursed world's goals: going without them asks first, like
         // an unready scene. Step 7 comes by itself when the boss falls, so pressing it always forces.
-        const question = current === 0 && !model.ready ? 'Круг не замкнут. Точно?'
-            : current === DICE_STEP && !model.ready ? 'Нет 6-6-6. Точно?'
-            : current === CURSED_STEP && !model.ready ? 'Цели не выполнены. Точно?'
-            : current === BOSS_STEP ? 'Босс жив. Точно?'
+        const question = current === 0 && !model.ready ? TEXT.circleOpen
+            : current === DICE_STEP && !model.ready ? TEXT.noSix
+            : current === CURSED_STEP && !model.ready ? TEXT.goalsOpen
+            : current === BOSS_STEP ? TEXT.bossAlive
             : null;
         if (question && !armed(step, question)) return;
         send(step, 'finale.step', question ? { step: current + 1, force: true } : { step: current + 1 });
     });
     reset.addEventListener('click', () => {
-        if (model && armed(reset, 'Точно?')) send(reset, 'reset', { round: model.round });
+        if (model && armed(reset, TEXT.sure)) send(reset, 'reset', { round: model.round });
     });
     more.addEventListener('click', () => send(more, 'bar.target', { delta: 5 }, { done: true }));
     less.addEventListener('click', () => send(less, 'bar.target', { delta: -5 }, { done: true }));
@@ -333,7 +480,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     runner.addEventListener('click', () => send(runner, 'flyer.special', { kind: 'roadrunner' }, { done: true }));
     const launched = (reply) => {
         const n = Number.isInteger(reply?.count) ? reply.count : 0;
-        return `+${n} ${plural(n, 'летун', 'летуна', 'летунов')}`;
+        return TEXT.launched(n);
     };
     burst.addEventListener('click', () => send(burst, 'flyers.burst', {}, { done: launched }));
     pause.addEventListener('click', () => model && send(pause, 'pause', { on: !model.paused }));
@@ -386,20 +533,20 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             next.hidden = final && !dawn;
             const bar = isBar(model.scene);
             next.toggleAttribute('data-ready', model.ready || dawn);
-            storyInfo.textContent = [`раунд ${model.round}`, `сцена ${model.scene}`, final && `шаг ${current}`].filter(Boolean).join(' · ');
+            storyInfo.textContent = [`${TEXT.round} ${model.round}`, `${TEXT.scene} ${model.scene}`, final && `${TEXT.stepWord} ${current}`].filter(Boolean).join(' · ');
             paintMenu(model.scene, final ? current : null);
             pub.hidden = !bar;
-            pubInfo.textContent = `цель ${model.bar?.target ?? 0} · выпито ${model.bar?.drunk ?? 0}`;
+            pubInfo.textContent = TEXT.pub(model.bar?.target ?? 0, model.bar?.drunk ?? 0);
             nudge.disabled = model.ready;
-            setLabel(next, dawn ? 'В бар' : model.ready ? 'Следующая сцена ›' : 'Следующая сцена');
+            setLabel(next, dawn ? TEXT.toBar : model.ready ? TEXT.nextReady : TEXT.next);
             step.hidden = !final || dawn;
             step.toggleAttribute('data-ready', final && (current === 0 || current === DICE_STEP || current === CURSED_STEP) && model.ready);
             diceGroup.hidden = !(final && current === DICE_STEP && model.dice?.on === true);
-            setLabel(owlDice, `Сова бросает (${Math.min(OWL_ROLLS, model.owlRolls ?? 0)}/${OWL_ROLLS})`);
-            setLabel(step, `Шаг финала ${current + 1}`);
+            setLabel(owlDice, `${TEXT.owlDice} (${Math.min(OWL_ROLLS, model.owlRolls ?? 0)}/${OWL_ROLLS})`);
+            setLabel(step, `${TEXT.step} ${current + 1}`);
             cursedGroup.hidden = !(final && current === CURSED_STEP);
             const cursed = model.cursed;
-            cursedInfo.textContent = cursed ? `кружки ${cursed.drunk}/${cursed.drinksTarget} · зомби ${cursed.slain}/${cursed.zombiesTarget}` : 'целей ещё нет';
+            cursedInfo.textContent = cursed ? `${TEXT.drinks} ${cursed.drunk}/${cursed.drinksTarget} · ${TEXT.zombies} ${cursed.slain}/${cursed.zombiesTarget}` : TEXT.noGoals;
             const boss = model.boss;
             // Only while FrankenPHP is up: before he wakes and after he falls there is no health to change.
             bossGroup.hidden = !(final && current === BOSS_STEP && boss?.hp > 0);
@@ -410,21 +557,21 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             runner.hidden = model.scene !== SCENE.day;
             burst.hidden = model.limits?.burst !== true;
             pause.setAttribute('aria-pressed', String(model.paused));
-            setLabel(pause, model.paused ? 'Пауза прогресса: вкл' : 'Пауза прогресса: выкл');
+            setLabel(pause, model.paused ? TEXT.pauseOn : TEXT.pauseOff);
             paused.hidden = !model.paused;
 
             const k = Number(model.k ?? 1);
             kValue.textContent = `×${formatK(k)}`;
             kInput.placeholder = formatK(k);
-            online.textContent = model.presence ? `онлайн: ${model.presence.players} · подключений: ${model.presence.connections}` : 'онлайн: —';
-            players.textContent = `на поле: ${model.limits?.players ?? '—'}`;
-            limitsInfo.textContent = limitsText(model.limits) ?? 'лимиты ещё не пришли';
+            online.textContent = model.presence ? TEXT.online(model.presence.players, model.presence.connections) : TEXT.offline;
+            players.textContent = TEXT.field(model.limits?.players ?? '—');
+            limitsInfo.textContent = limitsText(model.limits) ?? TEXT.noLimitsYet;
 
-            const finaleName = current >= LAST_STEP ? 'рассвет' : current === BOSS_STEP ? 'рапира' : current === CURSED_STEP ? 'проклятый мир' : `финал · шаг ${current}`;
-            const parts = [final ? finaleName : isBar(model.scene) ? 'бар' : `сцена ${model.scene}`];
+            const finaleName = current >= LAST_STEP ? TEXT.dawn : current === BOSS_STEP ? TEXT.rapier : current === CURSED_STEP ? TEXT.cursed : `${TEXT.finale} · ${TEXT.stepWord} ${current}`;
+            const parts = [final ? finaleName : isBar(model.scene) ? TEXT.barName : `${TEXT.scene} ${model.scene}`];
             // In the final scene readiness waits for the moderator only at step 0 (the circle), step 1 (the 6-6-6) and
             // step 5 (the goals).
-            if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === DICE_STEP || current === CURSED_STEP)) parts.push('готова');
+            if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === DICE_STEP || current === CURSED_STEP)) parts.push(TEXT.ready);
             if (k !== 1) parts.push(`×${formatK(k)}`);
             summary.textContent = parts.join(' · ');
         },

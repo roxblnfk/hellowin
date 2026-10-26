@@ -7,8 +7,61 @@ import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
 import { CLINK } from './pixel/clink.js';
 import { SUMMON_MS } from './pixel/finale-timeline.js';
+import { pick } from './i18n.js';
 
-const SCENE_NAMES = { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' };
+const TEXT = pick({
+    ru: {
+        scenes: { [SCENE.bar]: 'Бар', [SCENE.day]: 'День: подготовка', [SCENE.sunset]: 'Закат', [SCENE.night]: 'Ночь' },
+        dawn: 'Рассвет',
+        cursed: 'Проклятый мир',
+        finale: 'Финал',
+        owlTry: 'Дайте я попробую!',
+        status: { connecting: 'Связь: переподключение…', connected: 'Связь: есть', disconnected: 'Связь: нет' },
+        uptime: (h, mm) => `${h} ч ${mm} мин`,
+        runner: 'RoadRunner: работает',
+        runnerUp: 'аптайм',
+        of: 'из',
+        drunk: 'Выпито',
+        done: 'Готово',
+        zombies: 'Зомби',
+        word: {
+            'not now': 'Сейчас не время',
+            'has rapier': 'Рапира уже у тебя',
+            zombified: 'Зомби слов не молвят',
+            'invalid text': 'От 1 до 40 знаков',
+            'no character': 'Сначала выйди на поле',
+            'rate limited': 'Не так быстро',
+        },
+        wordEmpty: 'Молви хоть что-нибудь',
+        failed: 'Не вышло',
+    },
+    en: {
+        scenes: { [SCENE.bar]: 'Bar', [SCENE.day]: 'Day: getting ready', [SCENE.sunset]: 'Sunset', [SCENE.night]: 'Night' },
+        dawn: 'Dawn',
+        cursed: 'Cursed world',
+        finale: 'Finale',
+        owlTry: 'Let me try!',
+        status: { connecting: 'Link: reconnecting…', connected: 'Link: up', disconnected: 'Link: down' },
+        uptime: (h, mm) => `${h} h ${mm} min`,
+        runner: 'RoadRunner: running',
+        runnerUp: 'uptime',
+        of: 'of',
+        drunk: 'Drunk',
+        done: 'Done',
+        zombies: 'Zombies',
+        word: {
+            'not now': 'Not the time',
+            'has rapier': 'You already have the rapier',
+            zombified: "Zombies don't speak",
+            'invalid text': '1 to 40 characters',
+            'no character': 'Join the field first',
+            'rate limited': 'Not so fast',
+        },
+        wordEmpty: 'Say something, anything',
+        failed: "Didn't work",
+    },
+});
+const SCENE_NAMES = TEXT.scenes;
 const DEFAULT_STAGE_MAX = 4;
 // The reveal panel's finale in the bar after the dawn's «В бар» (`bar.roadrunner`): none there, the numbers come only
 // from RPC `reveal`.
@@ -28,21 +81,21 @@ const DICE_STEP = 1;
 const DAWN_COMPACT_PX = 600;
 // A `meep` older than this by its `at` is not drawn (docs/spec/frontend.md, «Пульт модератора», «Мип-мип»).
 const MEEP_STALE_MS = 1500;
-const OWL_TRY = 'Дайте я попробую!';
+const OWL_TRY = TEXT.owlTry;
 // My mug's busy spells (docs/spec/frontend.md, «Ввод в баре»), the server's defaults: the gulp (HELLOWIN_DRINK_MS, also
 // the scene's drink pose) and a pumpkin's hand-over when its `take` carries no `until` (HELLOWIN_BEER_HANDOVER_MS).
 const DRINK_MS = 1200;
 const HANDOVER_MS = 900;
 // The HUD's connection lamp: its words go to its title and aria-label.
-export const STATUS = { connecting: 'Связь: переподключение…', connected: 'Связь: есть', disconnected: 'Связь: нет' };
+export const STATUS = TEXT.status;
 
 /** Whether RoadRunner is out — finale step 3 on, or behind the counter after the dawn: the HUD tells his uptime. */
 export const runnerShown = (model) => (model.scene >= model.sceneStages && (model.finale?.step ?? 0) >= RUNNER_STEP) || model.bar?.roadrunner === true;
 
-/** Uptime as «Ч ч ММ мин» (scenario.md, «Финал»): hours unbounded, minutes two digits. */
+/** Uptime as «Ч ч ММ мин» / «H h MM min» (scenario.md, «Финал»): hours unbounded, minutes two digits. */
 export function formatUptime(ms) {
     const minutes = Math.max(0, Math.floor(ms / 60000));
-    return `${Math.floor(minutes / 60)} ч ${String(minutes % 60).padStart(2, '0')} мин`;
+    return TEXT.uptime(Math.floor(minutes / 60), String(minutes % 60).padStart(2, '0'));
 }
 
 const int = (value, fallback = 0) => {
@@ -81,13 +134,13 @@ export function barOf(bar) {
  * A meter of the scene's goal: `label` alone is the player's, `text` with the numbers the moderator's (scenario.md,
  * «Цифры прогресса»); `fill` — how full it is, 0–1 (full once the goal is reached).
  */
-const meterOf = (label, n, target) => ({ label, n, target, text: `${label} ${n} из ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
+const meterOf = (label, n, target) => ({ label, n, target, text: `${label} ${n} ${TEXT.of} ${target}`, fill: target > 0 ? Math.min(1, n / target) : 0 });
 
 /** The bar's meter: «Выпито 12 из 30». */
-export const drinksOf = (bar) => meterOf('Выпито', bar?.drunk ?? 0, bar?.target ?? 0);
+export const drinksOf = (bar) => meterOf(TEXT.drunk, bar?.drunk ?? 0, bar?.target ?? 0);
 
 /** The pumpkins' meter of scenes 1–3: «Готово 3 из 8» — the pumpkins at their last stage. */
-export const pumpkinsDoneOf = (pumpkins, stageMax) => meterOf('Готово', pumpkins.filter((e) => e.stage >= stageMax).length, pumpkins.length);
+export const pumpkinsDoneOf = (pumpkins, stageMax) => meterOf(TEXT.done, pumpkins.filter((e) => e.stage >= stageMax).length, pumpkins.length);
 
 const count = (n, fallback = 0) => (Number.isInteger(n) && n >= 0 ? n : fallback);
 
@@ -127,8 +180,8 @@ const owlRollsOf = (dice) => count(dice?.owl);
 /** The two meters of step 5: «Выпито 7 из 20» and «Зомби 3 из 20». */
 export function goalsOf(cursed) {
     return {
-        drinks: meterOf('Выпито', cursed?.drunk ?? 0, cursed?.drinksTarget ?? 0),
-        zombies: meterOf('Зомби', cursed?.slain ?? 0, cursed?.zombiesTarget ?? 0),
+        drinks: meterOf(TEXT.drunk, cursed?.drunk ?? 0, cursed?.drinksTarget ?? 0),
+        zombies: meterOf(TEXT.zombies, cursed?.slain ?? 0, cursed?.zombiesTarget ?? 0),
     };
 }
 
@@ -330,8 +383,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
     function sceneName() {
         if (model.scene < model.sceneStages) return SCENE_NAMES[model.scene] ?? '';
-        if (step() >= DAWN_STEP) return 'Рассвет';
-        return step() >= CURSED_STEP ? 'Проклятый мир' : 'Финал';
+        if (step() >= DAWN_STEP) return TEXT.dawn;
+        return step() >= CURSED_STEP ? TEXT.cursed : TEXT.finale;
     }
 
     // Story state shared by the HUD, the console and CSS: body attributes plus the reveal panel.
@@ -360,7 +413,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (!caption) return;
         caption.hidden = !(status === 'connected' && runnerShown(model));
         const up = uptime();
-        caption.textContent = up === null ? 'RoadRunner: работает' : `RoadRunner: работает · аптайм ${formatUptime(up)}`;
+        caption.textContent = up === null ? TEXT.runner : `${TEXT.runner} · ${TEXT.runnerUp} ${formatUptime(up)}`;
     }
 
     const myWalker = () => (model.me === null ? null : model.walkers.find((w) => w.id === model.me) ?? null);
@@ -1582,14 +1635,7 @@ export function bindMeep(root, meep) {
 }
 
 // The word form's answers to a refusal (protocol.md, RPC `word`); anything else is «Не вышло».
-const WORD_ERRORS = {
-    'not now': 'Сейчас не время',
-    'has rapier': 'Рапира уже у тебя',
-    zombified: 'Зомби слов не молвят',
-    'invalid text': 'От 1 до 40 знаков',
-    'no character': 'Сначала выйди на поле',
-    'rate limited': 'Не так быстро',
-};
+const WORD_ERRORS = TEXT.word;
 const WORD_NOTE_MS = 3000;
 
 /**
@@ -1616,7 +1662,7 @@ export function bindWord(root, client, say) {
         event.preventDefault();
         const text = input.value.trim();
         if (!text) {
-            tell('Молви хоть что-нибудь');
+            tell(TEXT.wordEmpty);
             return;
         }
         submit.disabled = true;
@@ -1627,11 +1673,11 @@ export function bindWord(root, client, say) {
                 note.textContent = '';
                 client.closeWord();
             } else {
-                tell(WORD_ERRORS[reply?.error] ?? 'Не вышло');
+                tell(WORD_ERRORS[reply?.error] ?? TEXT.failed);
             }
         } catch (error) {
             console.warn('word rpc failed', error);
-            tell('Не вышло');
+            tell(TEXT.failed);
         } finally {
             submit.disabled = false;
         }

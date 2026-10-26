@@ -5,6 +5,7 @@ import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, breathOf, frank
 import { EMISSIVE, LIT_PALETTE } from './night.js';
 import { PALETTE } from './palette.js';
 import { T } from './finale-timeline.js';
+import { pick } from '../i18n.js';
 
 /**
  * The finale's steps on the scene (docs/spec/scenario.md, «Финал»; docs/spec/frontend.md, «Финал»): FrankenPHP and
@@ -15,6 +16,8 @@ import { T } from './finale-timeline.js';
  */
 
 export { T };
+
+export const MEEP = pick({ ru: 'Мип-мип!', en: 'Meep-meep!' });
 
 // The moderator's «Мип-мип!» over RoadRunner, ms; the silhouette's eyes flaring at the 6-6-6, flickering at first.
 const MEEP_MS = 1600;
@@ -461,7 +464,7 @@ export function createFinaleStage(env) {
         if (r && meeping && !r.far && r.pose === 'stop') r.def = RUNNER[r.size].meep;
         shownRunner = r;
         if (r) {
-            if (meeping && r.far) bubble('runner', 'Мип-мип!', { x: r.x, y: r.y - r.def.h - 1 });
+            if (meeping && r.far) bubble('runner', MEEP, { x: r.x, y: r.y - r.def.h - 1 });
             if (r.far) {
                 const art = env.flyerArt(r.def, true);
                 runnerFar.visible = true;
@@ -472,7 +475,7 @@ export function createFinaleStage(env) {
             } else {
                 place(g.runner, r.def, r.x, r.y, env.defTexture(r.def, lit, runnerBake), env.depthKey(r.x, r.y));
                 g.runner.scale.x = r.flip ? -1 : 1;
-                if (r.meep || meeping) bubble('runner', 'Мип-мип!', { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
+                if (r.meep || meeping) bubble('runner', MEEP, { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
             }
         }
         sweepBubbles();

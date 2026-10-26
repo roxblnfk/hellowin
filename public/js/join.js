@@ -2,6 +2,7 @@
 // RPC `register`. Shared by app.js and public/dev/lab.html; the preview is a plain 2D canvas, no PixiJS.
 
 import { CATALOG, POSES, characterFrame, normalizeLook, randomLook } from './pixel/characters.js';
+import { pick } from './i18n.js';
 
 const LOOK_KEY = 'hellowin.look';
 const NAME_KEY = 'hellowin.name';
@@ -15,11 +16,20 @@ const TURNS = [
     { dir: 'back', flip: false, pose: 'idle', ms: 1200 },
     { dir: 'side', flip: true, pose: 'walk', ms: 1800 },
 ];
-const ERRORS = {
-    'invalid name': 'Имя — от 1 до 24 символов: буквы, цифры, пробел, _ . -',
-    'invalid look': 'Сервер не узнал персонажа — нажмите «Случайно»',
-    anonymous: 'Нет секрета игрока — обновите страницу',
-};
+const ERRORS = pick({
+    ru: {
+        'invalid name': 'Имя — от 1 до 24 символов: буквы, цифры, пробел, _ . -',
+        'invalid look': 'Сервер не узнал персонажа — нажмите «Случайно»',
+        anonymous: 'Нет секрета игрока — обновите страницу',
+        failed: 'Не вышло — попробуйте ещё раз',
+    },
+    en: {
+        'invalid name': 'Name: 1 to 24 characters — letters, digits, space, _ . -',
+        'invalid look': 'The server did not recognise the character — press “Random”',
+        anonymous: 'No player secret — reload the page',
+        failed: "Didn't work — try again",
+    },
+});
 
 function read(key) {
     try {
@@ -89,7 +99,7 @@ export function initJoin(dialog, { register }) {
     }
 
     function showError(code) {
-        error.textContent = code ? ERRORS[code] ?? 'Не вышло — попробуйте ещё раз' : '';
+        error.textContent = code ? ERRORS[code] ?? ERRORS.failed : '';
         nameInput.toggleAttribute('aria-invalid', code === 'invalid name');
     }
 

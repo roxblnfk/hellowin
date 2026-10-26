@@ -14,7 +14,7 @@ import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
 import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
-import { T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
+import { MEEP, T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
@@ -4017,7 +4017,7 @@ export async function createScene(rootEl, snapshot) {
             meepOf = null;
             return;
         }
-        toastSpeech.say('meep', 'Мип-мип!', spot.head);
+        toastSpeech.say('meep', MEEP, spot.head);
     }
 
     // The moderator's hit zone over RoadRunner of the finale (`[data-rr-meep]`): his sprite box in CSS px, at least

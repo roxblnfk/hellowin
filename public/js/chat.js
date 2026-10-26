@@ -2,12 +2,14 @@
 // HUD and the moderator's log on the console. No PixiJS: the Node tests load it.
 
 import { hash } from './pixel/clink.js';
+import { pick } from './i18n.js';
 
 /**
  * What a zombie worker says instead of its words (protocol.md, «Чат»: the server sends `zombie: true` without the
- * text). Add new ones at the end: the hash picks by index, and every viewer must get the same line.
+ * text). Add new ones at the end of both lists: the hash picks by index, and every viewer, in either language, must get
+ * the same line.
  */
-export const ZOMBIE_LINES = [
+export const ZOMBIE_LINES = pick({ ru: [
     'Мммм… мозги…',
     'Ммм-ааа…',
     'Мозгиии…',
@@ -16,7 +18,16 @@ export const ZOMBIE_LINES = [
     'Ааа… воркер… голоден…',
     'Хрррр… мозги…',
     'Ммм… пинг… понг…',
-];
+], en: [
+    'Mmmm… brains…',
+    'Mmm-aaah…',
+    'Braaains…',
+    'Uhhhh… process…',
+    'Mmm… one more request…',
+    'Aaah… worker… hungry…',
+    'Hrrrr… brains…',
+    'Mmm… ping… pong…',
+] });
 
 /** The zombie line of a `say` event: by the FNV hash of `{player.id}:{at}`, the same in every browser. */
 export const zombieLine = (playerId, at) => ZOMBIE_LINES[hash(`${playerId}:${at}`) % ZOMBIE_LINES.length];
@@ -41,8 +52,36 @@ const CHAT_MAX = 120;
 export const CHAT_LOG_MAX = 50;
 const NOTE_MS = 3000;
 const SHAKE_MS = 400;
-const MUTED_NOTE = 'Сова отобрала у тебя слово';
-const NOTES = { 'rate limited': 'Не так быстро', 'invalid text': (max) => `От 1 до ${max} знаков` };
+const TEXT = pick({
+    ru: {
+        muted: 'Сова отобрала у тебя слово',
+        notes: { 'rate limited': 'Не так быстро', 'invalid text': (max) => `От 1 до ${max} знаков` },
+        mute: { forbidden: 'Нет прав', 'no target': 'Нет такого' },
+        failed: 'Не вышло',
+        log: 'История чата',
+        empty: 'Пока молчат',
+        mutedTitle: 'Без слова',
+        silence: 'заглушить',
+        unsilence: 'вернуть слово',
+        zombie: 'зомби',
+        wanted: 'хотел:',
+    },
+    en: {
+        muted: 'The owl took your voice away',
+        notes: { 'rate limited': 'Not so fast', 'invalid text': (max) => `1 to ${max} characters` },
+        mute: { forbidden: 'Not allowed', 'no target': 'No such player' },
+        failed: "Didn't work",
+        log: 'Chat history',
+        empty: 'Silence so far',
+        mutedTitle: 'Muted',
+        silence: 'mute',
+        unsilence: 'unmute',
+        zombie: 'zombie',
+        wanted: 'meant:',
+    },
+});
+const MUTED_NOTE = TEXT.muted;
+const NOTES = TEXT.notes;
 // Where Enter belongs to the control under focus: it types, presses or follows it, the field does not open.
 const ENTER_TAKERS = 'input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"]';
 
@@ -171,7 +210,7 @@ export function chatRow(message) {
     return { time: clockOf(message?.at ?? 0), name: message?.player?.name ?? '?', zombie, said, wanted };
 }
 
-const MUTE_ERRORS = { forbidden: 'Нет прав', 'no target': 'Нет такого' };
+const MUTE_ERRORS = TEXT.mute;
 
 /**
  * The «Чат» group of the moderator's console: the log (`[data-chat-log]`, at most CHAT_LOG_MAX rows, the oldest go)
@@ -189,9 +228,9 @@ export function createChatConsole(call, doc = globalThis.document) {
         return node;
     };
     const node = make('div', { class: 'chat-log' });
-    const log = make('ol', { class: 'chat-log__list', 'data-chat-log': '', 'aria-label': 'История чата' });
-    const empty = make('p', { class: 'chat-log__empty' }, 'Пока молчат');
-    const mutedTitle = make('span', { class: 'chat-log__title' }, 'Без слова');
+    const log = make('ol', { class: 'chat-log__list', 'data-chat-log': '', 'aria-label': TEXT.log });
+    const empty = make('p', { class: 'chat-log__empty' }, TEXT.empty);
+    const mutedTitle = make('span', { class: 'chat-log__title' }, TEXT.mutedTitle);
     const mutedList = make('ul', { class: 'chat-log__muted', 'data-chat-muted': '' });
     node.append(log, empty, mutedTitle, mutedList);
     let messages = [];
@@ -202,7 +241,7 @@ export function createChatConsole(call, doc = globalThis.document) {
 
     const isMuted = (id) => muted.some((p) => p.id === id);
     function muteButton(player, on) {
-        const b = make('button', { type: 'button', class: 'debug__button chat-log__mute', 'data-chat-mute': '', 'data-player': player.id }, on ? 'заглушить' : 'вернуть слово');
+        const b = make('button', { type: 'button', class: 'debug__button chat-log__mute', 'data-chat-mute': '', 'data-player': player.id }, on ? TEXT.silence : TEXT.unsilence);
         b.dataset.on = on ? '1' : '0';
         b.addEventListener('click', async () => {
             b.disabled = true;
@@ -214,8 +253,8 @@ export function createChatConsole(call, doc = globalThis.document) {
                 }
             } catch (error) {
                 console.warn('chat.mute failed', error);
-                b.textContent = MUTE_ERRORS[error?.message] ?? 'Не вышло';
-                setTimeout(() => (b.textContent = on ? 'заглушить' : 'вернуть слово'), NOTE_MS);
+                b.textContent = MUTE_ERRORS[error?.message] ?? TEXT.failed;
+                setTimeout(() => (b.textContent = on ? TEXT.silence : TEXT.unsilence), NOTE_MS);
             } finally {
                 b.disabled = false;
             }
@@ -230,10 +269,10 @@ export function createChatConsole(call, doc = globalThis.document) {
             const li = make('li', { class: 'chat-log__row', 'data-chat-row': '', 'data-player': m.player?.id ?? '' });
             if (row.zombie) li.dataset.zombie = '';
             li.append(make('span', { class: 'chat-log__time' }, row.time), make('span', { class: 'chat-log__name' }, row.name));
-            if (row.zombie) li.append(make('span', { class: 'chat-log__tag' }, 'зомби'));
+            if (row.zombie) li.append(make('span', { class: 'chat-log__tag' }, TEXT.zombie));
             li.append(make('span', { class: 'chat-log__text' }, row.said));
             if (m.player?.id) li.append(muteButton(m.player, !isMuted(m.player.id)));
-            if (row.wanted) li.append(make('span', { class: 'chat-log__wanted' }, `хотел: ${row.wanted}`));
+            if (row.wanted) li.append(make('span', { class: 'chat-log__wanted' }, `${TEXT.wanted} ${row.wanted}`));
             return li;
         }));
         empty.hidden = messages.length > 0;

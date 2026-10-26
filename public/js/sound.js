@@ -11,7 +11,12 @@ import { seedOf } from './pixel/sprites.js';
 import { ROLL_LAND_MS, ROLL_TUMBLE_MS, winsRoll } from './dice.js';
 // A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
 import * as FLYER_ART from './pixel/flyers.js';
+import { pick } from './i18n.js';
 
+const TEXT = pick({
+    ru: { soundOn: 'Звук: вкл', soundOff: 'Звук: выкл', soundOnLabel: 'Звук включён', soundOffLabel: 'Звук выключен', musicOn: 'Музыка включена', musicOff: 'Музыка выключена' },
+    en: { soundOn: 'Sound: on', soundOff: 'Sound: off', soundOnLabel: 'Sound on', soundOffLabel: 'Sound off', musicOn: 'Music on', musicOff: 'Music off' },
+});
 const FLYER_SOUNDS = {
     duck: 'duck.quack',
     chicken: 'chicken.cluck',
@@ -528,14 +533,14 @@ export function bindSoundControls(root, audio) {
         const on = !state.muted;
         if (sound) {
             sound.setAttribute('aria-pressed', String(on));
-            if (sound.dataset.icon === undefined) sound.textContent = on ? 'Звук: вкл' : 'Звук: выкл';
-            else sound.setAttribute('aria-label', on ? 'Звук включён' : 'Звук выключен');
+            if (sound.dataset.icon === undefined) sound.textContent = on ? TEXT.soundOn : TEXT.soundOff;
+            else sound.setAttribute('aria-label', on ? TEXT.soundOnLabel : TEXT.soundOffLabel);
         }
         if (volume && document.activeElement !== volume) volume.value = String(Math.round((state.volume?.master ?? audio.volume('master')) * 100));
         if (music) {
             const playing = (state.volume?.music ?? audio.volume('music')) > 0;
             music.setAttribute('aria-pressed', String(playing));
-            music.setAttribute('aria-label', playing ? 'Музыка включена' : 'Музыка выключена');
+            music.setAttribute('aria-label', playing ? TEXT.musicOn : TEXT.musicOff);
         }
     };
     root.querySelectorAll('[data-sound-panel], [data-sound-toggle]').forEach((el) => (el.hidden = false));

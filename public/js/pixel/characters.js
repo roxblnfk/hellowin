@@ -1,4 +1,5 @@
 import { PALETTE } from './palette.js';
+import { pick as byLang } from '../i18n.js';
 
 /**
  * Paper-doll Halloween characters. A look picks one part per slot (body, cloak, face, eyes, hat); a frame is composed
@@ -8,6 +9,9 @@ import { PALETTE } from './palette.js';
  * Plain 2D canvas, no PixiJS: the join screen draws previews with it and the scene makes textures from the canvases.
  * Side view faces right; the caller mirrors it for the left.
  */
+
+/** A part's name on the join screen in the page's language. */
+const named = (ru, en) => byLang({ ru, en });
 
 // Every frame of every look shares this canvas, so the anchor never moves between frames.
 const W = 32;
@@ -835,7 +839,7 @@ const t800Face = (r) => faceLayer(r, T800_FACE, T800_LEGEND);
 
 const BODIES = {
     skeleton: {
-        label: 'Скелет',
+        label: named('Скелет', 'Skeleton'),
         skin: 'cream',
         torso: (i, y, dir) => (dir === 'side'
             ? rowsPattern({ [-9]: 'VeeeeeV', [-8]: 'VeVVVVV', [-7]: 'VeeeeVV', [-6]: 'VeeeVVV' }, 'violetDark')
@@ -848,7 +852,7 @@ const BODIES = {
         hand: 'cream',
     },
     witch: {
-        label: 'Ведьма',
+        label: named('Ведьма', 'Witch'),
         skin: 'leafShine',
         torso: (i, y, dir, w) => {
             if (y === -9 && dir === 'front' && (i === 4 || i === 5)) return 'leafShine';
@@ -870,7 +874,7 @@ const BODIES = {
         hairColor: 'pumpkinDark',
     },
     robe: {
-        label: 'Балахон',
+        label: named('Балахон', 'Robe'),
         skin: 'skin',
         torso: (i, y, dir) => {
             if (y === -7) return 'hay';
@@ -884,7 +888,7 @@ const BODIES = {
         shoe: 'stem',
     },
     wrestler: {
-        label: 'Рестлер',
+        label: named('Рестлер', 'Wrestler'),
         skin: 'skin',
         torso: (i, y, dir) => (dir === 'side'
             ? rowsPattern({ [-10]: 'sscsss', [-9]: 'sscssss', [-7]: 'ggggggg' }, 'crimson')
@@ -901,7 +905,7 @@ const BODIES = {
         hairColor: 'crimson',
     },
     vampire: {
-        label: 'Вампир',
+        label: named('Вампир', 'Vampire'),
         skin: 'pale',
         torso: (i, y, dir) => (dir === 'front'
             ? rowsPattern({ [-10]: 'VVvwwwwvVV', [-9]: 'VVvwccwvVV', [-8]: 'VVvcwwcvVV', [-7]: 'VVVcwwcVVV' }, 'violetDark')
@@ -921,7 +925,7 @@ const BODIES = {
         hairColor: 'violetDark',
     },
     mummy: {
-        label: 'Мумия',
+        label: named('Мумия', 'Mummy'),
         skin: 'cream',
         // Bandage turns: a seam every other row, stepping down by one where the wrap overlaps.
         torso: (i, y) => ((y + (i > 4 ? 1 : 0) + 40) % 2 === 0 ? 'seedShade' : 'cream'),
@@ -933,7 +937,7 @@ const BODIES = {
         hairColor: (c, r, inHead) => (inHead ? 'seedShade' : 'cream'),
     },
     zombie: {
-        label: 'Зомби',
+        label: named('Зомби', 'Zombie'),
         skin: 'zombie',
         torso: (i, y, dir) => {
             if (y === -6 && i % 3 === 1) return 'zombie';
@@ -953,7 +957,7 @@ const BODIES = {
         hairColor: 'stem',
     },
     scarecrow: {
-        label: 'Пугало',
+        label: named('Пугало', 'Scarecrow'),
         skin: 'hay',
         torso: (i, y, dir, w) => {
             const bib = dir === 'front' ? i >= 2 && i <= 7 : dir === 'side' ? i >= 3 : false;
@@ -976,7 +980,7 @@ const BODIES = {
     // A black tuxedo cat: the crow ramp stays a step above the outline at night, the white bib, muzzle and paws carry
     // the shape. Ears, muzzle and whiskers come from headPaint, the tail from tail.
     cat: {
-        label: 'Кот',
+        label: named('Кот', 'Cat'),
         skin: 'crow',
         torso: (i, y, dir) => {
             if (dir === 'front' && y >= -10 && y <= -7 && i >= (y === -10 || y === -7 ? 4 : 3) && i <= (y === -10 || y === -7 ? 5 : 6)) return 'white';
@@ -993,7 +997,7 @@ const BODIES = {
     },
     // The elePHPant in the PHP blue: the ears and the trunk carry the shape, so they stay on under every hat and face.
     elephant: {
-        label: 'PHP-слоник',
+        label: named('PHP-слоник', 'PHP elephant'),
         skin: 'elephant',
         torso: (i, y, dir) => {
             if (dir === 'front' && y >= -9 && y <= -6 && i >= (y === -9 || y === -6 ? 4 : 3) && i <= (y === -9 || y === -6 ? 5 : 6)) return 'elephantLight';
@@ -1011,7 +1015,7 @@ const BODIES = {
     // The Go gopher: a pudgy cyan blob whose eyes, muzzle and buck teeth carry the shape, so they stay on under every
     // face (the face slot shows only round them); its pupils take the eye colour.
     gopher: {
-        label: 'Go-гофер',
+        label: named('Go-гофер', 'Go gopher'),
         skin: 'gopher',
         torso: () => 'gopher',
         skirt: { hem: -5, flare: [1] },
@@ -1025,7 +1029,7 @@ const BODIES = {
     // A priest in a floor-length black cassock (the crow ramp, a step above the outline) with a white clerical collar
     // and a golden pectoral cross on a chain; the hem hides the legs, only the shoes step out from under it.
     priest: {
-        label: 'Священник',
+        label: named('Священник', 'Priest'),
         skin: 'pale',
         torso: (i, y, dir) => {
             if (dir === 'front') {
@@ -1055,7 +1059,7 @@ const BODIES = {
     // The tin robot: a square head with its own face, speakers and antennae (see robotHead), a chest panel, ribbed
     // arms and big round hands.
     robot: {
-        label: 'Робот',
+        label: named('Робот', 'Robot'),
         skin: 'robot',
         torso: (i, y, dir) => ROBOT_TORSO[dir](i, y),
         sleeve: (i) => (i % 2 ? 'robotDark' : 'robot'),
@@ -1070,7 +1074,7 @@ const BODIES = {
     // A Rambo-style bodybuilder: a bare sun-tanned torso with pecs and abs, bulging arms and thighs (brawn), khaki army
     // trousers with darker blotches, black shaggy hair under the red headband.
     bodybuilder: {
-        label: 'Качок',
+        label: named('Качок', 'Muscleman'),
         skin: 'tan',
         torso: (i, y, dir) => MUSCLE_TORSO[dir](i, y),
         sleeve: (i, n) => (i < n * 0.6 ? 'tanLight' : 'tan'),
@@ -1089,7 +1093,7 @@ const BODIES = {
     // A cute lime dinosaur kid: its own snout and teeth (the face slot keeps the eyes), a pale belly, an orange crest
     // and spikes down the back and the tail.
     dino: {
-        label: 'Динозавр',
+        label: named('Динозавр', 'Dinosaur'),
         skin: 'dino',
         torso: (i, y, dir) => {
             if (dir === 'front' && y >= -10 && y <= -6 && i >= (y === -10 || y === -6 ? 4 : 3) && i <= (y === -10 || y === -6 ? 5 : 6)) return 'hayLight';
@@ -1111,7 +1115,7 @@ const BODIES = {
     // A creepy-fun clown: a white greasepaint face with blue marks and red lips, a red ball nose, frizzy orange tufts
     // over the ears, a baggy two-tone suit with pompoms and a ruff, white gloves and big red shoes.
     clown: {
-        label: 'Клоун',
+        label: named('Клоун', 'Clown'),
         skin: 'white',
         torso: clownTorso,
         skirt: { hem: -5, flare: [1] },
@@ -1138,7 +1142,7 @@ const BODIES = {
     // The T-800: a black leather jacket over a grey shirt, a dark crew cut, half the face torn off to the steel skull
     // with a glowing red machine eye (see T800_FACE).
     terminator: {
-        label: 'Терминатор',
+        label: named('Терминатор', 'Terminator'),
         skin: 'skin',
         torso: (i, y, dir) => {
             if (y === -6) return dir !== 'back' && (i === 4 || i === 5) ? 'gray' : 'barkDark';
@@ -1173,44 +1177,44 @@ const FACE_LEGEND = { K: 'outline', E: 'eye', W: 'white', p: 'blush', S: 'cream'
 
 const FACES = {
     smile: {
-        label: 'Улыбка',
+        label: named('Улыбка', 'Smile'),
         front: ['', '', '', '', '', '..EE....EE..', '..EK....KE..', '.p........p.', '....K..K....', '.....KK.....'],
         side: ['', '', '', '', '', '........EE..', '........EK..', '......p.....', '..........K.', '.........K..'],
     },
     fangs: {
-        label: 'Клыки',
+        label: named('Клыки', 'Fangs'),
         front: ['', '', '', '', '..K......K..', '..EE....EE..', '..KE....EK..', '............', '...KKKKKK...', '...KWKKWK...'],
         side: ['', '', '', '', '........K...', '........EE..', '........EK..', '............', '.........KKK', '.........KWK'],
     },
     stitches: {
-        label: 'Шрамы',
+        label: named('Шрамы', 'Scars'),
         front: ['', '', '', '.K.K.K......', '.KKKKKK.....', '..EE....EE..', '..EK....KE.K', '.........KKK', '....KKKK...K', '..........K.'],
         side: ['', '', '', '...K.K.K....', '...KKKKKK...', '........EE..', '.....K..EK..', '....KKK.....', '.....K....KK', '............'],
     },
     skull: {
-        label: 'Череп',
+        label: named('Череп', 'Skull'),
         front: ['', '', '..SSSSSSSS..', '.SSSSSSSSSS.', '.SSSSSSSSSS.', '.SKKSSSSKKS.', '.SKESSSSEKS.', '.SSSSKKSSSS.', '..SSSSSSSS..', '..SKSKSKSK..', '...SSSSSS...'],
         side: ['', '', '.....SSSSS..', '....SSSSSSS.', '....SSSSSSSS', '....SSSKKSSS', '....SSSKESSS', '....SSSSSSKS', '.....SSSSSSS', '.....SSKSKSK', '......SSSSS.'],
     },
     grin: {
-        label: 'Ухмылка',
+        label: named('Ухмылка', 'Smirk'),
         front: ['', '', '', '', '.KK......KK.', '..EE....EE..', '..EE....EE..', '.K........K.', '.KWWWWWWWWK.', '..KKKKKKKK..'],
         side: ['', '', '', '', '.......KK...', '........EE..', '........EE..', '...........K', '.......KWWWW', '........KKKK'],
     },
     scared: {
-        label: 'Испуг',
+        label: named('Испуг', 'Scared'),
         front: ['', '', '', '..K......K..', '.K........K.', '..EE....EE..', '..EE....EE..', '............', '.....KK.....', '.....KK.....'],
         side: ['', '', '', '........K...', '.......K....', '........EE..', '........EE..', '............', '..........KK', '..........KK'],
     },
     cyclops: {
-        label: 'Циклоп',
+        label: named('Циклоп', 'Cyclops'),
         front: ['', '', '', '', '....KKKK....', '....EEEE....', '....EKKE....', '.....EE.....', '............', '....KKKK....'],
         side: ['', '', '', '', '........KKK.', '.........EE.', '.........EK.', '.........E..', '............', '..........KK'],
     },
     // A pirate's patch over one eye with its strap across the forehead and round the back of the head, the other eye
     // as usual, a crooked grin. From the side the patch covers the eye in view.
     eyepatch: {
-        label: 'Повязка на глаз',
+        label: named('Повязка на глаз', 'Eye patch'),
         front: ['', '', '.KK.........', '...KK.......', '.....KKKKKK.', '..EE...KKKKK', '..EK...KKKK.', '........KK..', '.........K..', '....KKKK....'],
         side: ['', '', 'KKK.........', '...KKK......', '......KKKK..', '.......KKKK.', '.......KKKK.', '........KK..', '...........K', '.........KK.'],
         back: ['', '', '..........KK', '.......KKK..', '...KKKK.....', 'KKK.........'],
@@ -1497,24 +1501,24 @@ function catEarsHat(g, x0, y0, dir) {
 }
 
 const HATS = {
-    none: { label: 'Нет', paint: () => {} },
-    pumpkin: { label: 'Тыква', paint: (g, x0, y0) => pumpkinHat(g, x0, y0) },
+    none: { label: named('Нет', 'None'), paint: () => {} },
+    pumpkin: { label: named('Тыква', 'Pumpkin'), paint: (g, x0, y0) => pumpkinHat(g, x0, y0) },
     witch: {
-        label: 'Ведьмина шляпа',
+        label: named('Ведьмина шляпа', 'Witch hat'),
         paint: (g, x0, y0, dir) => stamp(g, x0 - 3, y0 - 10, WITCH_HAT, HAT_LEGEND, dir !== 'front'),
     },
-    hood: { label: 'Капюшон культиста', paint: hoodPainter },
-    'witch-doctor': { label: 'Вич-доктор', paint: witchDoctor },
-    'top-hat': { label: 'Цилиндр', paint: (g, x0, y0) => stamp(g, x0 - 1, y0 - 7, TOP_HAT, HAT_LEGEND) },
+    hood: { label: named('Капюшон культиста', 'Cultist hood'), paint: hoodPainter },
+    'witch-doctor': { label: named('Вич-доктор', 'Witch doctor'), paint: witchDoctor },
+    'top-hat': { label: named('Цилиндр', 'Top hat'), paint: (g, x0, y0) => stamp(g, x0 - 1, y0 - 7, TOP_HAT, HAT_LEGEND) },
     horns: {
-        label: 'Рога',
+        label: named('Рога', 'Horns'),
         paint: (g, x0, y0, dir) => (dir === 'side'
             ? stamp(g, x0, y0 - 4, HORNS.side, HAT_LEGEND)
             : stamp(g, x0, y0 - 4, HORNS.front, HAT_LEGEND)),
     },
-    'cat-ears': { label: 'Ушки', paint: catEarsHat },
-    tricorn: { label: 'Треуголка', paint: tricorn },
-    mohawk: { label: 'Ирокез', paint: mohawk, grown: true },
+    'cat-ears': { label: named('Ушки', 'Cat ears'), paint: catEarsHat },
+    tricorn: { label: named('Треуголка', 'Tricorn'), paint: tricorn },
+    mohawk: { label: named('Ирокез', 'Mohawk'), paint: mohawk, grown: true },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1616,11 +1620,11 @@ function wings(g, r, layer) {
 }
 
 const CLOAKS = {
-    none: { label: 'Нет', paint: () => {} },
-    cape: { label: 'Плащ', paint: (g, r, layer) => cape(g, r, layer, { outer: 'crimsonDark', inner: 'crimson', fold: 'pumpkinDeep', collar: true }) },
-    rags: { label: 'Лохмотья', paint: (g, r, layer) => cape(g, r, layer, { outer: 'gray', inner: 'grayLight', fold: 'duckGrayDark', ragged: true }) },
-    poncho: { label: 'Пончо', paint: poncho },
-    wings: { label: 'Крылья', paint: wings },
+    none: { label: named('Нет', 'None'), paint: () => {} },
+    cape: { label: named('Плащ', 'Cape'), paint: (g, r, layer) => cape(g, r, layer, { outer: 'crimsonDark', inner: 'crimson', fold: 'pumpkinDeep', collar: true }) },
+    rags: { label: named('Лохмотья', 'Rags'), paint: (g, r, layer) => cape(g, r, layer, { outer: 'gray', inner: 'grayLight', fold: 'duckGrayDark', ragged: true }) },
+    poncho: { label: named('Пончо', 'Poncho'), paint: poncho },
+    wings: { label: named('Крылья', 'Wings'), paint: wings },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1653,24 +1657,24 @@ const BROOM = [
 
 const ITEM_DEFS = {
     beer: {
-        label: 'Пиво',
+        label: named('Пиво', 'Beer'),
         front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3], fx: [2, 0], keep: 'wcyY' },
         side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], fx: [2, 0], keep: 'wcyY' },
     },
     broom: {
-        label: 'Метла',
+        label: named('Метла', 'Broom'),
         front: { rows: BROOM, grip: [1, 11] },
         side: { rows: BROOM_SIDE, grip: [4, 12] },
     },
     pistol: {
-        label: 'Пистоль',
+        label: named('Пистоль', 'Pistol'),
         front: { rows: ['.a..', '.g..', '.g..', '.g..', '.ga.', 'Bbb.', '.Bb.', '..b.'], grip: [1, 5] },
         side: { rows: ['..a.', '..g.', '..g.', '..g.', '.ag.', '.bbB', '.bB.', '.b..'], grip: [1, 5] },
     },
     // A wax candle on a tin dish, carried at dusk. The flame is not in the rows: it is light, drawn over the frame in
     // its own flicker frames (CANDLE_FLAME), standing on the pixel above the wax.
     candle: {
-        label: 'Свеча',
+        label: named('Свеча', 'Candle'),
         front: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
         side: { rows: ['.....', '.....', '.....', '.ccc.', '.wcc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], grip: [2, 7], flame: [2, 2], fx: [2, 1] },
     },
@@ -1678,7 +1682,7 @@ const ITEM_DEFS = {
     // middle, two cream pages with green lines of text. From the side it turns three quarters to the camera, the near
     // page wider.
     book: {
-        label: 'Магическая книга',
+        label: named('Магическая книга', 'Spellbook'),
         front: {
             rows: ['.ccc.ccc.', 'VmmmvmmeV', 'VcccvcccV', 'VmmcvmmmV', 'VcccvcccV', 'VmmmvmccV', 'VVVVvVVVV'],
             grip: [4, 6],
@@ -1689,7 +1693,7 @@ const ITEM_DEFS = {
     // Items have no frames of their own, so the flame is static: a white-hot core in a lopsided tongue of fire over
     // a rag wrapping, so it reads as a flame and not as a lollipop. Gripped low, the flame clears the head.
     torch: {
-        label: 'Факел',
+        label: named('Факел', 'Torch'),
         front: {
             rows: ['..Y..', '.YY..', '.YyY.', 'YywyY', 'YwwyY', '.ywy.', 'HhHhH', '.HhH.', '..B..', '..b..', '..b..', '..b..', '..b..', '..b..', '..k..'],
             grip: [1, 12],
@@ -1703,7 +1707,7 @@ const ITEM_DEFS = {
     },
     // Three grey tines on a long shaft; from the side it leans forward like the broom, so it clears the face.
     pitchfork: {
-        label: 'Вилы',
+        label: named('Вилы', 'Pitchfork'),
         front: {
             rows: [
                 'g.g.g', 'g.g.g', 'g.g.g', 'aggga', '..g..', '..B..', '..B..', '..B..', '..B..', '..B..', '..B..',
@@ -1723,14 +1727,14 @@ const ITEM_DEFS = {
     // A small red flame floating over the open palm, in the magic circle's red: no rows, only light (RED_FLAME), so
     // the night never dims it. It hovers a pixel above the hand; from the side ahead of the fingers, clear of the face.
     'red-flame': {
-        label: 'Красный огонёк',
+        label: named('Красный огонёк', 'Red flame'),
         front: { rows: ['.', '.', '.'], grip: [0, 2], flame: [0, 0], fx: [0, -1], flames: 'red' },
         side: { rows: ['......', '......'], grip: [0, 1], flame: [5, 0], fx: [5, -1], flames: 'red' },
     },
     // The rapier of finale steps 6–7: a long thin blade of light over a golden cup hilt. Upright from the front; from
     // the side it points forward and up, so the blade clears the face. `blade` — its light shimmers (frame `flames`).
     rapier: {
-        label: 'Рапира',
+        label: named('Рапира', 'Rapier'),
         front: {
             rows: ['..q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', '..Q..', 'o.Q.o', 'oOOOo', '.OoO.', '..k..', '..k..', '..o..'],
             grip: [2, 14],
@@ -2234,16 +2238,16 @@ const FX_COLORS = {
 };
 
 const EYES = [
-    { id: 'amber', label: 'Янтарные', key: 'eyeAmber' },
-    { id: 'green', label: 'Зелёные', key: 'eyeGreen' },
-    { id: 'red', label: 'Красные', key: 'eyeRed' },
-    { id: 'blue', label: 'Синие', key: 'eyeBlue' },
-    { id: 'violet', label: 'Фиолетовые', key: 'eyeViolet' },
-    { id: 'white', label: 'Светящиеся', key: 'white' },
+    { id: 'amber', label: named('Янтарные', 'Amber'), key: 'eyeAmber' },
+    { id: 'green', label: named('Зелёные', 'Green'), key: 'eyeGreen' },
+    { id: 'red', label: named('Красные', 'Red'), key: 'eyeRed' },
+    { id: 'blue', label: named('Синие', 'Blue'), key: 'eyeBlue' },
+    { id: 'violet', label: named('Фиолетовые', 'Violet'), key: 'eyeViolet' },
+    { id: 'white', label: named('Светящиеся', 'Glowing'), key: 'white' },
     // Black eyes would melt into the outline round them: a white glint in each carries them, and the ritual's palm
     // lights, which take the eye colour, glow a pale ghostly blue instead of black. The mohawk's tips, black too, would
     // melt into its outline: they take the cat's fur, a step above it.
-    { id: 'black', label: 'Чёрные', key: 'eyeBlack', glint: true, palm: 'ghostShade', crest: 'crow' },
+    { id: 'black', label: named('Чёрные', 'Black'), key: 'eyeBlack', glint: true, palm: 'ghostShade', crest: 'crow' },
 ];
 
 /**

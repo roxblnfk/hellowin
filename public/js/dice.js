@@ -3,6 +3,7 @@
 // tests load it; the little dice over the walkers are the scene's (pixel/finale.js, DICE).
 
 import { PALETTE } from './pixel/palette.js';
+import { pick } from './i18n.js';
 
 /** Pips of a face on a 3×3 grid, [column, row]. */
 export const PIPS = {
@@ -50,16 +51,31 @@ export function diceOf(dice) {
 
 // Non-breaking hyphens: a narrow panel must not break «6-6-6» or «3-й» across lines.
 const SIX_TEXT = '6‑6‑6';
+const SUFFIX = { one: 'st', two: 'nd', few: 'rd', other: 'th' };
+const ORDINAL = new Intl.PluralRules('en', { type: 'ordinal' });
+const TEXT = pick({
+    ru: {
+        owl: (attempt) => `${SIX_TEXT} выбросила сова, с ${attempt}‑й попытки`,
+        player: (name, attempt) => `${SIX_TEXT} выбросил ${name} с ${attempt}‑й попытки`,
+        someone: 'кто-то',
+        roll: `Бросайте кости! Нужно ${SIX_TEXT}`,
+    },
+    en: {
+        owl: (attempt) => `The owl rolled ${SIX_TEXT} on the ${attempt}${SUFFIX[ORDINAL.select(attempt)]} try`,
+        player: (name, attempt) => `${name} rolled ${SIX_TEXT} on the ${attempt}${SUFFIX[ORDINAL.select(attempt)]} try`,
+        someone: 'someone',
+        roll: `Roll the dice! You need ${SIX_TEXT}`,
+    },
+});
 
 /** The line over the dice: the call to roll while the dice are on, who rolled 6-6-6 after it; null — nothing to say. */
 export function diceNote(dice) {
     if (dice?.winner) {
         const { attempt } = dice.winner;
-        if (dice.winner.owl) return `${SIX_TEXT} выбросила сова, с ${attempt}‑й попытки`;
-        const name = dice.winner.player.name?.trim() || 'кто-то';
-        return `${SIX_TEXT} выбросил ${name} с ${attempt}‑й попытки`;
+        if (dice.winner.owl) return TEXT.owl(attempt);
+        return TEXT.player(dice.winner.player.name?.trim() || TEXT.someone, attempt);
     }
-    return dice?.on ? `Бросайте кости! Нужно ${SIX_TEXT}` : null;
+    return dice?.on ? TEXT.roll : null;
 }
 
 /**
