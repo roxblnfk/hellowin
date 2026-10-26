@@ -122,6 +122,8 @@ export const EMISSIVE = new Set([
     'lightningCore', 'lightning', 'lightningEdge', 'columnCore',
     // The rapier's gold and the rising sun of the dawn.
     'goldCore', 'goldHot', 'goldGlow', 'goldDeep', 'dawnSun', 'dawnSunRim',
+    // The Terminator's machine eye.
+    'cyborgEye', 'cyborgEyeHot',
 ]);
 const EMISSIVE_COLORS = new Set([...EMISSIVE].map((key) => PALETTE[key]));
 

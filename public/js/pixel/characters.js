@@ -78,6 +78,8 @@ const DARK = {
     tan: 'tanShade',
     khakiLight: 'khaki',
     khaki: 'khakiDark',
+    dinoLight: 'dino',
+    dino: 'dinoDark',
 };
 const dark = (key) => DARK[key] ?? key;
 
@@ -347,7 +349,7 @@ function rig(dir, pose, frame) {
 // returns a layer laid on without an outline, tail(g, r) paints behind the body (over it from the back), snout(r)
 // returns a finished layer laid over the face, zombie maps the skin's other tones for a zombie player (zombieKeys),
 // bigHand rings the hands one pixel bigger, brawn bulges the upper arms and the thighs a pixel outward and caps the
-// shoulders.
+// shoulders, bigShoe makes clown shoes: wider outward from the front and the back, long and round-toed from the side.
 
 const pick = (s, i) => PICK[s[i]] ?? null;
 const PICK = {
@@ -704,6 +706,133 @@ const MUSCLE_TORSO = {
     back: musclePattern({ [-11]: 'tLLLttLLLt', [-10]: 'LLLtSStLLL', [-9]: 'tLLtSStLLt', [-8]: 'ttLtSStLtt', [-7]: 'tttLttLttt', [-6]: 'KKKKKKKKKK' }),
 };
 
+// The dinosaur's crest: orange spikes along the top of the head (bare-headed only, like the cat's ears), rows from two
+// pixels above the head box; from the back the spikes run on down the back of the head, under any hat.
+const DINO_LEGEND = { L: 'dinoLight', T: 'dino', t: 'dinoDark', o: 'pumpkin', O: 'pumpkinDark', w: 'cream', K: 'outline' };
+const DINO_CREST = {
+    front: ['.....oO.....', '....ooOO....'],
+    side: ['..o...o.....', '.oO..oO..o..'],
+    back: ['.....oO.....', '....ooOO....'],
+};
+const DINO_NAPE = ['oO', '..', '..', 'oO', '..', '..', 'oO'];
+
+function dinoHead(g, x0, y0, dir, bare) {
+    if (bare) stamp(g, x0, y0 - 2, DINO_CREST[dir], DINO_LEGEND);
+    if (dir === 'back') stamp(g, x0 + 5, y0 + 2, DINO_NAPE, DINO_LEGEND);
+}
+
+// Its snout over the face slot, which keeps the eyes: a pale muzzle with two nostrils and a toothy grin from the front,
+// a long jaw sticking out ahead from the side.
+const DINO_SNOUT = {
+    front: {
+        at: [1, 7],
+        rows: [
+            '..LLLLLL..',
+            '.LtLLLLtL.',
+            '.KwKwwKwK.',
+            '..KKKKKK..',
+        ],
+    },
+    side: {
+        at: [9, 5],
+        rows: [
+            '..TT..',
+            '.LLLLt',
+            'LLLLLL',
+            'KwKwKK',
+            'TTTTT.',
+            '.TTT..',
+        ],
+    },
+};
+
+const dinoSnout = (r) => faceLayer(r, DINO_SNOUT, DINO_LEGEND);
+
+// A fat tail tapering from the rump to the tip on the ground: an outline polygon per direction in local coordinates,
+// its tip point swinging with the pose, lit along the top and shaded underneath, orange spikes along its ridge.
+// From the back it hangs between the legs and curls aside on the ground, over the body; from the front the body hides
+// it.
+const DINO_TAIL = {
+    side: { pts: [[-2, -10], [-6, -8], [-9, -5], [-11, -1], [-8, -2], [-5, -4], [-2, -5]], tip: 3, spikes: [[-5, -10], [-8, -8]] },
+    back: { pts: [[-3, -8], [3, -8], [2, -4], [5, -2], [8, -1], [1, -1], [-2, -3]], tip: 4, spikes: [[0, -7], [0, -5], [1, -3]] },
+};
+
+function dinoTail(g, r) {
+    const def = DINO_TAIL[r.dir];
+    if (!def) return;
+    const swing = r.pose === 'walk' || r.pose === 'shamble' || r.pose === 'ritual' ? [-1, 0, 1, 0][r.frame] : r.pose === 'fidget' ? (r.frame ? 1 : -1) : 0;
+    const inside = polygon(def.pts.map(([x, y], i) => [x + r.sx + (i === def.tip ? swing : 0), y + (y < -5 ? r.bob : 0)]));
+    fill(g, inside, (x, y) => (!inside(x + 0.5, y - 0.5) ? 'dinoLight' : !inside(x + 0.5, y + 1.5) ? 'dinoDark' : 'dino'));
+    def.spikes.forEach(([x, y]) => put(g, x + r.sx, y + r.bob, 'pumpkin'));
+}
+
+// The clown's greasepaint under the face slot: blue marks over and under the eyes and red lips, so every face's mouth
+// lands on red.
+const CLOWN_PAINT = {
+    front: ['', '', '', '...d....d...', '..dd....dd..', '', '', '...d....d...', '...rrrrrr...', '....rrrr....'],
+    side: ['', '', '', '.........d..', '........dd..', '', '', '.........d..', '..........rr', '.........rrr'],
+};
+
+function clownHead(g, x0, y0, dir) {
+    if (CLOWN_PAINT[dir]) stamp(g, x0, y0, CLOWN_PAINT[dir], { d: 'denim', r: 'comb' });
+}
+
+// The red ball nose over the face slot.
+const CLOWN_NOSE = {
+    front: { at: [5, 5], rows: ['rc', 'cC'] },
+    side: { at: [11, 5], rows: ['rc', 'cC'] },
+};
+
+const clownNose = (r) => faceLayer(r, CLOWN_NOSE, { r: 'comb', c: 'crimson', C: 'crimsonDark' });
+
+// The baggy suit: violet on the character's right, orange on the left, big cream pompoms down the middle and a ruff
+// under the chin.
+function clownTorso(i, y, dir, w) {
+    // The head's outline covers the row under the chin, so the ruff starts a row lower.
+    if (y === -9) return 'cream';
+    if (y === -8 && i % 2 === 0) return 'seedShade';
+    if (dir === 'front' && (i === 4 || i === 5) && (y === -7 || y === -6)) return i === 4 && y === -7 ? 'cream' : 'seedShade';
+    if (dir === 'side') return (y === -7 || y === -6) && i === 6 ? 'cream' : 'violet';
+    const right = dir === 'front' ? i < w / 2 : i >= w / 2;
+    return right ? 'violet' : 'pumpkin';
+}
+
+// The Terminator's torn face over the face slot: the character's right half shows the steel skull, its red machine eye
+// glowing in the socket, a raw edge of flesh round the tear and steel teeth; from the side the tear shows round the eye.
+// The other eye stays the face slot's.
+const T800_LEGEND = {
+    G: 'grayLight', g: 'gray', a: 'steelDark', R: 'cyborgEye', H: 'cyborgEyeHot', K: 'outline', c: 'crimson', w: 'white',
+};
+const T800_FACE = {
+    front: {
+        at: [0, 2],
+        rows: [
+            '.cc....',
+            'cGGc...',
+            'GGGgc..',
+            'GKRKgc.',
+            'gKHRKc.',
+            'GgggGc.',
+            'gwawc..',
+            '.cc....',
+        ],
+    },
+    side: {
+        at: [6, 3],
+        rows: [
+            '.cccc.',
+            'cGGGGc',
+            'GgKRRK',
+            'GgKHRK',
+            'cGgggG',
+            '.cgwaw',
+            '..cccc',
+        ],
+    },
+};
+
+const t800Face = (r) => faceLayer(r, T800_FACE, T800_LEGEND);
+
 const BODIES = {
     skeleton: {
         label: 'Скелет',
@@ -957,6 +1086,84 @@ const BODIES = {
         headPaint: bandana,
         zombie: { tanLight: 'zombie' },
     },
+    // A cute lime dinosaur kid: its own snout and teeth (the face slot keeps the eyes), a pale belly, an orange crest
+    // and spikes down the back and the tail.
+    dino: {
+        label: 'Динозавр',
+        skin: 'dino',
+        torso: (i, y, dir) => {
+            if (dir === 'front' && y >= -10 && y <= -6 && i >= (y === -10 || y === -6 ? 4 : 3) && i <= (y === -10 || y === -6 ? 5 : 6)) return 'hayLight';
+            if (dir === 'side' && y >= -10 && y <= -7 && i >= 5) return 'hayLight';
+            if (dir === 'side' && i === 0 && (y === -10 || y === -8)) return 'pumpkin';
+            if (dir === 'back' && (i === 4 || i === 5) && (y === -10 || y === -7)) return i === 4 ? 'pumpkin' : 'pumpkinDark';
+            return 'dino';
+        },
+        sleeve: () => 'dino',
+        leg: () => 'dino',
+        shoe: 'dinoDark',
+        hand: 'dinoLight',
+        toe: 2,
+        headPaint: dinoHead,
+        snout: dinoSnout,
+        tail: dinoTail,
+        zombie: { dinoLight: 'zombie' },
+    },
+    // A creepy-fun clown: a white greasepaint face with blue marks and red lips, a red ball nose, frizzy orange tufts
+    // over the ears, a baggy two-tone suit with pompoms and a ruff, white gloves and big red shoes.
+    clown: {
+        label: 'Клоун',
+        skin: 'white',
+        torso: clownTorso,
+        skirt: { hem: -5, flare: [1] },
+        sleeve: (i, n) => (i >= n - 1 ? 'cream' : i % 2 ? 'pumpkin' : 'violet'),
+        leg: (i, yy) => (yy % 2 ? 'pumpkin' : 'violet'),
+        shoe: 'crimson',
+        bigShoe: true,
+        // Bald on top: the tufts puff out a pixel past the head at the sides.
+        hair: (c, r, dir, inHead) => {
+            const puff = r >= 3 && r <= 6;
+            if (dir === 'front') return inHead ? (c <= 1 || c >= 10) && r >= 2 && r <= 7 : (c === -1 || c === 12) && puff;
+            if (dir === 'side') return inHead ? c <= 3 && r >= 2 && r <= 7 : c === -1 && puff;
+            return inHead ? r >= 2 && r <= 8 && (c <= 1 || c >= 10 || r >= 5) : (c === -1 || c === 12) && puff;
+        },
+        // Little 2×2 curls, every other row of them shifted: each lit at the top left and shaded at the bottom right.
+        hairColor: (c, r) => {
+            const x = (c + 1 + ((r >> 1) & 1)) & 1;
+            const y = r & 1;
+            return !x && !y ? 'pumpkinLight' : x && y ? 'pumpkinDark' : 'pumpkin';
+        },
+        headPaint: clownHead,
+        snout: clownNose,
+    },
+    // The T-800: a black leather jacket over a grey shirt, a dark crew cut, half the face torn off to the steel skull
+    // with a glowing red machine eye (see T800_FACE).
+    terminator: {
+        label: 'Терминатор',
+        skin: 'skin',
+        torso: (i, y, dir) => {
+            if (y === -6) return dir !== 'back' && (i === 4 || i === 5) ? 'gray' : 'barkDark';
+            if (dir === 'front') {
+                if (i >= 3 && i <= 6 && y >= -10) return y === -10 && (i === 3 || i === 6) ? 'crowLight' : 'gray';
+                if ((i === 2 || i === 7) && y <= -8) return 'crowLight';
+            }
+            if (dir === 'side' && y >= -10 && i === 6) return 'gray';
+            if (dir === 'side' && y >= -10 && y <= -8 && i === 5) return 'crowLight';
+            if (dir === 'back' && y === -11) return 'crowLight';
+            return 'crow';
+        },
+        sleeve: (i, n) => (i >= n - 1 ? 'crowDark' : 'crow'),
+        leg: (i, yy) => (yy === 0 ? 'crowDark' : 'crow'),
+        shoe: 'barkDark',
+        hand: 'skin',
+        hair: (c, r, dir, inHead) => {
+            if (!inHead) return false;
+            if (dir === 'front') return r <= 1 || (r === 2 && (c <= 1 || c >= 10));
+            if (dir === 'side') return r <= 1 || (c <= 3 && r <= 4);
+            return r <= 5;
+        },
+        hairColor: 'barkDark',
+        snout: t800Face,
+    },
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1007,8 +1214,32 @@ const FACES = {
         front: ['', '', '.KK.........', '...KK.......', '.....KKKKKK.', '..EE...KKKKK', '..EK...KKKK.', '........KK..', '.........K..', '....KKKK....'],
         side: ['', '', 'KKK.........', '...KKK......', '......KKKK..', '.......KKKK.', '.......KKKK.', '........KK..', '...........K', '.........KK.'],
         back: ['', '', '..........KK', '.......KKK..', '...KKKK.....', 'KKK.........'],
+        // The patch and its strap alone are worn: they go on over a body's own face too (the snout layer), on its own
+        // eye where it has one (wornOn), { at, rows } in head-box coordinates.
+        worn: {
+            front: { at: [0, 2], rows: ['.KK.........', '...KK.......', '.....KKKKKK.', '.......KKKKK', '.......KKKK.', '........KK..', '.........K..'] },
+            side: { at: [0, 2], rows: ['KKK.........', '...KKK......', '......KKKK..', '.......KKKK.', '.......KKKK.', '........KK..'] },
+        },
+        wornOn: {
+            gopher: {
+                front: { at: [0, 0], rows: ['..KKK.......', '.....KKK....', '........KKK.', '.......KKKKK', '.......KKKKK', '.......KKKKK', '........KKK.'] },
+                side: { at: [0, 1], rows: ['.KKK........', '....KKKKKK..', '......KKKKK.', '......KKKKK.', '......KKKKK.', '.......KKK..'] },
+            },
+            robot: {
+                front: { at: [0, 0], rows: ['..KKK.......', '.....KKKKKK.', '.......KKKK.', '.......KKKK.', '.......KKKK.', '........KK..'] },
+                side: { at: [0, 1], rows: ['....KKKKKKKK', 'KKKK....KKKK', '........KKKK', '........KKKK', '.........KK.'] },
+            },
+        },
     },
 };
+
+/** A face's worn part over the head at its { at, rows } for the direction, as is: it lies inside the head. */
+function wornLayer(r, defs) {
+    const g = blank();
+    const def = defs[r.dir];
+    if (def) stamp(g, r.head.x + def.at[0], r.head.y + def.at[1], def.rows, FACE_LEGEND);
+    return g;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Hats: painters over the head box at (x0, y0), one per direction.
@@ -1723,6 +1954,16 @@ function drawLegs(body, r) {
             if (side && y === bottom) {
                 for (let k = 0; k < (body.toe ?? 1); k++) put(g, x + 3 + k, y - (k > 0 ? 1 : 0), leg.far ? dark(body.shoe) : body.shoe);
             }
+            if (body.bigShoe && y === bottom) {
+                const shoe = leg.far ? dark(body.shoe) : body.shoe;
+                if (side) {
+                    [[-1, 0], [4, 0], [5, 0], [3, -1], [4, -1]].forEach(([dx, dy]) => put(g, x + dx, y + dy, shoe));
+                } else {
+                    const outer = leg.hip > -1 ? 3 : -1;
+                    put(g, x + outer, y, outer > 0 ? dark(shoe) : shoe);
+                    put(g, x + outer, y - 1, outer > 0 ? dark(shoe) : shoe);
+                }
+            }
         }
     }
     return g;
@@ -1933,9 +2174,14 @@ function compose(look, dir, pose, frame, item) {
     const behindHead = drink && dir === 'back';
     if ((shoot || holding) && behindHead) holdLayer();
     // A body's own ears (the cat) show only bare-headed: every hat sits where they stand, the «Ушки» hat brings its own.
-    over(out, outlined(drawHead(body, FACES[look.face], r, look.hat === 'none')));
+    const face = FACES[look.face];
+    over(out, outlined(drawHead(body, face, r, look.hat === 'none')));
     if (body.whiskers) over(out, body.whiskers(r));
-    if (body.snout) over(out, body.snout(r));
+    if (body.snout) {
+        over(out, body.snout(r));
+        // The snout hides the face slot under it; what the face puts on (the eyepatch) still goes on top.
+        if (face.worn) over(out, wornLayer(r, face.wornOn?.[look.body] ?? face.worn));
+    }
     layer((g) => free.filter((a) => !a.far).forEach((a) => drawArm(g, body, a)));
     const hat = HATS[look.hat];
     if (hat.grown) {

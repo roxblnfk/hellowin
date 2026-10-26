@@ -244,4 +244,11 @@ export const PALETTE = {
     // The punk mohawk's root: a hot pink that stands apart from every eye colour its tips take, and its shade.
     mohawk: 0xff3c9a,
     mohawkShade: 0xb81e6a,
+    // The dinosaur: a yellowish lime, lighter than the lawn it walks on, shading toward a moss green.
+    dinoLight: 0xc6ec6a,
+    dino: 0x8ac844,
+    dinoDark: 0x4e8a36,
+    // The Terminator's machine eye: a light source, a step off eyeRed, so the red eye slot never glows by mistake.
+    cyborgEye: 0xff2a1a,
+    cyborgEyeHot: 0xffb09c,
 };

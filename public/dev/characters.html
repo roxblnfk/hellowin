@@ -139,7 +139,7 @@
         [null, CATALOG.eyes.flatMap((e) => [false, true].flatMap((zombie) => ['front', 'side'].map((dir) =>
             cell(() => ({ look: { ...base, hat: 'mohawk', eyes: e.id }, dir, pose: 'idle', zombie }), `${e.id} ${dir}${zombie ? ' z' : ''}`)))), 'mohawk'],
     ]);
-    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat', 'elephant', 'gopher', 'priest', 'robot', 'bodybuilder'].flatMap((body) => DIRS.map((dir) =>
+    section('hat', 'Шапки по направлениям', CATALOG.hat.map((p) => [p.label, ['skeleton', 'witch', 'vampire', 'cat', 'elephant', 'gopher', 'priest', 'robot', 'bodybuilder', 'dino', 'clown', 'terminator'].flatMap((body) => DIRS.map((dir) =>
         cell(() => ({ look: { ...base, body, hat: p.id }, dir, pose: 'idle' }), `${body} ${dir}`))), p.id]));
     section('item', 'Предметы: idle / walk / fidget по направлениям', ITEMS.map((it) => [it.label, DIRS.flatMap((dir) => ['idle', 'walk', 'fidget'].map((pose) =>
         cell(() => ({ look: base, dir, pose, item: it.id }), `${dir} ${pose}`))), it.id]));
