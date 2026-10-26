@@ -13,6 +13,7 @@ use Spiral\Views\ViewsInterface;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
+use Tests\Fake\SpyViews;
 use Tests\TestCase;
 
 /**
@@ -103,16 +104,29 @@ final class LocaleTest extends TestCase
         Assert::string($russian)->contains('<p lang="ru">Проверка переводчика · Ключ без перевода</p>');
     }
 
+    /**
+     * Checked by the view name, not by its text: Stempler names the compiled class after the view name, so a fixture
+     * and the real view of the same name are one class in a process that has rendered either.
+     */
     public function englishHowItWorksIsItsOwnView(): void
     {
-        $this->page(['lang' => 'en'])->assertBodyContains('The English how-it-works fixture');
-        $this->page(['lang' => 'ru'])->assertBodyContains('Как это работает · Hellowin');
+        Assert::same($this->howItWorksView(['lang' => 'en']), 'how-it-works.en.dark.php');
+        Assert::same($this->howItWorksView(['lang' => 'ru']), 'how-it-works');
     }
 
     #[Config('views.namespaces.default', [__DIR__ . '/../../Fixture/views-without-english/'])]
     public function howItWorksWithoutAnEnglishViewFallsBackToRussian(): void
     {
-        $this->page(['lang' => 'en'])->assertBodyContains('The only how-it-works fixture');
+        Assert::same($this->howItWorksView(['lang' => 'en']), 'how-it-works');
+    }
+
+    private function howItWorksView(array $query): string
+    {
+        $views = new SpyViews($this->getContainer()->get(ViewsInterface::class));
+        $this->getContainer()->bindSingleton(ViewsInterface::class, $views);
+        $this->page($query);
+
+        return $views->rendered[0][0];
     }
 
     private function page(array $query = [], array $headers = [], array $cookies = []): TestResponse
