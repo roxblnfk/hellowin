@@ -30,6 +30,7 @@
 | Лимиты: формула, волна, пересчёт | `Domain/Balance/Limit`, `Domain/Balance/Burst`, `Domain/Balance/LimitsStore`, `Application/Balance/LimitsService` |
 | Лимит RPC | `Domain/RateLimit/TokenBucket` (ведро), `Domain/RateLimit/RateLimiter` (вёдра в KV под локом), из `Endpoint/Centrifugo/RPCService` |
 | Адреса Centrifugo и Grafana для страницы | `Application/Web/ServiceUrl` (из `Endpoint/Web/HomeController`) |
+| Язык страницы, переводчик шаблонов | `Application/Locale/Language`, `Endpoint/Web/Middleware/LocaleMiddleware`, `Application/Bootloader/LocaleBootloader`, `app/config/translator.php` |
 | Счёт игроков для метрик | `Application/Player/PlayerCensus` (тикер) |
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
@@ -733,6 +734,29 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 
 Значения по умолчанию (`HELLOWIN_RPC_RATE_*`, «Env») рассчитаны так, чтобы быстрые клики (10–15 в секунду) не
 резались никогда, а поток из скрипта упирался в `burst` и дальше шёл не быстрее `rate`. `reveal` своего ведра не имеет: опрос панели — 0,5 вызова в секунду, это малая доля `other`.
+
+## Язык страниц
+
+**Реализовано.** Языки — `ru` (по умолчанию) и `en` (`Application/Locale/Language`); зачем и как их видит страница —
+[`frontend.md`](frontend.md), «Локализация».
+
+- **Выбор** — глобальный HTTP-middleware `LocaleMiddleware`, первым, до обработчика ошибок (страницы ошибок тоже на языке
+  посетителя). Порядок: `?lang=ru|en` → cookie `hellowin_lang` → `Accept-Language` (известный язык с наибольшим `q`,
+  при равных — раньше в заголовке; регион `en-GB` считается `en`, `q=0` — отказ) → `ru`. Неизвестное значение пропускается,
+  проверяется следующий источник. Известный `?lang=` ставит `Set-Cookie: hellowin_lang=…; Max-Age=31536000; Path=/;
+  HttpOnly; SameSite=Lax`. Все ответы PHP — с `Vary: Cookie, Accept-Language`.
+- **Локаль на запрос.** Переводчик (`spiral/translator` из `spiral/framework`, `I18nBootloader`) — синглтон долгоживущего
+  воркера: middleware ставит локаль на каждый запрос и возвращает `ru` после него, поэтому язык не протекает в следующий
+  запрос. Язык без каталога (`app/locale/{lang}/` нет) переводчику неизвестен — тогда страница на `ru`.
+- **Шаблоны.** `TranslatedCacheBootloader` (через `LocaleBootloader`, раньше `StemplerBootloader`) подключает к Stempler
+  `LocaleProcessor` и делает локаль зависимостью кеша видов: `[[Текст]]` и `@{locale}` подставляются при компиляции,
+  скомпилированный вид — свой на каждую локаль. Домен `[[...]]` — `view-{namespace}-{view}`, конфиг `domains` сводит все
+  в `messages`, отсюда каталог `app/locale/en/messages.php` (`ключ — русский текст => перевод`). Ключа нет в каталоге —
+  выводится сам ключ; индексировать (`i18n:index`) не нужно, `autoRegister` выключен.
+- **Каталоги** читаются из `app/locale` один раз на воркер и живут в его памяти (`CacheInterface` → `NullCache`, без
+  файлового кеша `runtime/cache/i18n.*`): новый воркер — пересборка образа или `rr reset` — читает свежие файлы.
+- **«Как это работает»** при `en` рендерит вид `how-it-works.en.dark.php` (имя с точкой загрузчик видов понимает только с
+  расширением), если файл есть; нет — обычный `how-it-works`.
 
 ## Хранилища
 

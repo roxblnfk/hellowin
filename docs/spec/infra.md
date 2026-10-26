@@ -58,6 +58,8 @@ RoadRunner (3.0) смотрит в браузер сам. Middleware обора�
 - `static` — `public/`, кроме `.php` и `.htaccess`; `calculate_etag` (сильный ETag по содержимому) и
   `Cache-Control: no-cache`: имена файлов без хеша, поэтому браузер каждый раз сверяет ETag и получает 304, пока файл
   не изменился. Несуществующий файл уходит дальше, в PHP (404).
+  Язык страницы статике не важен: `Vary: Cookie, Accept-Language` ставит только PHP ([`engine.md`](engine.md), «Язык
+  страниц»).
 - `rate_limiter` последним — token bucket по IP клиента только для запросов в PHP (`rate: 5` в секунду, `burst: 20`);
   сверх — 429 с `Retry-After`, до PHP запрос не доходит. Вёдра — в памяти процесса RoadRunner. `proxy_ip_parser` не
   нужен: прокси нет, IP — адрес TCP-соединения. В Docker Desktop все запросы с хоста приходят с одного адреса шлюза и
@@ -76,7 +78,8 @@ RoadRunner (3.0) смотрит в браузер сам. Middleware обора�
 
 - Прод (`docker-compose.yml`): `APP_ENV=prod`, `DEBUG=false` заданы жёстко и не зависят от `.env`.
 - Dev (`docker-compose.dev.yml`): код смонтирован, `APP_ENV=local`, `DEBUG=true`, Prometheus открыт на
-  `127.0.0.1:9090`; после правок PHP — `docker compose exec app rr reset`.
+  `127.0.0.1:9090`; после правок PHP и каталогов `app/locale` — `docker compose exec app rr reset`
+  (каталоги переводчик читает один раз на воркер).
 - Состояние локов и очереди — в памяти RoadRunner: `app` в одном экземпляре.
 
 ## E2E без браузера

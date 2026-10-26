@@ -69,6 +69,8 @@ class Kernel extends \Spiral\Framework\Kernel
 
             // Views
             ViewsBootloader::class,
+            // Before Stempler: it mounts the `[[...]]` translation only when the translator is already there
+            Bootloader\LocaleBootloader::class,
             StemplerBootloader::class,
 
             // Console commands
