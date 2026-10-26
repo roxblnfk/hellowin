@@ -151,6 +151,7 @@ scene.say(id, text, until);          // бабл реплики над нари�
 | `#app` | `data-centrifugo-url`, `data-round`, `data-scene-stages`, `data-stage-max`, `data-threshold` | из снимка |
 | `#app` | `data-k`, `data-online` | `k` (множитель лимитов, `$k ?? 1`) и `online` (`$online ?? 0`) снимка; клиент держит их в модели и обновляет атрибуты по `limits` / `leaderboard` |
 | `#app` | `data-limits` | JSON `limits` снимка (`$limits ?? null`): `{players, k, burst, limits}`; клиент обновляет по событию `limits` |
+| `#app` | `data-presence` | JSON `presence` снимка (`$presence ?? null`): `{players, connections}` — кто онлайн; клиент держит в модели (`presenceOf`) и обновляет по событию `presence`, показывает только пульт (**реализовано** на фронтенде, backend — **в работе**) |
 | `#app` | `data-bushes`, `data-walkers` | JSON `bushes` и `walkers` снимка (`$walkers ?? []`) |
 | `#app` | `data-chat-max` | `HELLOWIN_CHAT_MAX` — шаблонная переменная `chatMax` (`$chatMax ?? 120`); ею же `maxlength` поля чата |
 | `#app` | `data-now` | `now` снимка: первая оценка смещения серверных часов (дальше — замеры RPC `time`) |
@@ -162,7 +163,7 @@ scene.say(id, text, until);          // бабл реплики над нари�
 | HUD | `data-hud-runner` (`hidden`) | подпись рядом с лампочкой «RoadRunner: работает · аптайм Ч ч ММ мин» (без `startedAt` — без аптайма; аптайм — `now + смещение − startedAt` снимка, минуты тикают раз в секунду по смене минуты): видна на связи, когда RoadRunner «выбежал» — `runnerShown(model)`: финальная сцена с шага 3 (шаги 3–7) или `bar.roadrunner` (бар после рассвета и весь новый цикл до сброса пульта). До шага 3 — только лампочка: твист не раскрыт |
 | HUD | `data-hud-scene-name` | название сцены: «Бар», «День: подготовка», «Закат», «Ночь», «Финал», «Проклятый мир» (шаги 5–6), «Рассвет». Номер раунда, номер сцены и «сцена готова» в HUD не показываются — это служебное, оно на пульте (сводка и строка `data-console-story`) |
 | пульт | `data-console-story`; `data-owl-lines` → `data-owl-line="<id>"` | «раунд N · сцена N · шаг N»; быстрое меню совы текущей сцены или шага (`MENU`), `hidden` без кнопок |
-| пульт | `data-console-players`, `data-console-limits`; `data-action="flyers-burst"` | группа «Лимиты»: «игроков: n» и лимиты текущего контекста; «Пуск летунов» в «Нечисти» (`hidden` без `limits.burst`) |
+| пульт | `data-console-online`, `data-console-players`, `data-console-limits`; `data-action="flyers-burst"` | группа «Лимиты»: «онлайн: P · подключений: C» (`presence`: уникальные игроки и все подключения, с анонимами; до первого `presence` — «онлайн: —»), «на поле: n» (`players` в `limits`) и лимиты текущего контекста; «Пуск летунов» в «Нечисти» (`hidden` без `limits.burst`) |
 | пульт | `data-action="pause"` (`aria-pressed`); `data-console-paused` (`hidden`) | «Пауза прогресса: вкл/выкл» в «Сюжете»; плашка «пауза» в заголовке пульта рядом с «🦉 Пульт», видна и у свёрнутого, пока `paused` |
 | HUD | `data-reveal-open` | «Числа вечера»: открыть панель разоблачения; видна с шага 4, пока панель закрыта, и в баре после рассвета (`bar.roadrunner`, до сброса пульта): там числа только из RPC `reveal` (`AFTER_STORY` в `client.js`), панель сама не открывается |
 | `[data-owl-bubble]` (создаёт `owl.js` в `#app`) | `data-owl-text` внутри | пузырь совы, `role="status"`; `hidden`, когда сова молчит |
@@ -252,7 +253,7 @@ scene.say(id, text, until);          // бабл реплики над нари�
   делённым или умноженным на 1,25, округлённым до сотых и зажатым в 0,1–10), поле (`data-k-form`, `data-k-input`: текст
   с `inputmode="decimal"`, запятая или точка, плейсхолдер — текущее `k`) и «OK» (`data-action="k-set"`, `k` до сотых; вне
   диапазона уходит на сервер — его `invalid k` и показывается, не число — та же надпись без RPC; при успехе — «✓» и поле
-  очищается). Ниже — «игроков: n» (`data-console-players`; n — `limits.players`, число фигурок после дебаунса сервера, не
+  очищается). Ниже — «онлайн: P · подключений: C» (`data-console-online`, из `presence`; решение пользователя от 2026-10-26), «на поле: n» (`data-console-players`; n — `limits.players`, число фигурок после дебаунса сервера, не
   `online`; без `limits` — «—») и лимиты текущего контекста (`data-console-limits`, `limitsText` в `debug.js`) — только
   пришедшие ключи, по порядку: «тыква N кл./стадию», «костёр N кл./стадию», «круг N кл./стадию», «бар N кружек» (с
   согласованием), «кружки N», «зомби N», «HP босса N»; пустой объект — «в этой сцене лимитов нет», `limits` ещё не

@@ -612,7 +612,7 @@
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
     };
-    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), dawn: undefined, [topOld ? 'dawn' : 'top']: structuredClone(engine.dawn), online: engine.walkers.length, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)), dice: engine.dice && { ...engine.dice, owl: diceState.owl } });
+    const engineSnapshot = () => ({ ...structuredClone({ ...engine, walkers: engine.walkers.map(publicWalker) }), dawn: undefined, [topOld ? 'dawn' : 'top']: structuredClone(engine.dawn), online: engine.walkers.length, presence: { players: engine.walkers.length, connections: engine.walkers.length + 1 }, now: serverTime(), flyers: structuredClone(wandering().map(([, f]) => f.event)), dice: engine.dice && { ...engine.dice, owl: diceState.owl } });
     const playerOf = (w) => (w ? { id: w.id, name: w.name } : null);
     // Who "clicked" in the lab: your character if it is on the field, else the first bot, else nobody.
     const someone = () => playerOf(engine.walkers.find((w) => w.id === ME) ?? engine.walkers[0]);

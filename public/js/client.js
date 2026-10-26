@@ -107,6 +107,12 @@ export function bossOf(boss) {
 // The keys a `limits` event may carry (protocol.md, «Лимиты и баланс»); only the current context's come.
 const LIMIT_KEYS = ['pumpkin', 'bonfire', 'circle', 'bar', 'drinks', 'zombies', 'boss'];
 
+/** `presence` of a snapshot or an event — {players, connections}: who is online at all, for the console — or null. */
+export function presenceOf(presence) {
+    if (!presence || typeof presence !== 'object' || !Number.isInteger(presence.players) || !Number.isInteger(presence.connections)) return null;
+    return { players: Math.max(0, presence.players), connections: Math.max(0, presence.connections) };
+}
+
 /** `limits` of a snapshot or an event — {players, k, burst, limits} — or null. */
 export function limitsOf(limits) {
     if (!limits || typeof limits !== 'object' || !Number.isFinite(limits.k)) return null;
@@ -164,6 +170,7 @@ export function readSnapshot(root) {
         finale: parseFinale(root.dataset.finale),
         paused: flag(root.dataset.paused),
         limits: limitsOf(parseJson(root.dataset.limits, null)),
+        presence: presenceOf(parseJson(root.dataset.presence, null)),
         cursed: cursedOf(parseJson(root.dataset.cursed, null)),
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
@@ -549,6 +556,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             finale: snapshot.finale ?? null,
             paused: Boolean(snapshot.paused),
             limits: limitsOf(snapshot.limits) ?? model.limits,
+            presence: presenceOf(snapshot.presence) ?? model.presence,
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
@@ -991,6 +999,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (bonfire !== undefined && bonfireOf()) bonfireOf().threshold = bonfire;
             if (circle !== undefined && circleOf()) circleOf().threshold = circle;
             paintElements();
+        },
+
+        // Who is online (protocol.md, `presence`): only the console shows it.
+        presence(event) {
+            model.presence = presenceOf(event) ?? model.presence;
         },
 
         // Gone from the server (protocol.md, «Топ стрелков»: the table is `top`); one that still comes only tells `online`.

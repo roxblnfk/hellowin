@@ -217,8 +217,9 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     kForm.append(kInput, kSet);
     limits.append(kForm);
     const players = el('span', { class: 'console__info', 'data-console-players': '' });
+    const online = el('span', { class: 'console__info', 'data-console-online': '' });
     const limitsInfo = el('span', { class: 'console__info', 'data-console-limits': '' });
-    limits.append(players, limitsInfo);
+    limits.append(online, players, limitsInfo);
 
     // The players' chat (docs/spec/frontend.md, «Чат»): the log, re-read whenever the console opens, and the mutes.
     const chatGroup = group('Чат');
@@ -415,7 +416,8 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             const k = Number(model.k ?? 1);
             kValue.textContent = `×${formatK(k)}`;
             kInput.placeholder = formatK(k);
-            players.textContent = `игроков: ${model.limits?.players ?? '—'}`;
+            online.textContent = model.presence ? `онлайн: ${model.presence.players} · подключений: ${model.presence.connections}` : 'онлайн: —';
+            players.textContent = `на поле: ${model.limits?.players ?? '—'}`;
             limitsInfo.textContent = limitsText(model.limits) ?? 'лимиты ещё не пришли';
 
             const finaleName = current >= LAST_STEP ? 'рассвет' : current === BOSS_STEP ? 'рапира' : current === CURSED_STEP ? 'проклятый мир' : `финал · шаг ${current}`;
