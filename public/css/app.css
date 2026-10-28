@@ -2128,7 +2128,7 @@ body:not([data-final]) .circle,
     left: 50%;
     z-index: 1003;
     display: grid;
-    grid-template-columns: repeat(12, 36px);
+    grid-template-columns: repeat(var(--emotes, 13), 36px);
     gap: 4px;
     max-width: calc(100% - 32px);
     padding: 6px;
@@ -2179,7 +2179,7 @@ body:not([data-final]) .circle,
 @container patch (max-width: 600px) {
     .emotes {
         bottom: calc(var(--hud-h, 48px) + 22px);
-        grid-template-columns: repeat(6, 40px);
+        grid-template-columns: repeat(var(--emotes-half, 7), 40px);
     }
 
     .emotes__button {

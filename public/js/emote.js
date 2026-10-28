@@ -4,7 +4,7 @@
 import { pick } from './i18n.js';
 
 /** HELLOWIN_EMOTES' default (protocol.md, «Эмоции»), for a page whose snapshot brings no set (the lab). */
-export const DEFAULT_EMOTES = ['🎃', '👻', '💀', '😂', '😱', '😍', '👍', '👏', '🔥', '🍺', '🤘', '🙏'];
+export const DEFAULT_EMOTES = ['🎃', '👻', '💀', '😂', '😱', '😍', '👍', '👏', '🔥', '🍺', '🤘', '🙏', '🎉'];
 /** How long an emote stays over its walker, ms from the event's `at` on the server clock. */
 export const EMOTE_MS = 3000;
 /** HELLOWIN_EMOTE_COOLDOWN_MS' default: the panel rests this long after a press, so it never asks for a `busy`. */
@@ -13,12 +13,12 @@ export const EMOTE_COOLDOWN_MS = 1000;
 const TEXT = pick({
     ru: {
         panel: 'Эмоции',
-        named: { '🎃': 'тыква', '👻': 'привидение', '💀': 'череп', '😂': 'смех', '😱': 'ужас', '😍': 'восторг', '👍': 'класс', '👏': 'аплодисменты', '🔥': 'огонь', '🍺': 'пиво', '🤘': 'рок', '🙏': 'спасибо' },
+        named: { '🎃': 'тыква', '👻': 'привидение', '💀': 'череп', '😂': 'смех', '😱': 'ужас', '😍': 'восторг', '👍': 'класс', '👏': 'аплодисменты', '🔥': 'огонь', '🍺': 'пиво', '🤘': 'рок', '🙏': 'спасибо', '🎉': 'хлопушка' },
         label: (name) => `Эмоция: ${name}`,
     },
     en: {
         panel: 'Emotes',
-        named: { '🎃': 'pumpkin', '👻': 'ghost', '💀': 'skull', '😂': 'laughing', '😱': 'scream', '😍': 'love', '👍': 'thumbs up', '👏': 'applause', '🔥': 'fire', '🍺': 'beer', '🤘': 'rock on', '🙏': 'thanks' },
+        named: { '🎃': 'pumpkin', '👻': 'ghost', '💀': 'skull', '😂': 'laughing', '😱': 'scream', '😍': 'love', '👍': 'thumbs up', '👏': 'applause', '🔥': 'fire', '🍺': 'beer', '🤘': 'rock on', '🙏': 'thanks', '🎉': 'party popper' },
         label: (name) => `Emote: ${name}`,
     },
 });
@@ -77,6 +77,9 @@ export function bindEmotes(root, send, { onOpen = () => {}, later = (fn, ms) => 
         return b;
     });
     panel.replaceChildren(...buttons);
+    // The grid follows the set: one row on a desktop, two on a phone.
+    panel.style.setProperty('--emotes', String(buttons.length));
+    panel.style.setProperty('--emotes-half', String(Math.ceil(buttons.length / 2)));
     let resting = false;
 
     // aria-disabled, not disabled: a disabled button drops the keyboard's focus to the page.
