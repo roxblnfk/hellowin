@@ -1,0 +1,8 @@
+[Unit]
+Description=Hand the renewed Hellowin certificate to Centrifugo and Grafana
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hellowin-certs

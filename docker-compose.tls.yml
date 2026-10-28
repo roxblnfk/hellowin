@@ -1,0 +1,41 @@
+# The public server on its domain, over docker-compose.yml (COMPOSE_FILE in the server's .env). RoadRunner serves
+# HTTPS on 443 and renews the Let's Encrypt certificate itself; Centrifugo and Grafana take the same certificate, copied
+# out of the acme-data volume by docker/certs.sh.
+services:
+  app:
+    command: ["rr", "serve", "-c", ".rr.tls.yaml"]
+    environment:
+      RR_ACME_DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      RR_ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    # www-data binds 443
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    ports:
+      - "443:443"
+    volumes:
+      - acme-data:/app/runtime/acme
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2114/health?plugin=http"]
+
+  centrifugo:
+    environment:
+      CENTRIFUGO_HTTP_SERVER_TLS_ENABLED: "true"
+      CENTRIFUGO_HTTP_SERVER_TLS_CERT_PEM: /tls/cert.pem
+      CENTRIFUGO_HTTP_SERVER_TLS_KEY_PEM: /tls/key.pem
+      # The internal port of /health and /metrics stays plain HTTP
+      CENTRIFUGO_HTTP_SERVER_TLS_EXTERNAL: "true"
+    volumes:
+      - ${TLS_DIR:-/opt/hellowin-tls}:/tls:ro
+
+  grafana:
+    environment:
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /tls/cert.pem
+      GF_SERVER_CERT_KEY: /tls/key.pem
+    volumes:
+      - ${TLS_DIR:-/opt/hellowin-tls}:/tls:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1:3000/api/health"]
+
+volumes:
+  acme-data:

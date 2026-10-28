@@ -42,11 +42,15 @@ RUN composer dump-autoload --no-dev --optimize --no-scripts
 FROM base AS app
 COPY --from=rr /usr/bin/rr /usr/bin/rr
 COPY --from=vendor /app/vendor ./vendor
-COPY .rr.yaml app.php ./
+COPY .rr.yaml .rr.tls.yaml app.php ./
+# The TLS config (docker-compose.tls.yml) is .rr.yaml with the .rr.tls.yaml fragment merged over it.
+RUN php -r 'require "vendor/autoload.php"; $yaml = Symfony\Component\Yaml\Yaml::class; \
+    file_put_contents(".rr.tls.yaml", $yaml::dump(array_replace_recursive( \
+        $yaml::parseFile(".rr.yaml"), $yaml::parseFile(".rr.tls.yaml")), 10, 2));'
 COPY public ./public
 COPY app ./app
-# Workers of every pool boot at once and race to create these on the first start.
-RUN mkdir -p runtime/cache/views runtime/cache/listeners && chown -R www-data:www-data runtime
+# Workers of every pool boot at once and race to create these on the first start; acme is the certificate's volume.
+RUN mkdir -p runtime/cache/views runtime/cache/listeners runtime/acme && chown -R www-data:www-data runtime
 USER www-data
 ENV APP_ENV=prod \
     DEBUG=false \

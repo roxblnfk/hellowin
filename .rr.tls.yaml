@@ -1,0 +1,22 @@
+# TLS of the public server, merged over .rr.yaml when the image is built (Dockerfile): RoadRunner's own `include`
+# replaces whole sections instead of merging them. Used by docker-compose.tls.yml only.
+http:
+  ssl:
+    address: '0.0.0.0:443'
+    # Plain HTTP answers with a redirect to HTTPS only
+    redirect: true
+    # RoadRunner gets the Let's Encrypt certificate on start and renews it itself. tls-alpn-01 is answered on 443 by
+    # the running server; http-01 would need port 80, where every request is redirected.
+    acme:
+      cache_dir: runtime/acme
+      # Required by the config check, yet RoadRunner 3.0 orders with certmagic's default issuer, which comes first:
+      # production and no email, whatever these two say
+      email: '${RR_ACME_EMAIL}'
+      use_production_endpoint: true
+      challenge_type: tlsalpn-01
+      domains:
+        - '${RR_ACME_DOMAIN}'
+
+# The container healthcheck: the pages are behind the redirect now
+status:
+  address: '127.0.0.1:2114'
