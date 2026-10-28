@@ -724,7 +724,7 @@
                 </table>
             </div>
 
-            <h3 id="bar">The bar: the last mug and pouring one at a time</h3>
+            <h3 id="bar">The bar: the last mug and pouring in batches</h3>
             <p>
                 The evening starts in the bar (scene 0): no pumpkins there, but a counter where the owl bartender pours beer.
                 The bar shows two more mechanics — the same lock and KV, but on mugs.
@@ -736,10 +736,12 @@
                     like “is the flyer alive” for a shot. Two arrive almost at once — the lock lines them up: the first
                     leaves with a beer (<code>take</code> with <code>ok: true</code>), the second finds an empty counter
                     (<code>ok: false</code>, the owl: “all gone”). There is no queue — the latecomer clicks again.</li>
-                <li><strong>Pouring one at a time.</strong> While there are fewer than <code>HELLOWIN_BAR_MUGS</code> mugs, the owl pours
-                    the next one for <code>HELLOWIN_BAR_POUR_MS</code> ms: KV holds <code>pouring {since, until}</code> by
-                    server time, a RoadRunner ticker every 200 ms sets down the poured mug (<code>mugs</code>) and starts
-                    the next (<code>pour</code>). Everyone sees the same foam, and restarting the workers or the ticker itself
+                <li><strong>Pouring in batches.</strong> While the counter has free places (one per character on the field,
+                    up to <code>HELLOWIN_BAR_MUGS</code>), the owl pours the next batch for <code>HELLOWIN_BAR_POUR_MS</code> ms:
+                    a mug for every <code>HELLOWIN_BAR_POUR_PER</code> free places, at least one — a big crowd doesn't wait
+                    for beer one mug at a time. The batch is decided when the pour starts: KV holds
+                    <code>pouring {since, until, batch}</code> by server time, a RoadRunner ticker every 200 ms sets down the
+                    poured mugs (<code>mugs</code>, no more than the places) and starts the next batch (<code>pour</code>). Everyone sees the same foam, and restarting the workers or the ticker itself
                     loses nothing: the state lives in Valkey, not in process memory.</li>
                 <li>You can drink only from a mug that has clinked (<code>drink</code>, otherwise <code>not clinked</code>); drinks
                     are counted per round, and once the crowd has drunk the bar target (the moderator adjusts it), the bar is ready and the owl calls everyone
