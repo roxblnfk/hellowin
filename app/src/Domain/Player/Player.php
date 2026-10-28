@@ -66,6 +66,14 @@ final readonly class Player
         return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look, $this->drinks, $this->damage, $this->rolls);
     }
 
+    /**
+     * The record with every counter at zero: the name and the look stay, so the player plays on without signing in.
+     */
+    public function zeroed(): self
+    {
+        return new self($this->id, $this->name, look: $this->look);
+    }
+
     public function clicked(): self
     {
         return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls);

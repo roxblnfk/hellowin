@@ -32,6 +32,7 @@
 | Адреса Centrifugo и Grafana для страницы | `Application/Web/ServiceUrl` (из `Endpoint/Web/HomeController`) |
 | Язык страницы, переводчик шаблонов | `Application/Locale/Language`, `Endpoint/Web/Middleware/LocaleMiddleware`, `Application/Bootloader/LocaleBootloader`, `app/config/translator.php` |
 | Счёт игроков для метрик | `Application/Player/PlayerCensus` (тикер) |
+| Сброс статистики игроков | `Application/Player/StatsResetService` (RPC `stats.reset`), `PlayerStore::zero`, `TopService::clear` |
 | Периодический процесс | `Application/Ticker/Ticker`, `TickerLease`, консоль `hellowin:ticker` (`Endpoint/Console/TickerCommand`) |
 | Летуны: траектории, KV, выстрел | `Domain/Flyer/FlyerFactory`, `FlyerStore`, `Flyer`, `Application/Flyer/FlyerService` (выстрел — RPC `shoot`) |
 | Метрики игроков и летунов | `Application/Hellowin/PlayMetrics` |
@@ -372,7 +373,7 @@
   пишет в `hellowin:top` `{players: {id: {points, at, name}}}` абсолютное `points` из записи игрока, которую вернул
   `PlayerService::shotFlyer`: `points = max(старое, новое)`, `at` меняется, только когда счёт вырос, `name` — из записи.
   Повтор и гонка поэтому не считают дважды; 0 очков (только бегун) в доску не попадает. Доска — на весь вечер: сброс и
-  новый цикл её не чистят (статистику игроков не чистит ничто). Попадание само ничего не публикует: событие `top {board}`
+  новый цикл её не чистят; чистит только сброс статистики модератором (`stats.reset`, «Модератор»). Попадание само ничего не публикует: событие `top {board}`
   — весь порядок (`points` ↓, `at` ↑, `id`), не больше `HELLOWIN_TOP_BOARD` строк — шлёт тикер, когда доска отличается
   от последней опубликованной, не чаще `HELLOWIN_TOP_INTERVAL` мс (полный список каждому на каждое попадание при полном
   зале — слишком много). Сбой доски пишется в лог: попадание не падает. Снимок — `top {board}` всегда. Старый ключ
@@ -471,6 +472,19 @@
   meta и отвечает на RPC пульта не модератору `forbidden`. Пустой секрет в env — роли нет ни у кого.
 - Почему meta, а не `user`: модератор может быть и игроком (у него свой `playerSecret`), а `user` — это публичный id
   игрока в событиях и presence.
+- **Сброс статистики** (`stats.reset {}`, `Application/Player/StatsResetService`; решение пользователя от 2026-10-28,
+  **реализовано**): по индексу `hellowin:players` каждая запись под RR-локом `player:{id}` (`PlayerStore::zero`) —
+  `clicks`, `finished`, `flyers`, `points`, `drinks`, `damage`, `rolls` в 0, `id`, `name`, `look` и фигурка на поле
+  остаются; id индекса без записи не создаётся и не считается. Лок игрока, занятый дольше ожидания `Locks` (5 с), —
+  игрок пропускается и пишется в лог: ответ `{ok:true, players}` считает только обнулённые записи, повтор вызова
+  дочищает пропущенных. После записей — доска топа: под локом `top` `hellowin:top` пустеет и сразу публикуется
+  `top {board: []}` (`TopService::clear`); занятый лок `top` — ответ `busy`, записи уже обнулены, повтор безопасен.
+  Порядок «записи, потом доска» нужен, чтобы попадание во время прохода не вернуло на пустую доску старый счёт; узкая
+  гонка остаётся: попадание, чья запись обновилась до обнуления, а доска — после очистки, кладёт старый счёт (лечится
+  повтором). Тикер читает тот же ключ, поэтому старую доску не вернёт: его следующий проход видит пустую доску,
+  отличную от сказанной им, и шлёт `top {board: []}` ещё раз — для клиента это то же. Снимок несёт пустой `top`.
+  `hellowin_beer_litres` падает при следующем счёте игроков (`PlayerCensus` суммирует записи); счётчики Prometheus,
+  «числа вечера» (`reveal`) и сюжет не трогаются. Вызов, как и прочие модераторские, идёт без ведра лимита и в `calls`.
 - **Мип-мип** (`meep {flyer?}`, `StoryService::meep`): только публикация `meep {flyer?, at}` — ни лока, ни записи; `flyer`,
   не похожий на id, отбрасывается. Виден ли RoadRunner, решает фронтенд.
 - **Онлайн для пульта** (**реализовано**): событие `presence {players, connections}` и `presence` в снимке — кто

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Application\Player\StatsResetService;
 use App\Endpoint\Centrifugo\ConnectService;
 use App\Endpoint\Centrifugo\RPCService;
 use App\Endpoint\Centrifugo\SubscribeService;
@@ -28,6 +29,13 @@ final class CentrifugoWiringTest extends TestCase
         Assert::instanceOf($registry->getService(RequestType::Connect), ConnectService::class);
         Assert::instanceOf($registry->getService(RequestType::Subscribe), SubscribeService::class);
         Assert::instanceOf($registry->getService(RequestType::RPC), RPCService::class);
+    }
+
+    public function rpcGetsTheStatsReset(): void
+    {
+        $rpc = $this->getContainer()->get(RPCService::class);
+
+        Assert::instanceOf((new \ReflectionProperty(RPCService::class, 'stats'))->getValue($rpc), StatsResetService::class);
     }
 
     #[Env('BROADCAST_CONNECTION', 'centrifugo')]

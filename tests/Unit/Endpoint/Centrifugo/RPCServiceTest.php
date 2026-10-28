@@ -428,6 +428,7 @@ final class RPCServiceTest
     #[DataSet(['boss.hp'])]
     #[DataSet(['dice.owl'])]
     #[DataSet(['meep'])]
+    #[DataSet(['stats.reset'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
         $ritual = new RitualHarness();
@@ -1178,6 +1179,35 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'reveal', [])['reveal']['calls'] ?? null, 6);
     }
 
+    public function statsResetAnswersTheRecordsZeroedAndCountsInTheReveal(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'click', ['element' => 'pumpkin-1'], self::PLAYER);
+        $ritual->broadcast->published = [];
+        $calls = $ritual->tally->count(EveningTally::CALLS);
+
+        Assert::same($this->call($ritual, 'stats.reset', [], moderator: true), ['ok' => true, 'players' => 1]);
+        Assert::same($this->call($ritual, 'stats.reset', [], moderator: true), ['ok' => true, 'players' => 1]);
+
+        Assert::same($ritual->players->find(self::PLAYER)?->clicks, 0);
+        Assert::same($ritual->players->find(self::PLAYER)?->name, 'Jack');
+        Assert::same($ritual->broadcast->ofType('top'), [
+            ['type' => 'top', 'round' => 1, 'board' => []],
+            ['type' => 'top', 'round' => 1, 'board' => []],
+        ]);
+        Assert::same($ritual->tally->count(EveningTally::CALLS), $calls + 2);
+        Assert::same(\array_slice($this->rpcCalls($ritual), -1), [['stats.reset', 'ok']]);
+    }
+
+    public function statsResetWithTheTopLockBusyAnswersBusy(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->lock->held['top'] = 'someone-else';
+
+        Assert::same($this->call($ritual, 'stats.reset', [], moderator: true), ['ok' => false, 'error' => 'busy']);
+    }
+
     public function rateLimitedCallCountsToo(): void
     {
         $ritual = new RitualHarness();
@@ -1367,6 +1397,7 @@ final class RPCServiceTest
             $ritual->limits,
             $ritual->tally,
             $ritual->emotes,
+            $ritual->stats,
         );
         $service->handle(new RPC(
             worker: $this->worker,

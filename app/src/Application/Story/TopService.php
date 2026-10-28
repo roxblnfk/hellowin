@@ -48,6 +48,18 @@ final readonly class TopService
     }
 
     /**
+     * Empties the board and tells the clients at once. The ticker reads the same key, so it never brings the old board
+     * back; at most it repeats the empty one.
+     *
+     * @throws LockBusyException
+     */
+    public function clear(): void
+    {
+        $this->store->update(static fn(): TopBoard => new TopBoard());
+        $this->publisher->top($this->ritual->round(), []);
+    }
+
+    /**
      * The ticker's publication: the board goes out when it differs from the one the clients were told last.
      *
      * @param list<Row>|null $told The board published last; null — none since the ticker started.

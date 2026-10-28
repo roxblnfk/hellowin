@@ -57,6 +57,28 @@ final readonly class PlayerStore
     }
 
     /**
+     * Zeroes the player's counters; an id without a record stays without one.
+     *
+     * @param non-empty-string $id
+     * @return Player|null The zeroed record; null when there is none.
+     * @throws LockBusyException
+     */
+    public function zero(string $id): ?Player
+    {
+        return $this->locks->run([self::LOCK_PLAYER . $id], function () use ($id): ?Player {
+            $stored = self::record($this->storage->get(self::KEY_PLAYER . $id));
+            if ($stored === null) {
+                return null;
+            }
+
+            $player = Player::fromArray($id, $stored)->zeroed();
+            $this->storage->set(self::KEY_PLAYER . $id, $player->toArray());
+
+            return $player;
+        });
+    }
+
+    /**
      * Every known player; reads without locks, so it may lag a concurrent change.
      *
      * @return list<Player>

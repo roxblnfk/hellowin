@@ -22,6 +22,7 @@ use App\Application\Hellowin\TransitionHandler;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
+use App\Application\Player\StatsResetService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
 use App\Application\Story\EveningTally;
@@ -134,6 +135,7 @@ final class RitualHarness
     public readonly LimitsService $limits;
     public readonly FakeValkey $valkey;
     public readonly EveningTally $tally;
+    public readonly StatsResetService $stats;
 
     /**
      * @param positive-int $threshold
@@ -221,6 +223,7 @@ final class RitualHarness
         $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops, $this->tally);
         $this->topStore = new TopStore($this->storage, new Locks($this->lock));
         $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
+        $this->stats = new StatsResetService($this->playerStore, $this->top, new NullLogger());
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
         $this->emotes = new EmoteService(self::EMOTES, $this->walkerStore, $this->store, $publisher, $this->clock, new RateLimiter(new ArrayStorage(), new Locks($this->lock), $this->clock, EmoteService::bucket(self::EMOTE_COOLDOWN)), $this->playMetrics);
