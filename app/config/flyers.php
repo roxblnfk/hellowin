@@ -65,6 +65,11 @@ return [
     'zombie_per_player' => env('HELLOWIN_ZOMBIE_PER_PLAYER', 5),
     'zombie_points' => env('HELLOWIN_ZOMBIE_POINTS', 2),
 
+    // While FrankenPHP is up, a wandering zombie burns `zombie_burn_ms` milliseconds after it stood up or the boss woke,
+    // whichever is later (0 — none burns), and gives the boss `zombie_heal` health back
+    'zombie_burn_ms' => env('HELLOWIN_ZOMBIE_BURN_MS', 5000),
+    'zombie_heal' => env('HELLOWIN_ZOMBIE_HEAL', 3),
+
     // The moderator's burst (`flyers.burst`): `burst_base` flyers of the current set for one figure on the floor,
     // `burst_per_player` more for every other one
     'burst_base' => env('HELLOWIN_FLYER_BURST_BASE', 5),

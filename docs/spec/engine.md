@@ -10,7 +10,8 @@
 финала 2, свой набор летунов проклятого мира (`HELLOWIN_FLYER_KINDS_CURSED`) и светлячки (`firefly`), множитель
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
 — сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
-слово, зомби-игроки, босс FrankenPHP и рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»),
+слово, зомби-игроки, босс FrankenPHP, сгорание бродячих зомби с лечением босса (решение пользователя от 2026-10-29) и
+рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»),
 единая формула лимитов с пересчётом вживую и волна летунов модератора («Лимиты и баланс», бриф №22), автопилот вечера
 («Автопилот», решение пользователя от 2026-10-28).
 
@@ -76,6 +77,7 @@
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс (на рассвете — `HELLOWIN_FLYER_INTERVAL_DAWN`); первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Слон | раз в секунду (вместе со сверкой присутствия); пауза — случайно в `HELLOWIN_ELEPHANT_INTERVAL` мс, своя на каждого слона | отсчёт — от `launchedAt` последнего слона `hellowin:elephant` (тикерного или ручного; слонов ещё не было — от старта тикера) → `FlyerService::elephant(now)`: в баре (`RitualPolicy::bar`) и пока прошлый слон летит — ждёт и пробует на следующей секунде; пауза прогресса не держит → `FlyerFactory::elephant` → ключ + индекс → `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Бродячие зомби | каждый тик; удар `HELLOWIN_ZOMBIE_INTERVAL` мс — своё расписание | `FlyerService::wander(now, due)`: в проклятом мире (`finale` 5–6), и на паузе прогресса, под RR-локом `wanderers` — живых меньше `HELLOWIN_ZOMBIE_MIN` → встают недостающие; на ударе и живых меньше `max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER × фигурки)` → ещё один; каждый — `ZombieFactory::wander` → ключ + индекс → `flyer {wander: true}` → `hellowin_flyers_launched_total{depth}`. Вне шагов 5–6 оставшиеся снимаются (`retire`, событие `gone`) |
+| Сгорание зомби | каждый тик, перед бродячими зомби — сгоревшие освобождают место в том же тике | `RapierService::burn(now)`: шаг 6, босс проснулся и жив — бродячие с наступившим сроком `max(launchedAt, boss.awakeAt) + HELLOWIN_ZOMBIE_BURN_MS` под локом `boss` и внутри — `flyer:{id}` снимаются и лечат босса → `burn`, при `heal > 0` — `boss`; см. «Рапира» |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая партия с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
@@ -170,7 +172,7 @@
 - **Хранение**: `hellowin:flyer:{id}` — летун со временем запуска, TTL = полёт + 10 с (бродячий — 12 ч); индекс
   `hellowin:flyers` (id → момент окончания полёта, `null` у бродячего) пишут тикер и RPC `flyer.special`, поэтому под
   RR-локом `flyers`; учёт улетевших убирает из индекса только свои id, перечитав его под локом, бродячих не трогает —
-  их id убирают выстрел и снятие. Живые бродячие — в снимке (`flyers`).
+  их id убирают выстрел, сгорание (см. «Рапира») и снятие. Живые бродячие — в снимке (`flyers`).
 - **Выстрел** — RPC `shoot {flyer}`: под RR-локом `flyer:{id}` ключ есть, летуна можно сбить и полёт не кончился (у бродячего не проверяется) → удалить ключ → попадание:
   `flyers + 1`, `points + очки` игроку, одно событие `shot`, `hellowin_flyers_shot_total{depth}`, `+1` в `hellowin:shot`
   раунда (для разоблачения). Иначе промах.
@@ -383,14 +385,30 @@
   (под локом `walkers`, в той же синхронизации с presence) и, вернувшись на шаге 6, снова зомби.
 - **Расколдовать** (`cure`, `RapierService::cure`): под локом `walkers` — цель ещё зомби → `zombieAt` снят, событие
   `cure`; уже нет — `cured: false`. Первый под локом — как первый сбивший летуна.
-- **Босс** — ключ `hellowin:boss` `{round, hp, max, damage, bonus}` под RR-локом `boss` (`BossStore`). Первое верное
-  слово — `{hp: max, max}`, `max` — лимит `boss` («Лимиты и баланс») (под локом: проснётся один
-  раз), событие `boss`. `strike`: под локом `boss` жив → `hp − 1`, `damage + 1`; `damage + 1` игроку; событие `strike`.
+- **Босс** — ключ `hellowin:boss` `{round, hp, max, damage, bonus, awakeAt, healed}` под RR-локом `boss` (`BossStore`).
+  Первое верное слово — `{hp: max, max, awakeAt: now}`, `max` — лимит `boss` («Лимиты и баланс») (под локом: проснётся
+  один раз), событие `boss`. Событие `boss` и `boss` снимка всегда — `{hp, max, burnMs, awakeAt}` (`Boss::toEvent`,
+  `burnMs` — `HELLOWIN_ZOMBIE_BURN_MS`); ответ `boss.hp` — по-прежнему `{hp, max}`. Запись без `awakeAt` (проснулся до
+  выкладки) читается как `awakeAt: 0`. `strike`: под локом `boss` жив → `hp − 1`, `damage + 1`; `damage + 1` игроку; событие `strike`.
   Весь зал бьёт в одну запись под одним локом — как костёр; удар, снявший последнюю единицу, ровно один: он говорит
   `boss-down` и ставит задачу `TransitionFinale {key: "{round}:finale:7", round, toStep: 7}` (`#[Idempotent]`, как
   переходы), обработчик — `StoryService::finaleOf` (шаг меняется, только если раунд тот же и шаг 6 → 7).
-  `boss.hp {delta}` — `bonus + delta` (не ниже `1 − лимит`), `max = max(1, лимит + bonus)`, `hp = max(1, max − damage)`;
-  пересчёт лимитов (`RapierService::rescale`) делает то же с новым лимитом. Упавший босс не меняется.
+  `boss.hp {delta}` — `bonus + delta` (не ниже `1 − лимит`), `max = max(1, лимит + bonus)`,
+  `hp = min(max, max(1, max − damage + healed))`; пересчёт лимитов (`RapierService::rescale`) делает то же с новым
+  лимитом. Упавший босс не меняется. `healed` хранится отдельно от `damage`: `damage` — число ударов для разоблачения.
+- **Сгорание зомби** (`RapierService::burn(now)`, тикер, каждый тик перед добором бродячих). Только при
+  `HELLOWIN_ZOMBIE_BURN_MS` > 0, на шаге 6 и с проснувшимся боссом (`hellowin:boss` раунда есть); пауза читается до
+  прохода. Для каждого живого бродячего зомби срок — `max(launchedAt, boss.awakeAt) + HELLOWIN_ZOMBIE_BURN_MS`; срок
+  наступил → под RR-локом `boss`: босс жив (`hp > 0`) → `FlyerStore::burn(id)` — под локом `flyer:{id}` удалить ключ
+  (тот же лок, что у выстрела: из выстрела и сгорания летуна получает один) и убрать id из индекса; ключ был → без
+  паузы `Boss::healed(HELLOWIN_ZOMBIE_HEAL)`: `heal = min(max, hp + HEAL) − hp`, `hp += heal`, `healed += heal`.
+  Лок `flyer:{id}` берётся внутри лока `boss` (обратного порядка нигде нет), поэтому после последнего удара не
+  сгорает никто. Затем — событие `burn {flyer, at, heal, counted?}` (`at` — срок, а не момент тика), при `heal > 0` —
+  `boss {hp, max, burnMs, awakeAt}`, метрики `hellowin_zombie_burns_total{counted}` и `hellowin_boss_heal_total`
+  (`+heal`). Сгоревший — не сбитый: ни `slain`, ни очков, ни `shot`, ни `hellowin_flyers_shot_total`; и не
+  улетевший — `hellowin_flyers_escaped_total` его не считает, у него своя метрика. Место освобождается: добор
+  (`FlyerService::wander`) идёт следом в том же тике. Шаг 5, рассвет, сброс (запись босса — другого раунда), босс
+  до пробуждения и при `hp = 0` — ничего не сгорает; зомби-игроки (`Walker::zombie`) — не летуны, их это не касается.
 - **Рассвет.** Предмет — `rapier` из `finale_items` у всех, включая новых; зомби не встают (`cursed()` ложно),
   летуны — набор рассвета. `scene.next` — новый цикл в бар (см. «Переходы», «Снова в бар»).
 - **Топ стрелков** (`Domain/Story/TopBoard`, `TopStore`, `Application/Story/TopService`; протокол — «Топ стрелков»):
@@ -583,6 +601,8 @@
     `counted: false`, но ни `BarStore::drank` (и события `drinks`), ни `CursedService::drank`;
   - `RapierService::strike` — после `not now`, `no rapier` на паузе лок `boss` не берётся: `strike` с текущим `hp`,
     `boss-down` и задачи рассвета нет;
+  - `RapierService::burn` (тикер, см. «Рапира») — пауза читается до прохода: зомби сгорает как всегда, но босса не
+    лечит — `burn` с `heal: 0` и `counted: false`, без `boss`, `hellowin_zombie_burns_total{counted="false"}`;
   - `DiceService::roll` — см. «Кости»: бросок и событие `roll` есть, `winner` на паузе не пишется.
   Разоблачение считает и незасчитанное: `accepted` у кликов, `rolls` у костей растут всегда, а кружки, удары и
   подбитые бродячие зомби паузы — в `hellowin:uncounted` `{round, drinks, damage, slain}` под RR-локом `uncounted`
@@ -905,6 +925,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
+| `hellowin_zombie_burns_total{counted}` | counter | бродячие зомби, сгоревшие на шаге 6 (тикер, `RapierService::burn`); `counted` = `true` / `false` (пауза прогресса: сгорел, но не вылечил) |
+| `hellowin_boss_heal_total` | counter | здоровье, которое сгоревшие зомби вернули FrankenPHP (`+heal`, только при `heal > 0`) |
 | `hellowin_farts_total` | counter | пуки слонов: каждый выстрел по слону (RPC `shoot`), не раньше `HELLOWIN_ELEPHANT_FART_COOLDOWN_MS` после прошлого пука этого слона |
 | `hellowin_runner_runs_total` | counter | пробежки RoadRunner по горизонту, пущенные модератором (успешный RPC `runner`) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
@@ -963,6 +985,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |
 | `HELLOWIN_ZOMBIE_POINTS` | 2 | очки за зомби |
+| `HELLOWIN_ZOMBIE_BURN_MS` | 5000 | мс, через которые бродячий зомби сгорает на шаге 6 при живом боссе — от появления или от пробуждения босса, что позже; целое ≥ 0, 0 — не сгорают (`flyers.zombie_burn_ms`); приходит клиенту как `burnMs` в `boss` |
+| `HELLOWIN_ZOMBIE_HEAL` | 3 | здоровья возвращает боссу сгоревший зомби, не выше `max`; целое ≥ 0 (`flyers.zombie_heal`) |
 | `HELLOWIN_DICE_IDEMPOTENCY_TTL` | 900 | секунды, сколько хранится ответ на попытку броска для её повтора (`ExecuteOptions::$ttl` хранилища `dice`) |
 | `HELLOWIN_DICE_COOLDOWN_MS` | 1800 | пауза между новыми бросками игрока (`busy`); повтор попытки ей не подчиняется |
 | `HELLOWIN_TOP_BOARD` | 200 | строк топа стрелков в событии `top` и снимке, не больше |

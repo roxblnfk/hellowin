@@ -43,6 +43,8 @@ final class FlyerConfig extends InjectableConfig
         'zombie_min' => 5,
         'zombie_per_player' => 5,
         'zombie_points' => 2,
+        'zombie_burn_ms' => 5000,
+        'zombie_heal' => 3,
         'burst_base' => 5,
         'burst_per_player' => 0.2,
     ];
@@ -137,6 +139,23 @@ final class FlyerConfig extends InjectableConfig
     public function getZombiePoints(): int
     {
         return self::positiveInt($this->config['zombie_points'] ?? null, 'zombie_points', 'HELLOWIN_ZOMBIE_POINTS');
+    }
+
+    /**
+     * @return int<0, max> Milliseconds a wandering zombie stands on the rapier step before FrankenPHP burns it, counted
+     *         from its standing up or the boss's waking, whichever is later; 0 — none burns.
+     */
+    public function getZombieBurnMs(): int
+    {
+        return self::nonNegativeInt($this->config['zombie_burn_ms'] ?? null, 'zombie_burn_ms', 'HELLOWIN_ZOMBIE_BURN_MS');
+    }
+
+    /**
+     * @return int<0, max> Health a burnt zombie gives back to FrankenPHP, never above its maximum.
+     */
+    public function getZombieHeal(): int
+    {
+        return self::nonNegativeInt($this->config['zombie_heal'] ?? null, 'zombie_heal', 'HELLOWIN_ZOMBIE_HEAL');
     }
 
     /**

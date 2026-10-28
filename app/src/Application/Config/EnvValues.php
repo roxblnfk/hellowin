@@ -21,6 +21,18 @@ trait EnvValues
             : throw self::invalid($key, $env, 'a positive integer', $value);
     }
 
+    /**
+     * @return int<0, max>
+     */
+    private static function nonNegativeInt(mixed $value, string $key, string $env): int
+    {
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw self::invalid($key, $env, 'a non-negative integer', $value);
+    }
+
     private static function invalid(string $key, string $env, string $expected, mixed $value): \InvalidArgumentException
     {
         return new \InvalidArgumentException(\sprintf(

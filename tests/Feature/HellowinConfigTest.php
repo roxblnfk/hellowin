@@ -163,6 +163,22 @@ final class HellowinConfigTest extends TestCase
         Assert::same([$config->getElephantFartCooldown(), $config->getElephantLowChance()], [2500, 1.0]);
     }
 
+    public function shippedZombiesBurnFiveSecondsOnAndHealThree(): void
+    {
+        $config = $this->getContainer()->get(FlyerConfig::class);
+
+        Assert::same([$config->getZombieBurnMs(), $config->getZombieHeal()], [5000, 3]);
+    }
+
+    #[Env('HELLOWIN_ZOMBIE_BURN_MS', '0')]
+    #[Env('HELLOWIN_ZOMBIE_HEAL', '7')]
+    public function zombieBurnComesFromEnvAndZeroTurnsItOff(): void
+    {
+        $config = $this->getContainer()->get(FlyerConfig::class);
+
+        Assert::same([$config->getZombieBurnMs(), $config->getZombieHeal()], [0, 7]);
+    }
+
     #[Env('HELLOWIN_DICE_IDEMPOTENCY_TTL', '60')]
     public function diceAnswersAreKeptInALeaseForTheTtlFromEnv(): void
     {

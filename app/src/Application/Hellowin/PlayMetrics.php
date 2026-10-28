@@ -21,6 +21,8 @@ final readonly class PlayMetrics
     public const FLYERS_SHOT = 'hellowin_flyers_shot_total';
     public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
     public const FARTS = 'hellowin_farts_total';
+    public const ZOMBIE_BURNS = 'hellowin_zombie_burns_total';
+    public const BOSS_HEAL = 'hellowin_boss_heal_total';
     public const RUNNER_RUNS = 'hellowin_runner_runs_total';
     public const WALKERS = 'hellowin_walkers';
     public const ONLINE_PLAYERS = 'hellowin_online_players';
@@ -56,6 +58,8 @@ final readonly class PlayMetrics
             self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
             self::FARTS => Collector::counter()->withHelp('Elephant farts at shots, a cooldown apart.'),
+            self::ZOMBIE_BURNS => Collector::counter()->withHelp('Wandering zombies burnt by FrankenPHP; counted is false on a pause of the progress, which holds the healing.')->withLabels('counted'),
+            self::BOSS_HEAL => Collector::counter()->withHelp('Health the burnt zombies gave back to FrankenPHP.'),
             self::RUNNER_RUNS => Collector::counter()->withHelp('Runs of RoadRunner across the horizon the moderator started.'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
             self::ONLINE_PLAYERS => Collector::gauge()->withHelp('Players connected to the channel now, each once.'),
@@ -178,6 +182,16 @@ final readonly class PlayMetrics
     public function fart(): void
     {
         $this->safely(fn() => $this->metrics->add(self::FARTS, 1));
+    }
+
+    /**
+     * @param bool $counted False on a pause of the progress: the zombie burnt, the boss was not healed.
+     * @param int<0, max> $heal Health it gave back: 0 at full health and on a pause.
+     */
+    public function zombieBurnt(bool $counted, int $heal): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::ZOMBIE_BURNS, 1, [$counted ? 'true' : 'false']));
+        $heal > 0 and $this->safely(fn() => $this->metrics->add(self::BOSS_HEAL, $heal));
     }
 
     public function runnerRun(): void

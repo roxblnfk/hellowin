@@ -323,13 +323,27 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * FrankenPHP woke up, or the moderator tuned its health.
+     * FrankenPHP woke up, a burnt zombie healed it, or its maximum changed.
      *
-     * @param array{hp: int<0, max>, max: positive-int} $boss
+     * @param array{hp: int<0, max>, max: positive-int, burnMs: int<0, max>, awakeAt: int} $boss
      */
     public function boss(int $round, array $boss): void
     {
         $this->publish(['type' => 'boss', 'round' => $round] + $boss);
+    }
+
+    /**
+     * A wandering zombie burnt in FrankenPHP's green fire.
+     *
+     * @param non-empty-string $flyer
+     * @param int $at Unix time in milliseconds the zombie was due to burn, not the tick that burnt it: every client ends
+     *        the smoulder at the same moment.
+     * @param int<0, max> $heal Health it gave back.
+     * @param bool $counted False on a pause of the progress: the zombie burns, the boss is not healed.
+     */
+    public function burn(int $round, string $flyer, int $at, int $heal, bool $counted = true): void
+    {
+        $this->publish(self::counted(['type' => 'burn', 'round' => $round, 'flyer' => $flyer, 'at' => $at, 'heal' => $heal], $counted));
     }
 
     /**

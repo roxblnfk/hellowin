@@ -92,6 +92,8 @@ final class Ticker
         $this->nextZombie ??= $now + $this->random->getInt(...$this->zombieInterval);
         $due = $now >= $this->nextZombie;
         $due and $this->nextZombie = $now + $this->random->getInt(...$this->zombieInterval);
+        // Burnt zombies free their places before the crowd is topped up, so the minimum stands again on this tick
+        $this->safely('zombie burns', fn() => $this->rapier?->burn($now));
         $this->safely('zombies', fn() => $this->flyers->wander($now, $due));
 
         $this->safely('flyer sweep', fn() => $this->flyers->sweep($now));

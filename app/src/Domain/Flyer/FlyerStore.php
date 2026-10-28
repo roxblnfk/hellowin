@@ -12,14 +12,15 @@ use Psr\SimpleCache\CacheInterface;
  * Flyers in the sky, in a key-value store: `hellowin:flyer:{id}` while the flyer is up, and an index
  * `hellowin:flyers` (id → when it leaves the screen, null for a wandering zombie) for the ticker.
  *
- * A flyer ends exactly once: shot ({@see shoot()}), escaped ({@see sweep()}) or, a wandering zombie, retired
- * ({@see retire()}). Each deletes its key under the lock `flyer:{id}`, and only the one that still finds the key counts
- * it — so of two shots one hits, and a flyer shot at the last moment is never also counted as escaped. The ticker and
- * the moderator's special launches both write the index, so it changes under the lock `flyers`.
+ * A flyer ends exactly once: shot ({@see shoot()}), escaped ({@see sweep()}) or, a wandering zombie, burnt
+ * ({@see burn()}) or retired ({@see retire()}). Each deletes its key under the lock `flyer:{id}`, and only the one
+ * that still finds the key counts it — so of two shots one hits, and a flyer shot at the last moment is never also
+ * counted as escaped. The ticker and the moderator's special launches both write the index, so it changes under the
+ * lock `flyers`.
  *
  * The key expires on its own a little after the flight, in case the ticker is down; a flyer that expires that way
  * is counted neither as shot nor as escaped. A wandering zombie has no flight: its key outlives any evening and the
- * sweep passes it by, it ends shot or retired.
+ * sweep passes it by, it ends shot, burnt or retired.
  *
  * An elephant is never shot down, it ends escaped: its key keeps `lastFartAt` instead, read and written under its lock
  * by every shot ({@see fart()}), so of any number of shots at once one farts, and the next fart waits out the cooldown.
@@ -218,6 +219,22 @@ final readonly class FlyerStore
         $this->unindex($ids);
 
         return $retired;
+    }
+
+    /**
+     * Takes a wandering zombie off the lawn as it burns, under the same lock as a shot: of a shot and a burn at once,
+     * one gets the zombie.
+     *
+     * @param non-empty-string $id
+     * @return Flyer|null The zombie, null if a shot or the retirement took it first.
+     * @throws LockBusyException
+     */
+    public function burn(string $id): ?Flyer
+    {
+        $flyer = $this->take($id);
+        $this->unindex([$id]);
+
+        return $flyer;
     }
 
     /**

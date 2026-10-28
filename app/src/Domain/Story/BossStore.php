@@ -9,9 +9,9 @@ use App\Domain\Lock\Locks;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * FrankenPHP's health in `hellowin:boss` — `{round, hp, max, damage, bonus}` — changed under the lock `boss`: every strike
- * of the room takes this one lock, like every click on the bonfire. A record of an earlier round reads as no boss, so a
- * reset needs not touch it.
+ * FrankenPHP's health in `hellowin:boss` — `{round, hp, max, damage, bonus, awakeAt, healed}` — changed under the
+ * lock `boss`: every strike of the room and every burnt zombie takes this one lock, like every click on the bonfire. A
+ * record of an earlier round reads as no boss, so a reset needs not touch it.
  */
 final readonly class BossStore
 {

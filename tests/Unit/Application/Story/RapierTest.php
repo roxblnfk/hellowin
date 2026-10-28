@@ -264,10 +264,10 @@ final class RapierTest
 
         Assert::same($ritual->broadcast->ofType('word'), [['type' => 'word', 'round' => 1, 'player' => ['id' => self::JACK, 'name' => 'Jack'], 'ok' => true]]);
         // 40 + 5 for each of the two players
-        Assert::same($ritual->broadcast->ofType('boss'), [['type' => 'boss', 'round' => 1, 'hp' => 50, 'max' => 50]]);
+        Assert::same($ritual->broadcast->ofType('boss'), [['type' => 'boss', 'round' => 1, 'hp' => 50, 'max' => 50, 'burnMs' => RitualHarness::ZOMBIE_BURN_MS, 'awakeAt' => $ritual->clock->now]]);
         $snapshot = $ritual->snapshot->create();
         Assert::same(\array_column($snapshot['walkers'], 'item', 'id')[self::JACK], 'rapier');
-        Assert::same($snapshot['boss'], ['hp' => 50, 'max' => 50]);
+        Assert::same($snapshot['boss'], self::boss($ritual, 50, 50));
         Assert::same(self::refusal(static fn() => $ritual->rapier->word(self::JACK, 'рапира')), 'has rapier');
 
         // The second rapier does not wake it again
@@ -282,7 +282,7 @@ final class RapierTest
 
         $ritual->rapier->word(self::JACK, 'rapira');
 
-        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 75, 'max' => 75]);
+        Assert::same($ritual->snapshot->create()['boss'], self::boss($ritual, 75, 75));
     }
 
     public function wrongWordMakesAZombieTheServerWalks(): void
@@ -399,7 +399,7 @@ final class RapierTest
         $snapshot = $ritual->snapshot->create();
         Assert::same(\array_column($snapshot['walkers'], 'item'), ['rapier', 'rapier']);
         Assert::blank(\array_filter(\array_column($snapshot['walkers'], 'zombie')));
-        Assert::same($snapshot['boss'], ['hp' => 0, 'max' => 1]);
+        Assert::same($snapshot['boss'], self::boss($ritual, 0, 1));
     }
 
     public function strikeStopsAWalkingCharacterFirstAndARefusedOneDoesNot(): void
@@ -430,7 +430,7 @@ final class RapierTest
         Assert::same($ritual->story->finaleStep(7, force: true), 7);
 
         Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['finale-7']);
-        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 0, 'max' => 50]);
+        Assert::same($ritual->snapshot->create()['boss'], self::boss($ritual, 0, 50));
         Assert::same(self::refusal(static fn() => $ritual->rapier->tune(10)), 'not now');
     }
 
@@ -463,14 +463,14 @@ final class RapierTest
         $ritual->limits->settle();
         $ritual->limits->settle();
 
-        Assert::same($ritual->broadcast->ofType('boss'), [['type' => 'boss', 'round' => 1, 'hp' => 57, 'max' => 60]]);
+        Assert::same($ritual->broadcast->ofType('boss'), [['type' => 'boss', 'round' => 1] + self::boss($ritual, 57, 60)]);
         Assert::same(\array_column(\array_column($ritual->broadcast->ofType('limits'), 'limits'), 'boss'), [60]);
 
         // Damage beyond the new maximum leaves the boss one point, never fells it
         $ritual->rapier->tune(-100);
-        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 1, 'max' => 1]);
+        Assert::same($ritual->snapshot->create()['boss'], self::boss($ritual, 1, 1));
         $ritual->rapier->tune(10);
-        Assert::same($ritual->snapshot->create()['boss'], ['hp' => 8, 'max' => 11]);
+        Assert::same($ritual->snapshot->create()['boss'], self::boss($ritual, 8, 11));
     }
 
     public function dawnFliesItsOwnBirdsAndNoZombies(): void
@@ -551,6 +551,17 @@ final class RapierTest
         $ritual->story->finaleStep(6, force: true);
 
         return $ritual;
+    }
+
+    /**
+     * FrankenPHP as the snapshot and the `boss` event carry it: with the burn time and the moment it woke.
+     */
+    private static function boss(RitualHarness $ritual, int $hp, int $max): array
+    {
+        $awakeAt = $ritual->bossStore->get($ritual->store->round())?->awakeAt;
+        Assert::notNull($awakeAt);
+
+        return ['hp' => $hp, 'max' => $max, 'burnMs' => RitualHarness::ZOMBIE_BURN_MS, 'awakeAt' => $awakeAt];
     }
 
     private static function step(RitualHarness $ritual, int $last): void

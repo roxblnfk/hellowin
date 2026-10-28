@@ -118,6 +118,35 @@ final class FlyerStoreTest
         Assert::count(\array_filter($farts), 1);
     }
 
+    #[RunInFiber]
+    public function shotAndBurnAtOnceTakeTheZombieOnce(): void
+    {
+        $lock = new YieldingLock();
+        $store = new FlyerStore(new ArrayStorage(), new Locks($lock));
+        $store->add(Flyer::wanderer('f-0000000a', 1, new Point(50, 80), 2, 1_000));
+
+        $taken = Coroutine::concurrently(
+            static fn(): ?Flyer => $store->shoot('f-0000000a', 9_000),
+            static fn(): ?Flyer => $store->burn('f-0000000a'),
+        );
+
+        Assert::contains($lock->waited, 'flyer:f-0000000a', 'the burn came while the shot was inside');
+        Assert::count(\array_filter($taken), 1);
+        Assert::blank($store->wanderers());
+    }
+
+    public function burnTakesAWandererOffTheLawnOnce(): void
+    {
+        $store = self::store();
+        $store->add(Flyer::wanderer('f-0000000a', 1, new Point(50, 80), 2, 1_000));
+        $store->add(Flyer::wanderer('f-0000000b', 1, new Point(30, 70), 2, 1_000));
+
+        Assert::same($store->burn('f-0000000a')?->id, 'f-0000000a');
+        Assert::null($store->burn('f-0000000a'));
+        Assert::null($store->shoot('f-0000000a', 9_000));
+        Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->wanderers()), ['f-0000000b']);
+    }
+
     public function elephantFartsUntilItsFlightAndLatencyAreOver(): void
     {
         $store = self::store();

@@ -324,6 +324,9 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 ActionStop $stops,
                 UncountedTally $uncounted,
+                FlyerStore $flyers,
+                PlayMetrics $metrics,
+                FlyerConfig $flyerConfig,
             ): RapierService => new RapierService(
                 $walkers,
                 $ritual,
@@ -337,6 +340,10 @@ final class HellowinBootloader extends Bootloader
                 $config->getLimit(HellowinConfig::LIMIT_BOSS),
                 stops: $stops,
                 uncounted: $uncounted,
+                flyers: $flyers,
+                metrics: $metrics,
+                burnMs: $flyerConfig->getZombieBurnMs(),
+                heal: $flyerConfig->getZombieHeal(),
             ),
             BarStore::class => static fn(
                 HellowinConfig $config,

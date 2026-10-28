@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Story;
 
 use App\Application\Hellowin\ChannelPublisher;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\PlayerService;
 use App\Application\Walk\ActionStop;
@@ -12,6 +13,7 @@ use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\ZombifiedException;
 use App\Domain\Balance\Limit;
 use App\Domain\Clock\Clock;
+use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\Player;
@@ -48,6 +50,8 @@ final readonly class RapierService
      * @param WalkZone $lawn Where zombies shamble.
      * @param float $speed Percents of the screen per second along the path.
      * @param Limit $hp FrankenPHP's health as it wakes, before the moderator's bonus.
+     * @param int<0, max> $burnMs Milliseconds a wandering zombie stands before FrankenPHP burns it; 0 — none burns.
+     * @param int<0, max> $heal Health a burnt zombie gives back.
      */
     public function __construct(
         private WalkerStore $walkers,
@@ -63,6 +67,10 @@ final readonly class RapierService
         private Randomizer $random = new Randomizer(),
         private ?ActionStop $stops = null,
         private ?UncountedTally $uncounted = null,
+        private ?FlyerStore $flyers = null,
+        private ?PlayMetrics $metrics = null,
+        private int $burnMs = 0,
+        private int $heal = 0,
     ) {}
 
     /**
@@ -100,7 +108,7 @@ final readonly class RapierService
 
         $round = $this->ritual->round();
         $this->publisher->word($round, self::player($walker), $correct);
-        $correct and $this->wake($round);
+        $correct and $this->wake($round, $now);
 
         return $correct;
     }
@@ -191,7 +199,7 @@ final readonly class RapierService
 
     /**
      * The moderator moves the bonus on top of FrankenPHP's maximum by `$delta`, until the end of the round; the damage
-     * stays, so the health is `max(1, max − damage)`.
+     * and the healing stay, so the health is `max(1, max − damage + healed)`.
      *
      * @return array{hp: int<0, max>, max: positive-int}
      * @throws StoryRefusedException `invalid delta`, or `not now` — no boss or it is down.
@@ -215,9 +223,10 @@ final readonly class RapierService
         );
         $before !== null && !$before->down() && $after !== null or throw new StoryRefusedException('not now');
 
-        $after->toEvent() === $before->toEvent() or $this->publisher->boss($ritual->round, $after->toEvent());
+        $event = $after->toEvent($this->burnMs);
+        $event === $before->toEvent($this->burnMs) or $this->publisher->boss($ritual->round, $event);
 
-        return $after->toEvent();
+        return ['hp' => $after->hp, 'max' => $after->max];
     }
 
     /**
@@ -237,7 +246,65 @@ final readonly class RapierService
             $round,
             fn(?Boss $boss): ?Boss => $boss?->rescaled($this->hp->with($boss->bonus, $story->players, $story->k)),
         );
-        $after !== null && $after->toEvent() !== $before?->toEvent() and $this->publisher->boss($round, $after->toEvent());
+        $event = $after?->toEvent($this->burnMs);
+        $event !== null && $event !== $before?->toEvent($this->burnMs) and $this->publisher->boss($round, $event);
+    }
+
+    /**
+     * The ticker's work: while FrankenPHP is up on the rapier step, a wandering zombie that has stood `burnMs` since it
+     * stood up — or since the boss woke, if it stood up before — burns and heals the boss. Each burn takes the boss's
+     * lock, like a strike, and inside it the zombie's lock, like a shot: of a shot and a burn one gets the zombie, and no
+     * zombie burns past the last strike. On a pause of the progress zombies burn all the same, but heal nothing.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return list<non-empty-string> Ids of the zombies that burnt.
+     * @throws LockBusyException
+     */
+    public function burn(int $now): array
+    {
+        $flyers = $this->flyers;
+        if ($flyers === null || $this->burnMs <= 0) {
+            return [];
+        }
+        $ritual = $this->ritual->snapshot();
+        $round = $ritual->round;
+        $awakeAt = $this->boss->get($round)?->awakeAt;
+        if (!$ritual->story->rapier() || $awakeAt === null) {
+            return [];
+        }
+        $counted = !$ritual->story->paused;
+
+        $burnt = [];
+        foreach ($flyers->wanderers() as $zombie) {
+            $at = \max($zombie->launchedAt, $awakeAt) + $this->burnMs;
+            if ($at > $now) {
+                continue;
+            }
+
+            $took = false;
+            [$before, $after] = $this->boss->update(
+                $round,
+                function (?Boss $boss) use ($flyers, $zombie, $counted, &$took): ?Boss {
+                    if ($boss === null || $boss->down()) {
+                        return $boss;
+                    }
+                    $took = $flyers->burn($zombie->id) !== null;
+
+                    return $took && $counted ? $boss->healed($this->heal) : $boss;
+                },
+            );
+            if (!$took || $before === null || $after === null) {
+                continue;
+            }
+
+            $heal = \max(0, $after->hp - $before->hp);
+            $burnt[] = $zombie->id;
+            $this->publisher->burn($round, $zombie->id, $at, $heal, $counted);
+            $heal > 0 and $this->publisher->boss($round, $after->toEvent($this->burnMs));
+            $this->metrics?->zombieBurnt($counted, $heal);
+        }
+
+        return $burnt;
     }
 
     /**
@@ -305,11 +372,11 @@ final readonly class RapierService
     /**
      * FrankenPHP's health as the snapshot carries it: from its waking on, at dawn down to nothing.
      *
-     * @return array{hp: int<0, max>, max: positive-int}|null
+     * @return array{hp: int<0, max>, max: positive-int, burnMs: int<0, max>, awakeAt: int}|null
      */
     public function state(int $round): ?array
     {
-        return $this->boss->get($round)?->toEvent();
+        return $this->boss->get($round)?->toEvent($this->burnMs);
     }
 
     /**
@@ -323,14 +390,18 @@ final readonly class RapierService
     /**
      * The first rapier wakes FrankenPHP with health for the room, like every limit.
      *
+     * @param int $now Unix time in milliseconds of the right word.
      * @throws LockBusyException
      */
-    private function wake(int $round): void
+    private function wake(int $round, int $now): void
     {
         $story = $this->ritual->story();
         $max = $this->hp->of($story->players, $story->k);
-        [$before, $after] = $this->boss->update($round, static fn(?Boss $boss): Boss => $boss ?? new Boss($max, $max));
-        $before === null && $after !== null and $this->publisher->boss($round, $after->toEvent());
+        [$before, $after] = $this->boss->update(
+            $round,
+            static fn(?Boss $boss): Boss => $boss ?? new Boss($max, $max, awakeAt: $now),
+        );
+        $before === null && $after !== null and $this->publisher->boss($round, $after->toEvent($this->burnMs));
     }
 
     private function shamblePause(): int

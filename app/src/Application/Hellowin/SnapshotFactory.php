@@ -48,7 +48,7 @@ use App\Domain\Walk\WalkerStore;
  *     presence: array{players: int<0, max>, connections: int<0, max>},
  *     limits: array{players: positive-int, k: float, burst: bool, limits: array|\stdClass}|null,
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
- *     boss: array{hp: int<0, max>, max: positive-int}|null,
+ *     boss: array{hp: int<0, max>, max: positive-int, burnMs: int<0, max>, awakeAt: int}|null,
  *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
  *     top: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}>},
  *     flyers: list<array>,
