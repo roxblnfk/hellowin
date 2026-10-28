@@ -32,6 +32,8 @@ final class FlyerConfig extends InjectableConfig
         'fly_points' => 1,
         'elephant_interval' => '180000,360000',
         'elephant_duration' => 26000,
+        'elephant_fart_cooldown' => 1000,
+        'elephant_low_chance' => 0.33,
         'rare' => ';;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
@@ -81,6 +83,26 @@ final class FlyerConfig extends InjectableConfig
     public function getElephantDuration(): int
     {
         return self::positiveInt($this->config['elephant_duration'] ?? null, 'elephant_duration', 'HELLOWIN_ELEPHANT_DURATION');
+    }
+
+    /**
+     * @return positive-int Milliseconds from an elephant's fart to the next one it may make.
+     */
+    public function getElephantFartCooldown(): int
+    {
+        return self::positiveInt(
+            $this->config['elephant_fart_cooldown'] ?? null,
+            'elephant_fart_cooldown',
+            'HELLOWIN_ELEPHANT_FART_COOLDOWN_MS',
+        );
+    }
+
+    /**
+     * @return float Probability from 0 to 1 that an elephant flies in the low band.
+     */
+    public function getElephantLowChance(): float
+    {
+        return self::chance($this->config['elephant_low_chance'] ?? null, 'elephant_low_chance', 'HELLOWIN_ELEPHANT_LOW_CHANCE');
     }
 
     /**

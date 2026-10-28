@@ -21,16 +21,17 @@ use Psr\SimpleCache\CacheInterface;
  * is counted neither as shot nor as escaped. A wandering zombie has no flight: its key outlives any evening and the
  * sweep passes it by, it ends shot or retired.
  *
- * An elephant is never shot down, it ends escaped: its key keeps a `farted` flag instead, set under its lock by the
- * first shot ({@see fart()}), so it farts once however many shots come at once. The last elephant launched stays
- * under `hellowin:elephant` with no expiry: the ticker counts the pause to the next one from it, wherever it came from.
+ * An elephant is never shot down, it ends escaped: its key keeps `lastFartAt` instead, read and written under its lock
+ * by every shot ({@see fart()}), so of any number of shots at once one farts, and the next fart waits out the cooldown.
+ * The last elephant launched stays under `hellowin:elephant` with no expiry: the ticker counts the pause to the next one
+ * from it, wherever it came from.
  */
 final readonly class FlyerStore
 {
     private const KEY_FLYER = 'hellowin:flyer:';
     private const KEY_INDEX = 'hellowin:flyers';
     private const KEY_ELEPHANT = 'hellowin:elephant';
-    private const FARTED = 'farted';
+    private const LAST_FART_AT = 'lastFartAt';
     private const LOCK_FLYER = 'flyer:';
     private const LOCK_INDEX = 'flyers';
     private const LOCK_WANDERERS = 'wanderers';
@@ -43,11 +44,13 @@ final readonly class FlyerStore
 
     /**
      * @param positive-int $grace Milliseconds the key outlives the flight, for the ticker to sweep it.
+     * @param positive-int $fartCooldown Milliseconds from an elephant's fart to the next one it may make.
      */
     public function __construct(
         private CacheInterface $storage,
         private Locks $locks,
         private int $grace = 10_000,
+        private int $fartCooldown = 1000,
     ) {}
 
     /**
@@ -78,33 +81,36 @@ final readonly class FlyerStore
     }
 
     /**
-     * Marks the elephant as farted if it is still in the sky and has not farted yet.
+     * Makes the elephant fart if it is still in the sky and its last fart is at least the cooldown behind.
      *
      * @param int $now Unix time in milliseconds.
-     * @return Flyer|null The elephant that farted now; null for any other flyer, a late shot or a repeated one.
+     * @return Fart|null Null for any other flyer, a late shot or one within the cooldown.
      * @throws LockBusyException
      */
-    public function fart(string $id, int $now): ?Flyer
+    public function fart(string $id, int $now): ?Fart
     {
         if (!Flyer::isId($id)) {
             return null;
         }
 
-        return $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Flyer {
+        return $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Fart {
             /** @var mixed $data */
             $data = $this->storage->get(self::KEY_FLYER . $id);
             $flyer = Flyer::fromArray($data);
-            if (!\is_array($data) || $flyer === null || $flyer->downable() || !$flyer->flyingAt($now - self::LATENCY)
-                || ($data[self::FARTED] ?? false) === true) {
+            if (!\is_array($data) || $flyer === null || $flyer->downable() || !$flyer->flyingAt($now - self::LATENCY)) {
+                return null;
+            }
+            $last = isset($data[self::LAST_FART_AT]) && \is_int($data[self::LAST_FART_AT]) ? $data[self::LAST_FART_AT] : null;
+            if ($last !== null && $now - $last < $this->fartCooldown) {
                 return null;
             }
 
-            $data[self::FARTED] = true;
+            $data[self::LAST_FART_AT] = $now;
             // The key keeps its expiry: the sweep still finds it, and it still goes away if the ticker is down
             $ttl = (int) \ceil(($flyer->expiresAt() + $this->grace - $now) / 1000);
             $this->storage->set(self::KEY_FLYER . $id, $data, \max(1, $ttl));
 
-            return $flyer;
+            return new Fart($flyer, $last === null);
         });
     }
 

@@ -47,6 +47,10 @@ return [
     // (min,max, a random value between, or a fixed number) and milliseconds it takes across the sky
     'elephant_interval' => env('HELLOWIN_ELEPHANT_INTERVAL', '180000,360000'),
     'elephant_duration' => env('HELLOWIN_ELEPHANT_DURATION', 26000),
+    // Milliseconds after an elephant's fart before a shot makes it fart again; a shot within them just misses
+    'elephant_fart_cooldown' => env('HELLOWIN_ELEPHANT_FART_COOLDOWN_MS', 1000),
+    // Probability (0..1) of an elephant flying low, over the hills at the horizon, instead of high in the sky
+    'elephant_low_chance' => env('HELLOWIN_ELEPHANT_LOW_CHANCE', 0.33),
 
     // The rare flyer of each scene (empty — none), how often a launch is it, and its points
     'rare' => env('HELLOWIN_FLYER_RARE', ';;;;'),

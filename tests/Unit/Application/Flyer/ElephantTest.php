@@ -27,25 +27,46 @@ final class ElephantTest
     private const B = 'bbbbbbbbbbbbbbbb';
     private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
 
-    public function firstShotMakesItFartAndTheOwlSayItThenTheShotsJustMiss(): void
+    public function firstShotMakesItFartAndTheOwlSayItThenShotsWithinTheCooldownJustMiss(): void
     {
         $ritual = new RitualHarness();
         $elephant = self::launch($ritual);
         $ritual->clock->now += 5_000;
         $ritual->broadcast->published = [];
+        $at = $ritual->clock->now;
 
         $first = $ritual->flyers->shoot($elephant->id, self::A);
-        $ritual->clock->now += 100;
+        $ritual->clock->now = $at + 100;
         $second = $ritual->flyers->shoot($elephant->id, self::B);
+        $ritual->clock->now = $at + 999;
         $third = $ritual->flyers->shoot($elephant->id, null);
 
         Assert::same([$first, $second, $third], [null, null, null]);
         Assert::same(\array_column($ritual->broadcast->published, 'message'), [
-            ['type' => 'fart', 'round' => 1, 'flyer' => $elephant->id, 'player' => ['id' => self::A], 'at' => $ritual->clock->now - 100],
+            ['type' => 'fart', 'round' => 1, 'flyer' => $elephant->id, 'player' => ['id' => self::A], 'at' => $at],
             ['type' => 'owl', 'round' => 1, 'line' => 'fart-time'],
         ]);
         Assert::same($ritual->counters()[PlayMetrics::FARTS . '{}'] ?? null, 1.0);
         Assert::false(\array_key_exists(PlayMetrics::FLYERS_SHOT . '{0}', $ritual->counters()));
+    }
+
+    public function shotAfterTheCooldownFartsAgainWithoutTheOwl(): void
+    {
+        $ritual = new RitualHarness();
+        $elephant = self::launch($ritual);
+        $at = $ritual->clock->now + 2_000;
+        $ritual->broadcast->published = [];
+
+        foreach ([0, 1_000, 1_500, 2_500] as $after) {
+            $ritual->clock->now = $at + $after;
+            $ritual->flyers->shoot($elephant->id, self::A);
+        }
+
+        Assert::same(\array_column($ritual->broadcast->ofType('fart'), 'at'), [$at, $at + 1_000, $at + 2_500]);
+        Assert::count($ritual->broadcast->ofType('owl'), 1);
+        Assert::same($ritual->broadcast->ofType('owl')[0]['line'], 'fart-time');
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['fart', 'owl', 'fart', 'fart']);
+        Assert::same($ritual->counters()[PlayMetrics::FARTS . '{}'] ?? null, 3.0);
     }
 
     public function owlLineCountsInTheAutopilotSpeech(): void

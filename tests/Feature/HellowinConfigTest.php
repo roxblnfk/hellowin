@@ -147,6 +147,22 @@ final class HellowinConfigTest extends TestCase
         Assert::equals($config->getDepths(), [new FlyerDepth(3000, 5), new FlyerDepth(1000, 1)]);
     }
 
+    public function shippedElephantFartsASecondApartAndFliesLowAThirdOfTheTime(): void
+    {
+        $config = $this->getContainer()->get(FlyerConfig::class);
+
+        Assert::same([$config->getElephantFartCooldown(), $config->getElephantLowChance()], [1000, 0.33]);
+    }
+
+    #[Env('HELLOWIN_ELEPHANT_FART_COOLDOWN_MS', '2500')]
+    #[Env('HELLOWIN_ELEPHANT_LOW_CHANCE', '1')]
+    public function elephantComesFromEnv(): void
+    {
+        $config = $this->getContainer()->get(FlyerConfig::class);
+
+        Assert::same([$config->getElephantFartCooldown(), $config->getElephantLowChance()], [2500, 1.0]);
+    }
+
     #[Env('HELLOWIN_DICE_IDEMPOTENCY_TTL', '60')]
     public function diceAnswersAreKeptInALeaseForTheTtlFromEnv(): void
     {

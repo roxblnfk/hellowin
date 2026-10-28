@@ -38,7 +38,8 @@ use Random\Randomizer;
  * points.
  *
  * The elephant comes only by itself — on the ticker's timer or by the moderator's hand: across the far sky from behind
- * one side edge to behind the other, level within its band ({@see ELEPHANT_SKY}), for no points.
+ * one side edge to behind the other, level within its band — high ({@see ELEPHANT_SKY}) or, by the low chance, over the
+ * hills ({@see ELEPHANT_LOW}) — for no points.
  */
 final readonly class FlyerFactory
 {
@@ -93,6 +94,9 @@ final readonly class FlyerFactory
     /** Band of the sky an elephant flies in, percents from the top: well over the horizon. */
     private const ELEPHANT_SKY = [8.0, 20.0];
 
+    /** Low band of an elephant: over the hills at the horizon, still above the fence. */
+    private const ELEPHANT_LOW = [22.0, 26.0];
+
     /** How far an elephant's end may sit above or below its start, percents. */
     private const ELEPHANT_DRIFT = 2.0;
 
@@ -124,6 +128,7 @@ final readonly class FlyerFactory
      * @param positive-int $flyPoints Points for a fly.
      * @param list<non-empty-string> $dawn Kinds of the dawn in place of its scene's set.
      * @param positive-int $elephantDuration Milliseconds an elephant takes across the sky.
+     * @param float $elephantLowChance Probability from 0 to 1 that an elephant flies in the low band.
      */
     public function __construct(
         array $depths,
@@ -146,6 +151,7 @@ final readonly class FlyerFactory
         private int $flyPoints = 1,
         private array $dawn = [],
         private int $elephantDuration = 26000,
+        private float $elephantLowChance = 0.0,
     ) {
         $all = \array_merge($cursed, $dawn, ...$kinds);
         $lawn !== null || !\in_array(Flyer::KIND_WORM, $all, true) or throw new \InvalidArgumentException(
@@ -275,7 +281,7 @@ final readonly class FlyerFactory
     {
         $id = 'f-' . \bin2hex($this->random->getBytes(4));
         $leftToRight = $this->chance(0.5);
-        [$low, $high] = self::ELEPHANT_SKY;
+        [$low, $high] = $this->chance($this->elephantLowChance) ? self::ELEPHANT_LOW : self::ELEPHANT_SKY;
         $y = $this->float($low, $high);
         $end = \max($low, \min($high, $this->float($y - self::ELEPHANT_DRIFT, $y + self::ELEPHANT_DRIFT)));
 

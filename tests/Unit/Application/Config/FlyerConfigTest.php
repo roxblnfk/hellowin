@@ -50,6 +50,35 @@ final class FlyerConfigTest
         (new FlyerConfig(['elephant_interval' => '360000,180000']))->getElephantInterval();
     }
 
+    public function elephantFartsOnACooldownAndFliesLowByChance(): void
+    {
+        $config = new FlyerConfig();
+        $custom = new FlyerConfig(['elephant_fart_cooldown' => '1500', 'elephant_low_chance' => '0']);
+
+        Assert::same([$config->getElephantFartCooldown(), $config->getElephantLowChance()], [1000, 0.33]);
+        Assert::same([$custom->getElephantFartCooldown(), $custom->getElephantLowChance()], [1500, 0.0]);
+    }
+
+    #[DataSet(['0'], 'zero')]
+    #[DataSet(['-1'], 'negative')]
+    #[DataSet(['soon'], 'word')]
+    public function elephantFartCooldownRejectsGarbage(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ELEPHANT_FART_COOLDOWN_MS');
+
+        (new FlyerConfig(['elephant_fart_cooldown' => $value]))->getElephantFartCooldown();
+    }
+
+    #[DataSet(['1.5'], 'above one')]
+    #[DataSet(['-0.1'], 'negative')]
+    #[DataSet(['often'], 'word')]
+    public function elephantLowChanceRejectsGarbage(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ELEPHANT_LOW_CHANCE');
+
+        (new FlyerConfig(['elephant_low_chance' => $value]))->getElephantLowChance();
+    }
+
     #[DataSet(['900-500'], 'reversed')]
     #[DataSet(['0'], 'zero')]
     #[DataSet(['fast'], 'word')]

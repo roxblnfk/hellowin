@@ -192,7 +192,7 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * The elephant farts at the first shot; an anonymous shot names no player.
+     * An elephant's fart at a shot; an anonymous shot names no player.
      *
      * @param non-empty-string|null $player
      * @param int $at Unix time in milliseconds of the shot.

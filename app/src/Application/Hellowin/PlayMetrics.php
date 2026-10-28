@@ -55,7 +55,7 @@ final readonly class PlayMetrics
             self::FLYERS_LAUNCHED => Collector::counter()->withHelp('Flyers launched.')->withLabels('depth'),
             self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
-            self::FARTS => Collector::counter()->withHelp('Elephants that farted at a shot.'),
+            self::FARTS => Collector::counter()->withHelp('Elephant farts at shots, a cooldown apart.'),
             self::RUNNER_RUNS => Collector::counter()->withHelp('Runs of RoadRunner across the horizon the moderator started.'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
             self::ONLINE_PLAYERS => Collector::gauge()->withHelp('Players connected to the channel now, each once.'),

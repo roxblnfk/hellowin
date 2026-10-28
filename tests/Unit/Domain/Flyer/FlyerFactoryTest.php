@@ -16,6 +16,7 @@ use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataSet;
 use Testo\Expect;
 use Testo\Test;
 use Tests\Fake\RitualHarness;
@@ -34,16 +35,14 @@ final class FlyerFactoryTest
         }
     }
 
-    public function elephantCrossesTheFarSkyForNoPoints(): void
+    /**
+     * @param array{float, float} $band
+     */
+    #[DataSet([0.0, [8.0, 20.0]], 'high')]
+    #[DataSet([1.0, [22.0, 26.0]], 'low')]
+    public function elephantCrossesTheFarSkyForNoPointsWithinItsBand(float $lowChance, array $band): void
     {
-        $factory = new FlyerFactory(
-            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
-            [],
-            1.0,
-            1.0,
-            new Randomizer(new Mt19937(7)),
-            elephantDuration: 31_000,
-        );
+        $factory = self::elephantFactory($lowChance);
         $directions = [];
 
         for ($i = 0; $i < 200; ++$i) {
@@ -54,13 +53,29 @@ final class FlyerFactoryTest
             Assert::null($elephant->bush);
             Assert::null($elephant->wobble);
             Assert::same([$elephant->from->x, $elephant->to->x], $elephant->from->x < 0 ? [-10.0, 110.0] : [110.0, -10.0]);
-            Assert::numeric($elephant->from->y)->between(8, 20);
-            Assert::numeric($elephant->to->y)->between(8, 20);
+            Assert::numeric($elephant->from->y)->between(...$band);
+            Assert::numeric($elephant->to->y)->between(...$band);
             Assert::true(\abs($elephant->to->y - $elephant->from->y) <= 2.0);
             $directions[$elephant->from->x < 0 ? 'right' : 'left'] = true;
         }
 
         Assert::array($directions)->hasCount(2);
+    }
+
+    public function elephantFliesLowInAShareOfFlightsByHandToo(): void
+    {
+        $factory = self::elephantFactory(0.33);
+        $low = 0;
+
+        for ($i = 0; $i < 300; ++$i) {
+            $elephant = $factory->special(Flyer::KIND_ELEPHANT, 1_000);
+            $isLow = $elephant->from->y >= 22.0;
+            Assert::numeric($elephant->from->y)->between(...($isLow ? [22, 26] : [8, 20]));
+            Assert::numeric($elephant->to->y)->between(...($isLow ? [22, 26] : [8, 20]));
+            $isLow and ++$low;
+        }
+
+        Assert::int($low)->greaterThan(60)->lessThan(140);
     }
 
     public function elephantComesAsTheSpecialOne(): void
@@ -417,6 +432,19 @@ final class FlyerFactoryTest
         Assert::same($flyer->expiresAt(), 123_456 + $flyer->duration);
         Assert::true(Flyer::isId($flyer->id));
         Assert::equals(Flyer::fromArray($flyer->toArray()), $flyer);
+    }
+
+    private static function elephantFactory(float $lowChance): FlyerFactory
+    {
+        return new FlyerFactory(
+            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
+            [],
+            1.0,
+            1.0,
+            new Randomizer(new Mt19937(7)),
+            elephantDuration: 31_000,
+            elephantLowChance: $lowChance,
+        );
     }
 
     private static function factory(float $bushChance, float $arcChance): FlyerFactory

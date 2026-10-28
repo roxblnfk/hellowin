@@ -148,15 +148,18 @@
   знает.
 - **Слон** (`elephant`, [`protocol.md`](protocol.md), «Слон»; **реализовано**): `FlyerFactory::elephant` (им же
   отвечает `special('elephant')`) — `depth` 0, 0 очков, без `via`, `bush` и `wobble`; `from.x`/`to.x` — −10 и 110 в
-  случайную сторону, `from.y` — случайно в 8–20 %, `to.y` — в пределах ±2 от него и в тех же 8–20 %; `duration` —
+  случайную сторону; полоса высоты — низкая 22–26 % с вероятностью `HELLOWIN_ELEPHANT_LOW_CHANCE`, иначе обычная
+  8–20 %; `from.y` — случайно в полосе, `to.y` — в пределах ±2 от него и в той же полосе; `duration` —
   `HELLOWIN_ELEPHANT_DURATION`. Запускают тикер по своему таймеру (см. «Тикер») и модератор (`flyer.special`).
   `FlyerStore::add` пишет слона ещё и в `hellowin:elephant` (без TTL) — от него тикер считает паузу.
   Выстрел по слону (`Flyer::downable()` — нет) — всегда промах: ключ не удаляется, слон улетает и попадает в
   `hellowin_flyers_escaped_total{depth}`. После броска кружки `FlyerService::shoot` зовёт `FlyerStore::fart`: под
-  RR-локом `flyer:{id}` ключ есть, это слон, полёт не кончился (+500 мс) и флага `farted` в ключе нет → флаг ставится
-  (ключ перезаписывается с прежним сроком жизни) → `fart {flyer, player?: {id}, at}`, `owl {line: fart-time}` (через
-  `ChannelPublisher::owl`, поэтому в счёт `OwlClock`), `hellowin_farts_total`. Так из любых одновременных выстрелов
-  пукает ровно один; сбой здесь — предупреждение в лог, ответ остаётся `hit:false`.
+  RR-локом `flyer:{id}` ключ есть, это слон, полёт не кончился (+500 мс) и `lastFartAt` в ключе пуст или отстал от
+  `now` не меньше чем на `HELLOWIN_ELEPHANT_FART_COOLDOWN_MS` → `lastFartAt = now` (ключ перезаписывается с прежним
+  сроком жизни) → `fart {flyer, player?: {id}, at}`, `hellowin_farts_total`; только если `lastFartAt` был пуст (первый
+  пук слона) — ещё `owl {line: fart-time}` (через `ChannelPublisher::owl`, поэтому в счёт `OwlClock`). Иначе — ни
+  событий, ни метрики. Так из любых одновременных выстрелов пукает ровно один, а следующий пук — не раньше кулдауна;
+  сбой здесь — предупреждение в лог, ответ остаётся `hit:false`.
 - **Зомби** проклятого мира — тоже летуны (`kind: zombie`), чтобы выстрел, очки и метрики были общими, но бродячие
   (`Flyer::wanderer`, `wander: true`): полёта нет, встаёт в случайной точке прямоугольника лужайки `walk.area` (там и
   грядка), дальше его ведёт фронтенд. `depth` 1 (или последняя, если глубин меньше), без `via` и `bush`, очки
@@ -902,7 +905,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
-| `hellowin_farts_total` | counter | слоны, выпустившие газ: первый выстрел по слону (RPC `shoot`) |
+| `hellowin_farts_total` | counter | пуки слонов: каждый выстрел по слону (RPC `shoot`), не раньше `HELLOWIN_ELEPHANT_FART_COOLDOWN_MS` после прошлого пука этого слона |
 | `hellowin_runner_runs_total` | counter | пробежки RoadRunner по горизонту, пущенные модератором (успешный RPC `runner`) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 | `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
@@ -954,6 +957,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна |
 | `HELLOWIN_ELEPHANT_INTERVAL` | `180000,360000` | мс от слона до следующего: мин и макс через запятую (или дефис), случайно внутри, или число; отсчёт — от прошлого слона, и ручного тоже (`app/config/flyers.php`) |
 | `HELLOWIN_ELEPHANT_DURATION` | 26000 | мс полёта слона |
+| `HELLOWIN_ELEPHANT_FART_COOLDOWN_MS` | 1000 | мс от пука слона до следующего: выстрел раньше — просто промах, без событий |
+| `HELLOWIN_ELEPHANT_LOW_CHANCE` | 0.33 | вероятность (0..1), что слон летит низко, в полосе 22–26 %, а не 8–20 % — и по таймеру, и с пульта |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между бродячими зомби сверх минимума в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |

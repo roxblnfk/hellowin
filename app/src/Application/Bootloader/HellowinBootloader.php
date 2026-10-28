@@ -469,6 +469,7 @@ final class HellowinBootloader extends Bootloader
                 flyPoints: $flyers->getFlyPoints(),
                 dawn: $flyers->getDawnKinds(),
                 elephantDuration: $flyers->getElephantDuration(),
+                elephantLowChance: $flyers->getElephantLowChance(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),
@@ -479,9 +480,14 @@ final class HellowinBootloader extends Bootloader
                 => new ZombieCrowd($flyers->getZombieMin(), $flyers->getZombiePerPlayer()),
             FlyerStore::class => static fn(
                 HellowinConfig $config,
+                FlyerConfig $flyers,
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
-            ): FlyerStore => new FlyerStore($cache->storage($config->getStorage()), new Locks($lock)),
+            ): FlyerStore => new FlyerStore(
+                $cache->storage($config->getStorage()),
+                new Locks($lock),
+                fartCooldown: $flyers->getElephantFartCooldown(),
+            ),
             Ticker::class => static fn(
                 HellowinConfig $config,
                 FlyerConfig $flyerConfig,

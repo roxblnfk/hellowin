@@ -231,7 +231,7 @@ final readonly class FlyerService
     /**
      * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops,
      * and an empty mug in its hand flies at the flyer (docs/spec/protocol.md, «Пустая кружка»). An elephant is always
-     * missed, and the first shot at it makes it fart (docs/spec/protocol.md, «Слон»).
+     * missed, and a shot at it makes it fart, a cooldown after its last fart (docs/spec/protocol.md, «Слон»).
      *
      * @param non-empty-string|null $player
      * @return int|null Points for a hit, null for a miss.
@@ -343,13 +343,14 @@ final readonly class FlyerService
     private function fart(string $flyerId, ?string $player, int $now): void
     {
         try {
-            $elephant = $this->store->fart($flyerId, $now);
-            if ($elephant === null) {
+            $fart = $this->store->fart($flyerId, $now);
+            if ($fart === null) {
                 return;
             }
             $round = $this->ritual->round();
-            $this->publisher->fart($round, $elephant, $player, $now);
-            $this->publisher->owl($round, OwlLine::FART_TIME);
+            $this->publisher->fart($round, $fart->elephant, $player, $now);
+            // Once per elephant, so that a volley of farts does not make the owl chatter
+            $fart->first and $this->publisher->owl($round, OwlLine::FART_TIME);
             $this->metrics->fart();
         } catch (\Throwable $e) {
             $this->logger->warning('Elephant {flyer} did not fart: {message}', [

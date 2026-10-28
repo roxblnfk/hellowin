@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Flyer;
 
+use App\Domain\Flyer\Fart;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
@@ -83,14 +84,21 @@ final class FlyerStoreTest
         Assert::blank($store->sweep(120_000));
     }
 
-    public function elephantIsNeverShotDownAndFartsOnce(): void
+    public function elephantIsNeverShotDownAndFartsACooldownApart(): void
     {
-        $store = self::store();
+        $store = new FlyerStore(new ArrayStorage(), new Locks(new FakeLock()), fartCooldown: 700);
         $store->add(self::elephant('f-0000000e'));
 
         Assert::null($store->shoot('f-0000000e', 2_000));
-        Assert::same($store->fart('f-0000000e', 2_000)?->id, 'f-0000000e');
-        Assert::null($store->fart('f-0000000e', 2_001));
+        $first = $store->fart('f-0000000e', 2_000);
+        $within = $store->fart('f-0000000e', 2_699);
+        $after = $store->fart('f-0000000e', 2_700);
+        $again = $store->fart('f-0000000e', 3_000);
+
+        Assert::same([$first?->elephant->id, $first?->first], ['f-0000000e', true]);
+        Assert::null($within);
+        Assert::same([$after?->elephant->id, $after?->first], ['f-0000000e', false]);
+        Assert::null($again, 'the cooldown counts from the last fart, not the first');
         Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->sweep(5_500)), ['f-0000000e'], 'escapes, farted or not');
     }
 
@@ -102,8 +110,8 @@ final class FlyerStoreTest
         $store->add(self::elephant('f-0000000e'));
 
         $farts = Coroutine::concurrently(
-            static fn(): ?Flyer => $store->fart('f-0000000e', 2_000),
-            static fn(): ?Flyer => $store->fart('f-0000000e', 2_000),
+            static fn(): ?Fart => $store->fart('f-0000000e', 2_000),
+            static fn(): ?Fart => $store->fart('f-0000000e', 2_000),
         );
 
         Assert::contains($lock->waited, 'flyer:f-0000000e', 'the second shot came while the first was inside');
