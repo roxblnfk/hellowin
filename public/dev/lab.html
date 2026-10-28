@@ -116,7 +116,12 @@
   Click shots (docs/spec/frontend.md, «Выстрел по клику»): a click event carries its clicker like the server's — your
   click your character when it is on the field, a random or automatic click a random bot, or nobody with the share
   ?anon=0..1 (default 0.25); a standing clicker shoots the element with what it holds. ?still=1 keeps the bots where
-  they stand (no wandering, frozen bots do not set off), so ?auto=1&still=1&walkers=8 shows a crowd shooting.
+  they stand (no wandering, frozen bots do not set off), so ?auto=1&still=1&walkers=8 shows a crowd shooting. Up to 60
+  bots: past the eight named ones they are numbered.
+  RoadRunner's dashes (docs/spec/frontend.md, «Перебежки RoadRunner»; finale steps 3–4): ?rrdash=home|out|away|back with
+  ?freeze lands the frozen moment in that phase of a dash (?rrslot=N — another slot), ?rrcrowd=1 crowds the bots into
+  the strip he runs along: ?finale=4&walkers=40&rrcrowd=1&rrdash=out&freeze=1500 — mid-dash through the crowd, away — the
+  «Мип-мип!» at the far end, home — standing with his aura.
   Rapier (docs/spec/frontend.md, «Рапира»; finale steps 5–7): ?finale=5 — the cursed world's goal: the engine counts
   mugs drunk and zombies slain against the limits `drinks` and `zombies` (?goal=N — both flat N; the console's ±5 adds),
   ?cursed=drunk,slain — starting counters; `beer {pumpkin}` hands out a mug at a reachable pumpkin, drinking needs a clink
@@ -279,6 +284,7 @@
     import { createScene } from '/js/pixel/scene.js';
     import { inWanderZone } from '/js/pixel/wander.js';
     import { SUMMON_MS } from '/js/pixel/finale-timeline.js';
+    import { DASH, dashMoment } from '/js/pixel/runner-dash.js';
 
     const params = new URLSearchParams(location.search);
     const root = document.getElementById('app');
@@ -393,7 +399,13 @@
     // clock, which the snapshot's `now` has to compensate.
     // ?epoch=ms moves the frozen clock's start (a multiple of 6000 keeps the clink slots in place: ?epoch=336000 reaches a
     // two-voice toast without stepping through minutes).
-    const EPOCH = 1_700_000_000_000 + (Number.parseInt(params.get('epoch') ?? '0', 10) || 0);
+    // ?rrdash=home|out|away|back (with ?freeze) picks the epoch instead: the frozen moment lands in the middle of that
+    // phase of RoadRunner's dash in the finale's foreground (runner-dash.js), ?rrslot=N in the N-th slot (default 1).
+    const rrDash = params.get('rrdash');
+    const rrSlot = Number.parseInt(params.get('rrslot') ?? '1', 10) || 1;
+    const EPOCH = 1_700_000_000_000 + (rrDash && freeze > 0
+        ? rrSlot * DASH.loopMs + dashMoment(1_700_000_000_000 / DASH.loopMs + rrSlot, rrDash) - freeze
+        : Number.parseInt(params.get('epoch') ?? '0', 10) || 0);
     const serverTime = () => (simulated ? EPOCH + simTime : Date.now());
     const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
     const clientTime = () => serverTime() + skew;
@@ -515,7 +527,9 @@
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     const BOT_NAMES = ['Jack', 'Тыквоед', 'Ведьма Ира', 'Graf_Drak', 'Мумия', 'Bones', 'Кот-Баюн', 'Zed.13'];
-    const botCount = Math.max(0, Math.min(BOT_NAMES.length, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
+    // Past the named ones (up to 60 bots) they are numbered.
+    const botName = (i) => BOT_NAMES[i] ?? `Bot-${i + 1}`;
+    const botCount = Math.max(0, Math.min(60, Number.parseInt(params.get('walkers') ?? (simulated ? '0' : '3'), 10) || 0));
     const standing = (p, at) => ({ path: [p], startedAt: at, arrivesAt: at });
     // A newcomer's walk in the bar, as WalkService sends it: from the door's threshold `door_in` down onto the floor.
     function doorWalk(at) {
@@ -562,17 +576,20 @@
     }
     // ?bodies=gopher,priest,…: the bots' bodies in order, bare-headed and without a cloak, face and eyes still random.
     const botBodies = params.get('bodies')?.split(',') ?? [];
+    // ?rrcrowd=1: the bots crowd the foreground strip RoadRunner dashes along in the finale (steps 3–4).
+    const rrCrowd = params.get('rrcrowd') === '1';
+    const crowdPoint = (random) => clampToZone({ x: 6 + random() * 88, y: 84 + random() * 13 });
     const startWalkers = [];
     for (let i = 0; i < botCount; i++) {
         const random = seeded(1000 + i);
         startWalkers.push({
             id: `lab-bot-${String(i).padStart(9, '0')}`,
-            name: BOT_NAMES[i],
+            name: botName(i),
             look: botBodies[i] ? { ...randomLook(random), body: botBodies[i], cloak: 'none', hat: 'none' } : randomLook(random),
             item: barStart ? (barPairs || (rrClinkStart && i === 0) ? 'beer' : null) : i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
             walk: standing(barPairs ? clampToBar(BAR_SPOTS[i] ?? spawnPoint(random)) : barDemo ? clampToBar(DEMO_SPOTS[i] ?? spawnPoint(random))
                 : barStart ? spawnPoint(random)
-                : clinkStart || clickClinkStart ? clinkPoint(i) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
+                : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     const walkStop = params.get('walkstop');

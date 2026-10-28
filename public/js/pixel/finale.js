@@ -1063,6 +1063,25 @@ export function frankenHalo(rx, ry) {
     return toSprite(g, GLOW_TONES, { x: rx, y: ry });
 }
 
+const AURA_TONES = { a: 'eyeBlue', b: 'shieldBlue' };
+
+/**
+ * RoadRunner's blue aura, rx × ry, anchor at the centre: frankenHalo's dither upright around the body. Additive, behind
+ * him, so only the rim around his outline shows; alpha ~0.3–0.5.
+ */
+export function runnerAura(rx, ry) {
+    const g = grid(2 * rx + 1, 2 * ry + 1);
+    for (let y = 0; y <= 2 * ry; y++) {
+        for (let x = 0; x <= 2 * rx; x++) {
+            const d = Math.hypot((x - rx) / rx, (y - ry) / ry);
+            if (d > 1) continue;
+            const density = (1 - d) ** 0.7 * 1.2;
+            if (dither(x, y) < density) g[y][x] = d < 0.6 && dither(x, y) < density - 0.3 ? 'a' : 'b';
+        }
+    }
+    return toSprite(g, AURA_TONES, { x: rx, y: ry });
+}
+
 /**
  * One shape of the rapier's golden chain lightning from `from` to `to` (art px): a jagged polyline kinked every ~6 px
  * across its way, 2–3 branches forking off it toward the target, and a dithered edge beside the core. Returns pixel

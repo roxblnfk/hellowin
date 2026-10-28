@@ -1,10 +1,11 @@
 import { Sprite } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
 import { bossPhraseAt, phraseAt } from '../franken.js';
 import { createBubbles } from './bubble.js';
-import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, breathOf, frankenHalo } from './finale.js';
+import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, breathOf, frankenHalo, runnerAura } from './finale.js';
 import { EMISSIVE, LIT_PALETTE } from './night.js';
 import { PALETTE } from './palette.js';
 import { T } from './finale-timeline.js';
+import { DASH, dashAt, dashSpan, dustAt } from './runner-dash.js';
 import { pick } from '../i18n.js';
 
 /**
@@ -26,8 +27,13 @@ const EYES_FLICKER_MS = 600;
 // RoadRunner's evening run along the horizon in the cursed world: a run of RUN_MS in every slot of LOOP_MS.
 const LOOP_MS = 15000;
 const RUN_MS = 6500;
-// A FrankenPHP phrase is voiced only when caught this early: the frame loop stops in a background tab.
+// A FrankenPHP phrase or RoadRunner's meep of a dash is voiced only when caught this early: the frame loop stops in a
+// background tab.
 const PHRASE_FRESH_MS = 1500;
+// RoadRunner's blue aura breathes over AURA_MS between these alphas, in AURA_STEPS steps.
+const AURA_MS = 1800;
+const AURA_ALPHA = [0.4, 0.64];
+const AURA_STEPS = 4;
 
 // FrankenPHP's lime body keeps half its colour at night: the logo has to read under the moon. RoadRunner, the other
 // hero, keeps half of all its colours but the outline.
@@ -226,6 +232,10 @@ export function createFinaleStage(env) {
     // The moderator's «Мип-мип!» (scene clock), and RoadRunner as the last frame drew him (null — not on screen).
     let meepAt = -1e9;
     let shownRunner = null;
+    // The dash slot step 3 found already running at the end of his own «мип-мип» (held still for good, see dashOf),
+    // and the server ms of the last dash meep voiced.
+    let heldSlot = null;
+    let voicedMeep = null;
 
     function build() {
         const make = (layer, { add = false, alpha = 1 } = {}) => {
@@ -244,6 +254,8 @@ export function createFinaleStage(env) {
             cloudFront: make(env.ground, { alpha: 0.85 }),
             creep: [0, 1, 2, 3].map(() => make(env.ground, { alpha: 0.8 })),
             runner: make(env.ground),
+            aura: make(env.ground, { add: true }),
+            dust: Array.from({ length: Math.ceil(DASH.dustLifeMs / DASH.dustEveryMs) + 1 }, () => make(env.ground, { alpha: 0.9 })),
             halo: make(env.light, { add: true, alpha: 0.45 }),
             glasses: make(env.ground),
             wisp: make(env.ground, { alpha: 0.7 }),
@@ -291,11 +303,34 @@ export function createFinaleStage(env) {
         return frankenFrame(clock, phrase);
     }
 
-    // Where RoadRunner stops in the foreground: right of the circle, feet above the HUD.
+    // Where RoadRunner stops in the foreground: right of the circle, feet above the HUD; `away` — the far end of his
+    // dashes, left of the circle.
     function frontSpot() {
         const { artW, artH, cssPx } = env.layout();
-        const c = env.centre();
-        return { x: Math.round(Math.min(artW - 24, c.x + artW * 0.2)), y: Math.round(artH - 78 / cssPx) };
+        const span = dashSpan(artW, env.centre().x);
+        return { x: span.home, away: span.away, y: Math.round(artH - 78 / cssPx) };
+    }
+
+    /**
+     * The dash (runner-dash.js) at server ms `ms`. A slot already running when step 3's «мип-мип» ends is held on the
+     * home spot, in step 4 too: a live viewer would see him jump into the middle of a run. A page opened later sees
+     * that slot's dash; that one slot is all the difference. Reduced motion keeps him home, meeping on time.
+     */
+    function dashOf(step, t, ms) {
+        const d = dashAt(ms);
+        const home = { ...d, phase: 'home', k: 0, run: null, flip: true };
+        if (step === 3 && t - (ms - d.start) < T.meep + T.meepMs) heldSlot = d.slot;
+        if (d.slot === heldSlot) return { ...home, meep: false };
+        return env.reduced() ? home : d;
+    }
+
+    // RoadRunner on his dashes in the foreground at server ms `now`.
+    function dashing(step, t, now, clock) {
+        const front = frontSpot();
+        const d = dashOf(step, t, now);
+        const pose = d.run !== null ? 'run' : d.meep ? 'meep' : 'stop';
+        const def = pose === 'run' ? RUNNER.xl.run[Math.floor(clock / 70) % 4] : RUNNER.xl[pose];
+        return { far: false, def, x: lerp(front.x, front.away, d.k), y: front.y, flip: d.flip, size: 'xl', pose, meep: d.meep, meepAt: d.meepAt, dash: front };
     }
 
     const sizeOf = (p) => (p < 0.15 ? 's' : p < 0.4 ? 'm' : p < 0.7 ? 'l' : 'xl');
@@ -312,8 +347,8 @@ export function createFinaleStage(env) {
         const far = (x, flip, ms = clock) => ({ far: true, def: RUNNER.far[Math.floor(ms / 100) % 4], x, y: horizon - 1, flip });
         // Even ground speed looks like an ease-in on screen: the far part of the way is foreshortened.
         const along = (p) => p ** 1.8;
-        const on = (k, pose, flip) => {
-            const x = lerp(edge.x, front.x, k);
+        const on = (k, pose, flip, to = front.x) => {
+            const x = lerp(edge.x, to, k);
             const y = lerp(edge.y, front.y, k);
             if (k < 0.1) return { far: true, def: RUNNER.far[Math.floor(clock / 100) % 4], x, y, flip };
             const size = sizeOf(k);
@@ -322,15 +357,19 @@ export function createFinaleStage(env) {
             return { far: false, def, x, y, flip, size, pose };
         };
         // Heading down-left toward the front spot it faces left (mirrored); the stop turns it to the centre, also left.
+        // After his entrance and «мип-мип» he dashes across the foreground until step 5 sends him off.
         if (step === 3) {
             if (t < T.run) return on(along(t / T.run), 'run', true);
             const into = t - T.meep;
-            return { ...on(1, into >= 0 && into < T.meepMs ? 'meep' : 'stop', true), meep: into >= 0 && into < T.meepMs };
+            if (into < T.meepMs) return { ...on(1, into >= 0 ? 'meep' : 'stop', true), meep: into >= 0 };
+            return dashing(step, t, now, clock);
         }
-        if (step === 4) return on(1, 'stop', true);
+        if (step === 4) return dashing(step, t, now, clock);
         if (step >= 5) {
-            if (step === 5 && t < T.leave) return on(1, 'stop', true);
-            if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false);
+            // He leaves from wherever step 5 found him on his dash.
+            const from = step === 5 && t < T.leave + T.back ? lerp(front.x, front.away, dashOf(step, t, now - t).k) : front.x;
+            if (step === 5 && t < T.leave) return on(1, 'stop', true, from);
+            if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false, from);
             // Then it keeps running along the horizon, now and then, like in scene 0: one run per slot, on the server
             // clock so every viewer sees the same.
             const slot = Math.floor(now / LOOP_MS);
@@ -351,7 +390,7 @@ export function createFinaleStage(env) {
     // ------------------------------------------------------------------ the frame
     function hideAll() {
         if (g) {
-            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.halo, g.glasses, g.wisp, ...g.creep, ...g.puffs]) s.visible = false;
+            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.aura, g.halo, g.glasses, g.wisp, ...g.creep, ...g.puffs, ...g.dust]) s.visible = false;
         }
         lightning.visible = false;
         runnerFar.visible = false;
@@ -473,9 +512,21 @@ export function createFinaleStage(env) {
                 runnerFar.scale.x = r.flip ? -1 : 1;
                 runnerFar.position.set(Math.round(r.x), Math.round(r.y));
             } else {
-                place(g.runner, r.def, r.x, r.y, env.defTexture(r.def, lit, runnerBake), env.depthKey(r.x, r.y));
+                // In the foreground he is drawn over the crowd: among dozens of walkers by the HUD he would vanish,
+                // and nobody stands nearer the camera than the bottom of the screen anyway.
+                const z = r.size === 'xl' ? env.depthKey(r.x, env.layout().artH + 64) : env.depthKey(r.x, r.y);
+                place(g.runner, r.def, r.x, r.y, env.defTexture(r.def, lit, runnerBake), z);
                 g.runner.scale.x = r.flip ? -1 : 1;
+                const aura = auraDef(r.size);
+                place(g.aura, aura, r.x, r.y - Math.round(r.def.h / 2), env.defTexture(aura), z - 0.5);
+                g.aura.alpha = auraAlpha(clock, reduced);
+                if (r.dash) dust(r.dash, now, lit, clock, z - 1);
                 if (r.meep || meeping) bubble('runner', MEEP, { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
+                // A dash's meep is heard once, as it comes up; step 3's own is the step's sound (sound.js).
+                if (r.meep && r.meepAt !== undefined && r.meepAt !== voicedMeep) {
+                    voicedMeep = r.meepAt;
+                    if (now - r.meepAt < PHRASE_FRESH_MS) env.cue?.({ type: 'rr-meep', x: (r.x / env.layout().artW) * 100 });
+                }
             }
         }
         sweepBubbles();
@@ -502,6 +553,30 @@ export function createFinaleStage(env) {
         const glasses = y < rest ? BOSS.glasses[0][0] : BOSS.glassesFallen;
         place(g.glasses, glasses, y < rest ? c.x : c.x - 2, y < rest ? c.y + (y - head) : rest, frankenTexture(glasses), base + 4.5);
     }
+
+    // The dust his feet kick up on a dash, lying where it was kicked up, over the crowd like him (`z`); `front` —
+    // frontSpot(), the ends of the dash.
+    function dust(front, now, lit, clock, z) {
+        dustAt(now).slice(0, g.dust.length).forEach((p, i) => {
+            const def = FX.smoke.billow[1][p.fade][(Math.floor(clock / 240) + i) % 4];
+            const x = lerp(front.x, front.away, p.k);
+            place(g.dust[i], def, x, front.y, env.defTexture(def, lit), z);
+        });
+    }
+
+    const auras = new Map();
+    const auraDef = (size) => {
+        if (!auras.has(size)) {
+            const def = RUNNER[size].stop;
+            auras.set(size, runnerAura(Math.ceil(def.w / 2) + 6, Math.ceil(def.h / 2) + 6));
+        }
+        return auras.get(size);
+    };
+    const auraAlpha = (clock, reduced) => {
+        if (reduced) return AURA_ALPHA[1];
+        const wave = (1 - Math.cos((clock / AURA_MS) * 2 * Math.PI)) / 2;
+        return AURA_ALPHA[0] + ((AURA_ALPHA[1] - AURA_ALPHA[0]) * Math.round(wave * (AURA_STEPS - 1))) / (AURA_STEPS - 1);
+    };
 
     let halo = null;
     // Wider than the pit, which covers its middle.
