@@ -84,6 +84,13 @@ return [
         'history' => env('HELLOWIN_CHAT_HISTORY', 50),
     ],
 
+    // The emotes (docs/spec/protocol.md, «Эмоции»): `set` is the panel's emoji, comma-separated, in the order of its
+    // buttons, and a player shows one at most once in `cooldown_ms` milliseconds
+    'emotes' => [
+        'set' => env('HELLOWIN_EMOTES', '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏'),
+        'cooldown_ms' => env('HELLOWIN_EMOTE_COOLDOWN_MS', 1000),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [

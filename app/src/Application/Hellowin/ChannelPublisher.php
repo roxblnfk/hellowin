@@ -368,6 +368,18 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * A player showed an emoji over the character.
+     *
+     * @param non-empty-string $player
+     * @param non-empty-string $emoji
+     * @param int $at Unix time in milliseconds.
+     */
+    public function emote(int $round, string $player, string $emoji, int $at): void
+    {
+        $this->publish(['type' => 'emote', 'round' => $round, 'player' => ['id' => $player], 'emoji' => $emoji, 'at' => $at]);
+    }
+
+    /**
      * The whole ranking of the evening's shooters, once it has changed.
      *
      * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}> $board

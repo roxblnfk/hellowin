@@ -7,6 +7,7 @@ namespace App\Application\Bootloader;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
+use App\Application\Chat\EmoteService;
 use App\Application\Config\FlyerConfig;
 use App\Application\Config\HellowinConfig;
 use App\Application\Flyer\FlyerService;
@@ -140,6 +141,7 @@ final class HellowinBootloader extends Bootloader
                 $flyerService,
                 $limits,
                 $presence,
+                $config->getEmotes(),
             ),
             PresenceStore::class => static fn(HellowinConfig $config, CacheStorageProviderInterface $cache): PresenceStore
                 => new PresenceStore($cache->storage($config->getStorage())),
@@ -223,6 +225,30 @@ final class HellowinBootloader extends Bootloader
                 $clock,
                 $config->getChatMax(),
                 $config->getChatHistory(),
+            ),
+            // The pause between emotes is a bucket of the RPC limiter's kind, in the same storage and locks
+            EmoteService::class => static fn(
+                HellowinConfig $config,
+                WalkerStore $walkers,
+                RitualStore $ritual,
+                ChannelPublisher $publisher,
+                Clock $clock,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+                PlayMetrics $metrics,
+            ): EmoteService => new EmoteService(
+                $config->getEmotes(),
+                $walkers,
+                $ritual,
+                $publisher,
+                $clock,
+                new RateLimiter(
+                    $cache->storage('process'),
+                    new Locks($lock, ttl: 1.0, wait: 0.5),
+                    $clock,
+                    EmoteService::bucket($config->getEmoteCooldown()),
+                ),
+                $metrics,
             ),
             DiceStore::class => static fn(
                 HellowinConfig $config,

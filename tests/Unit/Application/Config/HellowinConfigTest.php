@@ -378,6 +378,38 @@ final class HellowinConfigTest
         (new HellowinConfig(['dice' => ['cooldown_ms' => '-1']]))->getDiceCooldown();
     }
 
+    public function emotesComeFromTheConfigInTheirOrder(): void
+    {
+        Assert::same((new HellowinConfig())->getEmotes(), ['🎃', '👻', '💀', '😂', '😱', '😍', '👍', '👏', '🔥', '🍺', '🤘', '🙏']);
+        Assert::same((new HellowinConfig(['emotes' => ['set' => ' 🍺 ,🎃']]))->getEmotes(), ['🍺', '🎃']);
+        Assert::same((new HellowinConfig(['emotes' => ['set' => ['👻']]]))->getEmotes(), ['👻']);
+    }
+
+    #[DataSet([''], 'empty')]
+    #[DataSet(['🎃,,👻'], 'empty item')]
+    #[DataSet(['🎃,🎃'], 'repeated')]
+    #[DataSet([[]], 'empty list')]
+    #[DataSet([42], 'number')]
+    public function rejectsAnInvalidEmoteSet(mixed $set): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_EMOTES');
+
+        (new HellowinConfig(['emotes' => ['set' => $set]]))->getEmotes();
+    }
+
+    public function emoteCooldownComesFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getEmoteCooldown(), 1000);
+        Assert::same((new HellowinConfig(['emotes' => ['cooldown_ms' => '0']]))->getEmoteCooldown(), 0);
+    }
+
+    public function rejectsAnInvalidEmoteCooldown(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_EMOTE_COOLDOWN_MS');
+
+        (new HellowinConfig(['emotes' => ['cooldown_ms' => '-1']]))->getEmoteCooldown();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();

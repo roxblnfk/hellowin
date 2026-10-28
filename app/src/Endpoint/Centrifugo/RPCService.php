@@ -9,6 +9,7 @@ use App\Application\Bar\BarRefusedException;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatRefusedException;
 use App\Application\Chat\ChatService;
+use App\Application\Chat\EmoteService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ClickHandler;
 use App\Application\Hellowin\ElementLockedException;
@@ -63,7 +64,7 @@ final readonly class RPCService implements ServiceInterface
     private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
-    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'me', 'reveal'];
+    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal'];
 
     /** Reads the page and the console poll for themselves, not actions: the tally of the calls leaves them out. */
     private const READS = ['state', 'time', 'me', 'reveal', 'chat.history'];
@@ -87,6 +88,7 @@ final readonly class RPCService implements ServiceInterface
         private ?ChatService $chat = null,
         private ?LimitsService $limits = null,
         private ?EveningTally $tally = null,
+        private ?EmoteService $emotes = null,
     ) {}
 
     #[\Override]
@@ -180,6 +182,7 @@ final readonly class RPCService implements ServiceInterface
             'dice.owl' => ['ok' => true] + $this->diceService()->owl(),
             'meep' => $this->meep($request->getData()),
             'say' => $this->chatSay($request->getData(), $player),
+            'emote' => $this->emote($request->getData(), $player),
             'chat.history' => ['ok' => true] + $this->chatService()->history(),
             'chat.mute' => ['ok' => true, 'muted' => $this->chatService()->mute($request->getData()['player'] ?? null, $request->getData()['on'] ?? null)],
             'me' => [
@@ -504,6 +507,22 @@ final readonly class RPCService implements ServiceInterface
         }
 
         $this->chatService()->say($player, $params['text'] ?? null);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Without the emote service the panel is closed: no emoji is in the set.
+     *
+     * @param non-empty-string|null $player
+     */
+    private function emote(array $params, ?string $player): array
+    {
+        if ($player === null) {
+            return self::fail('anonymous');
+        }
+
+        ($this->emotes ?? throw new ChatRefusedException('unknown emoji'))->emote($player, $params['emoji'] ?? null);
 
         return ['ok' => true];
     }

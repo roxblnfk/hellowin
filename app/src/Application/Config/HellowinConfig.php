@@ -67,6 +67,7 @@ final class HellowinConfig extends InjectableConfig
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
         'chat' => ['max' => 120, 'history' => 50],
+        'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏', 'cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -379,6 +380,49 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.dice.cooldown_ms" (env HELLOWIN_DICE_COOLDOWN_MS) must be a non-negative integer.');
+    }
+
+    /**
+     * The emoji of the emote panel, in the order of its buttons. A comma-separated string is accepted too: env
+     * variables arrive as strings.
+     *
+     * @return non-empty-list<non-empty-string> Distinct.
+     */
+    public function getEmotes(): array
+    {
+        /** @var mixed $value */
+        $value = $this->emotes()['set'] ?? null;
+        \is_string($value) and $value = \array_map(\trim(...), \explode(',', $value));
+
+        $error = static fn(): \InvalidArgumentException => new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.emotes.set" (env HELLOWIN_EMOTES) must be a comma-separated list of distinct emoji; got %s.',
+            \is_array($value) ? (string) \json_encode($value, \JSON_UNESCAPED_UNICODE) : \get_debug_type($value),
+        ));
+
+        \is_array($value) && $value !== [] or throw $error();
+
+        $list = [];
+        /** @var mixed $emoji */
+        foreach ($value as $emoji) {
+            \is_string($emoji) && $emoji !== '' && !\in_array($emoji, $list, true) or throw $error();
+            $list[] = $emoji;
+        }
+
+        return $list;
+    }
+
+    /**
+     * @return int<0, max> Milliseconds between two emotes of one player; 0 — no pause.
+     */
+    public function getEmoteCooldown(): int
+    {
+        /** @var mixed $value */
+        $value = $this->emotes()['cooldown_ms'] ?? null;
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.emotes.cooldown_ms" (env HELLOWIN_EMOTE_COOLDOWN_MS) must be a non-negative integer.');
     }
 
     /**
@@ -820,6 +864,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($chat) or throw new \InvalidArgumentException('Config "hellowin.chat" must be an array.');
 
         return $chat;
+    }
+
+    private function emotes(): array
+    {
+        $emotes = $this->config['emotes'] ?? [];
+        \is_array($emotes) or throw new \InvalidArgumentException('Config "hellowin.emotes" must be an array.');
+
+        return $emotes;
     }
 
     private function dice(): array

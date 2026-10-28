@@ -71,6 +71,17 @@ final class HomeControllerTest extends TestCase
         Assert::same($views->rendered[0][1]['chatMax'], 80);
     }
 
+    #[Env('HELLOWIN_EMOTES', '🍺,🎃')]
+    public function homePageCarriesTheEmotes(): void
+    {
+        $views = new SpyViews($this->getContainer()->get(ViewsInterface::class));
+        $this->getContainer()->bindSingleton(ViewsInterface::class, $views);
+
+        $this->fakeHttp()->get('/')->assertOk();
+
+        Assert::same($views->rendered[0][1]['emotes'], ['🍺', '🎃']);
+    }
+
     public function homePageCarriesTheLimitsOfTheScene(): void
     {
         $body = (string) $this->fakeHttp()->get('/')->assertOk()->getOriginalResponse()->getBody();

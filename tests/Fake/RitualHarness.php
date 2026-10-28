@@ -7,6 +7,7 @@ namespace Tests\Fake;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
+use App\Application\Chat\EmoteService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\ClickHandler;
@@ -49,6 +50,7 @@ use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
+use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\BossStore;
@@ -82,6 +84,8 @@ final class RitualHarness
     public const DICE_TTL = 900;
     public const CHAT_MAX = 12;
     public const CHAT_HISTORY = 3;
+    public const EMOTES = ['🎃', '👻', '🍺'];
+    public const EMOTE_COOLDOWN = 1000;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -124,6 +128,7 @@ final class RitualHarness
     public readonly TopService $top;
     public readonly ChatStore $chatStore;
     public readonly ChatService $chat;
+    public readonly EmoteService $emotes;
     public readonly LimitsStore $limitsStore;
     public readonly PresenceStore $presenceStore;
     public readonly LimitsService $limits;
@@ -216,6 +221,7 @@ final class RitualHarness
         $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
         $this->chatStore = new ChatStore($this->storage, new Locks($this->lock));
         $this->chat = new ChatService($this->chatStore, $this->walkerStore, $this->players, $this->store, $publisher, $this->clock, self::CHAT_MAX, self::CHAT_HISTORY);
+        $this->emotes = new EmoteService(self::EMOTES, $this->walkerStore, $this->store, $publisher, $this->clock, new RateLimiter(new ArrayStorage(), new Locks($this->lock), $this->clock, EmoteService::bucket(self::EMOTE_COOLDOWN)), $this->playMetrics);
         $this->reveal = new RevealBuilder($this->shots, $this->playerStore, $policy, $this->barStore, $this->cursedStore, $this->bossStore, $this->diceStore, $this->uncounted, $this->tally, $this->evening = new EveningStore($this->storage, new Locks($this->lock)));
         $this->publisher = $publisher;
         $this->census = new PlayerCensus($this->playerStore, $this->playMetrics);
@@ -253,7 +259,7 @@ final class RitualHarness
         $this->limitsStore = new LimitsStore($this->storage);
         $this->presenceStore = new PresenceStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore);
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore, self::EMOTES);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,

@@ -139,6 +139,7 @@ final class RPCServiceTest
             'dice' => null,
             'top' => ['board' => []],
             'flyers' => [],
+            'emotes' => RitualHarness::EMOTES,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
         ]]);
@@ -1044,6 +1045,47 @@ final class RPCServiceTest
         Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['say']], $ritual->metrics->calls, true));
     }
 
+    public function emoteAnswersItsErrorsInOrder(): void
+    {
+        $ritual = new RitualHarness();
+
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '🦄']), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '🦄'], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '🦄'], self::PLAYER), ['ok' => false, 'error' => 'unknown emoji']);
+        Assert::same($this->call($ritual, 'emote', [], self::PLAYER), ['ok' => false, 'error' => 'unknown emoji']);
+        Assert::same($this->call($ritual, 'emote', ['emoji' => ['🎃']], self::PLAYER), ['ok' => false, 'error' => 'unknown emoji']);
+        Assert::blank($ritual->broadcast->ofType('emote'));
+    }
+
+    public function emoteGoesToEveryoneAndCountsAsAnAction(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '👻'], self::PLAYER), ['ok' => true]);
+
+        Assert::same($ritual->broadcast->ofType('emote'), [[
+            'type' => 'emote',
+            'round' => 1,
+            'player' => ['id' => self::PLAYER],
+            'emoji' => '👻',
+            'at' => $ritual->clock->now,
+        ]]);
+        Assert::same(\array_slice($this->rpcCalls($ritual), -1), [['emote', 'ok']]);
+        Assert::same($ritual->tally->count(EveningTally::CALLS), 2);
+    }
+
+    public function emoteTakesATokenOfTheOtherBucket(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['other' => new TokenBucket(1.0, 1)]);
+
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '👻'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'no character']);
+        Assert::same($this->call($ritual, 'emote', ['emoji' => '👻'], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+        Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['other']], $ritual->metrics->calls, true));
+    }
+
     public function unavailableLimiterLetsTheCallThrough(): void
     {
         $ritual = new RitualHarness();
@@ -1324,6 +1366,7 @@ final class RPCServiceTest
             $ritual->chat,
             $ritual->limits,
             $ritual->tally,
+            $ritual->emotes,
         );
         $service->handle(new RPC(
             worker: $this->worker,

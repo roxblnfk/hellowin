@@ -28,6 +28,7 @@ final readonly class PlayMetrics
     public const RPC_DURATION = 'hellowin_rpc_duration_seconds';
     public const BEER_MUGS = 'hellowin_beer_mugs_total';
     public const BEER_LITRES = 'hellowin_beer_litres';
+    public const EMOTES = 'hellowin_emotes_total';
     public const PLACE_BAR = 'bar';
     public const PLACE_CURSED = 'cursed';
 
@@ -58,6 +59,7 @@ final readonly class PlayMetrics
             self::RPC_DURATION => Collector::histogram(...self::RPC_BUCKETS)->withHelp('RPC handling time in PHP, seconds.')->withLabels('method'),
             self::BEER_MUGS => Collector::counter()->withHelp('Mugs drunk since the RoadRunner start, by place: bar or cursed.')->withLabels('place'),
             self::BEER_LITRES => Collector::gauge()->withHelp('Litres of beer drunk by all players ever.'),
+            self::EMOTES => Collector::counter()->withHelp('Emotes shown over the characters, by emoji.')->withLabels('emoji'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -90,6 +92,14 @@ final readonly class PlayMetrics
     public function mug(string $place): void
     {
         $this->safely(fn() => $this->metrics->add(self::BEER_MUGS, 1, [$place]));
+    }
+
+    /**
+     * @param non-empty-string $emoji One of the configured set: the label stays a short list.
+     */
+    public function emote(string $emoji): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::EMOTES, 1, [$emoji]));
     }
 
     /**

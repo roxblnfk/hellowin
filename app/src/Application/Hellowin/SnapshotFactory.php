@@ -50,6 +50,7 @@ use App\Domain\Walk\WalkerStore;
  *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
  *     top: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}>},
  *     flyers: list<array>,
+ *     emotes: list<non-empty-string>,
  *     startedAt: int,
  *     now: int
  * }
@@ -58,6 +59,7 @@ final readonly class SnapshotFactory
 {
     /**
      * @param list<Bush> $bushes
+     * @param list<non-empty-string> $emotes The emoji of the emote panel, in the order of its buttons.
      */
     public function __construct(
         private ElementRegistry $elements,
@@ -77,6 +79,7 @@ final readonly class SnapshotFactory
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
         private ?PresenceStore $presence = null,
+        private array $emotes = [],
     ) {}
 
     /**
@@ -142,6 +145,7 @@ final readonly class SnapshotFactory
             'dice' => $this->dice?->state($ritual->round, $ritual->story),
             'top' => $this->top?->state() ?? ['board' => []],
             'flyers' => $this->flyers?->wanderers($ritual->story) ?? [],
+            'emotes' => $this->emotes,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now
             'startedAt' => $this->startTime?->at() ?? $this->clock->now(),

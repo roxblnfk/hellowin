@@ -43,6 +43,7 @@
 | Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
 | Кости 6-6-6: запись, грани | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 | Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
+| Эмоции: набор, пауза, событие | `Application/Chat/EmoteService` (RPC `emote`) |
 
 ## Периодический процесс (тикер)
 
@@ -440,6 +441,23 @@
 - **Заглушить** (`chat.mute`): нужен только `hellowin:player:{id}` — фигурка не обязательна; список меняется под тем же
   локом `chat`, имена в ответах — из записей игроков.
 
+## Эмоции
+
+**Реализовано** (бриф №28). Протокол — [`protocol.md`](protocol.md), «Эмоции».
+
+- **Показать** (`EmoteService::emote`, RPC `emote {emoji}`): аноним — `anonymous` (в `RPCService`); фигурки нет в
+  `hellowin:walkers` — `no character`; `emoji` не строка или не из `HELLOWIN_EMOTES` (точное совпадение строки) —
+  `unknown emoji`; затем пауза — `busy`. Принятая эмоция — событие `emote {round, player: {id}, emoji, at}` (`at` —
+  `Clock::now()`, мс) и `hellowin_emotes_total{emoji}`. Не хранится нигде, ход не останавливает (`ActionStop` не
+  зовётся), паузы прогресса, сцены и зомби-фигурки (`Walker::zombie()`) не проверяет.
+- **Пауза** `HELLOWIN_EMOTE_COOLDOWN_MS` на игрока — то же ведро, что у лимита RPC (`RateLimiter`, «Лимиты запросов»),
+  в своей группе `emote`: `burst` 1, пополнение 1 токен за паузу. Ключ `hellowin:rate:emote:{id}` в KV `process`,
+  лок `rate:emote:{id}`; отказ ведра — `busy` без события, занятый лок — тоже `busy`. 0 — без паузы. Отдельно от
+  этого вызов берёт токен общего ведра `other` в `RPCService`.
+- **Снимок** — `emotes`: набор `HELLOWIN_EMOTES` в порядке кнопок; страница получает его через снимок
+  (`HomeController`), клиент — и через RPC `state`.
+- `emote` — действие игрока: идёт в `calls` (`hellowin:tally:calls`), как любой известный метод, кроме чтений.
+
 ## Модератор
 
 - **Роль.** `ConnectService` сравнивает `moderatorSecret` из `data` подключения с `HELLOWIN_MODERATOR_SECRET`
@@ -526,7 +544,7 @@
   кружки, удары и бродячие зомби, не засчитанные паузой, — `hellowin:uncounted` (см. «Пауза прогресса»).
   `calls` — действия игроков и модератора, дошедшие до PHP за раунд, с любым ответом (`ok`, отказ, `rate limited`,
   `forbidden`, пауза): все известные методы `RPCService`, кроме чтений `state`, `time`, `me`, `reveal` и
-  `chat.history`; неизвестный метод — не действие. Это `clicks` и ходы, выстрелы, `clink`, `clink.auto`, `say` и всё прочее
+  `chat.history`; неизвестный метод — не действие. Это `clicks` и ходы, выстрелы, `clink`, `clink.auto`, `say`, `emote` и всё прочее
   (`Application/Story/EveningTally`, «Счётчики вечера»). К `burned` прибавляются повторы, отброшенные идемпотентностью
   вне кликов по элементам, — `dropped` того же счётчика (см. «Переходы», «Отброшенные повторы»).
   `lastPumpkin` — игрок из задачи, отметившей последнюю готовность
@@ -765,7 +783,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Бар: стойка `hellowin:bar`, выпитые за раунд `hellowin:drinks` | Valkey | тот же storage `hellowin` |
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot`, незасчитанные паузой кружки, удары и зомби `hellowin:uncounted` `{round, drinks, damage, slain}` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
-| Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` (TTL) | память RoadRunner | тот же storage `process` |
+| Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` и паузы эмоций `hellowin:rate:emote:{player}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
@@ -779,7 +797,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Числа прошлых циклов вечера `hellowin:evening` `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls, lastPumpkin}` | Valkey | тот же storage `hellowin`, лок `evening` |
 | Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `started-at`, `rate:{group}:{caller}` (и `rate:emote:{player}`), лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` — релиз `^0.5`: в нём `RedisAtMostOnceConfig` и `RedisLeaseConfig`. Valkey с AOF и volume — состояние переживает
@@ -811,6 +829,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
 | `hellowin_online_connections` | gauge | все подключения к каналу сейчас: вкладки и анонимы; там же |
 | `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
+| `hellowin_emotes_total{emoji}` | counter | показанные эмоции (успешный RPC `emote`); `emoji` — из набора `HELLOWIN_EMOTES` |
 | `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл. Тот же вызов, если это действие, — `+1` в `hellowin:tally:calls` (`reveal.calls`): метрика живёт до рестарта RR и раунда не знает |
 | `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |
 
@@ -861,6 +880,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_TOP_INTERVAL` | 500 | мс, не чаще которых тикер публикует изменившийся топ стрелков |
 | `HELLOWIN_CHAT_MAX` | 120 | символов в сообщении чата после чистки, не больше (`invalid text`) |
 | `HELLOWIN_CHAT_HISTORY` | 50 | последних сообщений чата в `hellowin:chat` для `chat.history` |
+| `HELLOWIN_EMOTES` | `🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏` | набор эмоций через запятую, порядок — порядок кнопок панели; без пустых и повторов; `emotes` снимка, иначе `unknown emoji` |
+| `HELLOWIN_EMOTE_COOLDOWN_MS` | 1000 | пауза между эмоциями игрока, мс (`busy`); 0 — без паузы |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |
@@ -869,7 +890,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_RPC_RATE_SHOOT` | `20,40` | то же для `shoot` |
 | `HELLOWIN_RPC_RATE_MOVE` | `10,20` | то же для `move` |
 | `HELLOWIN_RPC_RATE_SAY` | `1,3` | то же для `say` (чат) |
-| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `reveal`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`…) |
+| `HELLOWIN_RPC_RATE_OTHER` | `10,30` | общий лимит прочих методов (`state`, `reveal`, `time`, `me`, `register`, `clink`, `bar.take`, `clink.auto`, `drink`, `emote`…) |
 | `CENTRIFUGO_WS_URL` | `:8000/connection/websocket` | URL WebSocket для фронта: `:<порт>/путь` достраивается хостом страницы, полный URL или путь — как есть |
 | `GRAFANA_URL` | `:3000/` | ссылка на дашборд со страниц, в тех же формах |
 | `CENTRIFUGO_GRPC_API` | `centrifugo:10000` | gRPC API Centrifugo для публикации |
