@@ -132,7 +132,8 @@
   the word: ?word=ok — every answer right, ?word=fail — every answer wrong, by default every second one wrong; bots say the
   word, the wrong ones shamble as zombies (the engine walks them every 2–4 s), other bots cure them. ?boss=hp,max — the
   boss awake at once (his addition makes up max); otherwise he wakes with the limit `boss`; ?strike=1 — bots with a rapier strike FrankenPHP every 600 ms; the last blow says `boss-down` and
-  goes to step 7. ?zombified=1 (with ?me=1) — my walker a zombie. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
+  goes to step 7; ?bossdown=ms (with ?freeze) — the first walker lands that last blow at that moment, so
+  ?finale=6&boss=10,100&bossdown=0&freeze=1200 catches FrankenPHP burning (docs/spec/frontend.md, «Груда пепла»). ?zombified=1 (with ?me=1) — my walker a zombie. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
   chickens more often; «В бар» on the console (?mod=1) is a new round of the evening (`reset` with `again`, `bar-again`).
   RoadRunner behind the counter (`bar.roadrunner`): ?roadrunner=1 opens the bar as «В бар» from the dawn does, with him
   there (the console's reset sends him away, «В бар» brings him back); ?rrclink=1 — and the first bot, beer in hand,
@@ -2370,6 +2371,7 @@
     const shotAt = Math.round((Number.parseInt(params.get('shotAt') ?? '896', 10) || 896) / 16) * 16;
     const nextAt = params.has('next') ? Math.round(Number.parseInt(params.get('next'), 10) / 16) * 16 : -1;
     const playAt = params.has('play') ? Math.round(Number.parseInt(params.get('play'), 10) / 16) * 16 : -1;
+    const bossDownAt = params.has('bossdown') ? Math.round(Number.parseInt(params.get('bossdown'), 10) / 16) * 16 : -1;
     const meepAt = params.has('meep') ? Math.round(Number.parseInt(params.get('meep'), 10) / 16) * 16 : -1;
     const owlRollsAt = (params.get('owlroll') ?? '').split(',').filter(Boolean).map((ms) => Math.round(Number.parseInt(ms, 10) / 16) * 16);
     function simulate() {
@@ -2423,6 +2425,11 @@
             if (simTime === resetAt) engineReset();
             if (simTime === nextAt) engineSceneNext({ scene: engine.scene, force: true });
             if (simTime === playAt && engine.finale) engineFinaleStep({ step: engine.finale.step + 1, force: true });
+            if (simTime === bossDownAt && engine.boss && engine.walkers[0]) {
+                engine.boss.hp = 1;
+                engine.walkers[0].item = 'rapier';
+                engineStrike(engine.walkers[0].id);
+            }
             // ?flyers=1: one flyer per depth right away (the near one from a bush); ?shoot=N (default 1) is shot at ?shotAt=ms (default 896, a multiple of 16).
             if (flyersOn && simTime === 0) {
                 const kind = params.get('kind') ?? undefined;

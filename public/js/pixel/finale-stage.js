@@ -1,10 +1,10 @@
 import { Sprite } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
 import { bossPhraseAt, phraseAt } from '../franken.js';
 import { createBubbles } from './bubble.js';
-import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, breathOf, frankenHalo, runnerAura } from './finale.js';
-import { EMISSIVE, LIT_PALETTE } from './night.js';
+import { BOSS, FINALE_EMISSIVE, FRANKEN, FX, RUNNER, SILHOUETTE, bossBurn, breathOf, frankenHalo, runnerAura } from './finale.js';
+import { EMISSIVE, LIT_PALETTE, halo as groundHalo } from './night.js';
 import { PALETTE } from './palette.js';
-import { T } from './finale-timeline.js';
+import { BURN, BURN_SPARKS, T, burnFlame, burnFrameOf, burnLight, burnSparksAt } from './finale-timeline.js';
 import { DASH, dashAt, dashSpan, dustAt } from './runner-dash.js';
 import { horizonAt } from './runner-horizon.js';
 import { pick } from '../i18n.js';
@@ -113,6 +113,9 @@ const GLINT_LENS_MS = 80;
 // The fallen glasses drop onto the heap with this gravity (art px/s²); the ash smokes in a wisp every WISP_MS.
 const GLASSES_FALL = 260;
 const WISP_MS = 2400;
+// The burning boss's light: upright around him, and a pool on the ground at his feet.
+const FIRE_GLOW = groundHalo(30, 38, 'warm');
+const FIRE_POOL = groundHalo(46, 11, 'warm');
 
 // The smoke of the third strike, all of it a function of the ms since the strike, the same for every viewer.
 const BURST_AT = T.strikes[2];
@@ -236,8 +239,11 @@ export function createFinaleStage(env) {
     // and the server ms of the last meep of a dash or on the horizon voiced.
     let heldSlot = null;
     let voicedMeep = null;
+    let burnMade = false;
 
     function build() {
+        // The scene clears its own layers on a rebuild; what was lifted over its fade is ours to clear.
+        env.overFade?.removeChildren().forEach((c) => c.destroy());
         const make = (layer, { add = false, alpha = 1 } = {}) => {
             const s = new Sprite();
             s.visible = false;
@@ -260,6 +266,10 @@ export function createFinaleStage(env) {
             glasses: make(env.ground),
             wisp: make(env.ground, { alpha: 0.7 }),
             puffs: Array.from({ length: STRIKE_PUFFS }, () => make(env.ground)),
+            flame: make(env.ground),
+            fireGlow: make(env.light, { add: true }),
+            firePool: make(env.light, { add: true }),
+            sparks: Array.from({ length: BURN_SPARKS }, () => make(env.ground)),
         };
     }
 
@@ -387,7 +397,7 @@ export function createFinaleStage(env) {
     // ------------------------------------------------------------------ the frame
     function hideAll() {
         if (g) {
-            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.aura, g.halo, g.glasses, g.wisp, ...g.creep, ...g.puffs, ...g.dust]) s.visible = false;
+            for (const s of [g.flash, g.column, g.cloudBack, g.figure, g.cloudFront, g.runner, g.aura, g.halo, g.glasses, g.wisp, g.flame, g.fireGlow, g.firePool, ...g.creep, ...g.puffs, ...g.dust, ...g.sparks]) s.visible = false;
         }
         lightning.visible = false;
         runnerFar.visible = false;
@@ -427,6 +437,11 @@ export function createFinaleStage(env) {
         }
 
         const boss = env.boss?.() ?? null;
+        // His burning takes a while to draw: made ahead, in an idle moment, while the boss still stands.
+        if ((step === 5 || step === 6) && !burnMade && !reduced) {
+            burnMade = true;
+            (globalThis.requestIdleCallback ?? setTimeout)(() => bossBurn());
+        }
         const down = downOf(step, t, boss, clock);
         // FrankenPHP talks only in the cursed world, and not over the owl's farewell or its return; while the boss stands
         // he has his own lines, more often; felled, he is silent.
@@ -531,23 +546,52 @@ export function createFinaleStage(env) {
     }
 
     /**
-     * FrankenPHP felled, `down` ms ago: he darkens, cracks and crumbles into a heap (BOSS.collapse), then the ash
-     * pile stays with its embers flickering and a wisp of smoke; the boss's glasses drop onto it.
+     * FrankenPHP felled, `down` ms ago: he burns to ash (bossBurn, BURN) — fire from his feet up, the body charring
+     * and crumbling into a heap, sparks and cinders rising, the fire lighting the ground; then the ash pile stays with
+     * its embers flickering and a wisp of smoke; the boss's glasses drop onto it.
      */
     function fallen(down, c, base, boss, clock, reduced) {
-        const k = reduced ? BOSS.collapse.length : Math.floor(down / T.collapseFrame);
-        const def = k < BOSS.collapse.length ? BOSS.collapse[k] : BOSS.ash[reduced ? 0 : Math.floor(clock / 300) % BOSS.ash.length];
+        // The night fading into the dawn would cover his fire: while it fades he burns over it.
+        const over = env.fading?.() && env.overFade;
+        for (const [sprite, home] of [[g.figure, env.ground], [g.flame, env.ground], [g.glasses, env.ground], [g.wisp, env.ground], [g.fireGlow, env.light], [g.firePool, env.light], ...g.sparks.map((sp) => [sp, env.ground])]) {
+            const layer = over || home;
+            if (sprite.parent !== layer) layer.addChild(sprite);
+        }
+        const k = reduced ? null : burnFrameOf(down);
+        const def = k !== null ? bossBurn().body[k] : BOSS.ash[reduced ? 0 : Math.floor(clock / 300) % BOSS.ash.length];
         place(g.figure, def, c.x, c.y, frankenTexture(def), base + 4);
-        if (k >= BOSS.collapse.length && !reduced) {
+        const flame = reduced ? 0 : burnFlame(down);
+        if (flame > 0) {
+            const phase = Math.floor(down / BURN.flickerMs) % 4;
+            const fire = k !== null ? bossBurn().flames[k][phase] : bossBurn().heap[flame > 0.3 ? 0 : 1][phase];
+            place(g.flame, fire, c.x, c.y, env.defTexture(fire), base + 4.7);
+        }
+        const light = reduced ? 0 : burnLight(down) * (0.85 + 0.15 * ((mix(0xf1a3, Math.floor(down / BURN.flickerMs)) % 100) / 100));
+        if (light > 0) {
+            place(g.fireGlow, FIRE_GLOW, c.x, c.y - 30, env.defTexture(FIRE_GLOW));
+            g.fireGlow.alpha = 0.3 * light;
+            place(g.firePool, FIRE_POOL, c.x, c.y, env.defTexture(FIRE_POOL));
+            g.firePool.alpha = 0.6 * light;
+        }
+        if (!reduced) {
+            burnSparksAt(down).forEach((p, i) => {
+                const spark = FX.sparks[p.kind][p.fade];
+                // The dying ones blink out.
+                if (p.fade === 2 && (Math.floor(down / 60) + i) % 2) return;
+                place(g.sparks[i], spark, c.x + p.x, c.y + p.y, p.kind === 'cinder' ? env.defTexture(spark, env.lighting()) : env.defTexture(spark), base + 6);
+            });
+        }
+        if (k === null && down >= BURN.out && !reduced) {
             const into = clock % WISP_MS;
             const wisp = FX.smoke.puff[0][Math.min(3, Math.floor((into / WISP_MS) * 4))];
             place(g.wisp, wisp, c.x + 6 + Math.round(into / 600), c.y - 12 - Math.round(into / 140), env.defTexture(wisp, env.lighting()), base + 5);
         }
         if (!boss?.woke) return;
-        // The glasses fall from his eyes onto the top of the heap.
+        // The glasses stay on his face until the crumbling reaches his eyes, then fall onto the top of the heap.
         const head = c.y - 62;
         const rest = c.y - 10;
-        const y = reduced ? rest : Math.min(rest, head + 0.5 * GLASSES_FALL * (down / 1000) ** 2);
+        const fell = Math.max(0, down - BURN.glassesAt);
+        const y = reduced ? rest : Math.min(rest, head + 0.5 * GLASSES_FALL * (fell / 1000) ** 2);
         const glasses = y < rest ? BOSS.glasses[0][0] : BOSS.glassesFallen;
         place(g.glasses, glasses, y < rest ? c.x : c.x - 2, y < rest ? c.y + (y - head) : rest, frankenTexture(glasses), base + 4.5);
     }
@@ -582,7 +626,7 @@ export function createFinaleStage(env) {
 
     /** Hides FrankenPHP for one frame: a fade into the dawn freezes the night without him, he falls in the new light. */
     function hideFigure() {
-        if (g) for (const sprite of [g.figure, g.glasses, g.halo, g.wisp]) sprite.visible = false;
+        if (g) for (const sprite of [g.figure, g.glasses, g.halo, g.wisp, g.flame, g.fireGlow, g.firePool, ...g.sparks]) sprite.visible = false;
     }
 
     /** The moderator's «Мип-мип!» over RoadRunner, if he is on screen; returns whether he is. */

@@ -215,7 +215,10 @@ export async function createScene(rootEl, snapshot) {
     // A frozen copy of the world in the old lighting, fading out over the relit one when the scene changes.
     const fadeDisplay = new Sprite();
     fadeDisplay.visible = false;
-    app.stage.addChild(display, fadeDisplay, labelLayer);
+    // What must not fade with the old frame, drawn over it in art px: FrankenPHP burning as the night turns to the dawn.
+    const overFadeLayer = new Container();
+    overFadeLayer.sortableChildren = true;
+    app.stage.addChild(display, fadeDisplay, overFadeLayer, labelLayer);
 
     const art = new Map();
     const artTexture = (key, make) => {
@@ -1778,6 +1781,7 @@ export async function createScene(rootEl, snapshot) {
         // A fade frozen at the old size would not line up any more.
         if (fade && (fade.texture.width !== layout.artW || fade.texture.height !== layout.artH)) endFade();
         fadeDisplay.scale.set(layout.cssPx);
+        overFadeLayer.scale.set(layout.cssPx);
         groundLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
         lightLayer.removeChildren().forEach((c) => c.destroy());
         lighting = lightingOf(state.scene);
@@ -3938,6 +3942,8 @@ export async function createScene(rootEl, snapshot) {
     const stage = createFinaleStage({
         ground: groundLayer,
         light: lightLayer,
+        overFade: overFadeLayer,
+        fading: () => fade !== null,
         far: farFlyerLayer,
         fx: fxLayer,
         labels: labelLayer,

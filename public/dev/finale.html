@@ -30,7 +30,8 @@
     import { EMISSIVE, LIT_PALETTE, NIGHT, halo, paintSky, relightCanvas } from '../js/pixel/night.js';
     import { characterFrame, randomLook } from '../js/pixel/characters.js';
     import { OWL, OWL_FLIGHT, OWL_RAPIER, armed, glowing } from '../js/pixel/owl.js';
-    import { BOSS, FRANKEN, SILHOUETTE, RUNNER, FX, FINALE_EMISSIVE, breathOf, frankenHalo } from '../js/pixel/finale.js';
+    import { BOSS, FRANKEN, SILHOUETTE, RUNNER, FX, FINALE_EMISSIVE, bossBurn, breathOf, frankenHalo } from '../js/pixel/finale.js';
+    import { BURN, burnFrameOf, burnFlame } from '../js/pixel/finale-timeline.js';
 
     const params = new URLSearchParams(location.search);
     const frozen = params.has('t') ? Number(params.get('t')) : null;
@@ -489,8 +490,27 @@
         boss(FRANKEN.idle[0], 1), boss(FRANKEN.idle[0], 2), boss(BOSS.hit),
     ]);
     for (const lighting of ['night', 'dawn']) {
-        section('rapier', `Груда пепла: рассыпается ×6 (по 270 мс), пепел ×3 (угольки), очки на груде — ${lighting}`, () => [
-            ...sheet(BOSS.collapse.map((s, i) => [`collapse${i}`, s]), lighting, Math.max(1, zoom - 1)),
+        // A burning frame: the body lit by the scene, its flames (light) over it, on the flames' wider canvas.
+        const burnt = (down) => (ctx) => {
+            const fl = bossBurn().flames[0][0];
+            ctx.fillStyle = BG[lighting];
+            ctx.fillRect(0, 0, fl.w, fl.h);
+            const k = burnFrameOf(down);
+            const body = k === null ? BOSS.ash[0] : bossBurn().body[k];
+            stamp(ctx, bakeFinale(body, lighting), body, fl.anchor.x, fl.anchor.y);
+            const flame = burnFlame(down);
+            if (!flame) return;
+            const phase = Math.floor(down / BURN.flickerMs) % 4;
+            const fire = k !== null ? bossBurn().flames[k][phase] : bossBurn().heap[flame > 0.3 ? 0 : 1][phase];
+            stamp(ctx, bakeFinale(fire, 'day'), fire, fl.anchor.x, fl.anchor.y);
+        };
+        const fl = bossBurn().flames[0][0];
+        section('rapier', `Сгорание: тело ×${BURN.frames} по ${BURN.frameMs} мс с пламенем (×4 мерцания по ${BURN.flickerMs} мс), затем пламя на груде до ${BURN.out} мс; цикл — ${lighting}`, () => [
+            ...[0, 2, 4, 6, 8, 10, 11].map((k) => cell(fl.w, fl.h, Math.max(1, zoom - 1), burnt(k * BURN.frameMs + 40), `burn${k}`)),
+            cell(fl.w, fl.h, Math.max(1, zoom - 1), burnt(2900), 'heap'),
+            cell(fl.w, fl.h, Math.max(1, zoom - 1), (ctx, t) => burnt(t % (BURN.out + 800))(ctx), 'цикл'),
+        ]);
+        section('rapier', `Груда пепла: пепел ×3 (угольки), очки на груде — ${lighting}`, () => [
             ...sheet(BOSS.ash.map((s, i) => [`ash${i}`, s]), lighting, Math.max(1, zoom - 1)),
             cell(FRANKEN.w, FRANKEN.h, Math.max(1, zoom - 1), (ctx) => {
                 ctx.fillStyle = BG[lighting];

@@ -1,5 +1,6 @@
 import { FLYERS } from './flyers.js';
 import { PIPS } from '../dice.js';
+import { BURN, burnBody } from './finale-timeline.js';
 
 /**
  * The finale (scenario.md, «Финал»): FrankenPHP, the bird-like silhouette it rises as, RoadRunner running in from the
@@ -483,7 +484,7 @@ export const SILHOUETTE = {
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// The boss (finale step 6): black glasses over the sleepy eyes, the flinch of a strike, and the collapse into ash.
+// The boss (finale step 6): black glasses over the sleepy eyes, the flinch of a strike, and the burning into ash.
 
 /** Black wayfarers over the eyes for a frame breathing `b` (0 | -1); glint 0 — none, 1 — on the left lens, 2 — right. */
 function glassesGrid(b, glint) {
@@ -518,38 +519,126 @@ function glassesGrid(b, glint) {
 // Light keys stay light, the rest goes to the ash ramp by value; the sparks die.
 const ASHEN = { L: 'A', G: 'A', T: 'A', t: 'A', W: 'A', U: 'A', E: 'a', g: 'a', S: 'a', B: 'a', c: 'a', z: '.', Z: '.' };
 
+// Under the flames, before the char reaches them, his colours go a step darker.
+const SCORCH = { L: 'G', G: 'g', g: 'D', T: 't', t: 'A', W: 'B', B: 'b', U: 'S', S: 's', s: 'k', h: 'H', c: 'k' };
+// The smouldering edges: ember red with white-hot specks, both light.
+const BURN_LEGEND = { ...FRANKEN_LEGEND, w: 'flameCore', e: 'ember' };
+
 /**
- * FrankenPHP crumbling, `k` of COLLAPSE_FRAMES: dark first, then lit from within by lime cracks, then falling apart
- * from the top down into a growing heap at his feet, grains trickling off the broken edge.
+ * FrankenPHP (grid `src`, without sparks) burning, body frame `k` of BURN.frames: scorched under the fire climbing
+ * from his feet, charred behind it with a smouldering edge and his lime cracks glowing through, then falling apart
+ * from the top into a heap, grains trickling off the broken edge, which smoulders too.
  */
-function collapseGrid(k) {
-    const src = frankenGrid({ spark: -1 });
+function burnGrid(src, k) {
+    const { ignite, char, fall } = burnBody((k + 0.5) * BURN.frameMs);
     const out = grid(FW, FH);
-    const rnd = mulberry32(99 + k);
+    const rnd = mulberry32(131 + k);
     const top = src.findIndex((row) => row.some((ch) => ch !== '.'));
-    const fall = Math.max(0, k - 1) / (COLLAPSE_FRAMES - 2);
-    const cut = Math.round(top + (FH - top) * fall);
+    const tall = FH - top;
     for (let y = 0; y < FH; y++) {
         for (let x = 0; x < FW; x++) {
             const ch = src[y][x];
             if (ch === '.') continue;
-            let v = ASHEN[ch] ?? 'X';
-            if (v === '.') continue;
-            if (k >= 1 && k < COLLAPSE_FRAMES - 1 && CRACKS.has(x * 1000 + y)) v = (x + y) % 3 ? 'z' : 'Z';
+            const ragged = raggedOf(x, k);
+            const charY = FH - tall * char + ragged;
+            const cut = fall > 0 && fall < 1 ? top + tall * fall + (noise(x * 0.5, k, 91) - 0.5) * 6 : top + tall * fall;
+            let v;
+            if (char > 0 && y >= charY) {
+                v = ASHEN[ch] ?? 'X';
+                if (v === '.') continue;
+                if (fall < 1 && CRACKS.has(x * 1000 + y)) v = (x + y) % 3 ? 'z' : 'Z';
+                if (char < 1 && y < charY + 1.5) v = dither(x, y) < 0.35 ? 'w' : 'e';
+                else if (char < 1 && y < charY + 3.5 && dither(x, y) < 0.5) v = 'e';
+            } else if (y >= fireFront(tall, ignite, x, k)) v = SCORCH[ch] ?? ch;
+            else v = ch;
             if (y < cut) {
                 // A band of grains just under the broken edge still hangs in the air, falling.
                 if (y > cut - 8 && rnd() < 0.18) {
                     const ny = y + Math.round((cut - y) * 1.6 + rnd() * 4);
-                    if (ny < FH) out[ny][x] = rnd() < 0.5 ? 'a' : 'X';
+                    if (ny < FH) out[ny][x] = rnd() < 0.3 ? 'e' : rnd() < 0.5 ? 'a' : 'X';
                 }
                 continue;
             }
+            if (fall > 0 && fall < 1 && y < cut + 2) v = dither(x, y) < 0.3 ? 'w' : 'e';
             out[y][x] = v;
         }
     }
     // The heap grows at his feet as he falls into it.
-    if (fall > 0) heap(out, 8 + fall * 18, 2 + fall * 9, rnd, k);
+    if (fall > 0) heap(out, 8 + fall * 18, 2 + fall * 9, rnd, 40);
     return out;
+}
+
+// The fire's and the char's fronts are ragged by column, the same in a frame; the fire's front row at column `x`.
+const raggedOf = (x, k) => (noise(x * 0.3, k * 0.4, 77) - 0.5) * 10;
+const fireFront = (tall, ignite, x, k) => FH - tall * ignite + raggedOf(x, k);
+
+// The flames' canvas: FLAME_PAD px wider on each side than FrankenPHP's and FLAME_UP taller, anchored like him.
+const FLAME_PAD = 6;
+const FLAME_UP = 26;
+const FLAME_LEGEND = { w: 'flameCore', y: 'pumpkinShine', o: 'pumpkinLight', p: 'pumpkinDark', q: 'pumpkinDeep' };
+
+/**
+ * Flames licking up from the pixels that `burning(x, y)` picks (FrankenPHP's grid coordinates), `size` 0–1, flicker
+ * `phase` 0–3: streaks over the body itself with the char showing between them, and above it swaying tongues up to
+ * ~24 px, white-hot at the root, dithered out at the tips.
+ */
+function flameGrid(burning, size, phase) {
+    const W = FW + 2 * FLAME_PAD;
+    const H = FH + FLAME_UP;
+    const out = grid(W, H);
+    // How far above the nearest burning pixel, a step aside costing more than one up; padded by a column each side.
+    const dist = Array.from({ length: H + 1 }, () => new Float32Array(W + 2).fill(Infinity));
+    for (let y = H - 1; y >= 0; y--) {
+        for (let x = 0; x < W; x++) {
+            const below = dist[y + 1];
+            const d = burning(x - FLAME_PAD, y - FLAME_UP) ? 0 : Math.min(below[x + 1], below[x] + 0.6, below[x + 2] + 0.6) + 1;
+            dist[y][x + 1] = d;
+            if (d === Infinity) continue;
+            // The pattern rises with the phase and sways sideways with the height.
+            const sx = x + Math.sin(y * 0.35 + phase * 1.6) * 1.2;
+            const n = noise(sx * 0.42, (y + phase * 5) * 0.15, 21);
+            if (d === 0) {
+                if (n > 0.56) out[y][x] = n > 0.84 ? 'w' : n > 0.72 ? 'y' : n > 0.61 ? 'o' : 'p';
+                continue;
+            }
+            const tongue = noise(sx * 0.3, phase * 0.7, 5);
+            const reach = (2 + n * 8 + tongue * tongue * 22) * size;
+            if (d > reach) continue;
+            const t = d / reach;
+            if (t > 0.55 && dither(x, y + phase) > (1 - t) * 2.2) continue;
+            out[y][x] = t < 0.15 && n > 0.4 ? 'w' : t < 0.35 ? 'y' : t < 0.6 ? 'o' : t < 0.8 ? 'p' : 'q';
+        }
+    }
+    return toSprite(out, FLAME_LEGEND, { x: FX0 + FLAME_PAD, y: FH + FLAME_UP });
+}
+
+let burnArt = null;
+
+/**
+ * FrankenPHP's burning, made on first use. body — BURN.frames frames on FRANKEN's canvas (bake like him); flames[k] —
+ * 4 flicker frames over body frame k; heap — 2 sizes (0.5, 0.25) of 4 frames dying down on the ash pile (BOSS.ash).
+ * The flames are light (bake as is), on a canvas wider and taller than his with the same foot.
+ */
+export function bossBurn() {
+    if (burnArt) return burnArt;
+    const src = frankenGrid({ spark: -1 });
+    const grids = Array.from({ length: BURN.frames }, (_, k) => burnGrid(src, k));
+    const tall = FH - src.findIndex((row) => row.some((ch) => ch !== '.'));
+    // The fire catches on the ground around his boots first, then on him from the feet up to its front.
+    const catches = (g, front, ring) => (x, y) => (y === FH - 1 && Math.abs(x + 0.5 - FX0) <= ring) || (y >= front(x) && y < FH && (g[y]?.[x] ?? '.') !== '.');
+    const pile = grid(FW, FH);
+    heap(pile, 26, 11, mulberry32(7), 40);
+    burnArt = {
+        body: grids.map((g) => toSprite(g, BURN_LEGEND, FRANKEN_ANCHOR)),
+        flames: grids.map((g, k) => {
+            const s = (k + 0.5) * BURN.frameMs;
+            const { ignite } = burnBody(s);
+            const size = Math.min(1, 0.35 + s / 600) * (k >= BURN.frames - 3 ? 0.75 : 1);
+            return [0, 1, 2, 3].map((phase) => flameGrid(catches(g, (x) => fireFront(tall, ignite, x, k), 6 + 12 * ignite), size, phase));
+        }),
+        heap: [0.5, 0.25].map((size) => [0, 1, 2, 3].map((phase) => flameGrid(catches(pile, () => 0, 0), size, phase))),
+    };
+    return burnArt;
 }
 
 /** A heap of ash on the grid's foot, rx × h: lit from the upper left, ragged on top, a few lime embers in it. */
@@ -570,8 +659,6 @@ function heap(g, rx, h, rnd, seed) {
     }
 }
 
-const COLLAPSE_FRAMES = 6;
-
 // The lime cracks running down his darkened body: a few ragged lines, the same in every frame they show in.
 const CRACKS = (() => {
     const rnd = mulberry32(5);
@@ -588,7 +675,7 @@ const CRACKS = (() => {
     return set;
 })();
 
-/** The ash pile left on the circle, 3 frames of its lime embers flickering; the heap of the last collapse frame. */
+/** The ash pile left on the circle, 3 frames of its lime embers flickering; the heap the burning ends in (bossBurn). */
 function ashPile(f) {
     const g = grid(FW, FH);
     heap(g, 26, 11, mulberry32(7), 40 + f);
@@ -598,14 +685,12 @@ function ashPile(f) {
 /**
  * The boss's extras, same canvas and anchor as FRANKEN. glasses[b][glint]: the black glasses for a frame breathing b
  * (0 — idle[0], spark, talk[0..1], hit; 1 — idle[1], talk[2]), glint 0–2 (a streak of light across a lens every ~3 s,
- * ~80 ms per lens); hit — the flinch of a strike (~120 ms); collapse — 6 frames (~270 ms each) from whole to a heap;
- * ash — the pile on the circle, 3 ember frames (~300 ms); glassesFallen — the glasses lying on the pile, anchor at
- * their bottom middle.
+ * ~80 ms per lens); hit — the flinch of a strike (~120 ms); ash — the pile on the circle, 3 ember frames (~300 ms);
+ * glassesFallen — the glasses lying on the pile, anchor at their bottom middle. The burning itself — bossBurn().
  */
 export const BOSS = {
     glasses: [0, -1].map((b) => [0, 1, 2].map((glint) => glassesGrid(b, glint))),
     hit: frankenSprite({ spark: 2, mouth: true }),
-    collapse: Array.from({ length: COLLAPSE_FRAMES }, (_, k) => toSprite(collapseGrid(k), FRANKEN_LEGEND, FRANKEN_ANCHOR)),
     ash: [0, 1, 2].map(ashPile),
     glassesFallen: toSprite(
         ['.nnnn..nnnn.', 'nkTkknnkTkkn', 'nkkkn..nkkkn', '.nnn....nnn.'].map((r) => [...r]),
@@ -1156,6 +1241,13 @@ export const FX = {
         toSprite(['Z', 'z'].map((r) => [...r]), { z: 'frankenGlowDark', Z: 'frankenGlowHot' }, { x: 0, y: 0 }),
         toSprite(['..z..', '..h..', 'zhZhz', '..h..', '..z..'].map((r) => [...r]), { z: 'frankenGlowDark', h: 'frankenGlow', Z: 'frankenGlowCore' }, { x: 2, y: 2 }),
     ],
+    // The sparks off FrankenPHP burning (burnSparksAt), by fade 0–2: a speck, a cross of fire, a flake of ash with an
+    // ember on it (the flake lit by the scene, the rest light).
+    sparks: {
+        small: ['flameCore', 'pumpkinShine', 'ember'].map((c) => toSprite([['a']], { a: c }, { x: 0, y: 0 })),
+        big: [['y', 'w'], ['o', 'y'], ['p', 'o']].map(([arm, core]) => toSprite(['.a.', 'aba', '.a.'].map((r) => [...r]), { a: FLAME_LEGEND[arm], b: FLAME_LEGEND[core] }, { x: 1, y: 1 })),
+        cinder: [['A', 'e'], ['a', 'e'], ['a', 'X']].map(([flake, glow]) => toSprite([['a', 'b']], { a: { A: 'ashLight', a: 'ash' }[flake], b: { e: 'ember', X: 'ashDark' }[glow] }, { x: 1, y: 0 })),
+    },
 };
 
 /**
