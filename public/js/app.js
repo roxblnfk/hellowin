@@ -28,6 +28,8 @@ function playerSecret() {
 }
 
 const MODERATOR_KEY = 'hellowin.moderator';
+// One browser's meeps are no closer than this; a click inside it sends nothing.
+const MEEP_GAP_MS = 1000;
 
 /**
  * The moderator's secret (protocol.md, «Подключение», item 5): `?moderator=<secret>` is moved into localStorage and
@@ -227,8 +229,18 @@ async function main() {
             })
             .catch((error) => console.warn('shoot rpc failed', error));
     });
-    // RoadRunner on the horizon and of the finale meeps on the moderator's click; the dice roll by «Бросить» or Space.
-    bindMeep(root, () => rpc('meep'));
+    // RoadRunner meeps on anyone's click, a browser's clicks no closer than MEEP_GAP_MS (the server keeps its own
+    // cooldown); the dice roll by «Бросить» or Space.
+    let meepAt = -Infinity;
+    const meep = () => {
+        if (performance.now() - meepAt < MEEP_GAP_MS) return;
+        meepAt = performance.now();
+        // The server's `busy` is someone else's meep a moment ago: heard already, stays quiet.
+        centrifuge.rpc('meep').then(({ data }) => {
+            if (data?.ok === false && data.error !== 'busy') console.warn('meep rejected', data.error);
+        }).catch((error) => console.warn('meep rpc failed', error));
+    };
+    bindMeep(root, meep);
     bindObjectKeys();
     bindDice(root, client);
     // After the shots: a press on a flyer stays a shot even over a walker; a zombie player at step 6 is cured.
@@ -247,7 +259,7 @@ async function main() {
     bindBar(root, client, {
         take: () => mugRpc('bar.take'),
         clink: () => clink({ roadrunner: true }),
-        meep: () => rpc('meep'),
+        meep,
         drink: () => mugRpc('drink').then((data) => {
             if (data?.error === 'not clinked') scene?.hint?.(client.model.me, refusal());
         }),

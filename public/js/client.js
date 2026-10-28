@@ -656,11 +656,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         dawnTable.paint({ dawn: model.dawn, me: model.me, atDawn: step() === DAWN_STEP, compact: width <= DAWN_COMPACT_PX });
     }
 
-    // The moderator's hit zone over RoadRunner on the horizon and of the finale (shown by the scene only while he is on
-    // screen); in the bar the button over him behind the counter takes his meep.
+    // Anyone's hit zone over RoadRunner on the horizon and of the finale (shown by the scene only while he is on screen);
+    // in the bar the button over him behind the counter takes the meep.
     function paintMeep() {
         const zone = root.querySelector('[data-rr-meep]');
-        if (zone) zone.hidden = !(model.moderator && !isBar(model.scene));
+        if (zone) zone.hidden = isBar(model.scene);
     }
 
     // «Чат» and «😀» in the HUD: for a player with a walker, a zombie too (its words come out as a zombie line); without
@@ -1308,9 +1308,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     function clinksRoadrunner() {
         return inBar() && model.bar.roadrunner && canWalk() && holdsBeer();
     }
-    /** Whether the moderator's click on RoadRunner behind the counter is RPC `meep {}` instead of a clink. */
+    /** Whether a click on RoadRunner behind the counter is RPC `meep {}`: he stands there, and it is no clink. */
     function meepsRoadrunner() {
-        return inBar() && model.bar.roadrunner && model.moderator;
+        return inBar() && model.bar.roadrunner && !clinksRoadrunner();
     }
     /**
      * Whether «Бросить» or Space sends RPC `roll`: step 1 with the dice on and explained by the owl, my walker on the
@@ -1733,14 +1733,14 @@ export function bindObjectKeys(doc = globalThis.document) {
  * The bar's input (docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): the counter button asks for a mug, the button
  * over RoadRunner clinks with him, Space and the «Выпить» button drink. Nothing is drawn locally: the walk comes as
  * `move`, the mug as `take`, the glasses as `clink`, the gulp as `drink`. None of them goes out while my mug is busy
- * (`mugBusy`); the moderator's meep is no mug action.
+ * (`mugBusy`); the meep is no mug action.
  *
  * @param {{takesBeer: () => boolean, drinks: () => boolean, clinksRoadrunner?: () => boolean, mugBusy?: () => boolean}} client  the client model's routing
  * @param {object} actions
  * @param {() => void} actions.take  sends RPC `bar.take`
  * @param {() => void} actions.drink  sends RPC `drink`
  * @param {() => void} [actions.clink]  sends RPC `clink {roadrunner: true}`
- * @param {() => void} [actions.meep]  sends the moderator's RPC `meep {}`
+ * @param {() => void} [actions.meep]  sends RPC `meep {}`
  */
 export function bindBar(root, client, { take, drink, clink = null, meep = null }, doc = globalThis.document) {
     const free = () => !client.mugBusy?.();
@@ -1749,14 +1749,14 @@ export function bindBar(root, client, { take, drink, clink = null, meep = null }
         event.stopPropagation();
         if (client.takesBeer() && free()) take();
     });
-    // He stands over the counter's button: with empty hands a click on him is still a click on the counter.
+    // With a beer a click on him is a clink; otherwise he meeps (without the meep it is still a click on the counter).
     root.querySelector('[data-roadrunner]')?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (meep && client.meepsRoadrunner?.()) meep();
-        else if (!free()) return;
-        else if (clink && client.clinksRoadrunner?.()) clink();
-        else if (client.takesBeer()) take();
+        if (clink && client.clinksRoadrunner?.()) {
+            if (free()) clink();
+        } else if (meep && client.meepsRoadrunner?.()) meep();
+        else if (client.takesBeer() && free()) take();
     });
     root.querySelector('[data-drink]')?.addEventListener('click', () => {
         if (client.drinks() && free()) drink();
@@ -1795,7 +1795,7 @@ export function bindDice(root, client, doc = globalThis.document) {
 }
 
 /**
- * The moderator's hit zone over RoadRunner on the horizon and of the finale: RPC `meep {}`; the bubble comes back as the
+ * Anyone's hit zone over RoadRunner on the horizon and of the finale: RPC `meep {}`; the bubble comes back as the
  * `meep` event.
  */
 export function bindMeep(root, meep) {
