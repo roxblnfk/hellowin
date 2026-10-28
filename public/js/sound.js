@@ -154,7 +154,8 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
 
     /** 0.2 + 0.8 × the share of the scene passed; the whole way from the scene's readiness and finale step 1. */
     function intensity(model) {
-        if (isBar(model.scene)) return BAR_INTENSITY;
+        // The bar stays low until it is ready: a page opened after the owl's go-ahead hears the same as the hall.
+        if (isBar(model.scene)) return model.ready ? 1 : BAR_INTENSITY;
         // The epic breaks on FrankenPHP: only the choir of the rise hangs on through step 2.
         if (finalScene(model) && model.finale?.step === 2) return BROKEN_INTENSITY;
         if (model.ready || (finalScene(model) && (model.finale?.step ?? 0) >= 1)) return 1;
