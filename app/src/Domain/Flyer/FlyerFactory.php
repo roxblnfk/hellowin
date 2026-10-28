@@ -155,11 +155,22 @@ final readonly class FlyerFactory
      * @param bool $cursed The cursed world: its own set of kinds, the rare flyer still of the scene.
      * @param bool $dawn The dawn: its own set of kinds, like the cursed world.
      * @param bool $rare Whether this launch may turn out the rare flyer of the scene.
+     * @param bool $roadrunner Whether the rare flyer may be the roadrunner; when not, a scene whose rare one he is has
+     *        none.
      * @return Flyer|null Null when the set has no flyers and this launch is not the rare one.
      */
-    public function launch(int $now, int $scene = 0, bool $cursed = false, bool $dawn = false, bool $rare = true): ?Flyer
-    {
+    public function launch(
+        int $now,
+        int $scene = 0,
+        bool $cursed = false,
+        bool $dawn = false,
+        bool $rare = true,
+        bool $roadrunner = true,
+    ): ?Flyer {
         $special = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
+        if (!$roadrunner && $special === Flyer::KIND_ROADRUNNER) {
+            $special = null;
+        }
         if ($rare && $special !== null && $this->chance($this->rareChance)) {
             return $this->special($special, $now);
         }

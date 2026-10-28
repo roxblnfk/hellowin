@@ -77,7 +77,8 @@ final readonly class FlyerService
     public function launch(int $now): ?Flyer
     {
         $ritual = $this->ritual->snapshot();
-        $flyer = $this->factory->launch($now, $ritual->scene, $ritual->story->cursed(), $ritual->story->dawn());
+        $story = $ritual->story;
+        $flyer = $this->factory->launch($now, $ritual->scene, $story->cursed(), $story->dawn(), roadrunner: !$story->runnerCame());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }

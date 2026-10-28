@@ -167,6 +167,8 @@ final class RitualHarness
      * @param Limit|null $pumpkin Clicks a pumpkin stage takes, in place of the flat `$threshold`.
      * @param positive-int $barPourPer Free places on the counter per mug of a batch.
      * @param int<0, max> $autoStall Milliseconds without the room's task before the autopilot moves with `force`.
+     * @param list<non-empty-string|null> $flyerRare The rare flyer by scene; none by default.
+     * @param float $flyerRareChance Probability that a launch is the rare flyer of the scene.
      */
     public function __construct(
         int $threshold = 2,
@@ -187,6 +189,8 @@ final class RitualHarness
         ?Limit $pumpkin = null,
         int $barPourPer = 10,
         int $autoStall = 0,
+        array $flyerRare = [],
+        float $flyerRareChance = 0.0,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -256,6 +260,8 @@ final class RitualHarness
                 0.5,
                 new Randomizer(new Mt19937(42)),
                 $flyerKinds ?? [...(($stageMax[0] ?? null) === 0 ? [[Flyer::KIND_FLY]] : []), [Flyer::KIND_DUCK], ['bat'], [Flyer::KIND_WORM]],
+                rare: $flyerRare,
+                rareChance: $flyerRareChance,
                 lawn: self::walkZone(),
                 cursed: [Flyer::KIND_FIREFLY],
                 fireflyPoints: 1,

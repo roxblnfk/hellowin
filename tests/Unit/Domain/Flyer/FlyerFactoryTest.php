@@ -318,6 +318,15 @@ final class FlyerFactoryTest
         Assert::same($factory->launch(0, 2)?->kind, 'witch');
     }
 
+    public function roadrunnerHeldBackLeavesTheSceneWithoutARareFlyer(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck'], []], [null, 'roadrunner', 'witch'], 1.0);
+
+        Assert::null($factory->launch(0, 1, roadrunner: false));
+        Assert::same($factory->launch(0, 1)?->kind, 'roadrunner');
+        Assert::same($factory->launch(0, 2, roadrunner: false)?->kind, 'witch');
+    }
+
     public function rareFlyerOfTheSceneShowsUpByChance(): void
     {
         $factory = new FlyerFactory(

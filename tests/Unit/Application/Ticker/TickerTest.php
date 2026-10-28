@@ -300,6 +300,22 @@ final class TickerTest
         Assert::null($ritual->flyers->shoot($flies[1]['flyer'], 'bbbbbbbbbbbbbbbb'));
     }
 
+    public function roadrunnerLeavesTheSkyOnceHeComesIntoTheFinale(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1], flyerRare: [null, 'roadrunner'], flyerRareChance: 1.0);
+        $ritual->transitions->scene(1, 1);
+        $ritual->story->finaleStep(1, force: true);
+        $ritual->story->finaleStep(2, force: true);
+
+        Assert::same($ritual->flyers->launch(0)?->kind, 'roadrunner', 'before his entrance');
+
+        $ritual->story->finaleStep(3, force: true);
+        Assert::same($ritual->flyers->launch(0)?->kind, 'bat', 'his entrance');
+
+        $ritual->story->finaleStep(4, force: true);
+        Assert::same($ritual->flyers->launch(0)?->kind, 'bat', 'after it');
+    }
+
     public function cursedWorldLaunchesItsOwnSet(): void
     {
         $ritual = new RitualHarness(stageMax: [1]);

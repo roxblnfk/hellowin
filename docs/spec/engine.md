@@ -114,8 +114,11 @@
   берёт паузу `HELLOWIN_FLYER_INTERVAL_DAWN` (`FlyerService::atDawn`); `FlyerService` передаёт флаги в
   `FlyerFactory::launch(now, scene, cursed, dawn)`. До
   шага 5 финальная сцена летает своим набором из `HELLOWIN_FLYER_KINDS`. Редкий летун — по-прежнему по сцене
-  (`HELLOWIN_FLYER_RARE`, по умолчанию у финала его нет). Пустой набор — как пустой набор сцены. Пауза останавливает и
-  этот набор; зомби идут отдельно (бродячие, см. ниже).
+  (`HELLOWIN_FLYER_RARE`, по умолчанию у финала — `roadrunner`), но `roadrunner` — только до шага 3: с выхода
+  RoadRunner (`Story::RUNNER_STEP`, `Story::runnerCame`) он у клиента свой, и `FlyerService::launch` передаёт
+  `FlyerFactory::launch(…, roadrunner: false)` — сцена, чей редкий летун `roadrunner`, остаётся без редкого. Кнопка
+  `flyer.special` его по-прежнему запускает (пульт прячет её сам). Пустой набор — как пустой набор сцены. Пауза
+  останавливает и этот набор; зомби идут отдельно (бродячие, см. ниже).
 - **Светлячки** (`firefly`) — обычные летуны (край или куст, прямая или дуга), но глубина — только 1–2
   (`FIREFLY_DEPTHS`, ограничено числом глубин): из куста вне этих глубин светлячок не взлетает — путь берётся с края,
   глубина — равновероятно 1 или 2. Длительность — глубины, очки — `HELLOWIN_FLYER_FIREFLY_POINTS` на любой глубине.
@@ -926,7 +929,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_FLY_SIT` | `900-1600` | мс на каждой посадке мухи: диапазон или число |
 | `HELLOWIN_FLYER_FLY_LEG` | 900 | мс перелёта мухи от точки к точке |
 | `HELLOWIN_FLYER_FLY_POINTS` | 1 | очки за муху |
-| `HELLOWIN_FLYER_RARE` | `;roadrunner;;;` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний |
+| `HELLOWIN_FLYER_RARE` | `;roadrunner;roadrunner;roadrunner;roadrunner` | редкий летун каждой сцены через `;` (пусто — нет), за концом списка — последний; `roadrunner` в финале — только до шага 3 |
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
 | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5, 0.2 | волна летунов модератора (`flyers.burst`), см. «Лимиты и баланс» (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна, кроме `roadrunner` (у него 0) |

@@ -19,6 +19,9 @@ final readonly class Story
     /** The finale step where FrankenPHP stands revealed and the characters run to the edges of the lawn. */
     public const SCATTER_STEP = 2;
 
+    /** RoadRunner comes running into the finale. */
+    public const RUNNER_STEP = 3;
+
     /** The finale step that shows the reveal: the real numbers of the evening. */
     public const REVEAL_STEP = 4;
 
@@ -222,6 +225,15 @@ final readonly class Story
     public function dawn(): bool
     {
         return $this->finale === self::DAWN_STEP;
+    }
+
+    /**
+     * RoadRunner has come running into the finale: from here the client runs him, and a rare one in the sky would be
+     * a second RoadRunner.
+     */
+    public function runnerCame(): bool
+    {
+        return $this->finale !== null && $this->finale >= self::RUNNER_STEP;
     }
 
     public function revealed(): bool

@@ -30,7 +30,7 @@ final class FlyerConfig extends InjectableConfig
         'fly_sit' => '900-1600',
         'fly_leg' => 900,
         'fly_points' => 1,
-        'rare' => ';roadrunner;;;',
+        'rare' => ';roadrunner;roadrunner;roadrunner;roadrunner',
         'rare_chance' => 0.08,
         'rare_points' => 10,
         'kinds_dawn' => 'duck,chicken',
