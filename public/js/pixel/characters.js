@@ -1500,8 +1500,45 @@ function catEarsHat(g, x0, y0, dir) {
     catEars(g, x0, y0, dir, 'crow');
 }
 
+// «Кепка Валеры»: a dark grey baseball cap with NB on the front. It sits low: the visor ends a row above the eyes, so
+// its outline lands on the forehead and not on them. From the side the visor juts forward past the face; from the
+// back the strap's opening over the adjuster reads dark, the layer's outline fills it.
+const CAP_LEGEND = { l: 'capLight', c: 'cap', C: 'capShade', n: 'capLogo', a: 'gray' };
+const CAP = {
+    front: [
+        '......CC......',
+        '...lccccccC...',
+        '..lnccncnncC..',
+        '.lcnncncnnncC.',
+        '.lcncnncncncC.',
+        '.lcnccncnnccC.',
+        'llllllllllllll',
+        '..CCCCCCCCCC..',
+    ],
+    side: [
+        '......CC.........',
+        '...lcccccC.......',
+        '..lccccccccC.....',
+        '.lccccccccccC....',
+        '.lccccccccccC....',
+        '.lcccccccccccC...',
+        '.lcccccccccclllll',
+        '..CCCCCCCCCCCCCC.',
+    ],
+    back: [
+        '......CC......',
+        '...lccccccC...',
+        '..lccccccccC..',
+        '.lccccccccccC.',
+        '.lccccccccccC.',
+        '.lcccc..ccccC.',
+        '.lccc....cccC.',
+        '.CCCCaaaaCCCC.',
+    ],
+};
+
 const HATS = {
-    none: { label: named('Нет', 'None'), paint: () => {} },
+    none:{ label: named('Нет', 'None'), paint: () => {} },
     pumpkin: { label: named('Тыква', 'Pumpkin'), paint: (g, x0, y0) => pumpkinHat(g, x0, y0) },
     witch: {
         label: named('Ведьмина шляпа', 'Witch hat'),
@@ -1519,6 +1556,7 @@ const HATS = {
     'cat-ears': { label: named('Ушки', 'Cat ears'), paint: catEarsHat },
     tricorn: { label: named('Треуголка', 'Tricorn'), paint: tricorn },
     mohawk: { label: named('Ирокез', 'Mohawk'), paint: mohawk, grown: true },
+    valera: { label: named('Кепка Валеры', "Valera's cap"), paint: (g, x0, y0, dir) => stamp(g, x0 - 1, y0 - 4, CAP[dir], CAP_LEGEND) },
 };
 
 // ---------------------------------------------------------------------------------------------------------------

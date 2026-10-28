@@ -91,9 +91,30 @@ Push в `master` запускает `.github/workflows/deploy.yml`: CI отда�
 (`DEPLOY_HOST`). У ключа CI (секрет `DEPLOY_SSH_KEY`) в `authorized_keys` стоят `restrict` и forced command
 `/usr/local/bin/hellowin-deploy`, то есть копия `docker/deploy.sh`. Поэтому ключ умеет только деплоить, а серверу
 не нужен доступ к GitHub. Скрипт разворачивает архив в `/opt/hellowin` через rsync, оставляя на месте `.env` сервера
-(порты, `CENTRIFUGO_ALLOWED_ORIGINS`, пароли), затем выполняет `docker compose up -d --build` и до двух минут ждёт, пока все сервисы станут healthy. Centrifugo,
-Prometheus и Grafana он перезапускает, если изменились их конфиги в `docker/`. Сам скрипт деплоем не обновляется:
-после правки `docker/deploy.sh` его копируют на сервер вручную.
+(порты, домен, `CENTRIFUGO_ALLOWED_ORIGINS`, пароли), выполняет `docker compose up -d --build` и до двух минут ждёт,
+пока все сервисы станут healthy. Centrifugo, Prometheus и Grafana он перезапускает, если изменились их конфиги в
+`docker/`. Себя, `docker/certs.sh` и таймер из `docker/systemd/` скрипт ставит на сервер из каждого релиза, поэтому
+правка `docker/deploy.sh` действует со следующего деплоя.
+
+## HTTPS на домене
+
+Включается в `.env` сервера: `COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml`, `DOMAIN`, `ACME_EMAIL`,
+`CENTRIFUGO_ALLOWED_ORIGINS=https://<домен>`, `GRAFANA_ROOT_URL=https://<домен>:3000/`.
+
+- TLS сайта терминирует сам RoadRunner: `app` запускается с `.rr.tls.yaml`. В репозитории это фрагмент
+  (`http.ssl` и плагин `status`), а при сборке образа Dockerfile накладывает его на `.rr.yaml`. Собственный `include`
+  RoadRunner (как и `-o`) заменяет секцию `http` целиком, а не сливает её, поэтому слияние делается при сборке.
+  HTTPS слушает 443, HTTP на `${HTTP_PORT}` только редиректит на него (308). Чтобы www-data мог занять 443, контейнеру
+  выставлен sysctl `net.ipv4.ip_unprivileged_port_start=0`. Healthcheck идёт через `status`
+  (`127.0.0.1:2114/health?plugin=http`): страницы теперь за редиректом.
+- Сертификат Let's Encrypt RoadRunner получает при старте и продлевает сам (certmagic, проверка tls-alpn-01 на 443;
+  http-01 на 80 съел бы редирект). Хранится в volume `acme-data`, поэтому перезапуск сертификат не перевыпускает.
+  Плагин http в RoadRunner 3.0 заказывает через issuer certmagic по умолчанию: production и без email, что бы ни
+  стояло в `use_production_endpoint` и `email`, поэтому staging через конфиг не включить.
+- Centrifugo (`wss` на 8000, `tls_external`: внутренний порт 9000 остаётся HTTP) и Grafana (HTTPS на 3000) берут
+  тот же сертификат. Копию в `/opt/hellowin-tls` кладёт `docker/certs.sh`: его запускает деплой и раз в сутки
+  `hellowin-certs.timer`. Если сертификат изменился, скрипт перезапускает оба сервиса, потому что файлы они читают
+  только на старте.
 
 ## E2E без браузера
 

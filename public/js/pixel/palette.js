@@ -251,4 +251,10 @@ export const PALETTE = {
     // The Terminator's machine eye: a light source, a step off eyeRed, so the red eye slot never glows by mistake.
     cyborgEye: 0xff2a1a,
     cyborgEyeHot: 0xffb09c,
+    // «Кепка Валеры»: a dark grey cap, its shade kept a step above the outline so the visor's underside stays apart
+    // from it, and the light grey of the NB on the front.
+    capLight: 0x6e7380,
+    cap: 0x4a4e58,
+    capShade: 0x383b46,
+    capLogo: 0xe2e4ea,
 };
