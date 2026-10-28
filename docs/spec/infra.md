@@ -35,8 +35,11 @@ Centrifugo с Origin страницы (`http://localhost:8080`), он и дол�
   долгоживущий процесс `ticker` (`php app.php hellowin:ticker`): летуны и топ стрелков, см. `engine.md`.
 - Prometheus скрейпит `app:2112` и `centrifugo:9000/metrics` раз в 5 с.
 - Grafana: datasource и дашборд «Hellowin» через provisioning (`docker/grafana/`), анонимы — роль Viewer (публичный
-  read-only), дашборд домашний; админ — `GF_SECURITY_ADMIN_PASSWORD` (по умолчанию `admin`, для публичного
-  развёртывания задать). Разделы дашборда: игра (клики, сцена, раунд), переходы (задачи в очереди против выполненных
+  read-only), дашборд домашний. Входа по паролю нет вовсе: ни формы (`GF_AUTH_DISABLE_LOGIN_FORM`, по умолчанию
+  `true`), ни basic auth на API (`GF_AUTH_BASIC_ENABLED: false`) — пароль админа по умолчанию (`admin`) снаружи не
+  открывает ничего. Чтобы зайти админом, в `.env` на время `GF_AUTH_DISABLE_LOGIN_FORM=false` и сильный
+  `GF_SECURITY_ADMIN_PASSWORD`; пароль применяется только при первом старте тома `grafana-data`, потом —
+  `grafana cli admin reset-admin-password`. Разделы дашборда: игра (клики, сцена, раунд), переходы (задачи в очереди против выполненных
   по `kind`, «отсечённые дубли» = pushed − transitions, стадии тыкв), игроки (и «Beer drunk, L» —
   `max(hellowin_beer_litres)`, литры с одним знаком, плюс кружки в минуту по `place`), летуны (запущено / сбито / улетело по
   глубине, процент попаданий), Centrifugo, RPC в PHP (вызовы в секунду по методу, ошибки по коду, p95 времени по
@@ -48,7 +51,7 @@ RoadRunner (3.0) смотрит в браузер сам. Middleware обора�
 `http_metrics`, `headers`, `gzip`, `static`, `rate_limiter`.
 
 - `http_metrics` первым — считает все ответы, включая 429 лимитера.
-- `headers` — ко всем ответам, и статике, и PHP: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+- `headers` — ко всем ответам, и статике, и PHP: `X-Powered-By: RoadRunner 3`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (камера, микрофон, геолокация — нет) и
   `Content-Security-Policy` только из директив, не ломающих страницы: `frame-ancestors 'none'; base-uri 'self';
   object-src 'none'; form-action 'self'`. `script-src`/`style-src` нет: centrifuge-js и Pixi грузятся с CDN, SVG
