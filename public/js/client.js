@@ -5,6 +5,7 @@ import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jump
 import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf, winsRoll } from './dice.js';
 import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
+import { emoteOf } from './emote.js';
 import { CLINK } from './pixel/clink.js';
 import { SUMMON_MS } from './pixel/finale-timeline.js';
 import { pick } from './i18n.js';
@@ -554,16 +555,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         if (zone) zone.hidden = !(model.moderator && (step() ?? -1) >= RUNNER_STEP);
     }
 
-    // «Чат» in the HUD: for a player with a walker, a zombie too (its words come out as a zombie line); without one
-    // the field closes.
+    // «Чат» and «😀» in the HUD: for a player with a walker, a zombie too (its words come out as a zombie line); without
+    // one the field and the emote panel close.
     function paintChat() {
         const on = myWalker() !== null;
-        const opener = root.querySelector('[data-chat-open]');
-        if (opener) opener.hidden = !on;
-        const field = root.querySelector('[data-chat]');
-        if (field && !on && !field.hidden) {
-            field.hidden = true;
-            if (field.contains(document.activeElement)) document.activeElement.blur();
+        for (const [open, panel] of [['[data-chat-open]', '[data-chat]'], ['[data-emote-open]', '[data-emote-panel]']]) {
+            const opener = root.querySelector(open);
+            if (opener) opener.hidden = !on;
+            const field = root.querySelector(panel);
+            if (field && !on && !field.hidden) {
+                field.hidden = true;
+                opener?.setAttribute('aria-expanded', 'false');
+                if (field.contains(document.activeElement)) document.activeElement.blur();
+            }
         }
     }
 
@@ -1025,6 +1029,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const until = (event.at > 0 ? event.at : now() + offset) + chatShowMs(text);
             if (until > now() + offset) scene?.say?.(id, text, until);
             onSay(event);
+        },
+
+        // An emoji over its walker for EMOTE_MS from `at` (docs/spec/frontend.md, «Эмоции»); nothing is kept, so a
+        // late event shows what is left of it and a resync none.
+        emote(event) {
+            const emote = emoteOf(event, now() + offset);
+            if (emote) scene?.emote?.(emote.id, emote.emoji, emote.at);
         },
 
         // The pause of the progress is the console's only (protocol.md, «Пауза прогресса»): a player's actions go on as

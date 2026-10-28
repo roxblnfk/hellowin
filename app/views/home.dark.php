@@ -30,7 +30,8 @@
           data-dice="{{ json_encode($dice ?? null) }}"
           data-dawn="{{ json_encode($top ?? $dawn ?? null) }}"
           data-flyers="{{ json_encode($flyers ?? []) }}"
-          data-chat-max="{{ $chatMax ?? 120 }}">
+          data-chat-max="{{ $chatMax ?? 120 }}"
+          data-emotes="{{ json_encode($emotes ?? []) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="[[Звук]]" hidden>
             <button type="button" class="sound-panel__button sound-panel__button--sound" data-sound-toggle data-icon aria-pressed="true" aria-label="[[Звук включён]]" title="[[Звук]]"></button>
             <button type="button" class="sound-panel__button sound-panel__button--music" data-music-toggle aria-pressed="true" aria-label="[[Музыка включена]]" title="[[Музыка]]"></button>
@@ -111,6 +112,8 @@
             <button type="submit" class="chat__button" data-chat-submit>[[Сказать]]</button>
             <p class="chat__note" data-chat-note role="alert"></p>
         </form>
+        <!-- The emotes (docs/spec/frontend.md, «Эмоции»): a row of emoji over the HUD, opened by «😀»; emote.js fills it. -->
+        <div class="emotes" id="emotes" data-emote-panel role="group" aria-label="[[Эмоции]]" hidden></div>
 
         <footer class="hud">
             <!-- The viewer's minimum: the connection lamp (its words in title / aria-label), from finale step 3 RoadRunner's
@@ -125,6 +128,7 @@
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>[[Числа вечера]]</button>
             <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>[[Выпить]]</button>
             <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>[[Чат]]</button>
+            <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="[[Эмоции]]" title="[[Эмоции]]" hidden><span aria-hidden="true">😀</span></button>
             <button type="button" class="hud__item hud__button" data-join-open>[[Персонаж]]</button>
             @if('@{locale|ru}' === 'en')
             <a class="hud__item hud__button hud__button--lang" href="?lang=ru" hreflang="ru" lang="ru" data-lang-switch aria-label="Русский">RU</a>

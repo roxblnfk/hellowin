@@ -59,6 +59,7 @@ return [
     'Числа вечера' => 'The evening in numbers',
     'Выпить' => 'Drink',
     'Чат' => 'Chat',
+    'Эмоции' => 'Emotes',
     'Персонаж' => 'Character',
 
     // Join dialog

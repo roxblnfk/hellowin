@@ -67,5 +67,11 @@ export function createBubbles(env) {
         }
     }
 
-    return { say, sweep };
+    /** The screen y of bubble `key`'s top frame row, CSS px; null when it is not up. */
+    function top(key) {
+        const b = bubbles.get(key);
+        return b ? b.node.y - b.u : null;
+    }
+
+    return { say, sweep, top };
 }

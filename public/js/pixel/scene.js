@@ -17,6 +17,7 @@ import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.j
 import { MEEP, T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
+import { EMOTE_MS } from '../emote.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
@@ -3033,6 +3034,7 @@ export async function createScene(rootEl, snapshot) {
         }
         animateRolls(now);
         toastBubbles(clinking.groups, now);
+        animateEmotes();
     }
 
     /*
@@ -3958,6 +3960,66 @@ export async function createScene(rootEl, snapshot) {
         return { x: w.label.x, y: w.label.y - w.label.height - 2 };
     }
 
+    /*
+     * The players' emotes (docs/spec/frontend.md, «Эмоции»): an emoji over the walker for EMOTE_MS from the event's `at`
+     * on the server clock, a new one of the same player in its place. A colour glyph, so a Text at screen resolution
+     * like the labels; it stands over whatever is over the head — the name, the dice, the chat bubble — and covers none
+     * of them. It pops in, floats up a little and fades; under reduced motion it only appears and goes.
+     */
+    const emotes = new Map();
+    const EMOTE_POP_MS = 220;
+    const EMOTE_FADE_MS = 600;
+    // How far it floats up over its time, CSS px.
+    const EMOTE_RISE = 10;
+
+    function addEmote(id, emoji, at) {
+        dropEmote(id);
+        const node = new Text({
+            text: emoji,
+            style: {
+                fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+                fontSize: layout.width < 600 ? 22 : 26,
+                dropShadow: { color: PALETTE.outline, alpha: 0.6, blur: 0, distance: 2, angle: Math.PI / 2 },
+            },
+        });
+        node.anchor.set(0.5, 1);
+        node.visible = false;
+        labelLayer.addChild(node);
+        emotes.set(id, { at, node });
+    }
+
+    function dropEmote(id) {
+        emotes.get(id)?.node.destroy();
+        emotes.delete(id);
+    }
+
+    function animateEmotes() {
+        const now = serverNow();
+        for (const [id, e] of emotes) {
+            const t = now - e.at;
+            const w = walkers.get(id);
+            if (t >= EMOTE_MS || !w) {
+                dropEmote(id);
+                continue;
+            }
+            e.node.visible = t >= 0 && Boolean(w.label && w.sprite);
+            if (!e.node.visible) continue;
+            let y = w.label.y - w.label.height;
+            const roll = rolls.get(id);
+            if (roll?.node.visible) y = Math.min(y, roll.node.y - roll.node.height);
+            const bubble = toastSpeech?.top('say:' + id);
+            if (bubble !== null && bubble !== undefined) y = Math.min(y, bubble);
+            const pop = reduced ? 1 : Math.min(1, t / EMOTE_POP_MS);
+            // Back-out easing: it overshoots a little and settles — a pop, not a slide.
+            const q = pop - 1;
+            e.node.scale.set(0.4 + 0.6 * (1 + 2.7 * q ** 3 + 1.7 * q ** 2));
+            e.node.alpha = reduced ? 1 : Math.min(1, (EMOTE_MS - t) / EMOTE_FADE_MS);
+            const rise = reduced ? 0 : (t / EMOTE_MS) * EMOTE_RISE;
+            const half = e.node.width / 2 + 2;
+            e.node.position.set(Math.round(clamp(w.label.x, half, layout.width - half)), Math.round(y - 2 - rise));
+        }
+    }
+
     function animateRolls(now) {
         const px = layout.cssPx;
         for (const [key, r] of rolls) {
@@ -4316,9 +4378,19 @@ export async function createScene(rootEl, snapshot) {
             says.set(id, { text: String(text), until });
         },
 
+        /**
+         * An emoji over walker `id` from `at` (server clock) for EMOTE_MS: a new one of the same player replaces it; no
+         * such walker, or the time is up — nothing.
+         */
+        emote(id, emoji, at) {
+            if (!walkers.has(id) || !emoji || !(at + EMOTE_MS > serverNow())) return;
+            addEmote(id, String(emoji), at);
+        },
+
         /** Channel event `leave`: the player has no connections left. */
         leave(id) {
             const w = walkers.get(id);
+            dropEmote(id);
             if (!w) return;
             dropWalkerSprites(w);
             walkers.delete(id);

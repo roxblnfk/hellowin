@@ -157,6 +157,10 @@
   at the start: ?chat=4&freeze=1500 shows their bubbles); ?chatzombie=1 — every second of them a zombie worker, whose
   line comes from chat.js; ?mod=1 — the console's «Чат» with a short history and «заглушить» (a muted player's `say`
   answers `muted`).
+  Emotes (docs/spec/frontend.md, «Эмоции»): with a character «😀» in the HUD opens the row; `emote` is checked like the
+  server's (`anonymous`, `no character`, `unknown emoji`, `busy` within HELLOWIN_EMOTE_COOLDOWN_MS 1000) and comes back
+  to all. The set is the client's default (no data-emotes). ?emotes=N — N bots emote every 4 s (under ?freeze — once at
+  the start, with my walker's too under ?me=1: ?emotes=3&chat=2&me=1&freeze=1500 shows them beside the bubbles).
   HUD (docs/spec/frontend.md, «Разметка и DOM-хуки»): ?conn=ok|reconnect|down — the connection lamp green, yellow
   blinking, red; RoadRunner's uptime beside it from ?finale=3 on and in the bar with ?roadrunner=1. The console (?mod=1)
   shows only what works in the scene or finale step: ?mod=1&scene=1, ?mod=1&finale=5, ?mod=1&finale=6&boss=60,100.
@@ -205,6 +209,8 @@
         <button type="submit" class="chat__button" data-chat-submit>Сказать</button>
         <p class="chat__note" data-chat-note role="alert"></p>
     </form>
+    <!-- The emotes (docs/spec/frontend.md, «Эмоции»). -->
+    <div class="emotes" id="emotes" data-emote-panel role="group" aria-label="Эмоции" hidden></div>
     <aside class="debug lab-tools" data-lab-panel aria-label="Лаборатория">
         <button type="button" class="debug__button" data-lab-duck>утка</button>
         <button type="button" class="debug__button" data-lab-click>клик</button>
@@ -226,6 +232,7 @@
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
+        <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="Эмоции" title="Эмоции" hidden><span aria-hidden="true">😀</span></button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
         <button type="button" class="hud__item hud__button" data-sound-toggle aria-pressed="true" hidden>Звук: вкл</button>
     </footer>
@@ -262,6 +269,7 @@
     import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
     import { initDebugPanel } from '/js/debug.js';
     import { bindChat } from '/js/chat.js';
+    import { EMOTE_COOLDOWN_MS, bindEmotes, emotesOf } from '/js/emote.js';
     import { initJoin, storedLook } from '/js/join.js';
     import { LINES, createOwl } from '/js/owl.js';
     import { createReveal } from '/js/reveal.js';
@@ -1916,6 +1924,25 @@
         return { ok: true, muted: [...chatMuted.values()] };
     }
 
+    // The emotes (protocol.md, «Эмоции»): the page's set (the default without data-emotes), one per player per
+    // HELLOWIN_EMOTE_COOLDOWN_MS, nothing kept; `busy` sends no event. ?emotes=N — N bots emote.
+    const EMOTES = emotesOf(JSON.parse(root.dataset.emotes ?? '[]'));
+    const emotedAt = new Map();
+    function engineEmote(id, { emoji } = {}) {
+        if (!id) return { ok: false, error: 'anonymous' };
+        if (!engine.walkers.some((x) => x.id === id)) return { ok: false, error: 'no character' };
+        if (!EMOTES.includes(emoji)) return { ok: false, error: 'unknown emoji' };
+        const t = serverTime();
+        if (t - (emotedAt.get(id) ?? -Infinity) < EMOTE_COOLDOWN_MS) return { ok: false, error: 'busy' };
+        emotedAt.set(id, t);
+        deliver({ type: 'emote', player: { id }, emoji, at: t });
+        return { ok: true };
+    }
+    const emoteBots = () => wanderers().slice(0, Math.max(0, Number.parseInt(params.get('emotes') ?? '0', 10) || 0));
+    function emoteBotsGo(random = Math.random) {
+        emoteBots().forEach((w, i) => later(() => engineEmote(w.id, { emoji: EMOTES[Math.floor(random() * EMOTES.length)] }), 200 + i * 170 + random() * 400));
+    }
+
     async function engineRegister(rawName, look) {
         const name = rawName.trim();
         if (!/^(?=.*[\p{L}\p{N}])(?!.*  )[\p{L}\p{N} _.-]{1,24}$/u.test(name)) throw new Error('invalid name');
@@ -2204,7 +2231,9 @@
     bindClinking(root, scene, client, labClink, (target) => warned(engineCure(ME, target), 'cure'));
     bindWord(root, client, async (text) => engineWord(ME, { text }));
     bindStriking(root, client, () => warned(engineStrike(ME), 'strike'));
-    bindChat(root, client, async (text) => engineSay(ME, { text }));
+    const chat = bindChat(root, client, async (text) => engineSay(ME, { text }));
+    // Like app.js: the panel sends as the connection's player, anonymous until it has one.
+    bindEmotes(root, async (emoji) => engineEmote(client.model.me, { emoji }), { onOpen: () => chat?.close() });
     // The bar like app.js: the counter, Space and «Выпить»; `not clinked` is a hint over my walker only.
     const warned = (reply, method) => {
         if (!reply.ok) console.warn(`${method} rejected`, reply.error);
@@ -2260,6 +2289,10 @@
             chatBotsTalk();
             setInterval(() => chatBotsTalk(), 6000);
         }
+        if (emoteBots().length) {
+            emoteBotsGo();
+            setInterval(() => emoteBotsGo(), 4000);
+        }
         // ?bar=1: the paired bots drink once their beer is clinked, then fetch the next one.
         if (barPairs) setInterval(() => wanderers().forEach((w) => engine.scene === 0 && (w.clinked ? engineDrink(w.id) : w.item !== 'beer' && !w.taking && engineTake(w.id))), 4000);
         if (clickClinkStart) {
@@ -2309,6 +2342,7 @@
         takeSeq = 0;
         wordSeq = 0;
         sayBuckets.clear();
+        emotedAt.clear();
         chatMuted.clear();
         chatLog.splice(0, chatLog.length, ...structuredClone(chatSeed));
         Object.assign(limitBonus, initialBonus);
@@ -2380,6 +2414,8 @@
                 walkStopSteps();
                 if (rrClinkStart) rrClinkSteps();
                 chatBotsTalk(seeded(2121));
+                emoteBotsGo(seeded(3131));
+                if (emoteBots().length && params.get('me') === '1') later(() => engineEmote(ME, { emoji: EMOTES[0] }), 600);
             }
             if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !rrClinkStart && !still) {
                 const random = seeded(99);
