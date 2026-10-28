@@ -7,7 +7,7 @@ server:
   command: 'php app.php'
   relay: pipes
 
-# Every lock and metric call is logged at debug; the production image sets production/info
+# Every lock and metric call is logged at debug; the production image sets production/warn
 logs:
   mode: ${RR_LOG_MODE:-development}
   level: ${RR_LOG_LEVEL:-debug}

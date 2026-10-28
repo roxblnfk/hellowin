@@ -54,10 +54,10 @@ ENV APP_ENV=prod \
     VERBOSITY_LEVEL=basic \
     TOKENIZER_CACHE_TARGETS=true \
     VIEW_CACHE=true \
-    MONOLOG_DEFAULT_LEVEL=INFO \
+    MONOLOG_DEFAULT_LEVEL=WARNING \
     TELEMETRY_DRIVER=null \
     RR_LOG_MODE=production \
-    RR_LOG_LEVEL=info
+    RR_LOG_LEVEL=warn
 # Workers of every pool boot at once: the tokenizer and view caches are warmed here, or each worker would scan the
 # classes and race the others to write them, slow on one core. acme is the certificate's volume.
 RUN php app.php views:compile >/dev/null \
