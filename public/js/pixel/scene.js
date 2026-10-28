@@ -24,7 +24,7 @@ import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
-import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, mugSlots, paintBar } from './bar.js';
+import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, counterMugs, mugSlots, paintBar, pourBatch } from './bar.js';
 import { PALETTE } from './palette.js';
 import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
@@ -1471,24 +1471,32 @@ export async function createScene(rootEl, snapshot) {
     /*
      * The bar (scene 0; docs/spec/frontend.md, «Бар и сдвиг номеров сцен»): a hall instead of the patch. Its geometry
      * is the server's `walk.bar` in screen percents without the patch spread; the counter and the tables stand in
-     * groundLayer and sort with the walkers. The owl stands behind the counter (it covers the talons) and pours one
-     * mug at a time by `pouring` on the server clock; the counter holds exactly `mugs` full mugs.
+     * groundLayer and sort with the walkers. The owl stands behind the counter (it covers the talons) and pours a batch
+     * of mugs by `pouring` on the server clock («×N» at the tap); the counter holds exactly `mugs` full mugs, those
+     * past its drawn spots said by a «+N» label.
      */
     // Set-down after `mugs`: two owl frames (pixel/owl.js, OWL_BAR.set); the shrug and the gulp of a walker; the hint.
     const SET_FRAME_MS = 180;
     const SHRUG_MS = 800;
     const DRINK_MS = 1200;
     const HINT_MS = 2500;
-    // Counter mug slots laid out at most; the counter holds HELLOWIN_BAR_MUGS, which the client does not know.
-    const MUG_SLOTS = 12;
+    // Counter mug spots laid out at most; the drawn counter usually fits fewer, the rest go into the «+N» label.
+    const MUG_SLOTS = 120;
     // The flames' halos on the floor, like the art sheet (public/dev/bar.html).
     const FLAME_HALO_ALPHA = 0.35;
     const barLayoutOf = () => state.barLayout ?? BAR_LAYOUT;
     const DOOR_STEP_MS = 90;
     const DOOR_HOLD_MS = 600;
-    // The counter's state as the client model passes it in, and when the last mug was set down (scene clock). Taken
-    // from the page's snapshot at once: the client re-reads the state only after a reconnect or a gap.
-    const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9, roadrunner: snapshot.bar?.roadrunner === true };
+    // The counter's state as the client model passes it in, when the last batch was set down (scene clock) and how
+    // many mugs stood before it. Taken from the page's snapshot at once: the client re-reads the state only after a
+    // reconnect or a gap.
+    const barState = { mugs: Math.max(0, snapshot.bar?.mugs | 0), pouring: snapshot.bar?.pouring ?? null, setAt: -1e9, setFrom: 0, roadrunner: snapshot.bar?.roadrunner === true };
+    // The pixel-font labels of the counter («+N», «×N»), unlit so they read in any light of the hall.
+    const barLabels = new Map();
+    const barLabel = (text) => {
+        if (!barLabels.has(text)) barLabels.set(text, texture(flyerBake(digitsSprite(text))));
+        return barLabels.get(text);
+    };
     // What buildBar() laid out, art px: the counter's box, the owl's spot, the mug sprites, the flickering flames.
     let hall = null;
     // Lines only the scene knows: the local «Сначала чокнись…» hint over my own walker.
@@ -1578,15 +1586,30 @@ export async function createScene(rootEl, snapshot) {
         }
         // The full mugs right after the counter in depth.
         const mugTex = texture(bakeBar(BAR_MUG, lighting));
-        const mugs = mugSlots(L, artW, artH, MUG_SLOTS, opts).map((slot, i) => {
+        const slots = mugSlots(L, artW, artH, MUG_SLOTS, opts);
+        const mugs = slots.map((slot, i) => {
             const s = new Sprite(mugTex);
             s.anchor.set(BAR_MUG.anchor.x / BAR_MUG.w, BAR_MUG.anchor.y / BAR_MUG.h);
             s.position.set(slot.x, slot.y);
-            s.zIndex = (counterZ ?? depthKey(slot.x, box?.y ?? slot.y)) + 1 + i / 100;
+            // The back row behind the front one: by the foot line, within the step above the counter.
+            s.zIndex = (counterZ ?? depthKey(slot.x, box?.y ?? slot.y)) + 1 + (slot.y / artH + i / slots.length / artH) / 2;
             s.visible = false;
             groundLayer.addChild(s);
             return { sprite: s, y: slot.y };
         });
+        // «+N» over the counter's left end and «×N» beside the mug under the tap: in front of the counter and its mugs.
+        const labelZ = (counterZ ?? depthKey(0, box?.y ?? 0)) + 2;
+        const more = new Sprite();
+        more.anchor.set(0.5);
+        more.zIndex = labelZ;
+        more.visible = false;
+        groundLayer.addChild(more);
+        const batch = new Sprite();
+        batch.anchor.set(0, 0.5);
+        batch.zIndex = labelZ;
+        batch.visible = false;
+        if (spot) batch.position.set(spot.mug.x + 6, spot.mug.y - 4);
+        groundLayer.addChild(batch);
         // RoadRunner after the dawn: behind the counter like the owl, facing the hall; shown while `bar.roadrunner`.
         const rrSpot = barRunnerSpot(L, artW, artH, opts);
         let runner = null;
@@ -1603,7 +1626,7 @@ export async function createScene(rootEl, snapshot) {
             groundLayer.addChild(s);
             runner = { sprite: s, x, y: feet };
         }
-        hall = { box, flicker, mugs, door, runner };
+        hall = { box, flicker, slots, mugs, more, batch, view: null, door, runner };
         animateOwl();
         animateBar();
     }
@@ -1635,12 +1658,28 @@ export async function createScene(rootEl, snapshot) {
 
     function animateBar() {
         if (!hall || !isBar(state.scene)) return;
-        hall.mugs.forEach((m, i) => {
-            m.sprite.visible = i < barState.mugs;
-            // The newest mug lands with a small bump as the owl lets go of it.
-            const bump = i === barState.mugs - 1 && !reduced && clock - barState.setAt < SET_FRAME_MS ? -1 : 0;
-            m.sprite.position.y = m.y + bump;
+        if (hall.view?.mugs !== barState.mugs) hall.view = { mugs: barState.mugs, ...counterMugs(hall.slots, barState.mugs) };
+        const { shown, more, label } = hall.view;
+        // The mugs of the newest batch land with a small bump as the owl lets go of them; the label bumps for those it
+        // counts.
+        const landing = !reduced && clock - barState.setAt < SET_FRAME_MS;
+        const fresh = (k) => landing && k >= barState.setFrom && k < barState.mugs;
+        hall.mugs.forEach((m) => {
+            m.sprite.visible = false;
         });
+        shown.forEach((slot, k) => {
+            const m = hall.mugs[slot];
+            m.sprite.visible = true;
+            m.sprite.position.y = m.y - (fresh(k) ? 1 : 0);
+        });
+        hall.more.visible = label !== null;
+        if (label) {
+            hall.more.texture = barLabel(`+${more}`);
+            hall.more.position.set(label.x, label.y - (fresh(barState.mugs - 1) ? 1 : 0));
+        }
+        const batch = pourBatch(barState.pouring);
+        hall.batch.visible = Boolean(owlSprite) && batch > 1 && pourPhase(serverNow()) !== null;
+        if (hall.batch.visible) hall.batch.texture = barLabel(`×${batch}`);
         for (const f of hall.flicker) {
             const k = reduced ? 0 : Math.floor(clock / BAR_FLICKER_MS + f.phase) % f.frames.length;
             f.sprite.texture = f.frames[k];
@@ -4200,7 +4239,7 @@ export async function createScene(rootEl, snapshot) {
                 bushes: next.bushes ?? state.bushes,
                 barLayout: next.barLayout ?? state.barLayout,
             };
-            Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9, roadrunner: next.bar?.roadrunner === true });
+            Object.assign(barState, { mugs: next.bar?.mugs ?? 0, pouring: next.bar?.pouring ?? null, setAt: -1e9, setFrom: 0, roadrunner: next.bar?.roadrunner === true });
             hints.clear();
             for (const key of [...rolls.keys()]) dropRoll(key);
             meepOf = null;
@@ -4335,15 +4374,16 @@ export async function createScene(rootEl, snapshot) {
             for (const data of list ?? []) setWalker(data);
         },
 
-        /** Channel event `pour`: the owl fills the next mug from `since` until `until` (server ms). */
-        pour(since, until) {
-            barState.pouring = { since, until };
+        /** Channel event `pour`: the owl fills the next `batch` mugs from `since` until `until` (server ms). */
+        pour(since, until, batch) {
+            barState.pouring = { since, until, batch };
         },
 
-        /** Channel events `mugs` and `take`: `n` full mugs on the counter; one more than before was just set down. */
+        /** Channel events `mugs` and `take`: `n` full mugs on the counter; more than before — a batch just set down. */
         mugs(n) {
             if (n > barState.mugs) {
                 barState.setAt = clock;
+                barState.setFrom = barState.mugs;
                 barState.pouring = null;
             }
             barState.mugs = Math.max(0, n | 0);

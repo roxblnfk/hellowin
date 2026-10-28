@@ -100,8 +100,10 @@
   The goals' numbers («Готово 3 из 8», «Выпито 12 из 30», «HP 57 / 90») are the moderator's (?mod=1): a player sees
   the bars alone (scenario.md, «Цифры прогресса»).
   Scenes are numbered with the bar first (docs/spec/scenario.md): 0 bar, 1 day, 2 sunset, 3 night, 4 the final scene.
-  Bar (the default without ?scene): the ticker pours one mug at a time (?mugs=N at the start, default 5; ?pour=ms per
-  mug, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
+  Bar (the default without ?scene): the ticker pours batches like the server (protocol.md, «Розлив»): the counter is set
+  for the figures on the field (?players=N for good) up to 60, a batch is max(1, free / 10) rounded up, «×N» at the tap,
+  and what the drawn counter cannot fit is a «+N» label (?players=50&mugs=20 — ×3 and the label; ?mugs=N at the start,
+  default 5; ?pour=ms per batch, default 2500), about every third pour with a `rumor`; `bar.take` walks to the counter and takes a mug on arrival
   (a latecomer gets `take ok:false` and `bar-empty`); `drink` needs a clink (`not clinked`), counts `drunk` against the
   goal (the limit `bar`, ?target=N — flat; ?drunk=N already drunk) and sends `drinks`; the goal reached or «Отмашка» (`bar.ready`,
   ?mod=1) makes the bar ready once (`ready`, `bar-intro`); «+5/−5 бокалов» is `bar.target` (an addition); clinks by click need beer on
@@ -582,11 +584,14 @@
 
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
     const engine = readSnapshot(root);
-    // HELLOWIN_BAR_MUGS and HELLOWIN_BAR_POUR_MS: ?mugs=N full mugs at the start, ?pour=ms per mug.
-    const BAR_MUGS = 5;
+    // HELLOWIN_BAR_MUGS, HELLOWIN_BAR_POUR_PER and HELLOWIN_BAR_POUR_MS: ?mugs=N full mugs at the start, ?pour=ms per
+    // batch. The counter is set for the figures on the field (fieldCount, so ?players=N), at most BAR_MUGS.
+    const BAR_MUGS = 60;
+    const POUR_PER = 10;
+    const barMax = () => Math.min(BAR_MUGS, fieldCount());
     // The scripted demo pours slowly, so its latecomer finds the counter empty.
     const POUR_MS = Math.max(200, Number.parseInt(params.get('pour') ?? (barDemo ? '8000' : '2500'), 10) || 2500);
-    const startMugs = Math.max(0, Math.min(BAR_MUGS, Number.parseInt(params.get('mugs') ?? (barDemo ? '2' : String(BAR_MUGS)), 10)));
+    const startMugs = Math.max(0, Math.min(BAR_MUGS, Number.parseInt(params.get('mugs') ?? (barDemo ? '2' : '5'), 10)));
     // HELLOWIN_BAR_RUMOR_CHANCE: about every third pour carries a rumour. The hall's goal is the limit `bar` (startState).
     const RUMOR_CHANCE = 1 / 3;
     const startDrunk = Math.max(0, Number.parseInt(params.get('drunk') ?? '0', 10) || 0);
@@ -735,7 +740,7 @@
         engine.ready = false;
         inBarZone = true;
         // RoadRunner comes with the dawn's «В бар» and leaves with the moderator's reset.
-        engine.bar = { mugs: BAR_MUGS, pouring: null, drunk: 0, target: limitOf('bar'), roadrunner: again };
+        engine.bar = { mugs: barMax(), pouring: null, drunk: 0, target: limitOf('bar'), roadrunner: again };
         const now = serverTime();
         engine.walkers.forEach((w) => {
             w.item = null;
@@ -1342,7 +1347,8 @@
         }
     }
 
-    // The bar as the server plays it (protocol.md, «Бар»). The ticker pours one mug at a time while there is room; the
+    // The bar as the server plays it (protocol.md, «Бар»). The ticker pours a batch at a time while there is room: by
+    // the free places when it begins, landing no higher than the room then (players who left shrink it); the
     // first walker to reach the counter gets a mug, a latecomer none (and the owl's `bar-empty`, at most every 20 s).
     const BAR_TICK = 200;
     const EMPTY_LINE_MS = 20000;
@@ -1352,13 +1358,15 @@
         if (engine.scene !== 0) return;
         const now = serverTime();
         const bar = engine.bar;
+        const max = barMax();
         if (bar.pouring && now >= bar.pouring.until) {
-            bar.mugs++;
+            bar.mugs = Math.max(bar.mugs, Math.min(bar.mugs + bar.pouring.batch, max));
             bar.pouring = null;
-            deliver({ type: 'mugs', mugs: bar.mugs });
+            deliver({ type: 'mugs', mugs: bar.mugs, max });
         }
-        if (!bar.pouring && bar.mugs < BAR_MUGS) {
-            bar.pouring = { since: now, until: now + POUR_MS };
+        if (!bar.pouring && bar.mugs < max) {
+            const free = max - bar.mugs;
+            bar.pouring = { since: now, until: now + POUR_MS, batch: Math.min(free, Math.ceil(free / POUR_PER)) };
             if (Math.random() < RUMOR_CHANCE) bar.pouring.rumor = Math.floor(Math.random() * 2 ** 31);
             deliver({ type: 'pour', ...bar.pouring });
         }

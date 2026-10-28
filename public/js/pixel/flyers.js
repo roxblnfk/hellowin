@@ -1095,6 +1095,7 @@ const GLYPHS = {
     8: ['###', '#.#', '###', '#.#', '###'],
     9: ['###', '#.#', '###', '..#', '###'],
     '+': ['...', '.#.', '###', '.#.', '...'],
+    '×': ['...', '#.#', '.#.', '#.#', '...'],
 };
 
 // 3×5 glyphs inside a 1 px outline: 5×7 per character.
@@ -1114,7 +1115,7 @@ function glyphSprite(glyph) {
     return sprite(grid.map((r) => r.join('')), { O: 'outline', Y: 'gold', k: 'pumpkinLight' });
 }
 
-/** Score font: '0'–'9' and '+', 5×7 each including the outline. */
+/** Score font: '0'–'9', '+' and '×', 5×7 each including the outline. */
 export const DIGITS = Object.fromEntries(Object.entries(GLYPHS).map(([ch, g]) => [ch, glyphSprite(g)]));
 
 /** A string such as '+3' as one sprite; neighbouring glyphs share their outline column. Anchor: centre. */

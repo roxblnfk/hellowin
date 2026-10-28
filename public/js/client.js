@@ -772,13 +772,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintChat();
         },
 
-        // Every viewer plays the same foam from `since` to `until` on the server clock.
+        // Every viewer plays the same foam from `since` to `until` on the server clock; `batch` — the mugs it sets down.
         // Now and then the owl says a rumour as it pours: low priority, it never cuts a line off (owl.js).
         pour(event) {
             const rumor = Number.isInteger(event.rumor) ? event.rumor : undefined;
-            model.bar = { ...model.bar, pouring: { since: event.since, until: event.until, ...(rumor === undefined ? {} : { rumor }) } };
+            const batch = Number.isInteger(event.batch) ? { batch: event.batch } : {};
+            model.bar = { ...model.bar, pouring: { since: event.since, until: event.until, ...batch, ...(rumor === undefined ? {} : { rumor }) } };
             paintBar();
-            scene?.pour?.(event.since, event.until);
+            scene?.pour?.(event.since, event.until, event.batch);
             if (rumor !== undefined) owl?.rumor?.(rumor, event.until - (now() + offset));
         },
 

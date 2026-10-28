@@ -3,6 +3,7 @@ import { PALETTE } from './palette.js';
 import { EMISSIVE, LIGHTINGS, keepHueColor, litColor } from './night.js';
 import { BAR_HIDE, OWL_BAR } from './owl.js';
 import { paintFlames } from './sprites.js';
+import { digitsSprite } from './flyers.js';
 import { pick } from '../i18n.js';
 
 /**
@@ -50,6 +51,11 @@ import { pick } from '../i18n.js';
  *   barRunnerSpot(layout, artW, artH, opts)      → {x, y} — RoadRunner's place behind the counter, y its back edge.
  *   mugSlots(layout, artW, artH, max, opts)      → [{x, y}] up to `max` counter mugs, nearest the owl first; place
  *                                                BAR_MUG's anchor there and draw the mugs right after the counter.
+ *   counterMugs(slots, mugs)                     → {shown, more, label} — which of mugSlots' spots hold the `mugs` full
+ *                                                mugs: shown — slot indexes in pour order; more — the mugs left over,
+ *                                                said by a «+more» label (flyers.js digitsSprite) centred at label
+ *                                                {x, y}, which takes the left end of the front row; null when all fit.
+ *   pourBatch(pouring)                           → the mugs the current pour sets down at once (`batch`, 1 without it).
  *   counterBox(layout, artW, artH, opts)         → {x1, x2, top, y} — the drawn counter (top = the keg's top, y = the
  *                                                front foot line), for the DOM button over it; null without one.
  *   barDoor(layout, artW, artH, opts)            → {x, y, frames} — the door's leaf and what the open doorway shows,
@@ -1438,6 +1444,9 @@ export function barRunnerSpot(layout, artW, artH, opts = {}) {
     return { x: Math.round(at.x), y: g.counter ? g.counter.back : Math.round(at.y) };
 }
 
+// The distance between neighbouring counter mugs in a row, art px.
+const MUG_STEP = 6;
+
 /** Up to `max` counter mug spots (BAR_MUG's anchor), nearest the owl first: a front row, then a row behind it. */
 export function mugSlots(layout, artW, artH, max, opts = {}) {
     const g = geometry(layout, artW, artH, opts);
@@ -1445,7 +1454,7 @@ export function mugSlots(layout, artW, artH, max, opts = {}) {
     if (!c || max <= 0) return [];
     const right = g.owl.x - 10;
     const left = c.x1 + 14;
-    const step = 6;
+    const step = MUG_STEP;
     const perRow = Math.max(1, Math.floor((right - left) / step) + 1);
     const rows = [c.y2 - COUNTER_H - 1];
     if (c.depth >= 8) rows.push(c.y2 - COUNTER_H - 5);
@@ -1455,6 +1464,27 @@ export function mugSlots(layout, artW, artH, max, opts = {}) {
     }
     return out;
 }
+
+/** The counter's mugs over `slots` of mugSlots (see the module doc): every one when they fit, else a «+N» label. */
+export function counterMugs(slots, mugs, labelW = (text) => digitsSprite(text).w) {
+    const all = slots.map((_, i) => i);
+    if (mugs <= slots.length) return { shown: all.slice(0, Math.max(0, mugs)), more: 0, label: null };
+    const front = slots.filter((p) => p.y === slots[0].y).length;
+    // The label gives up the fewest front-row mugs it needs: it stands right of the leftmost spot's mug and may reach
+    // one step past it over the bare counter end, and keeps a pixel off the glass of the first mug still shown.
+    let hide = 1;
+    let w = labelW(`+${mugs - slots.length + hide}`);
+    while (hide < front && MUG_STEP * hide + 5 < w) w = labelW(`+${mugs - slots.length + ++hide}`);
+    const right = slots[front - hide].x + 1;
+    return {
+        shown: all.filter((i) => i < front - hide || i >= front),
+        more: mugs - slots.length + hide,
+        label: { x: right - (w >> 1), y: slots[0].y - 3 },
+    };
+}
+
+/** How many mugs a `pouring` of the protocol sets down at once: its `batch`, 1 when the field is absent or broken. */
+export const pourBatch = (pouring) => (Number.isInteger(pouring?.batch) && pouring.batch > 1 ? pouring.batch : 1);
 
 /** The drawn counter in art px: {x1, x2, top, y} (y — the front foot line), or null. */
 export function counterBox(layout, artW, artH, opts = {}) {
