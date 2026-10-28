@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a0649ddc7b2bf2ed474eda94d66ba29e",
+    "content-hash": "623469cb91c5782205cad0dfcad2ba1d",
     "packages": [
         {
             "name": "alexkart/curl-builder",
@@ -4686,16 +4686,16 @@
         },
         {
             "name": "spiral/idempotency",
-            "version": "dev-feat/redis-at-most-once",
+            "version": "0.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/idempotency.git",
-                "reference": "7f3be2b13772433ca50c5bba7be30f07174a2746"
+                "reference": "72d89fc8117cf44bde607339465c2fb95cbc3025"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/idempotency/zipball/7f3be2b13772433ca50c5bba7be30f07174a2746",
-                "reference": "7f3be2b13772433ca50c5bba7be30f07174a2746",
+                "url": "https://api.github.com/repos/spiral/idempotency/zipball/72d89fc8117cf44bde607339465c2fb95cbc3025",
+                "reference": "72d89fc8117cf44bde607339465c2fb95cbc3025",
                 "shasum": ""
             },
             "require": {
@@ -4759,9 +4759,9 @@
             "description": "Idempotency guarantees (AtLeastOnce lease / ExactlyOnce inbox) for Spiral Framework operations.",
             "support": {
                 "issues": "https://github.com/spiral/idempotency/issues",
-                "source": "https://github.com/spiral/idempotency/tree/feat/redis-at-most-once"
+                "source": "https://github.com/spiral/idempotency/tree/0.5.0"
             },
-            "time": "2026-10-19T20:18:42+00:00"
+            "time": "2026-10-25T08:27:47+00:00"
         },
         {
             "name": "spiral/nyholm-bridge",
@@ -9014,17 +9014,9 @@
             "time": "2026-10-13T19:58:28+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "spiral/idempotency",
-            "version": "dev-feat/redis-at-most-once",
-            "alias": "0.5.0",
-            "alias_normalized": "0.5.0.0"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
-        "spiral/idempotency": 20,
         "spiral/roadrunner-bridge": 20,
         "spiral/testing": 20
     },

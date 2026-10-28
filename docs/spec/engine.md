@@ -782,8 +782,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `started-at`, `rate:{group}:{caller}`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
-`spiral/idempotency` подключён из ветки `feat/redis-at-most-once` (`dev-feat/redis-at-most-once as 0.5.0`) до релиза
-0.5 с `RedisAtMostOnceConfig`; после релиза — обычная версия `^0.5`. Valkey с AOF и volume — состояние переживает
+`spiral/idempotency` — релиз `^0.5`: в нём `RedisAtMostOnceConfig` и `RedisLeaseConfig`. Valkey с AOF и volume — состояние переживает
 рестарт `app` и `valkey`; отсутствующий ключ `hellowin:round` означает раунд 1. Задачи в очереди при рестарте `app`
 теряются — следующий клик сверх порога ставит переход снова.
 
