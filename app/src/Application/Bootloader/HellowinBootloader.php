@@ -18,6 +18,7 @@ use App\Application\Hellowin\SnapshotFactory;
 use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
+use App\Application\Story\AutopilotService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
 use App\Application\Story\EveningTally;
@@ -48,12 +49,16 @@ use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Autopilot;
+use App\Domain\Story\AutoStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\EveningStore;
+use App\Domain\Story\OwlClock;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\SpeechTable;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
 use App\Domain\Walk\PresenceStore;
@@ -63,6 +68,7 @@ use Psr\Log\LoggerInterface;
 use RoadRunner\Centrifugo\CentrifugoApiInterface;
 use RoadRunner\Lock\LockInterface;
 use Spiral\Boot\Bootloader\Bootloader;
+use Spiral\Boot\DirectoriesInterface;
 use Spiral\Broadcasting\BroadcastInterface;
 use Spiral\Cache\CacheStorageProviderInterface;
 use Spiral\Idempotency\IdempotencyRegistry;
@@ -123,6 +129,7 @@ final class HellowinBootloader extends Bootloader
                 FlyerService $flyerService,
                 LimitsService $limits,
                 PresenceStore $presence,
+                AutopilotService $autopilot,
             ): SnapshotFactory => new SnapshotFactory(
                 $elements,
                 $store,
@@ -142,6 +149,7 @@ final class HellowinBootloader extends Bootloader
                 $limits,
                 $presence,
                 $config->getEmotes(),
+                $autopilot,
             ),
             PresenceStore::class => static fn(HellowinConfig $config, CacheStorageProviderInterface $cache): PresenceStore
                 => new PresenceStore($cache->storage($config->getStorage())),
@@ -412,7 +420,34 @@ final class HellowinBootloader extends Bootloader
             ChannelPublisher::class => static fn(
                 HellowinConfig $config,
                 BroadcastInterface $broadcast,
-            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems()),
+                OwlClock $owl,
+            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems(), $owl),
+            // The frontend keeps the table with the owl's texts; without it the autopilot does not wait for her
+            SpeechTable::class => static function (DirectoriesInterface $dirs, LoggerInterface $logger): SpeechTable {
+                try {
+                    return SpeechTable::fromFile($dirs->get('public') . 'autopilot.json');
+                } catch (\RuntimeException $e) {
+                    $logger->warning('{message}', ['message' => $e->getMessage(), 'exception' => $e]);
+                    return new SpeechTable();
+                }
+            },
+            OwlClock::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+                SpeechTable $table,
+                Clock $clock,
+            ): OwlClock => new OwlClock($cache->storage($config->getStorage()), new Locks($lock, ttl: 1.0, wait: 0.5), $table, $clock),
+            AutoStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): AutoStore => new AutoStore($cache->storage($config->getStorage()), new Locks($lock, ttl: 10.0, wait: 1.0)),
+            Autopilot::class => static function (HellowinConfig $config, SpeechTable $table): Autopilot {
+                $ms = $config->getAutopilot();
+
+                return new Autopilot($table, $ms['pause'], $ms['dawnMin'], $ms['dawnMax'], $ms['dice'], $ms['stall']);
+            },
             Clock::class => SystemClock::class,
             FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(
                 $flyers->getDepths(),
@@ -458,6 +493,7 @@ final class HellowinBootloader extends Bootloader
                 RapierService $rapier,
                 CursedService $cursed,
                 LimitsService $limits,
+                AutopilotService $autopilot,
             ): Ticker => new Ticker(
                 $top,
                 $config->getTopInterval(),
@@ -472,6 +508,7 @@ final class HellowinBootloader extends Bootloader
                 cursed: $cursed,
                 limits: $limits,
                 census: $census,
+                autopilot: $autopilot,
             ),
         ];
     }

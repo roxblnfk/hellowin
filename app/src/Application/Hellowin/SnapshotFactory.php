@@ -7,6 +7,7 @@ namespace App\Application\Hellowin;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
+use App\Application\Story\AutopilotService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
 use App\Application\Story\RapierService;
@@ -19,6 +20,7 @@ use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Autopilot;
 use App\Domain\Story\Story;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\PresenceStore;
@@ -52,8 +54,10 @@ use App\Domain\Walk\WalkerStore;
  *     flyers: list<array>,
  *     emotes: list<non-empty-string>,
  *     startedAt: int,
- *     now: int
+ *     now: int,
+ *     auto?: array{on: bool, next: Next|null}
  * }
+ * @psalm-import-type Next from Autopilot
  */
 final readonly class SnapshotFactory
 {
@@ -80,6 +84,7 @@ final readonly class SnapshotFactory
         private ?LimitsService $limits = null,
         private ?PresenceStore $presence = null,
         private array $emotes = [],
+        private ?AutopilotService $autopilot = null,
     ) {}
 
     /**
@@ -119,7 +124,7 @@ final readonly class SnapshotFactory
             $elements[] = $state;
         }
 
-        return [
+        $snapshot = [
             'round' => $ritual->round,
             'scene' => $ritual->scene,
             'sceneStages' => $this->policy->finalScene(),
@@ -151,5 +156,9 @@ final readonly class SnapshotFactory
             'startedAt' => $this->startTime?->at() ?? $this->clock->now(),
             'now' => $this->clock->now(),
         ];
+        // A server without the autopilot sends no field: the console hides the switch then
+        $this->autopilot === null or $snapshot['auto'] = $this->autopilot->state();
+
+        return $snapshot;
     }
 }

@@ -142,7 +142,45 @@ final class RPCServiceTest
             'emotes' => RitualHarness::EMOTES,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
+            'auto' => ['on' => false, 'next' => null],
         ]]);
+    }
+
+    public function autoIsForTheModeratorOnly(): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'auto', ['on' => true], self::PLAYER);
+
+        Assert::same($response, ['ok' => false, 'error' => 'forbidden']);
+        Assert::false($ritual->autopilot->state()['on']);
+        Assert::blank($ritual->broadcast->ofType('auto'));
+    }
+
+    public function autoWantsABoolean(): void
+    {
+        $ritual = new RitualHarness();
+
+        $response = $this->call($ritual, 'auto', ['on' => 1], moderator: true);
+
+        Assert::same($response, ['ok' => false, 'error' => 'invalid on']);
+        Assert::false($ritual->autopilot->state()['on']);
+    }
+
+    public function autoTellsEveryoneOnlyOfAChange(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2]);
+
+        $on = $this->call($ritual, 'auto', ['on' => true], moderator: true);
+        $again = $this->call($ritual, 'auto', ['on' => true], moderator: true);
+        $off = $this->call($ritual, 'auto', ['on' => false], moderator: true);
+
+        Assert::same([$on, $again, $off], [['ok' => true, 'on' => true], ['ok' => true, 'on' => true], ['ok' => true, 'on' => false]]);
+        Assert::same($ritual->broadcast->ofType('auto'), [
+            ['type' => 'auto', 'round' => 1, 'on' => true, 'next' => ['action' => 'bar.ready', 'wait' => 'room']],
+            ['type' => 'auto', 'round' => 1, 'on' => false, 'next' => null],
+        ]);
+        Assert::same(\array_slice($this->rpcCalls($ritual), -1), [['auto', 'ok']]);
     }
 
     public function clickOfAPlayerIsAttributed(): void
@@ -1398,6 +1436,7 @@ final class RPCServiceTest
             $ritual->tally,
             $ritual->emotes,
             $ritual->stats,
+            $ritual->autopilot,
         );
         $service->handle(new RPC(
             worker: $this->worker,

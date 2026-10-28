@@ -67,6 +67,7 @@ final class HellowinConfig extends InjectableConfig
         'rapier' => ['beer_handover_ms' => 900],
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
+        'autopilot' => ['pause_ms' => 4000, 'dawn_min_ms' => 300000, 'dawn_max_ms' => 600000, 'dice_ms' => 90000, 'stall_ms' => 0],
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
@@ -391,6 +392,35 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.dice.cooldown_ms" (env HELLOWIN_DICE_COOLDOWN_MS) must be a non-negative integer.');
+    }
+
+    /**
+     * @return array{pause: int<0, max>, dawnMin: int<0, max>, dawnMax: int<0, max>, dice: int<0, max>, stall: int<0, max>}
+     *         Milliseconds of the autopilot; the dawn's bounds in order.
+     */
+    public function getAutopilot(): array
+    {
+        $autopilot = $this->config['autopilot'] ?? [];
+        \is_array($autopilot) or throw new \InvalidArgumentException('Config "hellowin.autopilot" must be an array.');
+
+        $ms = [];
+        foreach (['pause' => 'PAUSE', 'dawnMin' => 'DAWN_MIN', 'dawnMax' => 'DAWN_MAX', 'dice' => 'DICE', 'stall' => 'STALL'] as $name => $env) {
+            $key = \strtolower($env) . '_ms';
+            /** @var mixed $value */
+            $value = $autopilot[$key] ?? null;
+            \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+            \is_int($value) && $value >= 0 or throw new \InvalidArgumentException(\sprintf(
+                'Config "hellowin.autopilot.%s" (env HELLOWIN_AUTO_%s_MS) must be a non-negative integer.',
+                $key,
+                $env,
+            ));
+            $ms[$name] = $value;
+        }
+        $ms['dawnMax'] >= $ms['dawnMin'] or throw new \InvalidArgumentException(
+            'Config "hellowin.autopilot.dawn_max_ms" (env HELLOWIN_AUTO_DAWN_MAX_MS) must not be less than "dawn_min_ms" (env HELLOWIN_AUTO_DAWN_MIN_MS).',
+        );
+
+        return $ms;
     }
 
     /**

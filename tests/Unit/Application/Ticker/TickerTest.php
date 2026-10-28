@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Application\Ticker;
 
+use App\Application\Hellowin\Job\TransitionScene;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Ticker\Ticker;
 use App\Domain\Flyer\Flyer;
@@ -28,6 +29,19 @@ final class TickerTest
 
         Assert::same($ritual->broadcast->ofType('top'), [['type' => 'top', 'round' => 1, 'board' => []]]);
         Assert::blank($ritual->broadcast->ofType('flyer'));
+    }
+
+    public function everyTickDrivesTheAutopilot(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        $ritual->bar->wave();
+        $ritual->autopilot->switch(true);
+        $at = \max($ritual->owl->until(), $ritual->clock->now) + RitualHarness::AUTO_PAUSE;
+        $ticker = new Ticker($ritual->top, 500, $ritual->flyers, [2000, 2000], $ritual->walks, new NullLogger(), autopilot: $ritual->autopilot);
+
+        $ticker->tick($at);
+
+        Assert::same(\array_column($ritual->queue->pushed, 'name'), [TransitionScene::class]);
     }
 
     public function everyTickLooksForArrivedClinks(): void

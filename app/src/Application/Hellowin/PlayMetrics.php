@@ -29,6 +29,8 @@ final readonly class PlayMetrics
     public const BEER_MUGS = 'hellowin_beer_mugs_total';
     public const BEER_LITRES = 'hellowin_beer_litres';
     public const EMOTES = 'hellowin_emotes_total';
+    public const AUTOPILOT_ON = 'hellowin_autopilot_on';
+    public const AUTOPILOT_MOVES = 'hellowin_autopilot_moves_total';
     public const PLACE_BAR = 'bar';
     public const PLACE_CURSED = 'cursed';
 
@@ -60,6 +62,8 @@ final readonly class PlayMetrics
             self::BEER_MUGS => Collector::counter()->withHelp('Mugs drunk since the RoadRunner start, by place: bar or cursed.')->withLabels('place'),
             self::BEER_LITRES => Collector::gauge()->withHelp('Litres of beer drunk by all players ever.'),
             self::EMOTES => Collector::counter()->withHelp('Emotes shown over the characters, by emoji.')->withLabels('emoji'),
+            self::AUTOPILOT_ON => Collector::gauge()->withHelp('The autopilot runs the evening: 1, or 0.'),
+            self::AUTOPILOT_MOVES => Collector::counter()->withHelp('Moves the autopilot made, by action.')->withLabels('action'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -100,6 +104,19 @@ final readonly class PlayMetrics
     public function emote(string $emoji): void
     {
         $this->safely(fn() => $this->metrics->add(self::EMOTES, 1, [$emoji]));
+    }
+
+    public function autopilot(bool $on): void
+    {
+        $this->safely(fn() => $this->metrics->set(self::AUTOPILOT_ON, $on ? 1 : 0));
+    }
+
+    /**
+     * @param non-empty-string $action One of the autopilot's actions: the label stays a short list.
+     */
+    public function autopilotMove(string $action): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::AUTOPILOT_MOVES, 1, [$action]));
     }
 
     /**

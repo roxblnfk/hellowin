@@ -21,6 +21,7 @@ use App\Application\Player\InvalidLookException;
 use App\Application\Player\InvalidNameException;
 use App\Application\Player\PlayerService;
 use App\Application\Player\StatsResetService;
+use App\Application\Story\AutopilotService;
 use App\Application\Story\BadAttemptException;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
@@ -62,7 +63,7 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute', 'stats.reset'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
     private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal'];
@@ -91,6 +92,7 @@ final readonly class RPCService implements ServiceInterface
         private ?EveningTally $tally = null,
         private ?EmoteService $emotes = null,
         private ?StatsResetService $stats = null,
+        private ?AutopilotService $autopilot = null,
     ) {}
 
     #[\Override]
@@ -168,6 +170,7 @@ final readonly class RPCService implements ServiceInterface
             'flyer.special' => $this->special($request->getData()),
             'flyers.burst' => ['ok' => true, 'count' => $this->flyers->burst($this->clock->now())],
             'pause' => $this->toggle($request->getData(), $this->story->pause(...)),
+            'auto' => $this->toggle($request->getData(), ($this->autopilot ?? throw new StoryRefusedException('not now'))->switch(...)),
             'thresholds' => ['ok' => true] + $this->story->thresholds($request->getData()['k'] ?? null),
             'bar.take' => $this->take($player),
             'drink' => $this->drink($player),

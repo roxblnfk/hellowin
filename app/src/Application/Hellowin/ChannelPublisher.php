@@ -7,6 +7,8 @@ namespace App\Application\Hellowin;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
+use App\Domain\Story\Autopilot;
+use App\Domain\Story\OwlClock;
 use App\Domain\Story\Story;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\Walker;
@@ -14,6 +16,8 @@ use Spiral\Broadcasting\BroadcastInterface;
 
 /**
  * Publishes ritual events to the shared channel. Message shapes are the client contract: docs/spec/protocol.md.
+ *
+ * @psalm-import-type Next from Autopilot
  */
 final readonly class ChannelPublisher
 {
@@ -24,6 +28,7 @@ final readonly class ChannelPublisher
         private BroadcastInterface $broadcast,
         private string $channel,
         private Items $items = new Items(),
+        private ?OwlClock $owlClock = null,
     ) {}
 
     /**
@@ -422,6 +427,7 @@ final readonly class ChannelPublisher
         $params === [] or $message['params'] = $params;
 
         $this->publish($message);
+        $this->owlClock?->line($line);
     }
 
     /**
@@ -432,6 +438,17 @@ final readonly class ChannelPublisher
     public function owlText(int $round, string $text): void
     {
         $this->publish(['type' => 'owl', 'round' => $round, 'text' => $text]);
+        $this->owlClock?->text($text);
+    }
+
+    /**
+     * The autopilot was switched, or its next move changed.
+     *
+     * @param Next|null $next
+     */
+    public function auto(int $round, bool $on, ?array $next): void
+    {
+        $this->publish(['type' => 'auto', 'round' => $round, 'on' => $on, 'next' => $next]);
     }
 
     public function pause(int $round, bool $on): void

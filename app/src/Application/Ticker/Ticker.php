@@ -8,6 +8,7 @@ use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Player\PlayerCensus;
+use App\Application\Story\AutopilotService;
 use App\Application\Story\CursedService;
 use App\Application\Story\RapierService;
 use App\Application\Story\TopService;
@@ -58,6 +59,7 @@ final class Ticker
         private readonly ?CursedService $cursed = null,
         private readonly ?LimitsService $limits = null,
         private readonly ?PlayerCensus $census = null,
+        private readonly ?AutopilotService $autopilot = null,
     ) {}
 
     /**
@@ -106,6 +108,8 @@ final class Ticker
             $this->nextCensus = $now + PlayerCensus::INTERVAL;
             $this->safely('players', fn() => $this->census?->count());
         }
+
+        $this->safely('autopilot', fn() => $this->autopilot?->tick($now));
     }
 
     /**

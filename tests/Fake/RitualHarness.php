@@ -23,6 +23,7 @@ use App\Application\Hellowin\TransitionQueue;
 use App\Application\Player\PlayerCensus;
 use App\Application\Player\PlayerService;
 use App\Application\Player\StatsResetService;
+use App\Application\Story\AutopilotService;
 use App\Application\Story\CursedService;
 use App\Application\Story\DiceService;
 use App\Application\Story\EveningTally;
@@ -54,12 +55,16 @@ use App\Domain\Player\PlayerStore;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\Autopilot;
+use App\Domain\Story\AutoStore;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\CursedStore;
 use App\Domain\Story\DiceRoller;
 use App\Domain\Story\DiceStore;
 use App\Domain\Story\EveningStore;
+use App\Domain\Story\OwlClock;
 use App\Domain\Story\ShotTally;
+use App\Domain\Story\SpeechTable;
 use App\Domain\Story\Story;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
@@ -88,6 +93,9 @@ final class RitualHarness
     public const CHAT_HISTORY = 3;
     public const EMOTES = ['🎃', '👻', '🍺'];
     public const EMOTE_COOLDOWN = 1000;
+    public const AUTO_PAUSE = 4000;
+    public const AUTO_DAWN = [300000, 600000];
+    public const AUTO_DICE = 90000;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -137,6 +145,10 @@ final class RitualHarness
     public readonly FakeValkey $valkey;
     public readonly EveningTally $tally;
     public readonly StatsResetService $stats;
+    public readonly SpeechTable $speech;
+    public readonly OwlClock $owl;
+    public readonly AutoStore $autoStore;
+    public readonly AutopilotService $autopilot;
 
     /**
      * @param positive-int $threshold
@@ -154,6 +166,7 @@ final class RitualHarness
      * @param non-empty-list<list<non-empty-string>>|null $flyerKinds Flyer kinds by scene in place of the usual sets.
      * @param Limit|null $pumpkin Clicks a pumpkin stage takes, in place of the flat `$threshold`.
      * @param positive-int $barPourPer Free places on the counter per mug of a batch.
+     * @param int<0, max> $autoStall Milliseconds without the room's task before the autopilot moves with `force`.
      */
     public function __construct(
         int $threshold = 2,
@@ -173,6 +186,7 @@ final class RitualHarness
         ?array $flyerKinds = null,
         ?Limit $pumpkin = null,
         int $barPourPer = 10,
+        int $autoStall = 0,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -201,10 +215,12 @@ final class RitualHarness
         $this->players = new PlayerService($this->playerStore, new NullLogger());
         $policy = new LockstepPolicy($pumpkin ?? new Limit($threshold), $stageMax, new Limit($bonfireThreshold), $bonfire ?? [], new Limit($circleThreshold), $circle ?? 1);
         $metrics = new RitualMetrics($this->metrics, new NullLogger());
-        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']));
+        $this->clock = new FrozenClock();
+        $this->speech = self::speech();
+        $this->owl = new OwlClock($this->storage, new Locks($this->lock), $this->speech, $this->clock);
+        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->owl);
         $queue = new TransitionQueue($this->queue, $metrics);
 
-        $this->clock = new FrozenClock();
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
         $this->walkerStore = new WalkerStore($this->storage, new Locks($this->lock));
         $this->stops = new ActionStop($this->walkerStore, $this->store, $publisher, $this->clock);
@@ -266,7 +282,6 @@ final class RitualHarness
         $this->limitsStore = new LimitsStore($this->storage);
         $this->presenceStore = new PresenceStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
-        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore, self::EMOTES);
         $this->presence = new FakePresence();
         $this->walks = new WalkService(
             $this->walkerStore,
@@ -294,6 +309,39 @@ final class RitualHarness
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally, $this->reveal);
         $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally);
+        $this->autoStore = new AutoStore($this->storage, new Locks($this->lock));
+        $this->autopilot = new AutopilotService(
+            $this->autoStore,
+            new Autopilot($this->speech, self::AUTO_PAUSE, self::AUTO_DAWN[0], self::AUTO_DAWN[1], self::AUTO_DICE, $autoStall, new Randomizer(new Mt19937(13))),
+            $this->owl,
+            $this->store,
+            $policy,
+            $this->story,
+            $publisher,
+            $this->clock,
+            $this->playMetrics,
+            new NullLogger(),
+            $this->bar,
+            $this->dice,
+        );
+        $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore, self::EMOTES, $this->autopilot);
+    }
+
+    /**
+     * A speech table of public/autopilot.json's shape with round numbers: `bar-intro` and `finale-1` (with the
+     * countdown's delay) are known, any other line talks `max`.
+     */
+    public static function speech(): SpeechTable
+    {
+        return SpeechTable::fromArray([
+            'showMs' => ['base' => 1000, 'perChar' => 100, 'min' => 2000, 'max' => 9000],
+            'holdMs' => 3000,
+            'lines' => [
+                'bar-intro' => ['ms' => 6000, 'hold' => 3000],
+                'finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000],
+            ],
+            'steps' => ['1' => 5200, '2' => 2200, '3' => 6800, '4' => 0, '5' => 5600, '6' => 2650, '7' => 8000],
+        ]);
     }
 
     /**
