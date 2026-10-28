@@ -89,6 +89,32 @@ body:has(.how) {
     overflow-wrap: normal;
 }
 
+/* A real excerpt from the repo: the caption names the file and the method to find it by. */
+.code {
+    margin: 0 0 16px;
+}
+
+.code figcaption {
+    margin-bottom: 4px;
+    color: var(--d-muted);
+    font-size: 13px;
+}
+
+.code figcaption code {
+    background: none;
+    padding: 0;
+}
+
+.code pre {
+    margin: 0;
+    font-size: 15px;
+}
+
+/* Code fonts draw -> and => as arrows; an excerpt shows the characters as they are in the file. */
+.code pre code {
+    font-variant-ligatures: none;
+}
+
 .how__nav {
     display: flex;
     flex-wrap: wrap;

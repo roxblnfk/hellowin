@@ -68,6 +68,24 @@
                 <code>:8000</code>, дашборд — <code>:3000</code>. Адреса страница получает от сервера, достроенные
                 хостом, по которому её открыли. Всё остальное живёт во внутренней сети docker compose.
             </p>
+            <p>Так это записано в <code>.rr.yaml</code>:</p>
+            <figure class="code">
+                <figcaption><code>.rr.yaml</code> · <code>http</code></figcaption>
+                <pre><code>http:
+  # …
+  middleware:
+    - http_metrics
+    - headers
+    - gzip
+    - static
+    - rate_limiter
+  headers:
+    response:
+      X-Powered-By: RoadRunner 3
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      # …</code></pre>
+            </figure>
             <p>
                 Основная нагрузка — не HTTP, а RPC через WebSocket, и HTTP-лимитер их не видит. Поэтому
                 <code>RPCService</code> до любого метода берёт токен из ведра игрока: оно лежит в KV
@@ -81,13 +99,32 @@
                 публикует сообщения через gRPC API Centrifugo на <code>centrifugo:10000</code>.
             </p>
             <p>
-                У RoadRunner три пула PHP-воркеров по два процесса <code>php app.php</code>: <code>http</code> отдаёт
+                У RoadRunner три пула PHP-воркеров — процессов <code>php app.php</code>, в <code>centrifuge</code> их
+                <code>RR_CENTRIFUGE_WORKERS</code>, в остальных по два: <code>http</code> отдаёт
                 страницы, <code>centrifuge</code> отвечает на connect и RPC, <code>jobs</code> выполняет задачи
                 переходов из очереди <code>transitions</code> (драйвер <code>memory</code>). Запросы и задачи RoadRunner
                 передаёт воркеру через pipes — stdin/stdout процесса. Обратно к плагинам <code>kv</code>,
                 <code>lock</code>, <code>jobs</code>, <code>metrics</code> и <code>centrifuge</code> воркер ходит по
                 goridge RPC на <code>127.0.0.1:6001</code>.
             </p>
+            <p>Пулы и очередь — там же:</p>
+            <figure class="code">
+                <figcaption><code>.rr.yaml</code> · <code>centrifuge, jobs</code></figcaption>
+                <pre><code>centrifuge:
+  proxy_address: 'tcp://0.0.0.0:10001'
+  grpc_api_address: '&#36;{CENTRIFUGO_GRPC_API:-centrifugo:10000}'
+  pool:
+    # Every click, shot and move of the room waits for one of these: about two per core
+    num_workers: &#36;{RR_CENTRIFUGE_WORKERS:-4}
+# …
+jobs:
+  consume: [transitions]
+  pool:
+    num_workers: 2
+  pipelines:
+    transitions:
+      driver: memory</code></pre>
+            </figure>
             <p>
                 Летунов, фигурки и топ стрелков двигает время, а не запросы. Для этого есть плагин
                 <code>service</code>: RoadRunner держит один долгоживущий процесс <code>php app.php hellowin:ticker</code>
@@ -376,6 +413,27 @@
                 RoadRunner, тот отдаёт вызов свободному воркеру из пула <code>centrifuge</code>, где
                 <code>RPCService</code> передаёт его в <code>ClickHandler::click()</code>.
             </p>
+            <p>Ответ уходит в Centrifugo через <code>$request-&gt;respond()</code>, а метрика вызова пишется в <code>finally</code> — даже если обработчик бросил исключение:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Endpoint/Centrifugo/RPCService.php</code> · <code>RPCService::handle()</code></figcaption>
+                <pre><code>public function handle(RequestInterface $request): void
+{
+    \assert($request instanceof RPC);
+
+    $started = \hrtime(true);
+    $method = (string) $request-&gt;method;
+    $result = 'exception';
+    try {
+        $answer = $this-&gt;answer($request, $method);
+        $request-&gt;respond(new RPCResponse($answer));
+        $result = self::result($answer);
+    } finally {
+        $known = \in_array($method, self::PUBLIC, true) || \in_array($method, self::CONSOLE, true);
+        $this-&gt;metrics-&gt;rpc($known ? $method : 'unknown', $result, (float) (\hrtime(true) - $started) / 1e9);
+        // …
+    }
+}</code></pre>
+            </figure>
             <ol>
                 <li>Элемент проверяется по <code>ElementRegistry</code> (id из <code>app/config/hellowin.php</code>).</li>
                 <li><code>RitualMetrics</code> добавляет 1 к <code>hellowin_clicks_total</code>.</li>
@@ -500,7 +558,23 @@
                     Метрики, публикация и постановка задачи — вне лока.
                 </figcaption>
             </figure>
-            <p>Сообщения в канале — JSON-строки. Событие клика:</p>
+            <p>Событие клика собирает <code>ChannelPublisher::click()</code>:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Hellowin/ChannelPublisher.php</code> · <code>ChannelPublisher::click()</code></figcaption>
+                <pre><code>public function click(int $round, Pumpkin $pumpkin, string $emoji, int $threshold, ?Player $player = null, bool $counted = true): void
+{
+    $this-&gt;publish(self::counted(self::withPlayer([
+        'type' =&gt; 'click',
+        'round' =&gt; $round,
+        'element' =&gt; $pumpkin-&gt;id,
+        'emoji' =&gt; $emoji,
+        'clicks' =&gt; $pumpkin-&gt;clicks,
+        'threshold' =&gt; $threshold,
+        'stage' =&gt; $pumpkin-&gt;stage,
+    ], $player), $counted));
+}</code></pre>
+            </figure>
+            <p>В канал оно уходит JSON-строкой:</p>
             <pre><code>{"type":"click","round":…,"element":"pumpkin-3","emoji":"🕸️","clicks":…,"threshold":…,"stage":…}</code></pre>
         </section>
 
@@ -617,7 +691,7 @@
 
             <h3>Зачем лок на тыкву</h3>
             <p>
-                Клики обрабатывают несколько воркеров параллельно (в пуле <code>centrifuge</code> их два), и по одной
+                Клики обрабатывают несколько воркеров параллельно (в пуле <code>centrifuge</code> их <code>RR_CENTRIFUGE_WORKERS</code>), и по одной
                 тыкве кликают многие. Увеличение счётчика — read-modify-write: прочитать <code>{stage, clicks}</code>,
                 +1, записать; атомарного инкремента у KV-плагина нет. Без лока два воркера прочитают одно и то же
                 значение, и один клик пропадёт.
@@ -723,6 +797,48 @@
                     </tbody>
                 </table>
             </div>
+
+            <p>Клик берёт один лок — своей тыквы — и читает, меняет и пишет её только внутри него:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Domain/Ritual/RitualStore.php</code> · <code>RitualStore::click()</code></figcaption>
+                <pre><code>public function click(string $id, ?\Closure $accepts = null, ?\Closure $acceptsIn = null): ?ClickOutcome
+{
+    $id = $this-&gt;known($id);
+
+    return $this-&gt;locked([$this-&gt;lockOf($id)], function () use ($id, $accepts, $acceptsIn): ?ClickOutcome {
+        // …
+        $story = $this-&gt;readStory();
+        $current = $this-&gt;readPumpkin($id);
+        $clicks = $story-&gt;paused ? $current-&gt;clicks : $current-&gt;clicks + 1;
+        $pumpkin = new Pumpkin($id, $current-&gt;stage, $clicks, $current-&gt;accepted + 1, $current-&gt;spent);
+        $this-&gt;writePumpkin($pumpkin);
+
+        return new ClickOutcome($this-&gt;readRound(), $this-&gt;readScene(), $pumpkin, $story-&gt;k, $story-&gt;players, !$story-&gt;paused);
+    });
+}</code></pre>
+            </figure>
+            <p><code>locked()</code> берёт локи плагина по порядку и отпускает их в обратном порядке в <code>finally</code>:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Domain/Ritual/RitualStore.php</code> · <code>RitualStore::locked()</code></figcaption>
+                <pre><code>private function locked(array $resources, \Closure $operation): mixed
+{
+    $held = [];
+
+    try {
+        foreach ($resources as $resource) {
+            $id = $this-&gt;lock-&gt;lock($resource, ttl: $this-&gt;lockTtl, waitTTL: $this-&gt;lockWait);
+            $id === false and throw new RitualBusyException(\sprintf('"%s" is locked by another worker.', $resource));
+            $held[$resource] = $id;
+        }
+
+        return $operation();
+    } finally {
+        foreach (\array_reverse($held, true) as $resource =&gt; $id) {
+            $this-&gt;lock-&gt;release($resource, $id);
+        }
+    }
+}</code></pre>
+            </figure>
 
             <h3 id="bar">Бар: последняя кружка и розлив партиями</h3>
             <p>
@@ -853,8 +969,17 @@
                 <code>IdempotencyInterceptor</code> в цепочке <code>interceptors.consume</code> очереди
                 (<code>app/config/queue.php</code>) берёт ключ из payload:
             </p>
-            <pre><code>#[Idempotent(storage: 'transitions', key: 'payload.key')]
-final class TransitionPumpkin extends JobHandler</code></pre>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Hellowin/Job/TransitionPumpkin.php</code> · <code>TransitionPumpkin::invoke()</code></figcaption>
+                <pre><code>#[Idempotent(storage: 'transitions', key: 'payload.key')]
+final class TransitionPumpkin extends JobHandler
+{
+    public function invoke(int $round, string $pumpkin, int $toStage, TransitionHandler $transitions, ?string $player = null): void
+    {
+        $transitions-&gt;pumpkin($round, $pumpkin, $toStage, PlayerId::isValid($player) ? $player : null);
+    }
+}</code></pre>
+            </figure>
 
             <h3>Кто придумывает ключ</h3>
             <p>
@@ -877,6 +1002,26 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                     </tbody>
                 </table>
             </div>
+            <p>Ключ кладётся в payload задачи рядом с данными перехода:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Hellowin/TransitionQueue.php</code> · <code>TransitionQueue::pumpkinKey(), ::pumpkin()</code></figcaption>
+                <pre><code>public static function pumpkinKey(int $round, string $pumpkin, int $toStage): string
+{
+    return \sprintf('%d:%s:%d', $round, $pumpkin, $toStage);
+}
+// …
+public function pumpkin(int $round, string $pumpkin, int $toStage, ?string $player = null, string $type = Element::TYPE_PUMPKIN): void
+{
+    $this-&gt;queue-&gt;push(TransitionPumpkin::class, [
+        'key' =&gt; self::pumpkinKey($round, $pumpkin, $toStage),
+        'round' =&gt; $round,
+        'pumpkin' =&gt; $pumpkin,
+        'toStage' =&gt; $toStage,
+        'player' =&gt; $player,
+    ]);
+    $this-&gt;metrics-&gt;jobPushed($type);
+}</code></pre>
+            </figure>
             <p>
                 В Valkey ключ попадает с префиксом хранилища и областью — именем обработчика, чтобы ключи разных
                 задач не столкнулись:
@@ -892,6 +1037,16 @@ final class TransitionPumpkin extends JobHandler</code></pre>
                 вызывается вовсе, интерсептор возвращает <code>null</code>, и задача подтверждается (ACK) — не падает и
                 не возвращается в очередь. Маркер не удаляется ни при успехе, ни при ошибке и исчезает сам по TTL.
             </p>
+            <figure class="code">
+                <figcaption><code>app/config/idempotency.php</code> · <code>storages.transitions</code></figcaption>
+                <pre><code>'storages' =&gt; [
+    'transitions' =&gt; new RedisAtMostOnceConfig(
+        keyPrefix: 'hellowin:amo:',
+        retentionTtl: 300,
+    ),
+    // …
+],</code></pre>
+            </figure>
             <figure class="diagram">
                 <div class="diagram__scroll">
 <svg class="diagram__svg" viewBox="0 0 1100 838" style="min-width: 792px" role="img" aria-label="Идемпотентный переход: клики сверх порога ставят в очередь transitions несколько задач TransitionPumpkin с одним ключом. Воркеры jobs разбирают их параллельно; IdempotencyInterceptor каждого делает SET NX EX в Valkey. Первый получает OK и выполняет переход: под локом тыквы проверяет раунд и стадию, пишет stage + 1 и clicks = 0, публикует событие pumpkin и проверяет, не готова ли сцена. Остальные получают отказ: обработчик не вызывается, задача подтверждается.">
@@ -1216,6 +1371,34 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 <code>bad attempt</code>) — не ответ: <code>FailurePolicy::Release</code> освобождает ключ, и попытку
                 можно бросить, когда отказ уйдёт.
             </p>
+            <p>В коде это один вызов <code>execute()</code>; <code>LockedException</code> значит, что ту же попытку прямо сейчас бросает другой вызов:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Story/DiceService.php</code> · <code>DiceService::roll()</code></figcaption>
+                <pre><code>public function roll(string $id, mixed $attempt): array
+{
+    // …
+    try {
+        // A refusal is not an answer: released, so the attempt throws once the refusal is gone
+        $answer = $this-&gt;replies-&gt;execute(
+            self::key($round, $id, $attempt),
+            $throw,
+            new ExecuteOptions(lockTtl: self::LOCK_TTL, ttl: $this-&gt;replyTtl, failurePolicy: FailurePolicy::Release),
+        );
+    } catch (LockedException) {
+        throw new StoryRefusedException('busy');
+    }
+    // …
+    return $answer;
+}</code></pre>
+            </figure>
+            <p>Хранилище <code>dice</code> — лизинг рядом с <code>transitions</code> в том же конфиге:</p>
+            <figure class="code">
+                <figcaption><code>app/config/idempotency.php</code> · <code>storages.dice</code></figcaption>
+                <pre><code>'dice' =&gt; new RedisLeaseConfig(
+    keyPrefix: 'hellowin:lease:',
+    lockTtl: 5,
+),</code></pre>
+            </figure>
             <p>
                 Грани последней попытки игрока ещё и лежат в <code>hellowin:dice</code> под локом <code>dice</code> —
                 одной записью с номером попытки и временем нового броска. Это страховка: AtLeastOnce допускает второй
@@ -1468,6 +1651,30 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 записывается в <code>hellowin:walkers</code>, а в канал уходит событие <code>move</code> с
                 <code>Walk {path, startedAt, arrivesAt}</code>.
             </p>
+            <p>Событие собирает <code>ChannelPublisher::move()</code>, а все события канала уходят одним <code>publish()</code> — через <code>BroadcastInterface</code> и плагин <code>centrifuge</code> в gRPC API Centrifugo:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Hellowin/ChannelPublisher.php</code> · <code>ChannelPublisher::move(), ::publish()</code></figcaption>
+                <pre><code>public function move(int $round, Walker $walker, ?string $stop = null): void
+{
+    $message = [
+        'type' =&gt; 'move',
+        'round' =&gt; $round,
+        'player' =&gt; ['id' =&gt; $walker-&gt;id],
+        'walk' =&gt; $walker-&gt;walk-&gt;toArray(),
+    ];
+    // …
+
+    $this-&gt;publish($message);
+}
+
+private function publish(array $message): void
+{
+    $this-&gt;broadcast-&gt;publish(
+        $this-&gt;channel,
+        \json_encode($message, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE),
+    );
+}</code></pre>
+            </figure>
             <figure class="diagram">
                 <div class="diagram__scroll">
 <svg class="diagram__svg" viewBox="0 0 1000 370" style="min-width: 720px" role="img" aria-label="Путь фигурки: прямоугольник лужайки и эллипс грядки в центре. Прямой отрезок от фигурки к цели прошёл бы через грядку, поэтому сервер ведёт путь по касательной к чуть увеличенному эллипсу, по его нижней дуге ломаной и по касательной к цели — с той стороны, где короче. Клик внутри грядки переносится на её край по лучу из центра.">
@@ -1634,6 +1841,29 @@ docker compose exec valkey valkey-cli ttl 'hellowin:amo:App\Application\Hellowin
                 и статику — он стоит перед <code>static</code>, потому что RoadRunner 3 выполняет middleware слева
                 направо).
             </p>
+            <p>Как это выглядит в коде — на RPC-метриках с вкладки <a href="#click">«Клик»</a>: коллекторы объявляются один раз, значения пишутся по ходу работы:</p>
+            <figure class="code">
+                <figcaption><code>app/src/Application/Hellowin/PlayMetrics.php</code> · <code>PlayMetrics::declare(), ::rpc()</code></figcaption>
+                <pre><code>public function declare(): void
+{
+    $collectors = [
+        // …
+        self::RPC_CALLS =&gt; Collector::counter()-&gt;withHelp('RPC calls by method and result: ok or the error code.')-&gt;withLabels('method', 'result'),
+        self::RPC_DURATION =&gt; Collector::histogram(...self::RPC_BUCKETS)-&gt;withHelp('RPC handling time in PHP, seconds.')-&gt;withLabels('method'),
+        // …
+    ];
+
+    foreach ($collectors as $name =&gt; $collector) {
+        $this-&gt;safely(fn() =&gt; $this-&gt;metrics-&gt;declare($name, $collector));
+    }
+}
+
+public function rpc(string $method, string $result, float $seconds): void
+{
+    $this-&gt;safely(fn() =&gt; $this-&gt;metrics-&gt;add(self::RPC_CALLS, 1, [$method, $result]));
+    $this-&gt;safely(fn() =&gt; $this-&gt;metrics-&gt;observe(self::RPC_DURATION, $seconds, [$method]));
+}</code></pre>
+            </figure>
             <p>
                 Prometheus раз в 5 секунд скрейпит <code>app:2112</code> и <code>centrifugo:9000/metrics</code> (внутренний
                 порт Centrifugo: наружу открыт только WebSocket на 8000).
