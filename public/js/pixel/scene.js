@@ -3219,7 +3219,9 @@ export async function createScene(rootEl, snapshot) {
             w.halo.visible = false;
             const red = view.item === 'red-flame';
             const rapier = view.item === 'rapier';
-            const light = rapier ? RAPIER_LIGHT : !dark ? null : view.item === 'candle' ? NIGHT.candleLight : red ? RED_LIGHT : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
+            // The rapier's light is the night's: at the dawn the blade is only a blade.
+            const shining = rapier && lighting !== 'dawn';
+            const light = shining ? RAPIER_LIGHT : !dark ? null : view.item === 'candle' ? NIGHT.candleLight : red ? RED_LIGHT : view.item === 'book' && lighting !== 'sunset' ? BOOK_LIGHT : null;
             w.glow.visible = Boolean(light);
             if (light) {
                 w.glow.texture = defTexture(light);
@@ -3230,8 +3232,8 @@ export async function createScene(rootEl, snapshot) {
             // The rapier's holder glows (docs/spec/frontend.md, «Рапира»): a gold light on the ground and a thin gold rim
             // round the frame, breathing once every RAPIER_BREATH_MS; the blade shimmers by a hash of short slots.
             const breath = reduced ? 1 : RAPIER_BREATH[Math.floor((((clock + w.seed) % RAPIER_BREATH_MS) / RAPIER_BREATH_MS) * RAPIER_BREATH.length)];
-            w.rim.visible = rapier;
-            if (rapier) {
+            w.rim.visible = shining;
+            if (shining) {
                 w.glow.alpha = 0.3 + 0.2 * breath;
                 w.rim.texture = rimTexture(f.canvas);
                 w.rim.anchor.copyFrom(w.sprite.anchor);
@@ -3242,7 +3244,7 @@ export async function createScene(rootEl, snapshot) {
             }
             if (f.flames && rapier) {
                 glow = f.flames[reduced ? 0 : FLICKER[mix(w.seed, Math.floor(clock / BLADE_MS)) % FLICKER.length]];
-                placeHalo(w, BLADE_HALO, framePoint(f.flame, x, y, view.flip), 0.3 + 0.15 * breath);
+                if (shining) placeHalo(w, BLADE_HALO, framePoint(f.flame, x, y, view.flip), 0.3 + 0.15 * breath);
             } else if (f.flames) {
                 // The candle: a flicker frame by a hash of short slots, the same on every client; the ground light
                 // and the halo breathe with it and stand under and around the flame, wherever the hand carries it.
