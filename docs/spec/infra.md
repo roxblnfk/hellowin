@@ -79,7 +79,12 @@ RoadRunner (3.0) смотрит в браузер сам. Middleware обора�
 
 ## Режимы
 
-- Прод (`docker-compose.yml`): `APP_ENV=prod`, `DEBUG=false` заданы жёстко и не зависят от `.env`.
+- Прод (`docker-compose.yml`): `APP_ENV=prod`, `DEBUG=false` заданы жёстко и не зависят от `.env`. Остальные
+  продакшн-опции Spiral — в `ENV` прод-образа: `TOKENIZER_CACHE_TARGETS=true`, `VIEW_CACHE=true`,
+  `MONOLOG_DEFAULT_LEVEL=WARNING`, `TELEMETRY_DRIVER=null`. Кеши токенайзера и шаблонов прогревает при сборке
+  `views:compile`: воркеры всех пулов стартуют разом, и без кеша на одном ядре воркер centrifuge не укладывался в свой
+  `allocate_timeout`. Логи самого RoadRunner — `RR_LOG_MODE=production`, `RR_LOG_LEVEL=warn` (в `.rr.yaml` по умолчанию
+  development/debug).
 - Dev (`docker-compose.dev.yml`): код смонтирован, `APP_ENV=local`, `DEBUG=true`, Prometheus открыт на
   `127.0.0.1:9090`; после правок PHP и каталогов `app/locale` — `docker compose exec app rr reset`
   (каталоги переводчик читает один раз на воркер).
