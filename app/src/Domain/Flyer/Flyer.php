@@ -15,9 +15,6 @@ final readonly class Flyer
     /** Flies a wobbling path: zigzags and loops. */
     public const KIND_BAT = 'bat';
 
-    /** Runs along the horizon in the first scene as a hint: no points, and every shot misses. */
-    public const KIND_ROADRUNNER = 'roadrunner';
-
     public const KIND_WITCH = 'witch';
 
     /** A ground target of the cursed world, walking out of the patch. */
@@ -132,11 +129,6 @@ final readonly class Flyer
     public function expiresAt(): int
     {
         return $this->launchedAt + $this->duration;
-    }
-
-    public function shootable(): bool
-    {
-        return $this->kind !== self::KIND_ROADRUNNER;
     }
 
     /**

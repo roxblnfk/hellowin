@@ -356,7 +356,7 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * RoadRunner says «Мип-мип!» on the moderator's click: over the runner `$flyer`, or over the one of the scene.
+     * RoadRunner of the scene says «Мип-мип!» on the moderator's click.
      *
      * @param non-empty-string|null $flyer
      * @param int $at Unix time in milliseconds.

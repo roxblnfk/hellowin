@@ -686,6 +686,7 @@ final class RPCServiceTest
     }
 
     #[DataSet([['kind' => 'duck']], 'ordinary kind')]
+    #[DataSet([['kind' => 'roadrunner']], 'the runner on the horizon is the client\'s')]
     #[DataSet([['kind' => 42]], 'number')]
     #[DataSet([[]], 'nothing')]
     public function onlySpecialFlyersLaunchByHand(array $params): void
@@ -694,21 +695,6 @@ final class RPCServiceTest
 
         Assert::same($this->call($ritual, 'flyer.special', $params, moderator: true), ['ok' => false, 'error' => 'unknown kind']);
         Assert::blank($ritual->broadcast->ofType('flyer'));
-    }
-
-    public function roadrunnerIsNeverHitAndTheOwlKeepsQuiet(): void
-    {
-        $ritual = new RitualHarness();
-        $this->call($ritual, 'flyer.special', ['kind' => 'roadrunner'], moderator: true);
-        $runner = $ritual->broadcast->ofType('flyer')[0];
-
-        $response = $this->call($ritual, 'shoot', ['flyer' => $runner['flyer']], self::PLAYER);
-
-        Assert::same($response, ['ok' => true, 'hit' => false]);
-        Assert::same($runner['points'], 0);
-        Assert::blank($ritual->broadcast->ofType('shot'));
-        Assert::blank($ritual->broadcast->ofType('owl'));
-        Assert::null($ritual->playerStore->find(self::PLAYER));
     }
 
     public function downedWitchMakesTheOwlNameTheShooter(): void
@@ -999,14 +985,14 @@ final class RPCServiceTest
         $ritual = new RitualHarness();
         $ritual->clock->now = 1_760_900_001_500;
 
-        Assert::same($this->call($ritual, 'meep', ['flyer' => 'f-0a1b2c3d'], moderator: true), ['ok' => true]);
         Assert::same($this->call($ritual, 'meep', [], moderator: true), ['ok' => true]);
         Assert::same($this->call($ritual, 'meep', ['flyer' => ['not', 'an', 'id']], moderator: true), ['ok' => true]);
+        Assert::same($this->call($ritual, 'meep', ['flyer' => 'f-0a1b2c3d'], moderator: true), ['ok' => true]);
 
         Assert::same($ritual->broadcast->ofType('meep'), [
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
             ['type' => 'meep', 'round' => 1, 'flyer' => 'f-0a1b2c3d', 'at' => 1_760_900_001_500],
-            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
-            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
         ]);
     }
 

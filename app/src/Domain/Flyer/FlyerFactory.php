@@ -33,8 +33,9 @@ use Random\Randomizer;
  * fixes only the landings and the timing — a leg between points and a sit at each; the loops between are the
  * frontend's. They bring their own points.
  *
- * Kinds come by scene; the cursed world and the dawn have sets of their own instead of their scene's. Sometimes a launch is the rare flyer of the scene instead — a special one, as the moderator
- * launches by hand: the roadrunner runs along the horizon, any other special flies from the edge for the rare points.
+ * Kinds come by scene; the cursed world and the dawn have sets of their own instead of their scene's. Sometimes a launch
+ * is the rare flyer of the scene instead — a special one, as the moderator launches by hand: from the edge, for the rare
+ * points.
  */
 final readonly class FlyerFactory
 {
@@ -95,8 +96,8 @@ final readonly class FlyerFactory
      *        take the last set. A scene with an empty set launches no flyers but its rare one.
      * @param list<non-empty-string|null> $rare The rare flyer by scene, null for none; scenes past the list take the last.
      * @param float $rareChance Probability that a launch is the rare flyer of the scene.
-     * @param positive-int $rarePoints Points for a rare flyer other than the roadrunner.
-     * @param float $horizon The line the roadrunner runs along, in percents from the top.
+     * @param positive-int $rarePoints Points for a rare flyer.
+     * @param float $horizon The horizon line, in percents from the top.
      * @param WalkZone|null $lawn Where worms crawl; needed only when a set has worms.
      * @param list<non-empty-string> $cursed Kinds of the cursed world in place of its scene's set; an empty set
      *        launches no flyers there but the rare one of the scene.
@@ -155,8 +156,6 @@ final readonly class FlyerFactory
      * @param bool $cursed The cursed world: its own set of kinds, the rare flyer still of the scene.
      * @param bool $dawn The dawn: its own set of kinds, like the cursed world.
      * @param bool $rare Whether this launch may turn out the rare flyer of the scene.
-     * @param bool $roadrunner Whether the rare flyer may be the roadrunner; when not, a scene whose rare one he is has
-     *        none.
      * @return Flyer|null Null when the set has no flyers and this launch is not the rare one.
      */
     public function launch(
@@ -165,12 +164,8 @@ final readonly class FlyerFactory
         bool $cursed = false,
         bool $dawn = false,
         bool $rare = true,
-        bool $roadrunner = true,
     ): ?Flyer {
         $special = $this->rare === [] ? null : $this->rare[\min(\max(0, $scene), \count($this->rare) - 1)];
-        if (!$roadrunner && $special === Flyer::KIND_ROADRUNNER) {
-            $special = null;
-        }
         if ($rare && $special !== null && $this->chance($this->rareChance)) {
             return $this->special($special, $now);
         }
@@ -226,8 +221,7 @@ final readonly class FlyerFactory
     }
 
     /**
-     * A flyer of the given kind: the roadrunner runs along the horizon at the far depth as fast as the nearest
-     * flyers and brings no points; any other kind flies from the edge for the rare points.
+     * A flyer of the given kind from the edge, at a random depth, for the rare points.
      *
      * @param non-empty-string $kind
      * @param int $now Unix time in milliseconds.
@@ -235,23 +229,6 @@ final readonly class FlyerFactory
     public function special(string $kind, int $now): Flyer
     {
         $id = 'f-' . \bin2hex($this->random->getBytes(4));
-
-        if ($kind === Flyer::KIND_ROADRUNNER) {
-            $leftToRight = $this->chance(0.5);
-
-            return new Flyer(
-                id: $id,
-                depth: 0,
-                from: new Point($leftToRight ? self::OUT[0] : self::OUT[1], $this->horizon),
-                to: new Point($leftToRight ? self::OUT[1] : self::OUT[0], $this->horizon),
-                via: null,
-                bush: null,
-                duration: $this->depths[\count($this->depths) - 1]->duration,
-                points: 0,
-                launchedAt: $now,
-                kind: $kind,
-            );
-        }
 
         /** @var int<0, max> $depth */
         $depth = $this->random->getInt(0, \count($this->depths) - 1);

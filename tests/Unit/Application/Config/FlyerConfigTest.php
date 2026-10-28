@@ -150,7 +150,8 @@ final class FlyerConfigTest
     {
         $config = new FlyerConfig();
 
-        Assert::same($config->getRare(), [null, 'roadrunner', 'roadrunner', 'roadrunner', 'roadrunner']);
+        Assert::same($config->getRare(), [null, null, null, null, null]);
+        Assert::same((new FlyerConfig(['rare' => ';witch;;;']))->getRare(), [null, 'witch', null, null, null]);
         Assert::same($config->getRareChance(), 0.08);
         Assert::same($config->getRarePoints(), 10);
         Assert::same((new FlyerConfig(['rare' => '']))->getRare(), [null]);

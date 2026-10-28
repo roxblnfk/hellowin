@@ -152,10 +152,10 @@ final readonly class StoryService
     }
 
     /**
-     * RoadRunner says «Мип-мип!» where the moderator clicked him. Nothing is kept: a client that does not see that
-     * runner skips it.
+     * RoadRunner of the scene says «Мип-мип!» on the moderator's click. Nothing is kept: a client that does not draw
+     * him now skips it.
      *
-     * @param mixed $flyer The runner on the horizon; anything but an id names the RoadRunner of the scene.
+     * @param mixed $flyer Echoed back when it looks like an id; clients neither send nor read it any more.
      */
     public function meep(mixed $flyer): void
     {

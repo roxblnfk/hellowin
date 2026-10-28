@@ -43,9 +43,8 @@ return [
     'fly_leg' => env('HELLOWIN_FLYER_FLY_LEG', 900),
     'fly_points' => env('HELLOWIN_FLYER_FLY_POINTS', 1),
 
-    // The rare flyer of each scene (empty — none), how often a launch is it, and its points. The roadrunner runs along
-    // the horizon and cannot be hit; in the finale he is not launched from his own entrance (step 3) on
-    'rare' => env('HELLOWIN_FLYER_RARE', ';roadrunner;roadrunner;roadrunner;roadrunner'),
+    // The rare flyer of each scene (empty — none), how often a launch is it, and its points
+    'rare' => env('HELLOWIN_FLYER_RARE', ';;;;'),
     'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),
     'rare_points' => env('HELLOWIN_FLYER_RARE_POINTS', 10),
 

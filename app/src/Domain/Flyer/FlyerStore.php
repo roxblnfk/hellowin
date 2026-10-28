@@ -66,7 +66,7 @@ final readonly class FlyerStore
      * Shoots the flyer down if it is still in the sky.
      *
      * @param int $now Unix time in milliseconds.
-     * @return Flyer|null The flyer that was hit, null for a miss: already shot, gone, unknown or one that cannot be hit.
+     * @return Flyer|null The flyer that was hit, null for a miss: already shot, gone or unknown.
      * @throws LockBusyException
      */
     public function shoot(string $id, int $now): ?Flyer
@@ -77,7 +77,7 @@ final readonly class FlyerStore
 
         $flyer = $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Flyer {
             $flyer = Flyer::fromArray($this->storage->get(self::KEY_FLYER . $id));
-            if ($flyer === null || !$flyer->shootable() || !$flyer->flyingAt($now - self::LATENCY)) {
+            if ($flyer === null || !$flyer->flyingAt($now - self::LATENCY)) {
                 return null;
             }
 

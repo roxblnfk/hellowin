@@ -131,6 +131,11 @@ final class HellowinConfigTest extends TestCase
         );
     }
 
+    public function shippedScenesHaveNoRareFlyer(): void
+    {
+        Assert::same($this->getContainer()->get(FlyerConfig::class)->getRare(), [null, null, null, null, null]);
+    }
+
     #[Env('HELLOWIN_FLYER_INTERVAL', '100-200')]
     #[Env('HELLOWIN_FLYER_POINTS', '5,1')]
     #[Env('HELLOWIN_FLYER_DURATION', '3000,1000')]

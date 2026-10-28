@@ -30,7 +30,7 @@ final class FlyerConfig extends InjectableConfig
         'fly_sit' => '900-1600',
         'fly_leg' => 900,
         'fly_points' => 1,
-        'rare' => ';roadrunner;roadrunner;roadrunner;roadrunner',
+        'rare' => ';;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
         'kinds_dawn' => 'duck,chicken',
@@ -228,7 +228,7 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * The rare flyer of each scene, by scene like the kinds: `"roadrunner;;witch"` — an empty item is a scene without
+     * The rare flyer of each scene, by scene like the kinds: `";witch;;;"` — an empty item is a scene without
      * one. Scenes past the list take its last item.
      *
      * @return non-empty-list<non-empty-string|null>
@@ -255,7 +255,7 @@ final class FlyerConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Points for a rare flyer; the roadrunner is never hit and brings none.
+     * @return positive-int Points for a rare flyer.
      */
     public function getRarePoints(): int
     {

@@ -32,7 +32,6 @@ final class ZombieFactoryTest
             Assert::true($zombie->from->x >= $zone->x1 && $zombie->from->x <= $zone->x2, 'stands inside the lawn');
             Assert::true($zombie->from->y >= $zone->y1 && $zombie->from->y <= $zone->y2, 'stands inside the lawn');
             Assert::same([$zombie->kind, $zombie->depth, $zombie->points, $zombie->wander], [Flyer::KIND_ZOMBIE, 1, 2, true]);
-            Assert::true($zombie->shootable());
             Assert::true($zombie->flyingAt(\PHP_INT_MAX), 'never leaves');
         }
     }

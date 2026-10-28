@@ -37,7 +37,7 @@ use Psr\Log\NullLogger;
 final readonly class FlyerService
 {
     /** Kinds the moderator may launch by hand. */
-    public const SPECIAL = [Flyer::KIND_WITCH, Flyer::KIND_ROADRUNNER];
+    public const SPECIAL = [Flyer::KIND_WITCH];
 
     public function __construct(
         private FlyerFactory $factory,
@@ -78,7 +78,7 @@ final readonly class FlyerService
     {
         $ritual = $this->ritual->snapshot();
         $story = $ritual->story;
-        $flyer = $this->factory->launch($now, $ritual->scene, $story->cursed(), $story->dawn(), roadrunner: !$story->runnerCame());
+        $flyer = $this->factory->launch($now, $ritual->scene, $story->cursed(), $story->dawn());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
     }
