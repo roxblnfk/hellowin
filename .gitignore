@@ -11,3 +11,4 @@
 /protoc-gen-php-grpc*
 /.env.docker
 /.ssh/
+/tools/*/node_modules/

@@ -1,0 +1,10 @@
+{
+  "name": "hellowin-loadtest",
+  "private": true,
+  "type": "module",
+  "description": "Bot players for a load run against a Hellowin stack",
+  "dependencies": {
+    "centrifuge": "^5.8.0",
+    "ws": "^8.22.0"
+  }
+}
