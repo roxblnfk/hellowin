@@ -17,6 +17,7 @@ use App\Application\Walk\ClinkRefusedException;
 use App\Application\Walk\WalkService;
 use App\Application\Walk\ZombifiedException;
 use App\Domain\Walk\Clink;
+use App\Domain\Walk\Walker;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -88,6 +89,36 @@ final class RapierTest
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::JILL)), 'busy');
         $ritual->clock->now = $until;
         Assert::same(self::refusal(static fn() => $ritual->walks->toPumpkin(self::JILL, 'pumpkin-2')), 'has beer');
+    }
+
+    public function pumpkinSwapsTheEmptyMugForABeer(): void
+    {
+        $ritual = self::cursed(alone: true);
+        $ritual->bar->drink(self::JACK);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id'), [self::JACK => 'mug']);
+        $ritual->clock->now += 1200;
+
+        $walk = $ritual->walks->toPumpkin(self::JACK, 'pumpkin-2');
+        $ritual->clock->now = $walk->arrivesAt + 900;
+        $ritual->walks->beers();
+
+        Assert::same(\array_column($ritual->broadcast->ofType('take'), 'ok'), [true]);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id'), [self::JACK => 'beer']);
+    }
+
+    public function emptyMugIsThrownInTheCursedWorldButNotAtDawn(): void
+    {
+        $ritual = self::cursed(alone: true);
+        $ritual->bar->drink(self::JACK);
+        $ritual->broadcast->published = [];
+
+        $ritual->flyers->shoot('f-missing', self::JACK);
+        $ritual->walkerStore->update(static fn(array $walkers): array => [[self::JACK => $walkers[self::JACK]->drank(0)] + $walkers, null]);
+        self::step($ritual, 7);
+        $ritual->flyers->shoot('f-missing', self::JACK);
+
+        Assert::same(\array_column($ritual->broadcast->ofType('throw'), 'player'), [['id' => self::JACK]]);
+        Assert::same($ritual->walkerStore->all()[self::JACK]->item, Walker::MUG);
     }
 
     public function beerIsRefusedInOrder(): void

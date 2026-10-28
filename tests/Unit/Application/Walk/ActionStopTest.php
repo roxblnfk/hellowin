@@ -10,6 +10,7 @@ use App\Application\Walk\ActionStop;
 use App\Domain\Flyer\Point;
 use App\Domain\Walk\Clink;
 use App\Domain\Walk\Walk;
+use App\Domain\Walk\Walker;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -105,7 +106,7 @@ final class ActionStopTest
         Assert::equals($ritual->broadcast->ofType('move')[0]['walk'], $stopped->walk->toArray());
         Assert::same($ritual->broadcast->ofType('move')[0]['stop'], 'drink');
         Assert::same($stopped->walk->startedAt, $stopped->walk->arrivesAt);
-        Assert::null($stopped->item);
+        Assert::same($stopped->item, Walker::MUG);
     }
 
     public function refusedDrinkDoesNotStop(): void

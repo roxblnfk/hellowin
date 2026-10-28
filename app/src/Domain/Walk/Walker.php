@@ -11,14 +11,17 @@ use App\Domain\Player\PlayerId;
  * A player's character on the lawn. Name and look are copied from the player when the character enters or the
  * player registers again, so the snapshot reads one key instead of every player.
  *
- * In the bar and in the cursed world the character holds its own item — a beer, the rapier or nothing — and remembers
- * whether it has clinked with this mug; everywhere else every character holds the item of the scene. A character that
- * said the wrong word is a zombie the server walks.
+ * In the bar and in the cursed world the character holds its own item — a beer, the empty mug, the rapier or
+ * nothing — and remembers whether it has clinked with this mug; everywhere else every character holds the item of the
+ * scene. A character that said the wrong word is a zombie the server walks.
  */
 final readonly class Walker
 {
     /** A mug: from the bar's counter or out of a pumpkin of the cursed world. */
     public const BEER = 'beer';
+
+    /** The mug drunk up: it is neither drunk nor clinked, a new beer replaces it, a shot throws it. */
+    public const MUG = 'mug';
 
     /** The rapier of the one who said the word. */
     public const RAPIER = 'rapier';
@@ -26,7 +29,7 @@ final readonly class Walker
     /** Milliseconds between the shambles of a zombie the server walks, min and max. */
     public const SHAMBLE_PAUSE = [2000, 4000];
 
-    private const ITEMS = [self::BEER, self::RAPIER];
+    private const ITEMS = [self::BEER, self::MUG, self::RAPIER];
 
     /**
      * @param non-empty-string $id Public id of the player.
@@ -34,7 +37,8 @@ final readonly class Walker
      * @param int $seenAt Unix time in milliseconds when the player was last seen connected.
      * @param Clink|null $clink The clink the character is walking to; any new walk cancels it.
      * @param int|null $clinkedAt Unix time in milliseconds of the character's last clink.
-     * @param self::BEER|self::RAPIER|null $item The character's own item: {@see BEER}, {@see RAPIER} or empty hands.
+     * @param self::BEER|self::MUG|self::RAPIER|null $item The character's own item: {@see BEER}, {@see MUG},
+     *        {@see RAPIER} or empty hands.
      * @param bool $clinked The mug in hand has been clinked: it may be drunk.
      * @param int|null $takeAt Unix time in milliseconds when the character reaches the counter, or the pumpkin of
      *        `$takeFrom`, for a mug; any new walk cancels it.
@@ -150,7 +154,8 @@ final readonly class Walker
     }
 
     /**
-     * The walk for a mug is over: with a fresh mug, not clinked yet, or with nothing when the counter was empty.
+     * The walk for a mug is over: with a fresh mug, not clinked yet, in place of the empty one or empty hands; or
+     * with what it held when the counter was empty.
      *
      * @param int|null $handedAt Unix time in milliseconds when the mug is in hand after a hand-over; null — at once.
      */
@@ -181,13 +186,26 @@ final readonly class Walker
     }
 
     /**
-     * The mug is drunk: empty hands, busy with the sip until `$until`.
+     * The mug is drunk: the empty mug in hand, busy with the sip until `$until`.
      *
      * @param int $until Unix time in milliseconds.
      */
     public function drank(int $until): self
     {
-        return $this->with(item: null, clinked: false, clinkedUntil: null, busyUntil: $until);
+        return $this->with(item: self::MUG, clinked: false, clinkedUntil: null, busyUntil: $until);
+    }
+
+    /**
+     * The empty mug is thrown at a flyer: empty hands.
+     */
+    public function threwMug(): self
+    {
+        return $this->with(item: null);
+    }
+
+    public function hasMug(): bool
+    {
+        return $this->item === self::MUG;
     }
 
     /**
@@ -376,7 +394,7 @@ final readonly class Walker
     /**
      * A copy with the given fields changed; a field left out keeps its value, `takeFrom` goes with `takeAt`.
      *
-     * @param self::BEER|self::RAPIER|null|false $item False keeps the item.
+     * @param self::BEER|self::MUG|self::RAPIER|null|false $item False keeps the item.
      * @param non-empty-string|null $takeFrom
      */
     private function with(

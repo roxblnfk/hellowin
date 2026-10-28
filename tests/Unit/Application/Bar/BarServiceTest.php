@@ -332,7 +332,7 @@ final class BarServiceTest
 
         $ritual->bar->drink(self::A);
 
-        Assert::null($ritual->walkerStore->all()[self::A]->item);
+        Assert::same($ritual->walkerStore->all()[self::A]->item, Walker::MUG);
         Assert::same(array_column($ritual->broadcast->ofType('drinks'), 'drunk'), [1]);
     }
 
@@ -344,7 +344,7 @@ final class BarServiceTest
 
         $ritual->bar->drink(self::A);
 
-        Assert::null($ritual->walkerStore->all()[self::A]->item);
+        Assert::same($ritual->walkerStore->all()[self::A]->item, Walker::MUG);
         Assert::false($ritual->walkerStore->all()[self::A]->clinked);
         Assert::same($ritual->broadcast->ofType('drink'), [['type' => 'drink', 'round' => 1, 'player' => ['id' => self::A]]]);
         Assert::same($ritual->broadcast->ofType('drinks'), [['type' => 'drinks', 'round' => 1, 'drunk' => 1, 'target' => 4]]);
@@ -357,6 +357,24 @@ final class BarServiceTest
         Assert::same(self::refusal(static fn() => $ritual->walks->toCounter(self::A)), 'busy');
         $ritual->clock->now += 1;
         Assert::notNull($ritual->walks->toCounter(self::A));
+    }
+
+    public function emptyMugIsShownAndSwappedForAFreshOneAtTheCounter(): void
+    {
+        $ritual = self::bar(mugs: 2);
+        self::place($ritual, self::A, 20, 92);
+        self::give($ritual, self::A);
+        $ritual->bar->drink(self::A);
+        Assert::same(\array_column($ritual->snapshot->create()['walkers'], 'item', 'id'), [self::A => 'mug']);
+        $ritual->clock->now += 1200;
+
+        $walk = $ritual->walks->toCounter(self::A);
+        $ritual->clock->now = $walk->arrivesAt;
+        $ritual->bar->takes();
+
+        Assert::same(\array_column($ritual->broadcast->ofType('take'), 'ok'), [true]);
+        Assert::same($ritual->walkerStore->all()[self::A]->item, Walker::BEER);
+        Assert::false($ritual->walkerStore->all()[self::A]->clinked);
     }
 
     public function barIsReadyOnceTheRoomHasDrunkItsGoal(): void

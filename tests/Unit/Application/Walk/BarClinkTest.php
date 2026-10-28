@@ -150,6 +150,23 @@ final class BarClinkTest
         Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::A)), 'not clinked');
     }
 
+    public function emptyMugClinksNoMoreThanEmptyHands(): void
+    {
+        $ritual = self::bar();
+        self::place($ritual, self::A, 20, 92);
+        self::place($ritual, self::B, 26, 92);
+        self::give($ritual, self::A);
+        self::give($ritual, self::B, clinked: true);
+        $ritual->bar->drink(self::B);
+        $ritual->clock->now += 1200;
+
+        Assert::same(self::refusal(static fn() => $ritual->walks->clink(self::B, Clink::WALKER, self::A)), 'no beer');
+        Assert::same(self::refusal(static fn() => $ritual->walks->clinkAuto(self::B, self::A)), 'no beer');
+        Assert::same(self::refusal(static fn() => $ritual->walks->clink(self::A, Clink::WALKER, self::B)), 'no target');
+        Assert::same(self::refusal(static fn() => $ritual->walks->clinkAuto(self::A, self::B)), 'no target');
+        Assert::same(self::refusal(static fn() => $ritual->bar->drink(self::B)), 'no beer');
+    }
+
     private static function bar(): RitualHarness
     {
         return new RitualHarness(stageMax: [0, 1, 2]);

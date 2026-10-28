@@ -12,6 +12,7 @@ use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
 use App\Application\Walk\NoCharacterException;
 use App\Domain\Flyer\Flyer;
+use App\Domain\Walk\Walker;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -79,7 +80,7 @@ final class PauseTest
 
         Assert::false($ritual->bar->drink(self::JACK));
 
-        Assert::null($ritual->walkerStore->all()[self::JACK]->item);
+        Assert::same($ritual->walkerStore->all()[self::JACK]->item, Walker::MUG);
         Assert::same($ritual->broadcast->ofType('move')[0]['stop'] ?? null, 'drink');
         Assert::same($ritual->broadcast->ofType('drink'), [['type' => 'drink', 'round' => 1, 'player' => ['id' => self::JACK], 'counted' => false]]);
         Assert::blank($ritual->broadcast->ofType('drinks'));

@@ -21,9 +21,11 @@ use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Player\Player;
+use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\ShotTally;
 use App\Domain\Story\Story;
+use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -54,6 +56,7 @@ final readonly class FlyerService
         private ?WalkerStore $walkers = null,
         private ?ActionStop $stops = null,
         private ?Burst $burst = null,
+        private ?RitualPolicy $policy = null,
     ) {}
 
     /**
@@ -197,7 +200,8 @@ final readonly class FlyerService
     }
 
     /**
-     * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops.
+     * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops,
+     * and an empty mug in its hand flies at the flyer (docs/spec/protocol.md, «Пустая кружка»).
      *
      * @param non-empty-string|null $player
      * @return int|null Points for a hit, null for a miss.
@@ -207,6 +211,7 @@ final readonly class FlyerService
     {
         $flyer = $this->store->shoot($flyerId, $this->clock->now());
         $this->stops?->stop($player, ActionStop::SHOOT);
+        $this->throwMug($player, $flyerId);
         if ($flyer === null) {
             return null;
         }
@@ -249,6 +254,51 @@ final readonly class FlyerService
         $this->metrics->flyerLaunched($flyer);
 
         return $flyer;
+    }
+
+    /**
+     * Empties the hand of a character holding an empty mug and tells everybody the mug flies at the flyer — only while
+     * the character's own item is shown: in the bar and the cursed world. The throw is a show beside the shot: a
+     * failure leaves the mug in hand and the shot stands.
+     *
+     * @param non-empty-string|null $player
+     */
+    private function throwMug(?string $player, string $flyer): void
+    {
+        if ($player === null || $this->walkers === null) {
+            return;
+        }
+
+        try {
+            // Most shots come from hands without a mug: those take no lock
+            if (($this->walkers->all()[$player] ?? null)?->hasMug() !== true) {
+                return;
+            }
+            $ritual = $this->ritual->snapshot();
+            if (!$ritual->story->cursed() && $this->policy?->bar($ritual->scene) !== true) {
+                return;
+            }
+
+            $threw = $this->walkers->update(
+                /** @param array<non-empty-string, Walker> $walkers */
+                static function (array $walkers) use ($player): array {
+                    $walker = $walkers[$player] ?? null;
+                    if ($walker === null || !$walker->hasMug()) {
+                        return [$walkers, false];
+                    }
+                    $walkers[$player] = $walker->threwMug();
+
+                    return [$walkers, true];
+                },
+            );
+            $threw and $this->publisher->throw($ritual->round, $player, $flyer, $this->clock->now());
+        } catch (\Throwable $e) {
+            $this->logger->warning('Mug of {player} is not thrown: {message}', [
+                'player' => $player,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+        }
     }
 
     /**

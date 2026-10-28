@@ -176,6 +176,17 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * The player's empty mug flies at the flyer, hit or miss: it goes out before the `shot` of a hit.
+     *
+     * @param non-empty-string $player
+     * @param int $at Unix time in milliseconds of the throw.
+     */
+    public function throw(int $round, string $player, string $flyer, int $at): void
+    {
+        $this->publish(['type' => 'throw', 'round' => $round, 'player' => ['id' => $player], 'flyer' => $flyer, 'at' => $at]);
+    }
+
+    /**
      * @param non-empty-string|null $item
      */
     public function walker(int $round, Walker $walker, ?string $item): void

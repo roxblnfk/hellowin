@@ -261,6 +261,7 @@ final class RitualHarness
             $this->walkerStore,
             $this->stops,
             new Burst(2, 0.5),
+            $policy,
         );
         $this->limitsStore = new LimitsStore($this->storage);
         $this->presenceStore = new PresenceStore($this->storage);
