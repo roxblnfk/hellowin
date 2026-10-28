@@ -380,7 +380,7 @@ final class HellowinConfigTest
 
     public function emotesComeFromTheConfigInTheirOrder(): void
     {
-        Assert::same((new HellowinConfig())->getEmotes(), ['🎃', '👻', '💀', '😂', '😱', '😍', '👍', '👏', '🔥', '🍺', '🤘', '🙏']);
+        Assert::same((new HellowinConfig())->getEmotes(), ['🎃', '👻', '💀', '😂', '😱', '😍', '👍', '👏', '🔥', '🍺', '🤘', '🙏', '🎉']);
         Assert::same((new HellowinConfig(['emotes' => ['set' => ' 🍺 ,🎃']]))->getEmotes(), ['🍺', '🎃']);
         Assert::same((new HellowinConfig(['emotes' => ['set' => ['👻']]]))->getEmotes(), ['👻']);
     }

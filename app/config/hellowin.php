@@ -89,7 +89,7 @@ return [
     // The emotes (docs/spec/protocol.md, «Эмоции»): `set` is the panel's emoji, comma-separated, in the order of its
     // buttons, and a player shows one at most once in `cooldown_ms` milliseconds
     'emotes' => [
-        'set' => env('HELLOWIN_EMOTES', '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏'),
+        'set' => env('HELLOWIN_EMOTES', '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉'),
         'cooldown_ms' => env('HELLOWIN_EMOTE_COOLDOWN_MS', 1000),
     ],
 
