@@ -1005,6 +1005,14 @@
             case 'dice.owl': return engineDiceOwl();
             case 'chat.history': return { ok: true, messages: structuredClone(chatLog), muted: [...chatMuted.values()] };
             case 'chat.mute': return engineChatMute(data);
+            case 'stats.reset': {
+                // players.md, «Статистика»: every shooter's points go, the board empties; the lab keeps no other counters.
+                const players = Math.max(dawnScores.size, engine.walkers.length);
+                dawnScores.clear();
+                engine.dawn = { board: [] };
+                deliver({ type: topOld ? 'dawn' : 'top', board: [] });
+                return { ok: true, players };
+            }
             case 'meep':
                 // A flyer that is no id is dropped, like the server's.
                 deliver({ type: 'meep', ...(typeof data?.flyer === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(data.flyer) ? { flyer: data.flyer } : {}), at: serverTime() });

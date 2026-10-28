@@ -89,6 +89,10 @@ const TEXT = pick({
         kUp: 'Множитель больше: все лимиты больше',
         kInput: 'Множитель лимитов, от 0,1 до 10',
         clickAll: 'Клик по всем',
+        statsReset: 'Сбросить статистику',
+        statsResetTitle: 'Обнулить клики, очки, кружки, урон и броски всех игроков; имена и персонажи остаются',
+        statsSure: 'Стереть у всех. Точно?',
+        statsDone: (n) => `обнулено: ${n}`,
         sure: 'Точно?',
         notReady: 'Не готово. Точно?',
         circleOpen: 'Круг не замкнут. Точно?',
@@ -167,6 +171,10 @@ const TEXT = pick({
         kUp: 'Bigger multiplier: all limits higher',
         kInput: 'Limits multiplier, 0.1 to 10',
         clickAll: 'Click everything',
+        statsReset: 'Reset player stats',
+        statsResetTitle: "Zero every player's clicks, points, mugs, damage and rolls; names and characters stay",
+        statsSure: 'Wipe for everyone. Sure?',
+        statsDone: (n) => `zeroed: ${n}`,
         sure: 'Sure?',
         notReady: 'Not ready. Sure?',
         circleOpen: 'Circle not closed. Sure?',
@@ -375,6 +383,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
 
     const tools = group(TEXT.groups.tools);
     button(tools, { 'data-action': 'click-all' }, TEXT.clickAll).addEventListener('click', () => clickAll());
+    // Wipes every player's counters (players.md, «Статистика»): only on the second press.
+    const statsReset = button(tools, { 'data-action': 'stats-reset', title: TEXT.statsResetTitle }, TEXT.statsReset);
+    statsReset.addEventListener('click', () => {
+        if (armed(statsReset, TEXT.statsSure)) send(statsReset, 'stats.reset', {}, { done: (reply) => TEXT.statsDone(reply?.players ?? 0) });
+    });
 
     // Labels change with the state, but a note on a button (an error, «Точно?») holds until it times out.
     const setLabel = (b, text) => {
