@@ -51,7 +51,7 @@ RoadRunner (3.0) смотрит в браузер сам. Middleware обора�
 `http_metrics`, `headers`, `gzip`, `static`, `rate_limiter`.
 
 - `http_metrics` первым — считает все ответы, включая 429 лимитера.
-- `headers` — ко всем ответам, и статике, и PHP: `X-Powered-By: RoadRunner 3`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+- `headers` — ко всем ответам, и статике, и PHP: `X-Powered-By: RoadRunner 3` (страницы PHP добавляют второй — `Spiral 3`, `PoweredByMiddleware`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (камера, микрофон, геолокация — нет) и
   `Content-Security-Policy` только из директив, не ломающих страницы: `frame-ancestors 'none'; base-uri 'self';
   object-src 'none'; form-action 'self'`. `script-src`/`style-src` нет: centrifuge-js и Pixi грузятся с CDN, SVG
