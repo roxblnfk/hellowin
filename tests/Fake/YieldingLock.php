@@ -7,8 +7,8 @@ namespace Tests\Fake;
 use RoadRunner\Lock\LockInterface;
 
 /**
- * The RoadRunner lock as concurrent workers meet it, for fibers: a busy lock is waited for, and every acquired one
- * lets the other fibers run, so a second caller arrives while the first is inside.
+ * The RoadRunner lock as concurrent workers meet it, for fibers: a busy lock is waited for, unless `waitTTL` is 0,
+ * and every acquired one lets the other fibers run, so a second caller arrives while the first is inside.
  */
 final class YieldingLock implements LockInterface
 {
@@ -27,6 +27,10 @@ final class YieldingLock implements LockInterface
         int|float|\DateInterval $waitTTL = 0,
     ): false|string {
         while (($acquired = $this->lock->lock($resource, $id, $ttl, $waitTTL)) === false) {
+            // The plugin gives up at once when told not to wait
+            if (\is_numeric($waitTTL) && $waitTTL <= 0) {
+                return false;
+            }
             $this->waited[] = $resource;
             \Fiber::suspend();
         }

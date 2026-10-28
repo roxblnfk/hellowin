@@ -52,6 +52,7 @@ use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
+use App\Domain\RateLimit\Cooldown;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -79,6 +80,7 @@ use App\Domain\Walk\WalkZone;
 use Psr\Log\NullLogger;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
+use RoadRunner\Lock\LockInterface;
 use Spiral\Cache\Storage\ArrayStorage;
 
 /**
@@ -101,6 +103,7 @@ final class RitualHarness
     public const ZOMBIE_HEAL = 3;
     public const WORD_HINT_MS = 180000;
     public const ZOMBIE_PLAYER_MS = 60000;
+    public const MEEP_COOLDOWN = 1500;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -175,6 +178,7 @@ final class RitualHarness
      * @param int<0, max> $autoStall Milliseconds without the room's task before the autopilot moves with `force`.
      * @param int<0, max> $wordHintMs Milliseconds after the word opens that the owl hints at it; 0 — never.
      * @param int<0, max> $zombiePlayerMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
+     * @param LockInterface|null $meepLock The lock of the meep's cooldown; by default one that expires by {@see $clock}.
      */
     public function __construct(
         int $threshold = 2,
@@ -197,6 +201,7 @@ final class RitualHarness
         int $autoStall = 0,
         int $wordHintMs = self::WORD_HINT_MS,
         int $zombiePlayerMs = self::ZOMBIE_PLAYER_MS,
+        ?LockInterface $meepLock = null,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -319,7 +324,7 @@ final class RitualHarness
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally, $this->reveal);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally, $this->playMetrics, new Randomizer(new Mt19937(17)));
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally, $this->playMetrics, new Randomizer(new Mt19937(17)), new Cooldown($meepLock ?? new FakeLock(clock: $this->clock), 'meep', self::MEEP_COOLDOWN));
         $this->autoStore = new AutoStore($this->storage, new Locks($this->lock));
         $this->autopilot = new AutopilotService(
             $this->autoStore,

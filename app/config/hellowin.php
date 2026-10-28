@@ -109,6 +109,12 @@ return [
         'cooldown_ms' => env('HELLOWIN_EMOTE_COOLDOWN_MS', 1000),
     ],
 
+    // RoadRunner's «Мип-мип!» on anyone's click (docs/spec/protocol.md, «Мип-мип для всех»): one for the whole room,
+    // the moderator included, per `cooldown_ms` milliseconds
+    'meep' => [
+        'cooldown_ms' => env('HELLOWIN_MEEP_COOLDOWN_MS', 1500),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [

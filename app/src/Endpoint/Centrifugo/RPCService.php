@@ -64,10 +64,10 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'runner', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'runner', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
-    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal'];
+    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal', 'meep'];
 
     /** Reads the page and the console poll for themselves, not actions: the tally of the calls leaves them out. */
     private const READS = ['state', 'time', 'me', 'reveal', 'chat.history'];

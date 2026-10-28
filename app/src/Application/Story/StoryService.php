@@ -15,6 +15,7 @@ use App\Application\Walk\WalkService;
 use App\Domain\Clock\Clock;
 use App\Domain\Clock\SystemClock;
 use App\Domain\Lock\LockBusyException;
+use App\Domain\RateLimit\Cooldown;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
@@ -49,6 +50,7 @@ final readonly class StoryService
         private ?EveningTally $tally = null,
         private ?PlayMetrics $play = null,
         private Randomizer $random = new Randomizer(),
+        private ?Cooldown $meeps = null,
     ) {}
 
     /**
@@ -157,13 +159,15 @@ final readonly class StoryService
     }
 
     /**
-     * RoadRunner of the scene says «Мип-мип!» on the moderator's click. Nothing is kept: a client that does not draw
-     * him now skips it.
+     * RoadRunner of the scene says «Мип-мип!» on anyone's click, once for the whole room per cooldown
+     * (docs/spec/protocol.md, «Мип-мип для всех»). Nothing is kept: a client that does not draw him now skips it.
      *
      * @param mixed $flyer Echoed back when it looks like an id; clients neither send nor read it any more.
+     * @throws StoryRefusedException `busy` within the cooldown of the last meep, the moderator's included.
      */
     public function meep(mixed $flyer): void
     {
+        $this->meeps?->take() === false and throw new StoryRefusedException('busy');
         $flyer = \is_string($flyer) && $flyer !== '' && \preg_match('/^[A-Za-z0-9_-]{1,64}$/', $flyer) === 1 ? $flyer : null;
 
         $this->publisher->meep($this->store->round(), $flyer, $this->clock->now());

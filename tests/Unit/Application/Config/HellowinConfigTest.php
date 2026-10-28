@@ -454,6 +454,19 @@ final class HellowinConfigTest
         (new HellowinConfig(['emotes' => ['cooldown_ms' => '-1']]))->getEmoteCooldown();
     }
 
+    public function meepCooldownComesFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getMeepCooldown(), 1500);
+        Assert::same((new HellowinConfig(['meep' => ['cooldown_ms' => '0']]))->getMeepCooldown(), 0);
+    }
+
+    public function rejectsAnInvalidMeepCooldown(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_MEEP_COOLDOWN_MS');
+
+        (new HellowinConfig(['meep' => ['cooldown_ms' => 'soon']]))->getMeepCooldown();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();

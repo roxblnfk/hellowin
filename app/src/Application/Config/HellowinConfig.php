@@ -70,6 +70,7 @@ final class HellowinConfig extends InjectableConfig
         'autopilot' => ['pause_ms' => 4000, 'dawn_min_ms' => 300000, 'dawn_max_ms' => 600000, 'dice_ms' => 90000, 'stall_ms' => 0],
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
+        'meep' => ['cooldown_ms' => 1500],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -481,6 +482,22 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.emotes.cooldown_ms" (env HELLOWIN_EMOTE_COOLDOWN_MS) must be a non-negative integer.');
+    }
+
+    /**
+     * @return int<0, max> Milliseconds after a meep of RoadRunner before anyone may make the next one; 0 — no pause.
+     */
+    public function getMeepCooldown(): int
+    {
+        /** @var mixed $meep */
+        $meep = $this->config['meep'] ?? [];
+        /** @var mixed $value */
+        $value = \is_array($meep) ? $meep['cooldown_ms'] ?? null : null;
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw new \InvalidArgumentException('Config "hellowin.meep.cooldown_ms" (env HELLOWIN_MEEP_COOLDOWN_MS) must be a non-negative integer.');
     }
 
     /**

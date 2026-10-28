@@ -45,6 +45,7 @@ use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\Locks;
 use App\Domain\Player\PlayerStore;
+use App\Domain\RateLimit\Cooldown;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\RitualPolicy;
@@ -235,6 +236,9 @@ final class HellowinBootloader extends Bootloader
                 $config->getChatMax(),
                 $config->getChatHistory(),
             ),
+            // The one cooldown of the app, RoadRunner's meep, which StoryService takes autowired
+            Cooldown::class => static fn(HellowinConfig $config, LockInterface $lock): Cooldown
+                => new Cooldown($lock, 'meep', $config->getMeepCooldown()),
             // The pause between emotes is a bucket of the RPC limiter's kind, in the same storage and locks
             EmoteService::class => static fn(
                 HellowinConfig $config,

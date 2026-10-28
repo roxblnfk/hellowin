@@ -23,11 +23,14 @@ use Spiral\Cache\Storage\ArrayStorage;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
+use Testo\Fiber\Coroutine;
+use Testo\Fiber\RunInFiber;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Tests\Fake\FakeLock;
 use Tests\Fake\RitualHarness;
 use Tests\Fake\SpyWorker;
+use Tests\Fake\YieldingLock;
 
 #[Test]
 #[Covers(RPCService::class)]
@@ -467,7 +470,6 @@ final class RPCServiceTest
     #[DataSet(['cursed.target'])]
     #[DataSet(['boss.hp'])]
     #[DataSet(['dice.owl'])]
-    #[DataSet(['meep'])]
     #[DataSet(['runner'])]
     #[DataSet(['stats.reset'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
@@ -903,6 +905,7 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'word', ['text' => 'шпага'], self::PLAYER), ['ok' => true, 'correct' => false]);
         Assert::same($this->call($ritual, 'move', ['x' => 30, 'y' => 90], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
         Assert::same($this->call($ritual, 'word', ['text' => 'rapira'], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
+        Assert::same($this->call($ritual, 'meep', [], self::PLAYER), ['ok' => true], 'a zombie meeps too');
     }
 
     public function rapierRoundTrip(): void
@@ -1026,14 +1029,66 @@ final class RPCServiceTest
         $ritual->clock->now = 1_760_900_001_500;
 
         Assert::same($this->call($ritual, 'meep', [], moderator: true), ['ok' => true]);
+        $ritual->clock->now += RitualHarness::MEEP_COOLDOWN;
         Assert::same($this->call($ritual, 'meep', ['flyer' => ['not', 'an', 'id']], moderator: true), ['ok' => true]);
+        $ritual->clock->now += RitualHarness::MEEP_COOLDOWN;
         Assert::same($this->call($ritual, 'meep', ['flyer' => 'f-0a1b2c3d'], moderator: true), ['ok' => true]);
 
         Assert::same($ritual->broadcast->ofType('meep'), [
             ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
-            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
-            ['type' => 'meep', 'round' => 1, 'flyer' => 'f-0a1b2c3d', 'at' => 1_760_900_001_500],
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_003_000],
+            ['type' => 'meep', 'round' => 1, 'flyer' => 'f-0a1b2c3d', 'at' => 1_760_900_004_500],
         ]);
+    }
+
+    public function anyoneMakesRoadrunnerMeep(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'register', ['name' => 'Jill'], 'aaaaaaaaaaaaaaaa');
+
+        Assert::same($this->call($ritual, 'meep', [], self::PLAYER), ['ok' => true], 'a player on the lawn');
+        $ritual->clock->now += RitualHarness::MEEP_COOLDOWN;
+        Assert::same($this->call($ritual, 'meep', [], 'aaaaaaaaaaaaaaaa'), ['ok' => true], 'a viewer without a figure');
+        $ritual->clock->now += RitualHarness::MEEP_COOLDOWN;
+        Assert::same($this->call($ritual, 'meep', []), ['ok' => true], 'a connection without a player');
+
+        Assert::count($ritual->broadcast->ofType('meep'), 3);
+    }
+
+    public function oneMeepForEveryonePerCooldown(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+
+        Assert::same($this->call($ritual, 'meep', [], self::PLAYER), ['ok' => true]);
+        $ritual->clock->now += RitualHarness::MEEP_COOLDOWN - 1;
+        Assert::same($this->call($ritual, 'meep', [], 'aaaaaaaaaaaaaaaa', client: 'client-2'), ['ok' => false, 'error' => 'busy'], 'another player');
+        Assert::same($this->call($ritual, 'meep', [], moderator: true), ['ok' => false, 'error' => 'busy'], 'the moderator');
+        $ritual->clock->now += 1;
+        Assert::same($this->call($ritual, 'meep', [], 'aaaaaaaaaaaaaaaa', client: 'client-2'), ['ok' => true]);
+
+        Assert::same($ritual->broadcast->ofType('meep'), [
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
+            ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_003_000],
+        ]);
+        Assert::same($this->rpcCalls($ritual), [['meep', 'ok'], ['meep', 'busy'], ['meep', 'busy'], ['meep', 'ok']]);
+    }
+
+    #[RunInFiber]
+    public function meepsAtOnceMakeOneEvent(): void
+    {
+        $lock = new YieldingLock();
+        $ritual = new RitualHarness(meepLock: $lock);
+
+        $answers = Coroutine::concurrently(
+            fn(): array => $this->call($ritual, 'meep', [], self::PLAYER),
+            fn(): array => $this->call($ritual, 'meep', [], 'aaaaaaaaaaaaaaaa', client: 'client-2'),
+            fn(): array => $this->call($ritual, 'meep', [], moderator: true, client: 'client-3'),
+        );
+
+        Assert::same(\array_count_values(\array_map(static fn(array $answer): string => $answer['error'] ?? 'ok', $answers)), ['ok' => 1, 'busy' => 2]);
+        Assert::count($ritual->broadcast->ofType('meep'), 1);
     }
 
     public function moderatorSendsRoadrunnerAcrossTheHorizonForEveryone(): void
