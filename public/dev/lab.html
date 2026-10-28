@@ -121,7 +121,8 @@
   RoadRunner's dashes (docs/spec/frontend.md, «Перебежки RoadRunner»; finale steps 3–4): ?rrdash=home|out|away|back with
   ?freeze lands the frozen moment in that phase of a dash (?rrslot=N — another slot), ?rrcrowd=1 crowds the bots into
   the strip he runs along: ?finale=4&walkers=40&rrcrowd=1&rrdash=out&freeze=1500 — mid-dash through the crowd, away — the
-  «Мип-мип!» at the far end, home — standing with his aura.
+  «Мип-мип!» at the far end, home — standing with his aura. ?rrmeep=N with ?freeze — the middle of his N-th «Мип-мип!»
+  on the horizon at the dawn: ?finale=7&rrmeep=1&freeze=8000.
   Rapier (docs/spec/frontend.md, «Рапира»; finale steps 5–7): ?finale=5 — the cursed world's goal: the engine counts
   mugs drunk and zombies slain against the limits `drinks` and `zombies` (?goal=N — both flat N; the console's ±5 adds),
   ?cursed=drunk,slain — starting counters; `beer {pumpkin}` hands out a mug at a reachable pumpkin, drinking needs a clink
@@ -285,6 +286,7 @@
     import { inWanderZone } from '/js/pixel/wander.js';
     import { SUMMON_MS } from '/js/pixel/finale-timeline.js';
     import { DASH, dashMoment } from '/js/pixel/runner-dash.js';
+    import { HORIZON as RR_HORIZON, nextHorizonMeep } from '/js/pixel/runner-horizon.js';
 
     const params = new URLSearchParams(location.search);
     const root = document.getElementById('app');
@@ -401,11 +403,20 @@
     // two-voice toast without stepping through minutes).
     // ?rrdash=home|out|away|back (with ?freeze) picks the epoch instead: the frozen moment lands in the middle of that
     // phase of RoadRunner's dash in the finale's foreground (runner-dash.js), ?rrslot=N in the N-th slot (default 1).
+    // ?rrmeep=N (with ?freeze) lands it in the middle of RoadRunner's N-th «Мип-мип!» on the horizon at the dawn
+    // (runner-horizon.js) after the fixed epoch plus the frozen moment.
     const rrDash = params.get('rrdash');
     const rrSlot = Number.parseInt(params.get('rrslot') ?? '1', 10) || 1;
+    const rrMeep = Number.parseInt(params.get('rrmeep') ?? '', 10);
+    const farMeep = (n) => {
+        let at = 1_700_000_000_000 + freeze;
+        for (let i = 0; i < n; i++) at = nextHorizonMeep(at + (i > 0 ? RR_HORIZON.loopMs / 2 : 0));
+        return at - 1_700_000_000_000 - freeze;
+    };
     const EPOCH = 1_700_000_000_000 + (rrDash && freeze > 0
         ? rrSlot * DASH.loopMs + dashMoment(1_700_000_000_000 / DASH.loopMs + rrSlot, rrDash) - freeze
-        : Number.parseInt(params.get('epoch') ?? '0', 10) || 0);
+        : rrMeep > 0 && freeze > 0 ? farMeep(rrMeep)
+            : Number.parseInt(params.get('epoch') ?? '0', 10) || 0);
     const serverTime = () => (simulated ? EPOCH + simTime : Date.now());
     const skew = Number.parseInt(params.get('skew') ?? '0', 10) || 0;
     const clientTime = () => serverTime() + skew;

@@ -6,6 +6,7 @@ import { EMISSIVE, LIT_PALETTE } from './night.js';
 import { PALETTE } from './palette.js';
 import { T } from './finale-timeline.js';
 import { DASH, dashAt, dashSpan, dustAt } from './runner-dash.js';
+import { horizonAt } from './runner-horizon.js';
 import { pick } from '../i18n.js';
 
 /**
@@ -24,12 +25,11 @@ export const MEEP = pick({ ru: 'Мип-мип!', en: 'Meep-meep!' });
 const MEEP_MS = 1600;
 const EYES_MS = 2400;
 const EYES_FLICKER_MS = 600;
-// RoadRunner's evening run along the horizon in the cursed world: a run of RUN_MS in every slot of LOOP_MS.
-const LOOP_MS = 15000;
-const RUN_MS = 6500;
-// A FrankenPHP phrase or RoadRunner's meep of a dash is voiced only when caught this early: the frame loop stops in a
-// background tab.
+// A FrankenPHP phrase or RoadRunner's meep of a dash or on the horizon is voiced only when caught this early: the frame
+// loop stops in a background tab.
 const PHRASE_FRESH_MS = 1500;
+// His meep on the horizon at the dawn is far away: quieter than the foreground's.
+const FAR_MEEP_VOLUME = 0.35;
 // RoadRunner's blue aura breathes over AURA_MS between these alphas, in AURA_STEPS steps.
 const AURA_MS = 1800;
 const AURA_ALPHA = [0.4, 0.64];
@@ -233,7 +233,7 @@ export function createFinaleStage(env) {
     let meepAt = -1e9;
     let shownRunner = null;
     // The dash slot step 3 found already running at the end of his own «мип-мип» (held still for good, see dashOf),
-    // and the server ms of the last dash meep voiced.
+    // and the server ms of the last meep of a dash or on the horizon voiced.
     let heldSlot = null;
     let voicedMeep = null;
 
@@ -371,13 +371,10 @@ export function createFinaleStage(env) {
             if (step === 5 && t < T.leave) return on(1, 'stop', true, from);
             if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false, from);
             // Then it keeps running along the horizon, now and then, like in scene 0: one run per slot, on the server
-            // clock so every viewer sees the same.
-            const slot = Math.floor(now / LOOP_MS);
-            const into = now - slot * LOOP_MS;
-            if (into >= RUN_MS) return null;
-            const ltr = mix(0x7a11, slot) % 2 === 0;
-            const k = into / RUN_MS;
-            return far(ltr ? lerp(-8, artW + 8, k) : lerp(artW + 8, -8, k), !ltr, into);
+            // clock so every viewer sees the same; at the dawn he stops in some of them for a «Мип-мип!».
+            const h = horizonAt(now, step >= 7);
+            if (!h) return null;
+            return { ...far(h.ltr ? lerp(-8, artW + 8, h.k) : lerp(artW + 8, -8, h.k), !h.ltr, h.run), meep: h.meep, meepAt: h.meepAt ?? undefined };
         }
         return null;
     }
@@ -503,7 +500,7 @@ export function createFinaleStage(env) {
         if (r && meeping && !r.far && r.pose === 'stop') r.def = RUNNER[r.size].meep;
         shownRunner = r;
         if (r) {
-            if (meeping && r.far) bubble('runner', MEEP, { x: r.x, y: r.y - r.def.h - 1 });
+            if ((meeping || r.meep) && r.far) bubble('runner', MEEP, { x: r.x, y: r.y - r.def.h - 1 });
             if (r.far) {
                 const art = env.flyerArt(r.def, true);
                 runnerFar.visible = true;
@@ -522,11 +519,12 @@ export function createFinaleStage(env) {
                 g.aura.alpha = auraAlpha(clock, reduced);
                 if (r.dash) dust(r.dash, now, lit, clock, z - 1);
                 if (r.meep || meeping) bubble('runner', MEEP, { x: r.x + (r.flip ? -6 : 6), y: r.y - r.def.h });
-                // A dash's meep is heard once, as it comes up; step 3's own is the step's sound (sound.js).
-                if (r.meep && r.meepAt !== undefined && r.meepAt !== voicedMeep) {
-                    voicedMeep = r.meepAt;
-                    if (now - r.meepAt < PHRASE_FRESH_MS) env.cue?.({ type: 'rr-meep', x: (r.x / env.layout().artW) * 100 });
-                }
+            }
+            // A dash's or the horizon's meep is heard once, as it comes up; step 3's own is the step's sound (sound.js).
+            if (r.meep && r.meepAt !== undefined && r.meepAt !== voicedMeep) {
+                voicedMeep = r.meepAt;
+                const x = (r.x / env.layout().artW) * 100;
+                if (now - r.meepAt < PHRASE_FRESH_MS) env.cue?.(r.far ? { type: 'rr-meep', x, volume: FAR_MEEP_VOLUME } : { type: 'rr-meep', x });
             }
         }
         sweepBubbles();

@@ -502,8 +502,9 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (c?.type === 'owl-rapier') play('owl.rapier', { pan: panOf(c.x) });
             // RoadRunner's toast behind the bar's counter: a soft «мип» as he lifts the mug.
             if (c?.type === 'rr-toast') play('bar.meep', { pan: panOf(c.x), volume: 0.4 });
-            // RoadRunner's «мип-мип» at the far end of a dash across the finale's foreground.
-            if (c?.type === 'rr-meep') play('rr.meep', { pan: panOf(c.x), volume: 0.7 });
+            // RoadRunner's «мип-мип» at the far end of a dash across the finale's foreground, or on the horizon with
+            // its own, quieter `volume`.
+            if (c?.type === 'rr-meep') play('rr.meep', { pan: panOf(c.x), volume: c.volume ?? 0.7 });
         },
     };
 }
