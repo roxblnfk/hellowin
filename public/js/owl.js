@@ -191,15 +191,15 @@ export function lineText(event, scene = 0, step = null) {
 }
 
 // Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good.
-export const showMs = (text) => Math.min(36000, Math.max(10500, 6000 + text.length * 210));
+export const showMs = (text) => Math.min(27000, Math.max(7900, 4500 + text.length * 158));
 
 // A line holds the bubble at least this long (or its whole time, if shorter) before the next one takes over: the
 // server says `last-pumpkin` and `scene-ready` back to back, and the first must not flash by unread. A two-part line
 // holds it through its first part and the hold of its second, so a burst never cuts off the `then`.
-const HOLD_MS = 7500;
+const HOLD_MS = 5600;
 const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
-const MAX_HOLD_MS = 36000 + HOLD_MS;
+const MAX_HOLD_MS = 27000 + HOLD_MS;
 // The countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): «Призыв через 3…», then «2…», «1…».
 const SUMMON = pick({ ru: 'Призыв через', en: 'Summoning in' });
 export const summonText = (left, first) => (first ? `${SUMMON} ${left}…` : `${left}…`);
