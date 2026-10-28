@@ -473,9 +473,9 @@ export const SFX = {
     'bar.meep': fx({
         dur: 0.8, variants: 3, voices: 1, level: -16, jitter: 0.02,
         render(r, out, v) {
-            const f0 = [620, 580, 660][v];
-            meep(r, out, 0, f0, { amp: 0.4, dur: 0.15, f2: 2200, send: 0.3 });
-            meep(r, out, 0.25, f0 * 1.03, { amp: 0.4, dur: 0.15, f2: 2200, send: 0.3 });
+            const f0 = [495, 465, 530][v];
+            meep(r, out, 0, f0, { amp: 0.4, dur: 0.15, f2: 2000, send: 0.3 });
+            meep(r, out, 0.25, f0 * 1.03, { amp: 0.4, dur: 0.15, f2: 2000, send: 0.3 });
             partials(r, out, 0.48, 2200 + r.rnd() * 300, [[1, 1, 12], [2.32, 0.5, 16], [4.25, 0.25, 22]], { amp: 0.1, dur: 0.3, send: 0.3 });
         },
     }),
@@ -483,9 +483,9 @@ export const SFX = {
     'rr.meep': fx({
         dur: 0.7, variants: 3, voices: 1, level: -12, jitter: 0.02,
         render(r, out, v) {
-            const f0 = [640, 600, 690][v];
-            meep(r, out, 0, f0, { amp: 0.4, send: 0.25 });
-            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, send: 0.25 });
+            const f0 = [510, 480, 550][v];
+            meep(r, out, 0, f0, { amp: 0.4, f2: 2100, send: 0.25 });
+            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, f2: 2100, send: 0.25 });
         },
     }),
     // A full mug set down on the counter: a heavy wooden knock with a slosh.
@@ -624,9 +624,9 @@ export const SFX = {
     'finale.meep': fx({
         stereo: true, group: 'finale', dur: 0.8, variants: 3, voices: 1, level: -6, jitter: 0, duck: 0.8,
         render(r, out, v) {
-            const f0 = [640, 600, 690][v];
-            meep(r, out, 0, f0, { amp: 0.4, send: 0.25 });
-            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, send: 0.25 });
+            const f0 = [510, 480, 550][v];
+            meep(r, out, 0, f0, { amp: 0.4, f2: 2100, send: 0.25 });
+            meep(r, out, 0.26, f0 * 1.03, { amp: 0.4, f2: 2100, send: 0.25 });
         },
     }),
     // Step 4: the reveal fanfare — brass climbing into a bright choir chord with a bell.
