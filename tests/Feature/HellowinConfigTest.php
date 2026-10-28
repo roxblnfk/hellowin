@@ -44,6 +44,35 @@ final class HellowinConfigTest extends TestCase
         Assert::same($reachable, ['pumpkin-3', 'pumpkin-5', 'pumpkin-7', 'pumpkin-9', 'pumpkin-10', 'pumpkin-11', 'pumpkin-13', 'pumpkin-15', 'pumpkin-17']);
     }
 
+    /**
+     * The frontend draws a character at the mug of a pumpkin when its walk ends within `PUMPKIN_STAND.near` (2.5) of
+     * the point beside the jumped pumpkin (public/js/layout.js): the lawn has to come that close for every one.
+     */
+    public function shippedPumpkinStandsAreOnTheLawnNearTheMug(): void
+    {
+        $config = $this->getContainer()->get(HellowinConfig::class);
+        $lawn = $config->getWalkZone();
+        $root = $lawn->patch();
+        $stand = $config->getPumpkinStand();
+
+        Assert::same([$stand->out, $stand->gap], [1.18, ['s' => 8.0, 'm' => 9.0, 'l' => 10.0]]);
+        foreach ($config->getElements() as $pumpkin) {
+            if (!$pumpkin->reachable) {
+                continue;
+            }
+            $side = $pumpkin->x < $root->cx || $pumpkin->x === $root->cx && (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1;
+            $beside = new Point(
+                $root->cx + ($pumpkin->x - $root->cx) * 1.18 + $side * $stand->gap[$pumpkin->size ?? 'm'],
+                $root->cy + ($pumpkin->y - $root->cy) * 1.18,
+            );
+
+            $at = $stand->at($pumpkin, $lawn);
+
+            Assert::true($lawn->contains($at), \sprintf('%s: (%.2f, %.2f) is off the lawn', $pumpkin->id, $at->x, $at->y));
+            Assert::numeric(\hypot($at->x - $beside->x, $at->y - $beside->y))->lessThanOrEqual(2.5);
+        }
+    }
+
     public function shippedBarHasRoomAtTheCounterAndInTheSpawnBand(): void
     {
         $layout = $this->getContainer()->get(HellowinConfig::class)->getBarLayout();

@@ -177,6 +177,11 @@ return [
         'clink_gap' => 4,
         'clink_duration' => 3200,
 
+        // Where a character stands at a reachable pumpkin for a beer or a clink (protocol.md, «Точка у кружки»): `gap`
+        // percents by the pumpkin's size to the side of its mug, past the pumpkin drawn `out` times farther from the
+        // root after the jump of the sunset. The frontend's PUMPKIN_STAND of public/js/layout.js holds the same numbers
+        'pumpkin_stand' => ['out' => 1.18, 'gap' => ['l' => 10, 'm' => 9, 's' => 8]],
+
         // The bar of scene 0 (docs/spec/protocol.md, «Бар»): the floor minus the obstacles — tables are ellipses
         // {cx, cy, rx, ry}, the counter a rectangle {x1, y1, x2, y2}; a mug is taken standing on the line `counter`,
         // characters put back on the floor at once appear in the band `spawn`, a new one walks in through the entrance

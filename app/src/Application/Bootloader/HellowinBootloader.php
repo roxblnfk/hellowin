@@ -403,6 +403,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getClinkGap(),
                 $config->getClinkDuration(),
                 $config->getWalkReach(),
+                $config->getPumpkinStand(),
                 bar: $config->getBarLayout(),
                 policy: $policy,
                 handover: $config->getBeerHandoverMs(),

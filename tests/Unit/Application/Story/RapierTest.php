@@ -69,7 +69,7 @@ final class RapierTest
 
         $walk = $ritual->walks->toPumpkin(self::JILL, 'pumpkin-2');
 
-        Assert::equals($walk->path[\count($walk->path) - 1]->toArray(), ['x' => 10.0, 'y' => 44.0]);
+        Assert::equals($walk->path[\count($walk->path) - 1]->toArray(), ['x' => 3.0, 'y' => 44.0]);
         Assert::same($ritual->broadcast->ofType('move')[0]['walk']['arrivesAt'], $walk->arrivesAt);
         $ritual->clock->now = $walk->arrivesAt - 1;
         $ritual->walks->beers();

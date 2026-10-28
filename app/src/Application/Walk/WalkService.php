@@ -23,6 +23,7 @@ use App\Domain\Story\Story;
 use App\Domain\Walk\Clink;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\PresenceStore;
+use App\Domain\Walk\PumpkinStand;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
@@ -45,7 +46,8 @@ final readonly class WalkService
      * @param array{float, float} $spawnY Top and bottom of the band new characters appear in.
      * @param float $clinkGap Percents of the screen between two characters that clink.
      * @param positive-int $clinkDuration Milliseconds a clink plays; a new clink of the same player is refused meanwhile.
-     * @param float $clinkReach Percents of the screen: how far from a pumpkin a character may stand to clink with it.
+     * @param float $clinkReach Percents of the screen: how near two characters clink by themselves without a bar.
+     * @param PumpkinStand $stand Where a character stands at a pumpkin for a beer or a clink.
      * @param BarLayout|null $bar Where characters walk in the bar; without it, or without the policy, they walk the
      *        lawn there too.
      * @param RitualPolicy|null $policy Tells the bar from the other scenes.
@@ -69,6 +71,7 @@ final readonly class WalkService
         private float $clinkGap,
         private int $clinkDuration,
         private float $clinkReach,
+        private PumpkinStand $stand,
         private Randomizer $random = new Randomizer(),
         private ?BarLayout $bar = null,
         private ?RitualPolicy $policy = null,
@@ -179,7 +182,7 @@ final readonly class WalkService
                     or throw new ClinkRefusedException('no target');
 
                 $from = self::rounded($walker->walk->positionAt($now));
-                $walk = Walk::along($this->zone->route($from, self::rounded($this->mugSide($element))), $now, $this->speed);
+                $walk = Walk::along($this->zone->route($from, self::rounded($this->stand->at($element, $this->zone))), $now, $this->speed);
                 $walker = $walker->taking($walk, $walk->arrivesAt, $element->id)->seen($now);
                 $walkers[$id] = $walker;
 
@@ -353,8 +356,8 @@ final readonly class WalkService
 
     /**
      * Sends the character to clink with another character or a reachable pumpkin (docs/spec/scenario.md, «Чоканье»):
-     * to the side of the character where it stands or is heading, or to the lawn point nearest to the pumpkin. The
-     * clink itself happens on arrival, in {@see clinks()}.
+     * to the side of the character where it stands or is heading, or to the side of the pumpkin's mug
+     * ({@see PumpkinStand}). The clink itself happens on arrival, in {@see clinks()}.
      *
      * Both clink with their mugs, in the bar and in the cursed world alike: whoever has none has nothing to clink; a
      * pumpkin holds its mug out only on the goal step, while it hands beer out.
@@ -388,7 +391,7 @@ final readonly class WalkService
             $element = $this->elements->find($target);
             $element !== null && $element->type === Element::TYPE_PUMPKIN && $element->reachable
                 or throw new ClinkRefusedException('no target');
-            $pumpkin = self::rounded($this->mugSide($element));
+            $pumpkin = self::rounded($this->stand->at($element, $this->zone));
         }
 
         $now = $this->clock->now();
@@ -678,27 +681,6 @@ final readonly class WalkService
         $this->publisher->move($this->ritual->round(), $walker);
 
         return $walker->walk;
-    }
-
-    /**
-     * Where a character stands to clink with the pumpkin: on the side of its mug, which the frontend draws outwards
-     * from the root of the patch, by the pumpkin's x against the patch centre, and on a pumpkin right above the centre
-     * by `crc32(id)` — odd on the left (public/js/pixel/scene.js); the nearest lawn point there, `$clinkGap` aside.
-     * Without such a point within `$clinkReach` — the lawn point nearest to the pumpkin.
-     */
-    private function mugSide(Element $pumpkin): Point
-    {
-        $at = new Point($pumpkin->x, $pumpkin->y);
-        $side = match (true) {
-            $pumpkin->x > $this->zone->patch()->cx => 1,
-            $pumpkin->x < $this->zone->patch()->cx => -1,
-            default => (\crc32($pumpkin->id) & 1) === 1 ? -1 : 1,
-        };
-        $beside = $this->zone->nearestBeside($at, $side, $this->clinkGap);
-
-        return $beside !== null && \hypot($beside->x - $at->x, $beside->y - $at->y) <= $this->clinkReach
-            ? $beside
-            : $this->zone->clamp($at);
     }
 
     /**

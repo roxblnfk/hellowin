@@ -15,6 +15,7 @@ use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\Obstacle;
+use App\Domain\Walk\PumpkinStand;
 use App\Domain\Walk\WalkZone;
 use Spiral\Core\InjectableConfig;
 
@@ -83,6 +84,7 @@ final class HellowinConfig extends InjectableConfig
             'reach' => 10,
             'clink_gap' => 4,
             'clink_duration' => 3200,
+            'pumpkin_stand' => ['out' => 1.18, 'gap' => ['l' => 10, 'm' => 9, 's' => 8]],
         ],
     ];
 
@@ -663,6 +665,24 @@ final class HellowinConfig extends InjectableConfig
     public function getClinkGap(): float
     {
         return self::nonNegative($this->walk()['clink_gap'] ?? 4, 'walk.clink_gap');
+    }
+
+    public function getPumpkinStand(): PumpkinStand
+    {
+        $stand = $this->walk()['pumpkin_stand'] ?? null;
+        $gap = \is_array($stand) ? $stand['gap'] ?? null : null;
+        \is_array($stand) && \is_array($gap) or throw new \InvalidArgumentException(
+            'Config "hellowin.walk.pumpkin_stand" must be {out, gap: {l, m, s}}.',
+        );
+
+        $out = self::float($stand['out'] ?? null, 'walk.pumpkin_stand.out');
+        $out > 0.0 or throw new \InvalidArgumentException('Config "hellowin.walk.pumpkin_stand.out" must be positive.');
+
+        return new PumpkinStand($out, [
+            's' => self::nonNegative($gap['s'] ?? null, 'walk.pumpkin_stand.gap.s'),
+            'm' => self::nonNegative($gap['m'] ?? null, 'walk.pumpkin_stand.gap.m'),
+            'l' => self::nonNegative($gap['l'] ?? null, 'walk.pumpkin_stand.gap.l'),
+        ]);
     }
 
     /**

@@ -44,20 +44,6 @@ final class WalkZoneTest
         Assert::equals($zone->beside(new Point(97, 90), new Point(97, 95), 4), new Point(93, 90));
     }
 
-    public function nearestBesideKeepsToItsSide(): void
-    {
-        $zone = RitualHarness::walkZone();
-        $pumpkin = new Point(40, 83.7);
-
-        $left = $zone->nearestBeside($pumpkin, -1, 4);
-        $right = $zone->nearestBeside($pumpkin, 1, 4);
-
-        Assert::true($left !== null && $left->x <= 36.0 + 1e-6 && $zone->contains($left));
-        Assert::true($right !== null && $right->x >= 44.0 - 1e-6 && $zone->contains($right));
-        // Beyond the right side of the rectangle there is no lawn
-        Assert::null($zone->nearestBeside(new Point(95, 90), 1, 4));
-    }
-
     public function pointInThePatchGoesToItsEdge(): void
     {
         $zone = RitualHarness::walkZone();

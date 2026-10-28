@@ -151,13 +151,14 @@ final class ClinkTest
     }
 
     /**
-     * The frontend turns a pumpkin's mug outwards from the root of the patch, to the lawn.
+     * The frontend turns a pumpkin's mug outwards from the root of the patch, to the lawn; the harness pumpkins are of
+     * size `m`.
      */
-    #[DataSet(['pumpkin-3', 66.2, 48.3, new Point(70.2, 44)], 'right, by the horizon')]
-    #[DataSet(['pumpkin-5', 71.2, 58.4, new Point(79.4, 55.07)], 'right')]
-    #[DataSet(['pumpkin-11', 40, 83.7, new Point(36, 85.44)], 'left')]
-    #[DataSet(['pumpkin-15', 27.7, 60.2, new Point(19.57, 58.23)], 'left, by the left side')]
-    #[DataSet(['pumpkin-17', 35.8, 51.5, new Point(29.66, 44.13)], 'left, by the horizon')]
+    #[DataSet(['pumpkin-3', 66.2, 48.3, new Point(78.12, 45.65)], 'right, above')]
+    #[DataSet(['pumpkin-5', 71.2, 58.4, new Point(84.02, 57.57)], 'right')]
+    #[DataSet(['pumpkin-11', 40, 83.7, new Point(29.2, 87.43)], 'left, below')]
+    #[DataSet(['pumpkin-15', 27.7, 60.2, new Point(14.69, 59.7)], 'left')]
+    #[DataSet(['pumpkin-17', 35.8, 51.5, new Point(24.05, 49.33)], 'left, onto the edge of the patch')]
     public function clinkWithAPumpkinStandsOnTheSideOfItsMug(string $id, float $x, float $y, Point $meet): void
     {
         $ritual = self::cursed([$id], [$id], [$id => [$x, $y]]);
@@ -182,18 +183,18 @@ final class ClinkTest
         Assert::true($walk->path[\count($walk->path) - 1]->x <= 46.0);
     }
 
-    public function pumpkinWithoutLawnOnItsMugSideIsMetAtTheNearestPoint(): void
+    public function pumpkinBeyondTheLawnIsMetOnItsEdge(): void
     {
-        // Right of the patch with its mug to the right, but the lawn ends 1 % further
+        // Right of the patch with its mug to the right, but the lawn ends before the jumped pumpkin
         $ritual = self::cursed(['pumpkin-1'], ['pumpkin-1'], ['pumpkin-1' => [96, 90]]);
         self::place($ritual, self::A, 60, 92);
 
         $walk = $ritual->walks->clink(self::A, Clink::PUMPKIN, 'pumpkin-1');
 
-        Assert::equals($walk->path[\count($walk->path) - 1], new Point(96, 90));
+        Assert::equals($walk->path[\count($walk->path) - 1], new Point(97, 94.86));
     }
 
-    public function clinkWithAPumpkinWalksToTheNearestPointOfTheLawn(): void
+    public function clinkWithAPumpkinAboveTheLawnWalksToItsEdge(): void
     {
         $ritual = self::cursed(['pumpkin-2']);
         self::place($ritual, self::A, 20, 90);
@@ -203,7 +204,7 @@ final class ClinkTest
         $ritual->walks->clinks();
 
         // The harness pumpkins stand at (10, 20), above the lawn
-        Assert::equals($walk->path[\count($walk->path) - 1], new Point(10, 44));
+        Assert::equals($walk->path[\count($walk->path) - 1], new Point(3, 44));
         Assert::same($ritual->broadcast->ofType('clink')[0]['pumpkin'], ['id' => 'pumpkin-2']);
         Assert::false(isset($ritual->broadcast->ofType('clink')[0]['walker']));
     }

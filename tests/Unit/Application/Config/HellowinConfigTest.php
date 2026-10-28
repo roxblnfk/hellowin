@@ -137,6 +137,28 @@ final class HellowinConfigTest
         Assert::same([$config->getClinkGap(), $config->getClinkDuration()], [4.0, 3200]);
     }
 
+    public function pumpkinStandComesFromTheWalk(): void
+    {
+        $config = new HellowinConfig(['walk' => ['pumpkin_stand' => ['out' => 1.5, 'gap' => ['l' => 3, 'm' => 2, 's' => 1.5]]]]);
+
+        $stand = $config->getPumpkinStand();
+
+        Assert::same([$stand->out, $stand->gap], [1.5, ['s' => 1.5, 'm' => 2.0, 'l' => 3.0]]);
+    }
+
+    #[DataSet([['out' => 1.18]], 'no gap')]
+    #[DataSet([['out' => 0, 'gap' => ['l' => 10, 'm' => 9, 's' => 8]]], 'no jump')]
+    #[DataSet([['out' => 1.18, 'gap' => ['l' => 10, 'm' => 9]]], 'a size left out')]
+    #[DataSet([['out' => 1.18, 'gap' => ['l' => 10, 'm' => -9, 's' => 8]]], 'negative gap')]
+    public function rejectsAnInvalidPumpkinStand(array $stand): never
+    {
+        $config = new HellowinConfig(['walk' => ['pumpkin_stand' => $stand]]);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('walk.pumpkin_stand');
+
+        $config->getPumpkinStand();
+    }
+
     public function rejectsAnUnknownElementType(): never
     {
         $config = new HellowinConfig(['elements' => [

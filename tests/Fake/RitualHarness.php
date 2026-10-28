@@ -67,6 +67,7 @@ use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
 use App\Domain\Walk\PresenceStore;
+use App\Domain\Walk\PumpkinStand;
 use App\Domain\Walk\WalkerStore;
 use App\Domain\Walk\WalkZone;
 use Psr\Log\NullLogger;
@@ -283,6 +284,7 @@ final class RitualHarness
             4.0,
             3200,
             10.0,
+            self::pumpkinStand(),
             new Randomizer(new Mt19937(7)),
             bar: ($stageMax[0] ?? null) === 0 ? self::barLayout($door) : null,
             policy: $policy,
@@ -299,6 +301,14 @@ final class RitualHarness
     public static function walkZone(): WalkZone
     {
         return WalkZone::lawn(3, 44, 97, 97, 50, 63, 31, 25);
+    }
+
+    /**
+     * The pumpkin stand of app/config/hellowin.php.
+     */
+    public static function pumpkinStand(): PumpkinStand
+    {
+        return new PumpkinStand(1.18, ['s' => 8.0, 'm' => 9.0, 'l' => 10.0]);
     }
 
     /**
