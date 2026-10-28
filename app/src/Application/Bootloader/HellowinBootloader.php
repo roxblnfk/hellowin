@@ -363,6 +363,7 @@ final class HellowinBootloader extends Bootloader
                 drinkMs: $config->getDrinkMs(),
                 metrics: $metrics,
                 uncounted: $uncounted,
+                pourPer: $config->getBarPourPer(),
             ),
             PlayerCensus::class => static fn(HellowinConfig $config, PlayerStore $players, PlayMetrics $metrics): PlayerCensus
                 => new PlayerCensus($players, $metrics, $config->getMugLitres()),

@@ -150,6 +150,7 @@ final class RitualHarness
      * @param Limit|null $barDrinks Mugs the bar wants; 4 by default, whoever is on the floor.
      * @param non-empty-list<list<non-empty-string>>|null $flyerKinds Flyer kinds by scene in place of the usual sets.
      * @param Limit|null $pumpkin Clicks a pumpkin stage takes, in place of the flat `$threshold`.
+     * @param positive-int $barPourPer Free places on the counter per mug of a batch.
      */
     public function __construct(
         int $threshold = 2,
@@ -168,6 +169,7 @@ final class RitualHarness
         ?Limit $barDrinks = null,
         ?array $flyerKinds = null,
         ?Limit $pumpkin = null,
+        int $barPourPer = 10,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -212,7 +214,7 @@ final class RitualHarness
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted);
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
-        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics, uncounted: $this->uncounted);
+        $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics, uncounted: $this->uncounted, pourPer: $barPourPer);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();

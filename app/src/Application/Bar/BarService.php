@@ -27,7 +27,7 @@ use App\Domain\Walk\WalkerStore;
 use Random\Randomizer;
 
 /**
- * The bar of scene 0 (docs/spec/scenario.md, «Сцена 0 — «Бар»»): the owl pours one mug at a time, a character who
+ * The bar of scene 0 (docs/spec/scenario.md, «Сцена 0 — «Бар»»): the owl pours mugs in batches, a character who
  * reaches the counter takes one if any is left, a clinked mug may be drunk, and the room is ready to leave once it
  * has drunk the bar's goal or the moderator waves.
  *
@@ -42,10 +42,11 @@ final readonly class BarService
 
     /**
      * @param positive-int $mugs Full mugs the counter has room for, however many players are on the floor.
-     * @param positive-int $pourMs Milliseconds the owl pours one mug.
+     * @param positive-int $pourMs Milliseconds the owl pours one batch.
      * @param Limit $drinks Mugs the room drinks before it may leave, before the moderator's bonus.
      * @param float $rumorChance Probability that the owl mutters a rumour over a pour.
      * @param positive-int $drinkMs Milliseconds a sip plays: no mug is taken or drunk meanwhile.
+     * @param positive-int $pourPer Free places on the counter per mug of a batch.
      */
     public function __construct(
         private BarStore $bar,
@@ -64,10 +65,11 @@ final readonly class BarService
         private int $drinkMs = 1200,
         private ?PlayMetrics $metrics = null,
         private ?UncountedTally $uncounted = null,
+        private int $pourPer = 10,
     ) {}
 
     /**
-     * The ticker's work: a poured mug lands on the counter and the next one is begun, characters at the counter take
+     * The ticker's work: a poured batch lands on the counter and the next one is begun, characters at the counter take
      * their mugs.
      *
      * @throws LockBusyException
@@ -79,7 +81,7 @@ final readonly class BarService
     }
 
     /**
-     * Puts the poured mug on the counter when its time has come and begins the next one while there is room. Only in
+     * Puts the poured batch on the counter when its time has come and begins the next one while there is room. Only in
      * the bar: the scene is checked again under the lock, so a mug never lands after the room has left.
      *
      * @throws LockBusyException
@@ -101,7 +103,7 @@ final readonly class BarService
             $max = $this->max();
             $placed = null;
             if ($bar->poured($now)) {
-                $bar = $bar->placed();
+                $bar = $bar->placed($max);
                 $placed = $bar->mugs;
             }
             [$bar, $pouring] = $this->pourNext($bar, $now, $max);
@@ -368,11 +370,13 @@ final readonly class BarService
     }
 
     /**
-     * Begins the next mug while the counter holds fewer than `$max` and the owl is not pouring. Mugs above `$max`, left
-     * by players who went away, stay until they are taken.
+     * Begins the next batch while the counter holds fewer than `$max` and the owl is not pouring: as many mugs as
+     * {@see Bar::batch()} gives for the free places now. Mugs above `$max`, left by players who went away, stay until
+     * they are taken.
      *
      * @param positive-int $max
-     * @return array{Bar, array{since: int, until: int, rumor?: int}|null} The counter and the new pour, if any.
+     * @return array{Bar, array{since: int, until: int, batch: positive-int, rumor?: int}|null} The counter and the new
+     *         pour, if any.
      */
     private function pourNext(Bar $bar, int $now, int $max): array
     {
@@ -384,7 +388,7 @@ final readonly class BarService
         $rumor = $this->rumorChance > 0.0 && $this->random->nextFloat() < $this->rumorChance
             ? $this->random->getInt(0, 0x7FFFFFFF)
             : null;
-        $bar = $bar->pour($now, $this->pourMs, $rumor);
+        $bar = $bar->pour($now, $this->pourMs, $rumor, Bar::batch($max - $bar->mugs, $this->pourPer));
 
         return [$bar, $bar->pouringToArray()];
     }

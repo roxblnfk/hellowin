@@ -413,10 +413,10 @@ final class HellowinConfigTest
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
-        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarRumorChance()], [12, 2500, 0.33]);
+        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarPourPer(), $config->getBarRumorChance()], [60, 2500, 10, 0.33]);
 
-        $config = new HellowinConfig(['bar' => ['mugs' => '3', 'pour_ms' => '1000', 'rumor_chance' => '0']]);
-        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarRumorChance()], [3, 1000, 0.0]);
+        $config = new HellowinConfig(['bar' => ['mugs' => '3', 'pour_ms' => '1000', 'pour_per' => '4', 'rumor_chance' => '0']]);
+        Assert::same([$config->getBarMugs(), $config->getBarPourMs(), $config->getBarPourPer(), $config->getBarRumorChance()], [3, 1000, 4, 0.0]);
     }
 
     public function barRumorChanceIsAProbability(): never

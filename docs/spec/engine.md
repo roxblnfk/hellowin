@@ -73,7 +73,7 @@
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс (на рассвете — `HELLOWIN_FLYER_INTERVAL_DAWN`); первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Бродячие зомби | каждый тик; удар `HELLOWIN_ZOMBIE_INTERVAL` мс — своё расписание | `FlyerService::wander(now, due)`: в проклятом мире (`finale` 5–6), и на паузе прогресса, под RR-локом `wanderers` — живых меньше `HELLOWIN_ZOMBIE_MIN` → встают недостающие; на ударе и живых меньше `max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER × фигурки)` → ещё один; каждый — `ZombieFactory::wander` → ключ + индекс → `flyer {wander: true}` → `hellowin_flyers_launched_total{depth}`. Вне шагов 5–6 оставшиеся снимаются (`retire`, событие `gone`) |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
-| Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая кружка с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
+| Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая партия с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Кто онлайн | раз в секунду, тем же чтением presence | `WalkService::sync`: `players` — уникальные валидные id игроков, `connections` — все записи presence (вкладки, анонимы с пустым `user` включительно) → gauge `hellowin_online_players`, `hellowin_online_connections` на каждом проходе; числа разошлись с `hellowin:presence` → событие `presence {round, players, connections}` и запись ключа. Снимок несёт `presence` из того же ключа (до первого счёта — нули) |
@@ -269,13 +269,17 @@
   политикой, летунов нет (пустые первые наборы env). Геометрия — `walk.bar` (`BarLayout`): `WalkService` выбирает
   зону бара или лужайки по сцене, прочитанной под локом `walkers`; новые фигурки в баре входят в дверь `walk.bar.door`
   (`door_in`, по умолчанию 6), см. «Фигурки на поле».
-- **Стойка** — ключ `hellowin:bar` `{mugs, pouring: {since, until, rumor?} | null, emptyAt?}` под RR-локом `bar`
-  (`Domain/Bar/BarStore`). **Розлив по одной** ведёт тикер (`BarService::pour`, каждый тик): без лока читает стойку и,
-  только если пора (налитая кружка с наступившим `until` или `pouring = null` при `mugs < max`), берёт
-  лок, снова проверяет, что сцена — бар, заново считает `max`, ставит кружку (`mugs + 1`, событие `mugs` с `max`) и начинает следующую
-  (`pouring = {since: now, until: now + HELLOWIN_BAR_POUR_MS}`, событие `pour`; с вероятностью
-  `HELLOWIN_BAR_RUMOR_CHANCE` — `rumor`, случайное 0…2³¹−1). Состояние в Valkey и серверное время: перезапуск воркеров
-  или тикера продолжает ту же кружку, а все зрители видят одну фазу пены. Вне бара тикер не наливает.
+- **Стойка** — ключ `hellowin:bar` `{mugs, pouring: {since, until, batch, rumor?} | null, emptyAt?}` под RR-локом `bar`
+  (`Domain/Bar/BarStore`). **Розлив партиями** ведёт тикер (`BarService::pour`, каждый тик): без лока читает стойку и,
+  только если пора (налитая партия с наступившим `until` или `pouring = null` при `mugs < max`), берёт
+  лок, снова проверяет, что сцена — бар, заново считает `max`, ставит партию (`mugs = max(mugs, min(mugs + batch,
+  max))` — ушедшие посреди розлива игроки не дают партии переполнить стойку, а стоящую кружку она не убирает; событие
+  `mugs` с `max`) и начинает следующую (`pouring = {since: now, until: now + HELLOWIN_BAR_POUR_MS, batch}`, событие
+  `pour {since, until, batch, rumor?}`; с вероятностью `HELLOWIN_BAR_RUMOR_CHANCE` — `rumor`, случайное 0…2³¹−1).
+  **Партия** (`Bar::batch`) фиксируется в начале розлива: `free = max − mugs`, `batch = min(free, ceil(free /
+  HELLOWIN_BAR_POUR_PER))` — до `HELLOWIN_BAR_POUR_PER` свободных мест по одной, до двойного — по две. Розлив без
+  `batch` в записи (сохранённый до партий) читается как партия 1. Состояние в Valkey и серверное время: перезапуск
+  воркеров или тикера продолжает ту же партию, а все зрители видят одну фазу пены. Вне бара тикер не наливает.
 - **Максимум кружек** (`BarService::max`) — `max = clamp(число фигурок в hellowin:walkers, 1, HELLOWIN_BAR_MUGS)`: тот
   же счёт, что у «пить одному». Не хранится — считается при каждом решении о доливе: в `pour` — чтением `walkers` без
   лока лужайки внутри лока `bar`, в `takes` — по фигуркам, уже взятым под локом `walkers`. Лок лужайки ради счёта не
@@ -846,8 +850,9 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_SCENE_STAGE_MAX` | `0,4,8,11` | последняя стадия тыквы по сценам, накопительно; длина списка — номер финальной сцены; 0 — только первым: сцена 0 — бар (`RitualPolicy::bar`) |
 | `HELLOWIN_BONFIRE_STAGE_MAX` | `0,0,4,7` | последняя стадия костра по сценам, накопительно, неубывающий список от 0; 0 (или не выше текущей стадии) — костёр сцене не нужен; за концом списка и в финале — последнее значение до финала |
 | `HELLOWIN_CIRCLE_STAGES` | 4 | последняя стадия круга в финальной сцене, целое > 0: на ней круг замкнут и сцена готова |
-| `HELLOWIN_BAR_MUGS` | 12 | место на стойке бара: потолок `max` — сова наливает по кружке на фигурку на поле, но не больше (`hellowin:bar`) |
-| `HELLOWIN_BAR_POUR_MS` | 2500 | мс розлива одной кружки |
+| `HELLOWIN_BAR_MUGS` | 60 | место на стойке бара: потолок `max` — сова наливает по кружке на фигурку на поле, но не больше (`hellowin:bar`) |
+| `HELLOWIN_BAR_POUR_MS` | 2500 | мс розлива одной партии |
+| `HELLOWIN_BAR_POUR_PER` | 10 | свободных мест на кружку партии, целое > 0: `batch = min(free, ceil(free / HELLOWIN_BAR_POUR_PER))` (`hellowin.bar.pour_per`) |
 | `HELLOWIN_BAR_RUMOR_CHANCE` | 0.33 | вероятность `rumor` у розлива: случайное 0…2³¹−1 в `pour` и `pouring` |
 | `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
 | `HELLOWIN_MUG_LITRES` | 0.5 | литров в кружке, число > 0: `hellowin_beer_litres` = кружки × объём (`hellowin.bar.mug_litres`) |

@@ -62,7 +62,7 @@ final class HellowinConfig extends InjectableConfig
             self::LIMIT_BOSS => ['base' => 45, 'per_player' => 60],
         ],
         'valkey_dsn' => 'tcp://valkey:6379',
-        'bar' => ['mugs' => 12, 'pour_ms' => 2500, 'rumor_chance' => 0.33, 'drink_ms' => 1200, 'mug_litres' => 0.5],
+        'bar' => ['mugs' => 60, 'pour_ms' => 2500, 'pour_per' => 10, 'rumor_chance' => 0.33, 'drink_ms' => 1200, 'mug_litres' => 0.5],
         'rapier' => ['beer_handover_ms' => 900],
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
@@ -275,11 +275,20 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int Milliseconds the owl pours one mug.
+     * @return positive-int Milliseconds the owl pours one batch of mugs.
      */
     public function getBarPourMs(): int
     {
         return self::positiveInt($this->bar()['pour_ms'] ?? null, 'bar.pour_ms', 'HELLOWIN_BAR_POUR_MS');
+    }
+
+    /**
+     * @return positive-int Free places on the counter per mug of a batch: up to this many free places the owl pours
+     *         one mug at once, up to twice as many two.
+     */
+    public function getBarPourPer(): int
+    {
+        return self::positiveInt($this->bar()['pour_per'] ?? null, 'bar.pour_per', 'HELLOWIN_BAR_POUR_PER');
     }
 
     /**

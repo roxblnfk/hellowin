@@ -98,9 +98,9 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * The owl began pouring a mug.
+     * The owl began pouring a batch of mugs.
      *
-     * @param array{since: int, until: int, rumor?: int} $pouring
+     * @param array{since: int, until: int, batch: positive-int, rumor?: int} $pouring
      */
     public function pour(int $round, array $pouring): void
     {
