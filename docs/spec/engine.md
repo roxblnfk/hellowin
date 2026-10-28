@@ -801,8 +801,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `bonfire` — кликов на стадию костра | `HELLOWIN_BONFIRE_BASE`, `HELLOWIN_BONFIRE_PER_PLAYER` | 8 | 20 | 8 | 188 | 788 |
 | `circle` — кликов на стадию круга | `HELLOWIN_CIRCLE_BASE`, `HELLOWIN_CIRCLE_PER_PLAYER` | 15 | 40 | 15 | 375 | 1575 |
 | `bar` — кружек бара | `HELLOWIN_BAR_BASE`, `HELLOWIN_BAR_PER_PLAYER` | 5 | 1.5 | 5 | 19 | 64 |
-| `drinks` — кружек проклятого мира | `HELLOWIN_CURSED_DRINKS_BASE`, `HELLOWIN_CURSED_DRINKS_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
-| `zombies` — зомби проклятого мира | `HELLOWIN_CURSED_ZOMBIES_BASE`, `HELLOWIN_CURSED_ZOMBIES_PER_PLAYER` | 5 | 4 | 5 | 41 | 161 |
+| `drinks` — кружек проклятого мира | `HELLOWIN_CURSED_DRINKS_BASE`, `HELLOWIN_CURSED_DRINKS_PER_PLAYER` | 10 | 8 | 10 | 82 | 322 |
+| `zombies` — зомби проклятого мира | `HELLOWIN_CURSED_ZOMBIES_BASE`, `HELLOWIN_CURSED_ZOMBIES_PER_PLAYER` | 15 | 12 | 15 | 123 | 483 |
 | `boss` — здоровье FrankenPHP | `HELLOWIN_BOSS_HP_BASE`, `HELLOWIN_BOSS_HP_PER_PLAYER` | 45 | 60 | 45 | 585 | 2385 |
 | волна летунов (без `k`) | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5 | 0.2 | 5 | 7 | 13 |
 

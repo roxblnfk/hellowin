@@ -27,8 +27,8 @@ return [
         'bonfire' => ['base' => env('HELLOWIN_BONFIRE_BASE', 8), 'per_player' => env('HELLOWIN_BONFIRE_PER_PLAYER', 20)],
         'circle' => ['base' => env('HELLOWIN_CIRCLE_BASE', 15), 'per_player' => env('HELLOWIN_CIRCLE_PER_PLAYER', 40)],
         'bar' => ['base' => env('HELLOWIN_BAR_BASE', 5), 'per_player' => env('HELLOWIN_BAR_PER_PLAYER', 1.5)],
-        'drinks' => ['base' => env('HELLOWIN_CURSED_DRINKS_BASE', 5), 'per_player' => env('HELLOWIN_CURSED_DRINKS_PER_PLAYER', 4)],
-        'zombies' => ['base' => env('HELLOWIN_CURSED_ZOMBIES_BASE', 5), 'per_player' => env('HELLOWIN_CURSED_ZOMBIES_PER_PLAYER', 4)],
+        'drinks' => ['base' => env('HELLOWIN_CURSED_DRINKS_BASE', 10), 'per_player' => env('HELLOWIN_CURSED_DRINKS_PER_PLAYER', 8)],
+        'zombies' => ['base' => env('HELLOWIN_CURSED_ZOMBIES_BASE', 15), 'per_player' => env('HELLOWIN_CURSED_ZOMBIES_PER_PLAYER', 12)],
         'boss' => ['base' => env('HELLOWIN_BOSS_HP_BASE', 45), 'per_player' => env('HELLOWIN_BOSS_HP_PER_PLAYER', 60)],
     ],
 

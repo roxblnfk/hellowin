@@ -27,8 +27,8 @@ final class HellowinConfigTest
     #[DataSet([HellowinConfig::LIMIT_BONFIRE, 8.0, 20.0])]
     #[DataSet([HellowinConfig::LIMIT_CIRCLE, 15.0, 40.0])]
     #[DataSet([HellowinConfig::LIMIT_BAR, 5.0, 1.5])]
-    #[DataSet([HellowinConfig::LIMIT_DRINKS, 5.0, 4.0])]
-    #[DataSet([HellowinConfig::LIMIT_ZOMBIES, 5.0, 4.0])]
+    #[DataSet([HellowinConfig::LIMIT_DRINKS, 10.0, 8.0])]
+    #[DataSet([HellowinConfig::LIMIT_ZOMBIES, 15.0, 12.0])]
     #[DataSet([HellowinConfig::LIMIT_BOSS, 45.0, 60.0])]
     public function limitsHaveTheirDefaults(string $name, float $base, float $perPlayer): void
     {
