@@ -801,6 +801,16 @@ body:not([data-final]) .circle,
     content: '· ';
 }
 
+/* The autopilot's next move: a line of its own under the story's buttons. */
+.console__info.console__auto {
+    flex-basis: 100%;
+    color: var(--gold);
+}
+
+.console__info + .console__auto::before {
+    content: none;
+}
+
 @container patch (max-width: 600px) {
     .console {
         top: 8px;

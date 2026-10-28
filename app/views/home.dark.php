@@ -25,6 +25,7 @@
           data-paused="{{ ($paused ?? false) ? 1 : 0 }}"
           data-limits="{{ json_encode($limits ?? null) }}"
           data-presence="{{ json_encode($presence ?? null) }}"
+          data-auto="{{ json_encode($auto ?? null) }}"
           data-cursed="{{ json_encode($cursed ?? null) }}"
           data-boss="{{ json_encode($boss ?? null) }}"
           data-dice="{{ json_encode($dice ?? null) }}"

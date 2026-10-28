@@ -111,7 +111,10 @@ const EN_LINES = {
     zombies: { text: "Workers crawling out of the pumpkin patch! They don't sleep, don't eat — they just process." },
 };
 
-export const LINES = pick({ ru: RU_LINES, en: Object.fromEntries(Object.entries(RU_LINES).map(([id, line]) => [id, { ...line, ...EN_LINES[id] }])) });
+/** The catalog in each language (the autopilot's speech table takes the longer of the two). */
+export const LINES_BY_LANG = { ru: RU_LINES, en: Object.fromEntries(Object.entries(RU_LINES).map(([id, line]) => [id, { ...line, ...EN_LINES[id] }])) };
+
+export const LINES = pick(LINES_BY_LANG);
 
 /**
  * The owl's quick menu on the console (docs/spec/scenario.md, «Модератор и сова»): catalog ids by scene before the
@@ -190,16 +193,18 @@ export function lineText(event, scene = 0, step = null) {
     return ((step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
 }
 
-// Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good.
-export const showMs = (text) => Math.min(27000, Math.max(7900, 4500 + text.length * 158));
+// Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good. The
+// server's autopilot counts by the same numbers (public/autopilot.json, `showMs`): change both together.
+export const SHOW = { base: 4500, perChar: 158, min: 7900, max: 27000 };
+export const showMs = (text) => Math.min(SHOW.max, Math.max(SHOW.min, SHOW.base + text.length * SHOW.perChar));
 
 // A line holds the bubble at least this long (or its whole time, if shorter) before the next one takes over: the
 // server says `last-pumpkin` and `scene-ready` back to back, and the first must not flash by unread. A two-part line
 // holds it through its first part and the hold of its second, so a burst never cuts off the `then`.
-const HOLD_MS = 5600;
+export const HOLD_MS = 5600;
 const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
-const MAX_HOLD_MS = 27000 + HOLD_MS;
+const MAX_HOLD_MS = SHOW.max + HOLD_MS;
 // The countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): «Призыв через 3…», then «2…», «1…».
 const SUMMON = pick({ ru: 'Призыв через', en: 'Summoning in' });
 export const summonText = (left, first) => (first ? `${SUMMON} ${left}…` : `${left}…`);

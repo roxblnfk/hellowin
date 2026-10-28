@@ -127,6 +127,7 @@ async function main() {
         call: (method, params) => centrifuge.rpc(method, params).then(answer),
         // Spaced out so the clicks do not contend for the server's lock and come back as `busy`.
         clickAll: () => client.model.elements.forEach((e, i) => setTimeout(() => click(e.id), i * 30)),
+        serverNow: () => client?.serverNow() ?? Date.now(),
     });
     // The server's clock for the offset measurement: RPC `time` is cheap; a server without it answers
     // `unknown method`, and then the full `state` snapshot carries the time instead.

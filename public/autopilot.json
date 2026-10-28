@@ -1,0 +1,158 @@
+{
+  "showMs": {
+    "base": 4500,
+    "perChar": 158,
+    "min": 7900,
+    "max": 27000
+  },
+  "holdMs": 5600,
+  "nameChars": 24,
+  "lines": {
+    "bar-again": {
+      "ms": 7900,
+      "hold": 5600
+    },
+    "bar-clink": {
+      "ms": 8766,
+      "hold": 5600
+    },
+    "bar-crowd": {
+      "ms": 9872,
+      "hold": 5600
+    },
+    "bar-empty": {
+      "ms": 8924,
+      "hold": 5600
+    },
+    "bar-intro": {
+      "ms": 27012,
+      "hold": 15156
+    },
+    "bar-who": {
+      "ms": 7900,
+      "hold": 5600
+    },
+    "bonfire-done": {
+      "ms": 14770,
+      "hold": 5600
+    },
+    "bonfire-open": {
+      "ms": 14138,
+      "hold": 5600
+    },
+    "boss-down": {
+      "ms": 11926,
+      "hold": 5600
+    },
+    "circle-done": {
+      "ms": 14612,
+      "hold": 5600
+    },
+    "clues": {
+      "ms": 17930,
+      "hold": 5600
+    },
+    "cursed-ready": {
+      "ms": 7900,
+      "hold": 5600
+    },
+    "dice-owl-win": {
+      "ms": 13032,
+      "hold": 5600
+    },
+    "dice-win": {
+      "ms": 16824,
+      "hold": 5600
+    },
+    "finale-1": {
+      "ms": 28118,
+      "hold": 14840,
+      "delay": 3000
+    },
+    "finale-2": {
+      "ms": 19744,
+      "hold": 15630
+    },
+    "finale-3": {
+      "ms": 25432,
+      "hold": 15472
+    },
+    "finale-4": {
+      "ms": 41390,
+      "hold": 31430
+    },
+    "finale-5": {
+      "ms": 13664,
+      "hold": 5600
+    },
+    "finale-6": {
+      "ms": 28118,
+      "hold": 13500
+    },
+    "finale-7": {
+      "ms": 16508,
+      "hold": 5600
+    },
+    "flyers": {
+      "ms": 14928,
+      "hold": 5600
+    },
+    "hurry": {
+      "ms": 16350,
+      "hold": 5600
+    },
+    "intro": {
+      "ms": 21722,
+      "hold": 5600
+    },
+    "last-pumpkin": {
+      "ms": 17298,
+      "hold": 5600
+    },
+    "outro": {
+      "ms": 14770,
+      "hold": 5600
+    },
+    "rules": {
+      "ms": 19352,
+      "hold": 5600
+    },
+    "scene-1": {
+      "ms": 27802,
+      "hold": 16104
+    },
+    "scene-2": {
+      "ms": 22114,
+      "hold": 18632
+    },
+    "scene-3": {
+      "ms": 21324,
+      "hold": 18790
+    },
+    "scene-4": {
+      "ms": 19826,
+      "hold": 5600
+    },
+    "scene-ready": {
+      "ms": 13506,
+      "hold": 5600
+    },
+    "witch-down": {
+      "ms": 16192,
+      "hold": 5600
+    },
+    "zombies": {
+      "ms": 18878,
+      "hold": 5600
+    }
+  },
+  "steps": {
+    "1": 5200,
+    "2": 2200,
+    "3": 6800,
+    "4": 0,
+    "5": 5600,
+    "6": 2650,
+    "7": 8000
+  }
+}

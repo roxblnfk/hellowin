@@ -180,6 +180,15 @@
   HUD (docs/spec/frontend.md, «Разметка и DOM-хуки»): ?conn=ok|reconnect|down — the connection lamp green, yellow
   blinking, red; RoadRunner's uptime beside it from ?finale=3 on and in the bar with ?roadrunner=1. The console (?mod=1)
   shows only what works in the scene or finale step: ?mod=1&scene=1, ?mod=1&finale=5, ?mod=1&finale=6&boss=60,100.
+  Autopilot (docs/spec/scenario.md, «Автопилот»; the console's «Автопилот», ?mod=1): the engine runs the server's rules
+  of /dev/autopilot.js every 200 ms — a ready scene or step moves on once the owl has finished (public/autopilot.json)
+  plus the pause, steps 2–4 after their staging, the owl rolls the dice when the room has not rolled 6-6-6, the dawn
+  goes «В бар» after a random 5–10 min, round and round; the console shows the next move. ?autopilot=1 starts it on;
+  ?appause=ms (HELLOWIN_AUTO_PAUSE_MS, default 4000), ?apdawn=min-max (the dawn, ms), ?apdice=ms (the owl's rolls,
+  default 90000), ?apstall=ms (a stuck room forced, default 0 — never), ?aptalk=0..1 (the owl's speech counted shorter);
+  ?aproom=1 — the room does its tasks itself. A quick evening:
+  ?mod=1&autopilot=1&aproom=1&k=0.1&walkers=4&aptalk=0.1&appause=1000&apdawn=6000-9000&apdice=4000;
+  ?mod=1&autopilot=1&scene=1&ready=1&freeze=900 — the console counting down to the sunset.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5" data-chat-max="120"
@@ -296,6 +305,7 @@
     import { SUMMON_MS } from '/js/pixel/finale-timeline.js';
     import { DASH, dashMoment } from '/js/pixel/runner-dash.js';
     import { HORIZON as RR_HORIZON, nextHorizonMeep } from '/js/pixel/runner-horizon.js';
+    import { AUTO, autoTick, createSpeech, speechTimes } from '/dev/autopilot.js';
 
     const params = new URLSearchParams(location.search);
     const root = document.getElementById('app');
@@ -674,7 +684,10 @@
     const pending = new Set();
     // A random 20–60 ms of latency, but in order: the channel never reorders publications.
     let deliveredBy = 0;
+    // The autopilot (autopilotTick): its stored record and the owl's speech clock, fed by every `owl` sent.
+    const autoState = { rec: null, speech: null };
     const deliver = (event) => {
+        if (event.type === 'owl') autoState.speech?.said(event, serverTime());
         const now = simulated ? simTime : performance.now();
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
@@ -1039,6 +1052,79 @@
         return { ok: true, count };
     }
 
+    // The autopilot (docs/spec/scenario.md, «Автопилот») as the server runs it: the rules of /dev/autopilot.js on the
+    // lab's clock, the owl's speech by public/autopilot.json. It acts through the same engine calls as the console.
+    const intParam = (name, fallback) => (params.has(name) ? Math.max(0, Number.parseInt(params.get(name), 10) || 0) : fallback);
+    const [dawnMin, dawnMax] = (params.get('apdawn') ?? '').split('-').map((n) => Number.parseInt(n, 10));
+    // ?aptalk=0..1 shortens the owl's speech for the autopilot's count only: the bubble itself keeps its time.
+    const talkScale = Math.min(1, Math.max(0.01, Number.parseFloat(params.get('aptalk') ?? '1') || 1));
+    const speechTable = (await fetch('/autopilot.json').then((r) => (r.ok ? r.json() : null)).catch(() => null)) ?? speechTimes();
+    const scaled = (ms) => Math.round(ms * talkScale);
+    const talkTable = {
+        ...speechTable,
+        showMs: Object.fromEntries(Object.entries(speechTable.showMs).map(([key, ms]) => [key, ms * talkScale])),
+        holdMs: scaled(speechTable.holdMs),
+        lines: Object.fromEntries(Object.entries(speechTable.lines).map(([id, l]) => [id, { ms: scaled(l.ms), hold: scaled(l.hold), ...(l.delay ? { delay: l.delay } : {}) }])),
+    };
+    const AUTO_CFG = {
+        ...AUTO,
+        pauseMs: intParam('appause', AUTO.pauseMs),
+        diceMs: intParam('apdice', AUTO.diceMs),
+        stallMs: intParam('apstall', AUTO.stallMs),
+        ...(dawnMin >= 0 && dawnMax >= dawnMin ? { dawnMinMs: dawnMin, dawnMaxMs: dawnMax } : {}),
+        steps: speechTable.steps,
+    };
+    autoState.speech = createSpeech(talkTable);
+
+    // Every 200 ms, like the server's ticker: the next move to the console (`auto`, only when it changed), the move itself
+    // once it is due.
+    function autopilotTick() {
+        later(autopilotTick, 200);
+        if (!engine.auto?.on) return;
+        const final = engine.scene >= engine.sceneStages;
+        const state = { round: engine.round, scene: engine.scene, sceneStages: engine.sceneStages, ready: engine.ready, step: final ? engine.finale?.step ?? 0 : null, paused: engine.paused, dice: engine.dice };
+        const { rec, next, due } = autoTick(state, autoState.rec, autoState.speech.until(), serverTime(), AUTO_CFG);
+        autoState.rec = rec;
+        tellAuto({ on: true, next });
+        if (!due) return;
+        const force = next.force ? { force: true } : {};
+        try {
+            if (next.action === 'bar.ready') engineBarReady();
+            else if (next.action === 'scene.next' || next.action === 'again') engineSceneNext({ scene: engine.scene, ...force });
+            else if (next.action === 'finale.step') engineFinaleStep({ step: next.to, ...force });
+            else if (next.action === 'dice.owl') engineDiceOwl();
+        } catch (error) {
+            console.warn('autopilot', next.action, error.message);
+        }
+    }
+    function tellAuto(auto) {
+        if (JSON.stringify(auto) === JSON.stringify(engine.auto)) return;
+        engine.auto = auto;
+        deliver({ type: 'auto', ...structuredClone(auto) });
+    }
+    // RPC `auto {on}`: switched on, it counts every wait from now.
+    function engineAuto({ on }) {
+        if (typeof on !== 'boolean') throw new Error('invalid on');
+        if (on !== engine.auto?.on) {
+            autoState.rec = null;
+            tellAuto({ on, next: null });
+        }
+        return { ok: true, on };
+    }
+
+    // ?aproom=1: the room does what the autopilot waits for — clicks where a click counts, shoots the wandering zombies,
+    // strikes FrankenPHP with every rapier; the bots fetch, clink and drink their beer and say the word on their own.
+    function roomTick() {
+        later(roomTick, 300);
+        const id = randomId();
+        if (id) engineClick(id, randomClicker());
+        const step = engine.scene >= engine.sceneStages ? engine.finale?.step : null;
+        const shooter = wanderers()[0];
+        const zombie = wandering()[0];
+        if (step === CURSED_STEP && shooter && zombie) engineShoot(zombie[0], shooter);
+        if (step === BOSS_STEP) wanderers().forEach((w) => w.item === 'rapier' && engineStrike(w.id));
+    }
+
     // Console RPCs (protocol.md, «Модератор»): `forbidden` before anything else for a non-moderator.
     async function engineCall(method, data) {
         if (!moderator) throw new Error('forbidden');
@@ -1057,6 +1143,7 @@
             case 'cursed.target': return engineCursedTarget(data);
             case 'boss.hp': return engineBossHp(data);
             case 'dice.owl': return engineDiceOwl();
+            case 'auto': return engineAuto(data);
             case 'chat.history': return { ok: true, messages: structuredClone(chatLog), muted: [...chatMuted.values()] };
             case 'chat.mute': return engineChatMute(data);
             case 'stats.reset': {
@@ -2176,6 +2263,7 @@
         }
         dawnSeed();
         engine.paused = params.get('paused') === '1';
+        engine.auto = { on: params.get('autopilot') === '1', next: null };
         settleLimits({ silent: true });
         seedWanderers();
     }
@@ -2255,6 +2343,7 @@
         open: params.get('ui') !== '0' ? undefined : false,
         call: engineCall,
         clickAll: () => engine.elements.forEach((e, i) => later(() => client.clickable(e.id) && engineClick(e.id, randomClicker()), i * 30)),
+        serverNow: serverTime,
     });
     client = createClient(root, scene, {
         requestState: async () => engineSnapshot(),
@@ -2293,6 +2382,8 @@
     // Random clicks go where a click counts: an open bonfire, else the pumpkins (like a room would).
     const randomId = () => {
         const open = engine.elements.filter((e) => client.clickable(e.id));
+        // The bar and the finale past its circle have nothing to click.
+        if (!open.length) return null;
         const bonfire = open.find((e) => e.type === 'bonfire');
         if (bonfire && Math.random() < 0.7) return bonfire.id;
         const list = open.filter((e) => e.type !== 'bonfire' && e.stage < engine.stageMax);
@@ -2394,6 +2485,8 @@
             setInterval(startClinks, 9000);
         }
         if (pumpkinBeerStart) pumpkinBeerRound();
+        autopilotTick();
+        if (params.get('aproom') === '1') roomTick();
     }
     root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
         if (event.target.value !== '') engineJump(Number(event.target.value));
@@ -2407,7 +2500,10 @@
             clearInterval(auto);
             auto = 0;
         } else {
-            auto = setInterval(() => engineClick(randomId(), randomClicker()), 70);
+            auto = setInterval(() => {
+                const id = randomId();
+                if (id) engineClick(id, randomClicker());
+            }, 70);
         }
         autoButton.setAttribute('aria-pressed', String(Boolean(auto)));
     };
@@ -2448,6 +2544,8 @@
         simTime = 0;
         walkTrace.length = 0;
         diceForget();
+        autoState.rec = null;
+        autoState.speech = createSpeech(talkTable);
         client.forgetDice();
         diceState.owl = initial.dice?.owl ?? 0;
         dawnRandom = seeded(1807);
@@ -2470,7 +2568,8 @@
         const wormShotAt = params.has('wshot') ? Math.round(Number.parseInt(params.get('wshot'), 10) / 16) * 16 : -1;
         for (simTime = 0; simTime < freeze; simTime += 16) {
             if (params.get('auto') === '1' && simTime >= nextClick) {
-                engineClick(randomId(), randomClicker());
+                const id = randomId();
+                if (id) engineClick(id, randomClicker());
                 nextClick += 70;
             }
             if (simTime === resetAt) engineReset();
@@ -2522,6 +2621,8 @@
                 chatBotsTalk(seeded(2121));
                 emoteBotsGo(seeded(3131));
                 if (emoteBots().length && params.get('me') === '1') later(() => engineEmote(ME, { emoji: EMOTES[0] }), 600);
+                autopilotTick();
+                if (params.get('aproom') === '1') roomTick();
             }
             if (simTime === 0 && !finaleStart && !barPairs && !barDemo && !rrClinkStart && !still) {
                 const random = seeded(99);

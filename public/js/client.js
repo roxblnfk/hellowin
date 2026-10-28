@@ -167,6 +167,30 @@ export function presenceOf(presence) {
     return { players: Math.max(0, presence.players), connections: Math.max(0, presence.connections) };
 }
 
+// What the autopilot may do next (protocol.md, «Автопилот»): the console's RPC it stands in for.
+const AUTO_ACTIONS = ['bar.ready', 'scene.next', 'finale.step', 'dice.owl', 'again'];
+
+/**
+ * `auto` of a snapshot or an event — the autopilot {on, next} for the console — or null. `next` — {action, to?, at?,
+ * wait?, force?}: `at` the server time it acts, or `wait` — 'room' (the room's task) or 'pause' (the progress pause);
+ * null while it is off.
+ */
+export function autoOf(auto) {
+    if (!auto || typeof auto !== 'object' || typeof auto.on !== 'boolean') return null;
+    const n = auto.next;
+    if (!auto.on || !n || !AUTO_ACTIONS.includes(n.action)) return { on: auto.on, next: null };
+    return {
+        on: true,
+        next: {
+            action: n.action,
+            ...(Number.isInteger(n.to) ? { to: n.to } : {}),
+            ...(Number.isFinite(n.at) ? { at: n.at } : {}),
+            ...(n.wait === 'room' || n.wait === 'pause' ? { wait: n.wait } : {}),
+            ...(n.force === true ? { force: true } : {}),
+        },
+    };
+}
+
 /** `limits` of a snapshot or an event — {players, k, burst, limits} — or null. */
 export function limitsOf(limits) {
     if (!limits || typeof limits !== 'object' || !Number.isFinite(limits.k)) return null;
@@ -225,6 +249,7 @@ export function readSnapshot(root) {
         paused: flag(root.dataset.paused),
         limits: limitsOf(parseJson(root.dataset.limits, null)),
         presence: presenceOf(parseJson(root.dataset.presence, null)),
+        auto: autoOf(parseJson(root.dataset.auto, null)),
         cursed: cursedOf(parseJson(root.dataset.cursed, null)),
         boss: bossOf(parseJson(root.dataset.boss, null)),
         dice: diceOf(parseJson(root.dataset.dice, null)),
@@ -614,6 +639,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paused: Boolean(snapshot.paused),
             limits: limitsOf(snapshot.limits) ?? model.limits,
             presence: presenceOf(snapshot.presence) ?? model.presence,
+            auto: autoOf(snapshot.auto) ?? model.auto,
             cursed: cursedOf(snapshot.cursed),
             boss: bossOf(snapshot.boss),
             dice: diceOf(snapshot.dice),
@@ -1078,6 +1104,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         // Who is online (protocol.md, `presence`): only the console shows it.
         presence(event) {
             model.presence = presenceOf(event) ?? model.presence;
+        },
+
+        // The autopilot (protocol.md, «Автопилот»): service state, only the console shows it; a reset keeps it.
+        auto(event) {
+            model.auto = autoOf(event) ?? model.auto;
         },
 
         // Gone from the server (protocol.md, «Топ стрелков»: the table is `top`); one that still comes only tells `online`.

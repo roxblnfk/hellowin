@@ -49,6 +49,22 @@ export const T = {
 };
 
 /**
+ * How long each finale step's staging plays from its event, ms: the server's autopilot moves on no earlier (it reads
+ * them from public/autopilot.json, `steps`). Step 1 — the countdown and the rising silhouette, 2 — the strikes and the
+ * pumpkins' fall, 3 — RoadRunner's run and «мип-мип», 4 — the numbers panel (the owl's lines outlast it), 5 — RoadRunner
+ * runs off, 6 — the owl flies back in, 7 — the sunrise.
+ */
+export const STEP_MS = {
+    1: SUMMON_MS + T.rumble,
+    2: T.reveal + T.fling + 600,
+    3: T.meep + T.meepMs,
+    4: 0,
+    5: T.leave + T.back,
+    6: T.owlFly + T.owlLand,
+    7: T.sunrise,
+};
+
+/**
  * FrankenPHP burning to ash (docs/spec/frontend.md, «Груда пепла»), ms since he started: the fire catches at his feet
  * and climbs him by `climb`, the body chars from the feet up behind it, from `crumble` it falls from the top into a
  * heap; the body is `frames` frames of `frameMs`, then the flames die down on the heap by `out` and its glow by `cool`.

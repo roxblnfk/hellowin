@@ -115,6 +115,31 @@ const TEXT = pick({
         finale: 'финал',
         barName: 'бар',
         ready: 'готова',
+        autoOn: 'Автопилот: вкл',
+        autoOff: 'Автопилот: выкл',
+        autoTitle: 'Сценарий идёт сам: переход — когда зал выполнил задачу, сова договорила и прошла пауза; на рассвете — через 5–10 минут «В бар», и по кругу. Ведёт сервер, и при закрытом пульте; ручные кнопки работают',
+        autoBadge: 'автопилот',
+        autoDo: {
+            'bar.ready': () => 'отмашка бара',
+            'scene.next': (to, final) => (to >= final ? 'финал' : ['бар', 'день', 'закат', 'ночь'][to] ?? `сцена ${to}`),
+            'finale.step': (to) => `шаг финала ${to}`,
+            'dice.owl': () => 'сова бросает кости',
+            again: () => 'в бар',
+        },
+        autoForce: 'без готовности',
+        autoIn: (left) => `через ${left}`,
+        autoNow: 'сейчас',
+        autoPause: 'стоит: пауза прогресса',
+        autoWait: {
+            bar: 'ждёт зал: цель бара',
+            pumpkins: 'ждёт зал: тыквы',
+            bonfire: 'ждёт зал: тыквы и костёр',
+            circle: 'ждёт зал: круг',
+            dice: 'ждёт зал: 6-6-6',
+            cursed: 'ждёт зал: цели проклятого мира',
+            boss: 'ждёт зал: FrankenPHP',
+            room: 'ждёт зал',
+        },
     },
     en: {
         bonus: 'bonus until the round ends',
@@ -197,6 +222,31 @@ const TEXT = pick({
         finale: 'finale',
         barName: 'bar',
         ready: 'ready',
+        autoOn: 'Autopilot: on',
+        autoOff: 'Autopilot: off',
+        autoTitle: 'The story runs by itself: it moves on once the room has done its task, the owl has finished talking and a pause has passed; at the dawn, after 5–10 minutes, «To the bar», and round again. The server runs it, the console may be closed; the buttons still work',
+        autoBadge: 'autopilot',
+        autoDo: {
+            'bar.ready': () => 'bar go-ahead',
+            'scene.next': (to, final) => (to >= final ? 'finale' : ['bar', 'day', 'sunset', 'night'][to] ?? `scene ${to}`),
+            'finale.step': (to) => `finale step ${to}`,
+            'dice.owl': () => 'the owl rolls the dice',
+            again: () => 'to the bar',
+        },
+        autoForce: 'without readiness',
+        autoIn: (left) => `in ${left}`,
+        autoNow: 'now',
+        autoPause: 'holding: progress paused',
+        autoWait: {
+            bar: 'waits for the room: the bar goal',
+            pumpkins: 'waits for the room: pumpkins',
+            bonfire: 'waits for the room: pumpkins and bonfire',
+            circle: 'waits for the room: the circle',
+            dice: 'waits for the room: 6-6-6',
+            cursed: 'waits for the room: the cursed world goals',
+            boss: 'waits for the room: FrankenPHP',
+            room: 'waits for the room',
+        },
     },
 });
 const BONUS = TEXT.bonus;
@@ -217,6 +267,36 @@ export function limitsText(limits) {
     if (!limits) return null;
     const parts = LIMIT_TEXTS.filter(([key]) => Number.isInteger(limits.limits?.[key])).map(([key, text]) => text(limits.limits[key]));
     return parts.length ? parts.join(' · ') : TEXT.noLimits;
+}
+
+/** m:ss of the ms left, rounded up so the line never says 0:00 before the move. */
+const clock = (ms) => {
+    const s = Math.ceil(Math.max(0, ms) / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// What the room is doing while the autopilot waits for it, by the scene or the finale step of the model.
+function roomOf(model) {
+    if (isBar(model.scene)) return TEXT.autoWait.bar;
+    if (model.scene < model.sceneStages) {
+        const bonfire = model.elements?.find((e) => e.type === 'bonfire');
+        return bonfire?.stageMax > 0 ? TEXT.autoWait.bonfire : TEXT.autoWait.pumpkins;
+    }
+    return { 0: TEXT.autoWait.circle, [DICE_STEP]: TEXT.autoWait.dice, [CURSED_STEP]: TEXT.autoWait.cursed, [BOSS_STEP]: TEXT.autoWait.boss }[model.finale?.step ?? 0] ?? TEXT.autoWait.room;
+}
+
+/**
+ * The console's line of the autopilot (protocol.md, «Автопилот»): «→ ночь · через 0:12», «→ шаг финала 1 · ждёт зал:
+ * круг», «→ в бар · стоит: пауза прогресса»; null while it is off or has not said its next move. `now` — server time.
+ */
+export function autoText(model, now) {
+    const next = model?.auto?.on ? model.auto.next : null;
+    if (!next) return null;
+    const what = [`→ ${TEXT.autoDo[next.action](next.to, model.sceneStages)}`, next.force && TEXT.autoForce].filter(Boolean).join(' ');
+    const when = next.wait === 'pause' ? TEXT.autoPause
+        : next.at !== undefined ? (next.at > now ? TEXT.autoIn(clock(next.at - now)) : TEXT.autoNow)
+            : roomOf(model);
+    return `${what} · ${when}`;
 }
 
 const roundK = (k) => Math.round(k * 100) / 100;
@@ -258,10 +338,11 @@ const el = (tag, attrs = {}, text = '') => {
  * @param {(method: string, data: object) => Promise<object>} actions.call  console RPC; rejects with Error(code)
  * @param {() => void} actions.clickAll  RPC `click` on every pumpkin
  * @param {boolean} [actions.open]  start expanded or collapsed instead of the remembered state
+ * @param {() => number} [actions.serverNow]  the server's clock, for the autopilot's countdown
  * @returns {null|{update: (model: object) => void, say: (event: object) => void}}  update repaints the console from the client
  *   model; say adds a `say` event to the chat log
  */
-export function initDebugPanel(panel, { call, clickAll, open }) {
+export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => Date.now() }) {
     if (!panel) return null;
     panel.hidden = true;
     panel.classList.add('console');
@@ -298,9 +379,22 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     const reset = button(story, { 'data-action': 'reset' }, TEXT.reset);
     // The pause of the progress (protocol.md, «Пауза прогресса»): the scene's task stands still, the flyers fly on.
     const pause = button(story, { 'data-action': 'pause', 'aria-pressed': 'false', title: TEXT.pauseTitle }, TEXT.pauseOff);
+    // The autopilot (protocol.md, «Автопилот») lives on the server; here its switch and what it does next.
+    const auto = button(story, { 'data-action': 'auto', 'aria-pressed': 'false', title: TEXT.autoTitle }, TEXT.autoOff);
     // The service numbers left the HUD for here: the round, the scene's number, the finale step.
     const storyInfo = el('span', { class: 'console__info', 'data-console-story': '' });
-    story.append(storyInfo);
+    const autoInfo = el('span', { class: 'console__info console__auto', 'data-console-auto': '', 'aria-live': 'off' });
+    autoInfo.hidden = true;
+    story.append(storyInfo, autoInfo);
+    const paintAuto = () => {
+        const text = autoText(model, serverNow());
+        autoInfo.hidden = text === null;
+        autoInfo.textContent = text ?? '';
+    };
+    // The countdown ticks between events; a hidden panel has nothing to tick.
+    setInterval(() => {
+        if (!panel.hidden && model?.auto?.next?.at !== undefined) paintAuto();
+    }, 1000);
 
     // The bar's goal (scenario.md, «Сцена 0 — «Бар»»): mugs the hall drinks before going out; the nudge goes without it.
     const pub = group(TEXT.groups.bar);
@@ -497,6 +591,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
     };
     burst.addEventListener('click', () => send(burst, 'flyers.burst', {}, { done: launched }));
     pause.addEventListener('click', () => model && send(pause, 'pause', { on: !model.paused }));
+    auto.addEventListener('click', () => model && send(auto, 'auto', { on: !model.auto?.on }));
     kDown.addEventListener('click', () => model && send(kDown, 'thresholds', { k: clampK(model.k / K_STEP) }));
     kUp.addEventListener('click', () => model && send(kUp, 'thresholds', { k: clampK(model.k * K_STEP) }));
     kForm.addEventListener('submit', async (event) => {
@@ -572,6 +667,11 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             pause.setAttribute('aria-pressed', String(model.paused));
             setLabel(pause, model.paused ? TEXT.pauseOn : TEXT.pauseOff);
             paused.hidden = !model.paused;
+            // A server without the autopilot sends no `auto`: the switch stays away.
+            auto.hidden = !model.auto;
+            auto.setAttribute('aria-pressed', String(model.auto?.on === true));
+            setLabel(auto, model.auto?.on ? TEXT.autoOn : TEXT.autoOff);
+            paintAuto();
 
             const k = Number(model.k ?? 1);
             kValue.textContent = `×${formatK(k)}`;
@@ -586,6 +686,7 @@ export function initDebugPanel(panel, { call, clickAll, open }) {
             // step 5 (the goals).
             if (model.ready && !isBar(model.scene) && (!final || current === 0 || current === DICE_STEP || current === CURSED_STEP)) parts.push(TEXT.ready);
             if (k !== 1) parts.push(`×${formatK(k)}`);
+            if (model.auto?.on) parts.push(TEXT.autoBadge);
             summary.textContent = parts.join(' · ');
         },
     };
