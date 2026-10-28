@@ -17,14 +17,14 @@ import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { MEEP, T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
-import { horizonAt } from './runner-horizon.js';
+import { horizonRunAt } from './runner-horizon.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { EMOTE_MS } from '../emote.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
-import { ELEPHANT, FART, PUFFS as FART_PUFFS, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
+import { ELEPHANT, FART, PUFFS as FART_PUFFS, addFart, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
 import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, counterMugs, mugSlots, paintBar, pourBatch } from './bar.js';
@@ -332,6 +332,8 @@ export async function createScene(rootEl, snapshot) {
     const flyers = new Map();
     // Server time in ms; the client model supplies it with the clock offset (setServerClock).
     let serverNow = () => Date.now();
+    // The moderator's extra run of RoadRunner on the horizon, { at, ltr } of the server, or null (setRunner).
+    let manualRun = null;
     // Moments the sound plays that no channel event marks (sound.js): set by onCue.
     let cue = () => {};
     const bushes = new Map();
@@ -2272,15 +2274,25 @@ export async function createScene(rootEl, snapshot) {
         return cache.get(def);
     }
 
-    // The banner under the elephant; the fart's puffs and cloud over both, in the far plan's layer.
+    // The banner under the elephant; each fart's puffs and cloud over both, in the far plan's layer.
     function elephantParts(f) {
         const layer = f.sprite.parent;
         f.banner = new Sprite();
         layer.addChildAt(f.banner, layer.getChildIndex(f.sprite));
-        f.puffs = Array.from({ length: FART.puffCount }, () => layer.addChild(new Sprite()));
-        f.cloud = layer.addChild(new Sprite());
-        f.parts = [f.banner, f.cloud, ...f.puffs];
-        f.fart = null;
+        f.parts = [f.banner];
+        f.farts = [];
+        f.fartSlots = [];
+    }
+
+    // Sprites for the i-th fart alive, made on first need and reused: a cloud and its puffs.
+    function fartSlot(f, i) {
+        while (f.fartSlots.length <= i) {
+            const layer = f.sprite.parent;
+            const slot = { puffs: Array.from({ length: FART.puffCount }, () => layer.addChild(new Sprite())), cloud: layer.addChild(new Sprite()) };
+            f.fartSlots.push(slot);
+            f.parts.push(slot.cloud, ...slot.puffs);
+        }
+        return f.fartSlots[i];
     }
 
     /**
@@ -2306,14 +2318,14 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /**
-     * One frame of the elephant on server time: the flap, the bob, the waving banner; from a `fart` its strain, the
-     * puffs and the cloud rising from where its rump was at `at`. False once the flight and the cloud are both over.
+     * One frame of the elephant on server time: the flap, the bob, the waving banner; from each `fart` its strain, the
+     * puffs and the cloud rising from where its rump was at its `at`. False once the flight and every cloud are over.
      */
     function animateElephant(f) {
         const now = serverNow();
-        const fart = f.fart ? fartAt(now - f.fart.at, reduced) : null;
+        const farts = f.farts.map((e) => ({ at: e.at, ...fartAt(now - e.at, reduced, e.hurry === null ? null : now - e.hurry) }));
         const flying = now < f.expiresAt;
-        if (!flying && !(fart?.cloud)) return false;
+        if (!flying && !farts.some((e) => e.cloud)) return false;
         const ltr = !f.flip;
         const local = Math.max(0, now - f.launchedAt);
         const fly = flightAt(local, reduced);
@@ -2322,24 +2334,30 @@ export async function createScene(rootEl, snapshot) {
         f.sprite.visible = flying;
         f.banner.visible = flying;
         if (flying) {
-            const art = elephantArt(fart?.strain ? ELEPHANT.strain : ELEPHANT.fly[fly.frame]);
+            const art = elephantArt(farts.some((e) => e.strain) ? ELEPHANT.strain : ELEPHANT.fly[fly.frame]);
             placeArt(f.sprite, art, f.pos.x, f.pos.y);
             f.sprite.scale.x = ltr ? 1 : -1;
             f.art = art;
             const hook = hookOf(Math.round(f.pos.x), Math.round(f.pos.y), ltr);
             placeArt(f.banner, elephantArt(bannerFrame(fly.wave, ltr ? 'right' : 'left')), hook.x, hook.y);
         } else f.art = null;
-        const rump = fart && elephantPath(f, clamp((f.fart.at - f.launchedAt) / f.duration, 0, 1));
-        const origin = rump && hookOf(rump.x, rump.y, ltr);
         const back = ltr ? -1 : 1;
-        f.puffs.forEach((s, i) => {
-            const p = fart?.puffs[i];
-            s.visible = Boolean(p);
-            if (p) placeArt(s, fartArt(FART_PUFFS[p.size]), origin.x + back * p.back, origin.y - p.up);
+        const live = farts.filter((e) => !e.done);
+        f.farts = f.farts.filter((e, i) => !farts[i].done);
+        live.forEach((fart, i) => {
+            const slot = fartSlot(f, i);
+            const rump = elephantPath(f, clamp((fart.at - f.launchedAt) / f.duration, 0, 1));
+            const origin = hookOf(rump.x, rump.y, ltr);
+            slot.puffs.forEach((s, k) => {
+                const p = fart.puffs[k];
+                s.visible = Boolean(p);
+                if (p) placeArt(s, fartArt(FART_PUFFS[p.size]), origin.x + back * p.back, origin.y - p.up);
+            });
+            const { cloud } = fart;
+            slot.cloud.visible = Boolean(cloud);
+            if (cloud) placeArt(slot.cloud, fartArt(fartCloud(cloud.scale, cloud.melt)), origin.x + back * cloud.back, origin.y - cloud.up);
         });
-        const cloud = fart?.cloud;
-        f.cloud.visible = Boolean(cloud);
-        if (cloud) placeArt(f.cloud, fartArt(fartCloud(cloud.scale, cloud.melt)), origin.x + back * cloud.back, origin.y - cloud.up);
+        for (const slot of f.fartSlots.slice(live.length)) for (const s of [slot.cloud, ...slot.puffs]) s.visible = false;
         return true;
     }
 
@@ -4234,6 +4252,7 @@ export async function createScene(rootEl, snapshot) {
         centre,
         clock: () => clock,
         serverNow: () => serverNow(),
+        manualRun: () => manualRun,
         reduced: () => reduced,
         defTexture,
         flyerArt,
@@ -4382,7 +4401,7 @@ export async function createScene(rootEl, snapshot) {
     /*
      * RoadRunner on the horizon (docs/spec/frontend.md, «RoadRunner на горизонте») in every scene but the bar, until
      * the finale's step 3 hands him to finale-stage.js: the far flyer's run on the server schedule of
-     * runner-horizon.js, drawn like a far flyer — behind the tree and the fence, hazy, feet on our horizon line.
+     * runner-horizon.js or the moderator's extra run, drawn like a far flyer — behind the tree and the fence, hazy, feet on our horizon line.
      */
     const HORIZON_OFF_STEP = 3;
     const horizonSprite = new Sprite();
@@ -4393,7 +4412,7 @@ export async function createScene(rootEl, snapshot) {
 
     function animateHorizonRunner() {
         const off = isBar(state.scene) || (state.scene >= state.sceneStages && (finale.step ?? 0) >= HORIZON_OFF_STEP);
-        const h = off ? null : horizonAt(serverNow());
+        const h = off ? null : horizonRunAt(serverNow(), manualRun);
         horizonRunner = null;
         horizonSprite.visible = false;
         if (!h) return;
@@ -4662,14 +4681,15 @@ export async function createScene(rootEl, snapshot) {
 
         /**
          * Channel event `fart`: the elephant strains and lets out the Fart Time cloud, timed from `at` on the server clock
-         * (a late one joins midway, an old one shows what is left of the cloud); once per elephant. The shooter fires at
-         * it, if the event is fresh.
+         * (a late one joins midway, an old one shows what is left of the cloud). Every new `at` is a fart of its own, with
+         * its own strain, puffs and cloud; the same `at` again is ignored. The shooter fires at it, if the event is fresh.
          */
         fart(event) {
             const f = flyers.get(event.flyer);
-            if (f?.kind !== 'elephant' || f.fart) return;
-            f.fart = { at: Number.isFinite(event.at) ? event.at : serverNow() };
-            if (serverNow() - f.fart.at < FART.staleMs) walkerShot(event);
+            if (f?.kind !== 'elephant') return;
+            const now = serverNow();
+            const at = Number.isFinite(event.at) ? event.at : now;
+            if (addFart(f.farts, at, now) && now - at < FART.staleMs) walkerShot(event);
         },
 
         /** Channel event `throw`: the walker's empty mug flies at the flyer and bursts; its hands are empty from now. */
@@ -4846,6 +4866,11 @@ export async function createScene(rootEl, snapshot) {
         /** Whether the owl has left the branch (finale step 5): its lines are then shown over FrankenPHP. */
         owlGone() {
             return owlGone();
+        },
+
+        /** The moderator's run of RoadRunner on the horizon (`runner` of the snapshot or the event): { at, ltr } or null. */
+        setRunner(run) {
+            manualRun = run ?? null;
         },
 
         /** Sets the server-time source flights are measured against. */

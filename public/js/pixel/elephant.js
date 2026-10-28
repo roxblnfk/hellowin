@@ -337,7 +337,7 @@ export function flightAt(local, reduced = false) {
  * The fart's timeline, ms from `at`: the elephant strains until `strain`; `puffCount` green puffs burst out behind it
  * `puffGap` apart, each living `puffLife`; the cloud forms at `cloud`, is grown by `grown`, rises `rise` px drifting `drift`
  * px back and keeps swelling, melts away from `melt` and is gone at `gone`. A `fart` heard later than `staleMs`
- * stays silent.
+ * stays silent. One elephant keeps at most `pool` clouds: one pushed out melts away within `hurry`.
  */
 export const FART = {
     strain: 700,
@@ -351,7 +351,24 @@ export const FART = {
     rise: 36,
     drift: 8,
     staleMs: 1500,
+    pool: 4,
+    hurry: 400,
 };
+
+/**
+ * Adds a fart at `at` to an elephant's `farts` ([{at, hurry}], oldest first) heard at `now`, server ms: the same `at`
+ * twice is one fart, a gone one is dropped; past `pool` clouds the oldest not yet hurried gets `hurry: now`. False
+ * when nothing new was added.
+ */
+export function addFart(farts, at, now) {
+    for (let i = farts.length - 1; i >= 0; i--) if (now - farts[i].at >= FART.gone) farts.splice(i, 1);
+    if (now - at >= FART.gone || farts.some((f) => f.at === at)) return false;
+    farts.push({ at, hurry: null });
+    farts.sort((a, b) => a.at - b.at);
+    const over = farts.filter((f) => f.hurry === null).length - FART.pool;
+    for (const f of farts.filter((f) => f.hurry === null).slice(0, Math.max(0, over))) f.hurry = now;
+    return true;
+}
 
 const easeOut = (p) => 1 - (1 - p) ** 2.4;
 const step = (v, q) => Math.round(v / q) * q;
@@ -360,14 +377,16 @@ const step = (v, q) => Math.round(v / q) * q;
  * The fart `ms` after its `at`. Offsets are art px from the hook at the moment of the fart: `back` — away from where
  * the elephant flies, `up` — upwards. Returns { strain, puffs: [{back, up, size: 0–2}], cloud: {back, up, scale,
  * melt} | null, done }; `scale` steps by 0.05 and `melt` by 1/8, so the sprites are few. Reduced motion: no puffs, the
- * cloud stands still at full size and blinks out at the end.
+ * cloud stands still at full size and blinks out at the end. `hurried` — ms since the cloud was pushed out of the pool
+ * (null — it was not): it melts away within FART.hurry, the puffs and the strain run on.
  */
-export function fartAt(ms, reduced = false) {
+export function fartAt(ms, reduced = false, hurried = null) {
     if (!(ms >= 0)) return { strain: false, puffs: [], cloud: null, done: false };
-    const done = ms >= FART.gone;
+    const out = hurried !== null && hurried >= FART.hurry;
+    const done = ms >= FART.gone || (out && ms >= FART.strain && ms >= FART.puffLife + FART.puffGap * (FART.puffCount - 1));
     const strain = ms < FART.strain;
     if (reduced) {
-        const cloud = ms < FART.gone ? { back: 12, up: 16, scale: 1, melt: 0 } : null;
+        const cloud = ms < FART.gone && !out ? { back: 12, up: 16, scale: 1, melt: 0 } : null;
         return { strain, puffs: [], cloud, done };
     }
     const puffs = [];
@@ -378,15 +397,16 @@ export function fartAt(ms, reduced = false) {
         puffs.push({ back: Math.round(2 + (9 + i * 2.5) * e), up: Math.round((i % 2 ? 2 : -2) * e + (2 + i * 1.2) * e), size: Math.min(2, Math.floor(0.5 + k * 3)) });
     }
     let cloud = null;
-    if (ms >= FART.cloud && !done) {
+    if (ms >= FART.cloud && !done && !out) {
         const life = (ms - FART.cloud) / (FART.gone - FART.cloud);
         const grow = easeOut(clamp((ms - FART.cloud) / (FART.grown - FART.cloud), 0, 1));
         const swell = clamp((ms - FART.grown) / (FART.gone - FART.grown), 0, 1);
+        const melt = Math.max(clamp((ms - FART.melt) / (FART.gone - FART.melt), 0, 1), hurried === null ? 0 : clamp(hurried / FART.hurry, 0, 1));
         cloud = {
             back: Math.round(10 + FART.drift * life),
             up: Math.round(6 + FART.rise * life ** 0.85),
             scale: step(0.35 + 0.65 * grow + 0.2 * swell, 0.05),
-            melt: step(clamp((ms - FART.melt) / (FART.gone - FART.melt), 0, 1), 1 / 8),
+            melt: step(melt, 1 / 8),
         };
     }
     return { strain, puffs, cloud, done };

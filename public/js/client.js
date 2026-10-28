@@ -122,6 +122,14 @@ function parseFinale(json) {
     }
 }
 
+/**
+ * The moderator's run of RoadRunner on the horizon (protocol.md, «Пробежка RoadRunner по кнопке»): `runner` of the
+ * snapshot or the event as { at, ltr }; anything else — none.
+ */
+export function manualRunOf(run) {
+    return run && Number.isFinite(run.at) && run.at > 0 && typeof run.ltr === 'boolean' ? { at: run.at, ltr: run.ltr } : null;
+}
+
 /** `bar` of a snapshot or an event as the model keeps it; anything else is the empty counter. */
 export function barOf(bar) {
     if (!bar || !Number.isInteger(bar.mugs)) return { ...NO_BAR };
@@ -258,6 +266,7 @@ export function readSnapshot(root) {
         dawn: dawnOf(parseJson(root.dataset.dawn, null)),
         // The wandering zombies alive (protocol.md, «Бродячие зомби»): `flyer` events with `wander`, steps 5–6 only.
         flyers: parseList(root.dataset.flyers),
+        runner: manualRunOf(parseJson(root.dataset.runner, null)),
         elements: [...root.querySelectorAll('[data-element]')].map((el) => {
             const element = {
                 id: el.dataset.element,
@@ -315,6 +324,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     let clocking = null;
     takeTime(model.now);
     scene?.setServerClock(() => now() + offset);
+    scene?.setRunner?.(model.runner);
 
     const hud = (name) => root.querySelector(`[data-hud-${name}]`);
     const button = (id) => root.querySelector(`[data-element="${CSS.escape(id)}"]`);
@@ -646,7 +656,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             dice: diceOf(snapshot.dice),
             dawn: dawnOf(snapshot.top ?? snapshot.dawn),
             flyers: Array.isArray(snapshot.flyers) ? snapshot.flyers : [],
+            runner: manualRunOf(snapshot.runner),
         });
+        scene?.setRunner?.(model.runner);
         stageMaxByScene.set(model.scene, model.stageMax);
         // The owl's rolls survive a reload in the snapshot (`dice.owl`): the console offers the right attempt.
         model.owlRolls = Math.max(model.owlRolls, owlRollsOf(snapshot.dice));
@@ -992,7 +1004,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.meep?.();
         },
 
-        // The first shot at the elephant: its fart, drawn by the scene from `at`; the owl's «Fart Time!» comes as `owl`.
+        // The moderator's extra run on the horizon: drawn from `at` by the scene, nothing once it is over.
+        runner(event) {
+            model.runner = manualRunOf(event) ?? model.runner;
+            scene?.setRunner?.(model.runner);
+        },
+
+        // A shot at the elephant past its cooldown: a fart, drawn by the scene from `at`; the owl's «Fart Time!» on the
+        // first one comes as `owl`.
         fart(event) {
             scene?.fart?.(event);
         },
@@ -1137,6 +1156,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             model.boss = null;
             model.dice = null;
             model.flyers = [];
+            model.runner = null;
+            scene?.setRunner?.(null);
             forgetDice();
             wordClosed = false;
             // The goal is the room's (it survives a reset): an event without one keeps ours.

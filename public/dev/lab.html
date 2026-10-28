@@ -59,7 +59,10 @@
   scene ignores it) and a zombie at the start
   (?zshot=ms shoots the zombie). ?elephant=1 launches the elephant with its banner 30 % into its flight (0.6 — 60 %;
   ?elephantrtl=1 — to the left), ?fart=ms has the first walker shoot it then: the fart and the owl's «Fart Time!»
-  (?elephant=1&fart=0&freeze=1200 — the cloud forming, 3200 — melting). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS (worms in the final scene, with
+  (?elephant=1&fart=0&freeze=1200 — the cloud forming, 3200 — melting); ?farts=N&fartgap=ms — N shots that far apart
+  (default 1100: a fart each past the 1 s cooldown, the owl on the first only; ?elephant=1&fart=0&farts=3&freeze=2600
+  — three clouds); ?elephantlow=1 — the low band over the hills (0 — the usual one; without it a third of flights go
+  low). Flyer kinds follow the scene like HELLOWIN_FLYER_KINDS (worms in the final scene, with
   a small wobble; the cursed world flies worms, bats and fireflies); ?worms=1 sends three worms over the lawn at the start
   in any scene (?wshot=ms shoots the first one); ?fireflies=1 launches three fireflies at the start (?fshot=ms shoots a
   near one); ?flies=N launches N flies (the bar's flyer: loops between landings on the tables and the counter) at the
@@ -136,7 +139,9 @@
   his N-th run after the fixed epoch plus the frozen moment, as he passes ?rrx of the width (default 0.8, clear of the
   fence and the tree): ?scene=1&rrrun=1&freeze=3000 by day,
   ?scene=3&rrrun=1&freeze=3000 at night; ?rrmeep=N with ?freeze — the middle of his N-th «Мип-мип!» on the horizon at
-  the dawn: ?finale=7&rrmeep=1&freeze=8000.
+  the dawn: ?finale=7&rrmeep=1&freeze=8000. The moderator's run («Бегун» on the console, RPC `runner`): ?rrman=K with
+  ?freeze — the snapshot's `runner` puts the frozen moment K of the way into it (?rrltr=0 — right to left):
+  ?scene=1&rrman=0.5&freeze=3000, ?finale=6&rrman=0.5&freeze=3000.
   Rapier (docs/spec/frontend.md, «Рапира»; finale steps 5–7): ?finale=5 — the cursed world's goal: the engine counts
   mugs drunk and zombies slain against the limits `drinks` and `zombies` (?goal=N — both flat N; the console's ±5 adds),
   ?cursed=drunk,slain — starting counters; `beer {pumpkin}` hands out a mug at a reachable pumpkin, drinking needs a clink
@@ -454,6 +459,11 @@
     // RoadRunner has been up a while when the lab starts: the finale's uptime (protocol.md, `startedAt`).
     const UPTIME = (3 * 60 + 7) * 60000 + 20000;
     root.dataset.startedAt = String(serverTime() - UPTIME);
+    // ?rrman=K (with ?freeze): the moderator's run of RoadRunner in the snapshot, the frozen moment K of the way into it.
+    const rrMan = Number.parseFloat(params.get('rrman') ?? '');
+    if (rrMan >= 0 && rrMan < 1 && freeze > 0) {
+        root.dataset.runner = JSON.stringify({ at: EPOCH + freeze - Math.round(RR_HORIZON.runMs * rrMan), ltr: params.get('rrltr') !== '0' });
+    }
 
     // Walking of players.md («На поле»): the zone of app/config/hellowin.php (`walk`), the lawn rectangle minus the
     // patch ellipse, and HELLOWIN_WALK_SPEED in percents per second along the path.
@@ -795,6 +805,7 @@
 
     function engineReset({ again = false } = {}) {
         engine.round++;
+        engine.runner = null;
         // A reset lifts the pause of the progress; the `reset` event says so, no `pause` comes.
         engine.paused = false;
         engine.scene = 0;
@@ -1165,6 +1176,16 @@
                 deliver({ type: topOld ? 'dawn' : 'top', board: [] });
                 return { ok: true, players };
             }
+            case 'runner': {
+                // Like the server's: where he runs on the horizon (all but the bar and the finale's steps 3–4), one at a time.
+                const step = engine.scene >= engine.sceneStages ? engine.finale?.step ?? 0 : null;
+                if (engine.scene === 0 || step === 3 || step === 4) throw new Error('not here');
+                const at = serverTime();
+                if (engine.runner && at < engine.runner.at + RR_HORIZON.runMs) throw new Error('busy');
+                engine.runner = { at, ltr: Math.random() < 0.5 };
+                deliver({ type: 'runner', ...engine.runner });
+                return { ok: true, ...engine.runner };
+            }
             case 'meep':
                 // A flyer that is no id is dropped, like the server's.
                 deliver({ type: 'meep', ...(typeof data?.flyer === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(data.flyer) ? { flyer: data.flyer } : {}), at: serverTime() });
@@ -1213,14 +1234,20 @@
     }
 
     // The elephant with its banner (protocol.md, «Слон»): across the sky in HELLOWIN_ELEPHANT_DURATION at depth 0, no
-    // points, never hit; `progress` (0–1) launches it that far into its flight already (?elephant with ?freeze).
+    // points, never hit; `progress` (0–1) launches it that far into its flight already (?elephant with ?freeze). It
+    // flies in the usual band of heights, or in HELLOWIN_ELEPHANT_LOW_CHANCE of flights in the low one over the hills;
+    // `low` forces one or the other. Its y drifts 2 % down along the way, inside the band.
     const ELEPHANT_MS = 26000;
-    function engineElephant(ltr = Math.random() < 0.5, progress = 0) {
+    const ELEPHANT_BAND = { high: [8, 20], low: [22, 26] };
+    const ELEPHANT_LOW_CHANCE = 0.33;
+    const FART_COOLDOWN_MS = 1000;
+    function engineElephant(ltr = Math.random() < 0.5, progress = 0, low = Math.random() < ELEPHANT_LOW_CHANCE) {
         const id = nextId();
         const launchedAt = serverTime() - Math.round(progress * ELEPHANT_MS);
         const expiresAt = launchedAt + ELEPHANT_MS;
-        const y = simulated ? 13 : 10 + Math.round(Math.random() * 8);
-        live.set(id, { until: expiresAt + 500, points: 0, kind: 'elephant', shot: false, farted: false });
+        const [min, max] = ELEPHANT_BAND[low ? 'low' : 'high'];
+        const y = simulated ? (low ? min + 1 : 13) : min + Math.round(Math.random() * (max - min - 2));
+        live.set(id, { until: expiresAt + 500, points: 0, kind: 'elephant', shot: false, fartAt: null });
         deliver({ type: 'flyer', flyer: id, kind: 'elephant', depth: 0, from: { x: ltr ? -10 : 110, y }, to: { x: ltr ? 110 : -10, y: y + 2 }, duration: ELEPHANT_MS, points: 0, launchedAt, expiresAt });
         return id;
     }
@@ -1379,11 +1406,13 @@
             deliver({ type: 'throw', player: { id: player.id }, flyer: id, at: serverTime() });
         }
         const f = live.get(id);
-        // The first shot at the elephant, whoever fires it: its fart and the owl's «Fart Time!», once; a miss all the same.
-        if (f?.kind === 'elephant' && !f.farted && serverTime() <= f.until) {
-            f.farted = true;
-            deliver({ type: 'fart', flyer: id, ...(player ? { player: { id: player.id } } : {}), at: serverTime() });
-            deliver({ type: 'owl', line: 'fart-time' });
+        // A shot at the elephant, whoever fires it, a cooldown after its last fart: a fart of its own; the owl's
+        // «Fart Time!» on the first one only. A miss all the same.
+        if (f?.kind === 'elephant' && serverTime() <= f.until && (f.fartAt === null || serverTime() - f.fartAt >= FART_COOLDOWN_MS)) {
+            const first = f.fartAt === null;
+            f.fartAt = serverTime();
+            deliver({ type: 'fart', flyer: id, ...(player ? { player: { id: player.id } } : {}), at: f.fartAt });
+            if (first) deliver({ type: 'owl', line: 'fart-time' });
         }
         if (!f || f.shot || f.kind === 'roadrunner' || f.kind === 'elephant' || serverTime() > f.until) return { ok: true, hit: false };
         f.shot = true;
@@ -2342,11 +2371,18 @@
             });
         }
         // ?elephant=1 — the elephant already 30 % into its flight (a fraction under 1 — that far in), ?elephantrtl=1 —
-        // flying to the left; ?fart=ms — the first walker (anonymous without walkers) shoots it at that moment.
+        // flying to the left, ?elephantlow=1 / 0 — in the low band or the usual one; ?fart=ms — the first walker
+        // (anonymous without walkers) shoots it at that moment, ?farts=N — N shots from then on, ?fartgap=ms apart.
         if (params.has('elephant')) {
             const into = Number.parseFloat(params.get('elephant'));
-            const elephant = engineElephant(params.get('elephantrtl') !== '1', into > 0 && into < 1 ? into : 0.3);
-            if (params.has('fart')) later(() => engineShoot(elephant, engine.walkers[0] ?? null), Math.max(0, Number.parseInt(params.get('fart'), 10) || 0));
+            const low = params.has('elephantlow') ? params.get('elephantlow') === '1' : undefined;
+            const elephant = engineElephant(params.get('elephantrtl') !== '1', into > 0 && into < 1 ? into : 0.3, low);
+            if (params.has('fart')) {
+                const from = Math.max(0, Number.parseInt(params.get('fart'), 10) || 0);
+                const gap = Math.max(0, Number.parseInt(params.get('fartgap') ?? '1100', 10) || 0);
+                const shots = Math.max(1, Number.parseInt(params.get('farts') ?? '1', 10) || 1);
+                for (let i = 0; i < shots; i++) later(() => engineShoot(elephant, engine.walkers[0] ?? null), from + i * gap);
+            }
         }
         return { zombie, worm: worms[0] ?? null, firefly: fireflies[1] ?? null, fly: flies[0] ?? null };
     }

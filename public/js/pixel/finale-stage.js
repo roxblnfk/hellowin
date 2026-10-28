@@ -6,7 +6,7 @@ import { EMISSIVE, LIT_PALETTE, halo as groundHalo } from './night.js';
 import { PALETTE } from './palette.js';
 import { BURN, BURN_SPARKS, T, burnFlame, burnFrameOf, burnLight, burnSparksAt } from './finale-timeline.js';
 import { DASH, dashAt, dashSpan, dustAt } from './runner-dash.js';
-import { horizonAt } from './runner-horizon.js';
+import { horizonRunAt } from './runner-horizon.js';
 import { pick } from '../i18n.js';
 
 /**
@@ -216,7 +216,8 @@ export const ritualOf = (step, ready, t) => (step === 0 && ready) || step === 1 
 
 /**
  * @param {object} env  scene internals: layers (ground, light, far, fx, labels), layout(), lighting(), centre() — the
- *   circle's foot in art px, clock(), serverNow(), reduced(), defTexture(def, lit), flyerArt(def, hazy), depthKey(x, y),
+ *   circle's foot in art px, clock(), serverNow(), manualRun() — the moderator's run on the horizon { at, ltr } or null,
+ *   reduced(), defTexture(def, lit), flyerArt(def, hazy), depthKey(x, y),
  *   strike() — a lightning strike begins (the scene flashes its veil), cue(cue) — a moment the sound plays, boss() —
  *   the boss of step 6 as the scene keeps it: { hp, max, downAt, hitAt, woke } (scene clock) or null, diceWin() — when
  *   the 6-6-6 of step 1 was rolled (scene clock; -1e9 — not seen)
@@ -381,8 +382,9 @@ export function createFinaleStage(env) {
             if (step === 5 && t < T.leave) return on(1, 'stop', true, from);
             if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false, from);
             // Then it keeps running along the horizon on the schedule of the other scenes (scene.js draws him there
-            // until step 3); at the dawn he stops in some of the runs for a «Мип-мип!».
-            const h = horizonAt(now, step >= 7);
+            // until step 3); at the dawn he stops in some of the runs for a «Мип-мип!». The moderator's extra run
+            // comes only after his departure: a run sent during it is not seen.
+            const h = horizonRunAt(now, env.manualRun?.() ?? null, step >= 7);
             if (!h) return null;
             return { ...far(h.ltr ? lerp(-8, artW + 8, h.k) : lerp(artW + 8, -8, h.k), !h.ltr, h.run), meep: h.meep, meepAt: h.meepAt ?? undefined };
         }

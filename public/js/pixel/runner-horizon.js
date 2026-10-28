@@ -1,6 +1,7 @@
 // RoadRunner's runs along the horizon (docs/spec/frontend.md, «RoadRunner на горизонте»): every scene but the bar —
 // the day, the sunset, the night, the finale until his entrance at step 3 and again from step 5. A function of the
-// server time alone, without PixiJS, so every viewer sees the same run and hears the same «Мип-мип!».
+// server time alone, without PixiJS, so every viewer sees the same run and hears the same «Мип-мип!». The moderator's
+// extra run (`runner {at, ltr}` of the server) comes on top of the schedule: horizonRunAt.
 
 /**
  * One run of RUN_MS per slot of LOOP_MS, starting up to JITTER_MS into the slot (a hash of the slot), so the runs come
@@ -83,4 +84,30 @@ export function nextHorizonMeep(from) {
         const mid = horizonStart(slot) + Math.round(HORIZON.runMs * stop) + HORIZON.meepDelayMs + HORIZON.meepMs / 2;
         if (mid >= from) return Math.round(mid);
     }
+}
+
+/** Ms of RoadRunner's scheduled run in slot `slot`, from its start: the run, and the stop of a meeping one. */
+const slotSpan = (slot, meeps) => HORIZON.runMs + (meeps && horizonStop(slot) !== null ? HORIZON.stopMs : 0);
+
+/**
+ * RoadRunner on the horizon at server ms `now` with the moderator's run `manual` ({ at, ltr } — server ms of its start
+ * and its direction; null — none): the manual run while it lasts, a plain run of RUN_MS without a stop or a meep;
+ * otherwise the schedule of horizonAt. A scheduled run that overlaps the manual one in time stays hidden for all of
+ * it, so there are never two of him and he never pops up mid-way. Same shape as horizonAt, with `manual` true or
+ * false.
+ */
+export function horizonRunAt(now, manual = null, meeps = false) {
+    if (manual) {
+        const into = now - manual.at;
+        if (into >= 0 && into < HORIZON.runMs) {
+            return { slot: null, k: into / HORIZON.runMs, ltr: manual.ltr, run: into, meepAt: null, meep: false, manual: true };
+        }
+    }
+    const h = horizonAt(now, meeps);
+    if (!h) return null;
+    if (manual) {
+        const start = horizonStart(h.slot);
+        if (start < manual.at + HORIZON.runMs && manual.at < start + slotSpan(h.slot, meeps)) return null;
+    }
+    return { ...h, manual: false };
 }

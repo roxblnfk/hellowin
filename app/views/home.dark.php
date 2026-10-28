@@ -31,6 +31,7 @@
           data-dice="{{ json_encode($dice ?? null) }}"
           data-dawn="{{ json_encode($top ?? $dawn ?? null) }}"
           data-flyers="{{ json_encode($flyers ?? []) }}"
+          data-runner="{{ json_encode($runner ?? null) }}"
           data-chat-max="{{ $chatMax ?? 120 }}"
           data-emotes="{{ json_encode($emotes ?? []) }}">
         <div class="sound-panel" data-sound-panel role="group" aria-label="[[Звук]]" hidden>
