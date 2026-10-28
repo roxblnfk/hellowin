@@ -21,6 +21,7 @@ http:
     - rate_limiter
   headers:
     response:
+      X-Powered-By: RoadRunner 3
       X-Content-Type-Options: nosniff
       X-Frame-Options: DENY
       Referrer-Policy: strict-origin-when-cross-origin
