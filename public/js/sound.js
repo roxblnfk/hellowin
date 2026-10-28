@@ -5,6 +5,7 @@ import { CLINK, CLINK_STALE_MS } from './pixel/clink.js';
 import { flyAt, flyPlan } from './pixel/fly-path.js';
 import { wanderAt } from './pixel/wander.js';
 import { T } from './pixel/finale-timeline.js';
+import { THROW, THROW_STALE_MS, throwElapsed } from './pixel/mug-throw.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar, shownItem } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
@@ -113,6 +114,7 @@ export function deathOf(id) {
  */
 export function createSound(audio, { serverNow, now = () => performance.now(), owlGone = () => false, later = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), doc = globalThis.document ?? null, owlX = () => null, runnerAt = () => null }) {
     const flyers = new Map();
+    const thrown = new Map();
     let roseAt = -1e9;
     let muttering = null;
     const wanderers = () => [...flyers.values()].filter((f) => f.wander === true);
@@ -220,18 +222,38 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         if (bush) play('bush.rustle', { pan: panOf(bush.x), volume, delay });
     }
 
+    // A thrown empty mug bursts at THROW.impact after its `at`, like the scene draws it (pixel/mug-throw.js); the
+    // flyer it hit falls then, and its `shot` sounds then. Kept by flyer: {player, impactAt} in server ms.
+    function throwMug(model, event) {
+        const id = event.player?.id;
+        if (!id || !event.flyer) return;
+        const at = serverNow();
+        for (const [flyer, th] of thrown) if (at > th.impactAt + 2000) thrown.delete(flyer);
+        const elapsed = throwElapsed(event.at, at);
+        const impactAt = at - (elapsed ?? THROW_STALE_MS) + THROW.impact;
+        thrown.set(event.flyer, { player: id, impactAt });
+        if (elapsed === null) return;
+        const f = flyers.get(event.flyer);
+        const x = f && at <= f.expiresAt + 1000 ? flyerX(f, impactAt) : walkerX(model, id);
+        play('mug.shatter', { pan: panOf(x), volume: volumeOf(model, id), delay: Math.max(0, (impactAt - at) / 1000) });
+    }
+
     function shot(model, event) {
         const f = flyers.get(event.flyer);
         const at = serverNow();
         // Like the scene: a flyer this page never saw, or one long gone, falls silently.
         if (!f || at > f.expiresAt + 1000) return;
-        const pan = panOf(flyerX(f, at));
-        play('flyer.hit', { pan });
-        // A zombie worker does not fall: it dies its own way.
-        if (f.kind === 'zombie') play(DEATH_SOUNDS[deathOf(event.flyer)] ?? 'flyer.fall', { pan, delay: 0.05 });
-        else play('flyer.fall', { pan, delay: 0.05 });
-        if (f.wander === true) flyers.delete(event.flyer);
         const id = event.player?.id;
+        const mug = thrown.get(event.flyer);
+        const delay = mug && mug.player === id ? Math.max(0, (mug.impactAt - at) / 1000) : 0;
+        const pan = panOf(flyerX(f, at + delay * 1000));
+        play('flyer.hit', { pan, delay });
+        // A zombie worker does not fall: it dies its own way.
+        if (f.kind === 'zombie') play(DEATH_SOUNDS[deathOf(event.flyer)] ?? 'flyer.fall', { pan, delay: delay + 0.05 });
+        else play('flyer.fall', { pan, delay: delay + 0.05 });
+        if (f.wander === true) flyers.delete(event.flyer);
+        // A thrown mug has no shot of its own: its burst is the sound.
+        if (mug && mug.player === id) return;
         const walker = id && model.walkers.find((w) => w.id === id);
         const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
         if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
@@ -439,6 +461,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         },
         flyer,
         shot,
+        throw: throwMug,
         gone(model, event) {
             forgetWanderers(Array.isArray(event.flyers) ? event.flyers : []);
         },

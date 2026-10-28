@@ -724,6 +724,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.shot(event);
         },
 
+        // A `shoot` with the empty mug in hand threw it (hit or miss; the hit's `shot` follows): the hands are empty.
+        throw(event) {
+            const w = model.walkers.find((x) => x.id === event.player?.id);
+            if (w) w.item = null;
+            scene?.throwMug?.(event);
+            paintBar();
+            paintRapier();
+        },
+
         // The wandering zombies of finale steps 5–6 left unshot (the dawn, a reset): the scene sinks them.
         gone(event) {
             scene?.gone?.(Array.isArray(event.flyers) ? event.flyers : []);
@@ -826,11 +835,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
         },
 
-        // The hands are empty at once in the model; the scene keeps the mug through the gulp.
+        // The mug is empty at once in the model (`mug`, protocol.md); the scene keeps the beer in it through the gulp.
         drink(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (!w) return;
-            w.item = null;
+            w.item = 'mug';
             if (w.id === model.me) {
                 model.clinked = false;
                 holdMug('drinkUntil', now() + offset + DRINK_MS);
@@ -1229,10 +1238,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             return step() === RAPIER_STEP && Boolean(id) && id !== model.me && canWalk() && zombieOf(id);
         },
 
-        /** Whether a click on element `id` is RPC `beer {pumpkin}`: step 5, a reachable pumpkin, my hands empty. */
+        /** Whether a click on element `id` is RPC `beer {pumpkin}`: step 5, a reachable pumpkin, my hands empty or an empty mug in them. */
         beersPumpkin(id) {
             const element = findElement(id);
-            return Boolean(element && isPumpkin(element) && element.reachable) && step() === CURSED_STEP && canWalk() && !myWalker().item;
+            const item = myWalker()?.item ?? null;
+            return Boolean(element && isPumpkin(element) && element.reachable) && step() === CURSED_STEP && canWalk() && (item === null || item === 'mug');
         },
 
         strikes,
@@ -1298,7 +1308,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintDice();
         },
 
-        /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and empty hands. */
+        /** Whether a click on the counter is worth RPC `bar.take`: in the bar, with a character and no beer (an empty mug is swapped). */
         takesBeer() {
             return inBar() && canWalk() && !holdsBeer();
         },

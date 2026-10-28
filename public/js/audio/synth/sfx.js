@@ -529,6 +529,23 @@ export const SFX = {
             murmur(r, out, gulps * 0.24 + 0.1, 0.7, 50 + r.rnd() * 3, { glide: -3, cutoff: 700, breath: 0.25, amp: 0.4 });
         },
     }),
+    // An empty mug thrown at a flyer bursts: a sharp crack of glass with a short ring, then the shards tinkling down
+    // for half a second, thicker at first, and a wet splat of the foam left in it.
+    'mug.shatter': fx({
+        dur: 1.0, variants: 4, voices: 3, level: -11,
+        render(r, out) {
+            noiseSweep(r, out, 0, 0.06, { from: 7000, to: 2600, q: 0.7, amp: 0.8, mode: 'hp', curve: 2 });
+            thump(r, out, 0, { f0: 900, f1: 380, dur: 0.035, amp: 0.3 });
+            partials(r, out, 0.004, 2400 + r.rnd() * 500, [[1, 1, 16], [2.32, 0.7, 20], [4.25, 0.45, 26], [6.63, 0.25, 34]], { amp: 0.26, dur: 0.45, send: 0.3 });
+            const shards = 10 + Math.floor(r.rnd() * 5);
+            for (let k = 0; k < shards; k++) {
+                const t = 0.025 + r.rnd() ** 1.8 * 0.55;
+                const f = 3000 + r.rnd() * 4000;
+                partials(r, out, t, f, [[1, 1, 35 + r.rnd() * 25], [2.76, 0.5, 50]], { amp: 0.13 * (1 - t), dur: 0.12, pan: (r.rnd() - 0.5) * 0.7, send: 0.25 });
+            }
+            noiseSweep(r, out, 0.02, 0.14, { from: 700, to: 1800, q: 1.4, amp: 0.18, attack: 0.008, curve: 1.5, grain: 90 });
+        },
+    }),
 
     // ---------------------------------------------------------------- voices
     'owl.hoot': fx({

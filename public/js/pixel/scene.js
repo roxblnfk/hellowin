@@ -12,6 +12,7 @@ import { BAR_LAYOUT, PUMPKIN_STAND, ROOT, SCENE, floats, fromDoor, isBar, isPump
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
+import { THROW, throwElapsed, throwPhase, throwPoint } from './mug-throw.js';
 import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { MEEP, T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
@@ -1856,6 +1857,7 @@ export async function createScene(rootEl, snapshot) {
             particle.sprite.destroy();
             particle.done?.();
         }
+        settleThrows();
         publishHitZones();
         veil.width = layout.artW;
         veil.height = layout.artH;
@@ -3065,7 +3067,12 @@ export async function createScene(rootEl, snapshot) {
                 view = { dir: 'front', flip: false, pose: 'shrug', frame: Math.floor((SHRUG_MS - (w.shrugUntil - clock)) / poseOf('shrug').ms) % poseOf('shrug').frames, item: w.item ?? null };
             } else if (w.shoot && clock < w.shoot.until) {
                 // One shot with what the hand holds: the aimed frame, then the follow-through (the pistol's recoil).
-                view = { dir: w.shoot.dir, flip: w.shoot.flip, pose: 'shoot', frame: clock - w.shoot.at < RECOIL_MS ? 0 : 1, item: w.shoot.item };
+                // A thrown mug is in the hand until it is let go; then the empty hand follows through.
+                const t = clock - w.shoot.at;
+                const released = w.shoot.throw && t >= THROW.release;
+                view = { dir: w.shoot.dir, flip: w.shoot.flip, pose: 'shoot', frame: t < (w.shoot.throw ? THROW.release : RECOIL_MS) ? 0 : 1, item: released ? null : w.shoot.item };
+            } else if ((view = giveView(w, at, now))) {
+                w.shoot = null;
             } else if (ritual) {
                 // Hands up toward the circle, swaying on their own beat; a walker on the way walks normally and joins in
                 // once it stands.
@@ -3791,6 +3798,108 @@ export async function createScene(rootEl, snapshot) {
         };
     }
 
+    // Which way a walker turns to shoot a flyer (dx, dy) art px away. The sky is beyond the patch: a bird straight
+    // ahead means turning away from the camera. A fly in the bar can be anywhere in the hall, in front as well: it is
+    // aimed at like a clicked pumpkin.
+    const shotFacing = (dx, dy) => (isBar(state.scene)
+        ? (Math.abs(dx) >= Math.abs(dy) * 0.8 ? ['side', dx < 0] : dy > 0 ? ['front', false] : ['back', false])
+        : Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false]);
+    // The middle of a flyer's body: a ground target stands on its anchor, a flyer is centred on it.
+    const flyerMid = (f) => (f.ground ? { x: f.pos.x, y: f.pos.y - f.art.def.h / 2 } : { ...f.pos });
+
+    /*
+     * A thrown empty mug (`throw`, docs/spec/frontend.md, «Бросок кружки»): held out on the aimed arm, let go at
+     * THROW.release, it turns over in an arc onto the flyer — where it is now, or where it was last seen — and bursts at
+     * THROW.impact. The timeline runs from the event's `at`, so the burst comes at one moment on every client; a hit's
+     * `shot`, which follows the throw at once, is held until the burst so the flyer falls when the glass strikes it.
+     */
+    const throws = [];
+
+    function throwMug(event) {
+        const id = event.player?.id;
+        const w = walkers.get(id);
+        if (!w) return;
+        w.item = null;
+        w.threw = event.flyer;
+        const elapsed = throwElapsed(event.at, serverNow());
+        if (elapsed === null || !w.sprite || w.zombie) return;
+        const f = flyers.get(event.flyer);
+        const s = walkAt(w.track, clock);
+        const me = walkerArt(s.at);
+        const target = f?.art ? flyerMid(f) : null;
+        const [dir, flip] = target ? shotFacing(target.x - me.x, target.y - me.y) : ['side', false];
+        const at = clock - elapsed;
+        // A walker still on its way throws without stopping, its arms in the walk.
+        if (!s.moving) w.shoot = { dir, flip, item: 'mug', throw: true, target, at, until: at + THROW.pose, sparked: true, puffs: Infinity, fired: Infinity };
+        throws.push({ flyer: event.flyer, player: id, w, at, dir, flip, from: null, target, sprite: null, shot: null });
+    }
+
+    function animateThrows() {
+        for (let i = throws.length - 1; i >= 0; i--) {
+            const th = throws[i];
+            const f = flyers.get(th.flyer);
+            if (f?.art) th.target = flyerMid(f);
+            const { phase, k } = throwPhase(clock - th.at);
+            if (phase === 'wind') continue;
+            th.from ??= releasePoint(th);
+            const to = th.target ?? { x: th.from.x + (th.flip ? -60 : 60), y: th.from.y - 60 };
+            if (phase === 'fly') {
+                const p = throwPoint(th.from, to, k);
+                const def = SHOT_FX.mug[p.turn];
+                if (!th.sprite) {
+                    th.sprite = new Sprite();
+                    particleLayer.addChild(th.sprite);
+                }
+                th.sprite.texture = defTexture(def, lightAt(p.x, p.y));
+                th.sprite.pivot.set(def.anchor.x, def.anchor.y);
+                // Thrown to the left it turns the other way.
+                th.sprite.scale.x = to.x < th.from.x ? -1 : 1;
+                th.sprite.position.set(Math.round(p.x), Math.round(p.y));
+                continue;
+            }
+            throws.splice(i, 1);
+            th.sprite?.destroy();
+            shatter(to);
+            if (th.shot) down(th.shot);
+        }
+    }
+
+    // A rebuild drops the mugs in the air: the flyers they hit fall at once.
+    function settleThrows() {
+        for (const th of throws.splice(0)) {
+            th.sprite?.destroy();
+            if (th.shot) down(th.shot);
+        }
+    }
+
+    // Where the mug leaves the hand: the mug's point of the aimed frame at the walker drawn now.
+    function releasePoint(th) {
+        const a = walkerArt(th.w.drawn ?? walkAt(th.w.track, clock).at);
+        const f = characterFrame(th.w.look, { dir: th.dir, flip: th.flip, pose: 'shoot', frame: 0, item: 'mug' });
+        return f.muzzle ? framePoint(f.muzzle, Math.round(a.x), Math.round(a.y), th.flip) : { x: a.x, y: a.y - 20 };
+    }
+
+    // The mug bursts: a glint, glass shards flung up and out and falling, and the foam left in it splashing.
+    function shatter(at) {
+        const glint = spawn([defTexture(SHOT_FX.glint)], at.x, at.y, 0, 0, 0, 0.12);
+        glint.sprite.pivot.set(SHOT_FX.glint.anchor.x, SHOT_FX.glint.anchor.y);
+        const lit = lightAt(at.x, at.y);
+        const shards = SHOT_FX.shards.map((def) => defTexture(def, lit));
+        for (let i = 0; i < (reduced ? 2 : 9); i++) {
+            const a = -Math.PI / 2 + between(-1.7, 1.7);
+            const v = between(40, 95);
+            spawn(shards, at.x, at.y, Math.cos(a) * v, Math.sin(a) * v, 260, between(0.5, 0.85));
+        }
+        if (reduced) return;
+        // Foam is drawn as is, like the burp bubbles: relit, it would vanish at night.
+        const foam = SHOT_FX.foam.map((def) => defTexture(def));
+        for (let i = 0; i < 6; i++) {
+            const a = between(0, Math.PI * 2);
+            const v = between(25, 60);
+            spawn(foam, at.x, at.y, Math.cos(a) * v, Math.sin(a) * v - 15, 180, between(0.35, 0.6));
+        }
+    }
+
     // A walker whose player shot a flyer turns toward it and shoots with what it holds; one already walking does not
     // stop for it.
     function walkerShot(event) {
@@ -3799,13 +3908,7 @@ export async function createScene(rootEl, snapshot) {
         if (walkAt(w.track, clock).moving) return;
         const f = flyers.get(event.flyer);
         const me = walkerArt(walkAt(w.track, clock).at);
-        const dx = f ? f.pos.x - me.x : 0;
-        const dy = f ? f.pos.y - me.y : 0;
-        // The sky is beyond the patch: a bird straight ahead means turning away from the camera. A fly in the bar can
-        // be anywhere in the hall, in front as well: it is aimed at like a clicked pumpkin.
-        const [dir, flip] = isBar(state.scene)
-            ? (Math.abs(dx) >= Math.abs(dy) * 0.8 ? ['side', dx < 0] : dy > 0 ? ['front', false] : ['back', false])
-            : Math.abs(dx) > 24 ? ['side', dx < 0] : ['back', false];
+        const [dir, flip] = shotFacing(f ? f.pos.x - me.x : 0, f ? f.pos.y - me.y : 0);
         const item = heldItem(w);
         const until = clock + (item === 'pistol' ? SHOT_MS : ITEM_SHOT_MS);
         // The rapier's lightning is thinned like a click shot: the pose without the bolt past the scene's cap or within
@@ -3931,6 +4034,7 @@ export async function createScene(rootEl, snapshot) {
 
         animateFlyers();
         animateWalkers();
+        animateThrows();
         animateOwl();
         stage.animate(inFinale() ? finale.step : null, sinceStep());
         publishRunnerZone();
@@ -4417,8 +4521,19 @@ export async function createScene(rootEl, snapshot) {
 
         /** Channel event `shot`: hit frame, tumble, feathers and points; unknown or gone flyers are ignored. */
         shot(event) {
-            walkerShot(event);
+            const th = throws.find((t) => t.flyer === event.flyer && t.player === event.player?.id);
+            if (th) {
+                th.shot = event;
+                return;
+            }
+            // The thrower of a mug too late to draw shoots nothing more at its flyer.
+            if (walkers.get(event.player?.id)?.threw !== event.flyer) walkerShot(event);
             down(event);
+        },
+
+        /** Channel event `throw`: the walker's empty mug flies at the flyer and bursts; its hands are empty from now. */
+        throwMug(event) {
+            throwMug(event);
         },
 
         /** Channel event `gone` {flyers}: the wandering zombies left unshot sink into the ground; null — all of them. */
@@ -4478,11 +4593,11 @@ export async function createScene(rootEl, snapshot) {
             if (w) w.shrugUntil = clock + SHRUG_MS;
         },
 
-        /** Channel event `drink`: the gulp with the mug, then empty hands. */
+        /** Channel event `drink`: the gulp with the mug, then the empty mug in hand. */
         drink(id) {
             const w = walkers.get(id);
             if (!w) return;
-            w.item = null;
+            w.item = 'mug';
             w.shrugUntil = 0;
             w.drinkUntil = clock + DRINK_MS;
         },

@@ -1679,7 +1679,12 @@ const ITEM_LEGEND = {
     e: 'eyeGreen', E: 'eerieHot', v: 'violetDark', V: 'violet', m: 'eerieMid',
     // The rapier: a golden cup hilt, its blade light (fx keys: no outline, drawn unlit in the frame's glow).
     o: 'gold', O: 'pumpkinGoldDark', Q: 'fxBlade', q: 'fxBladeEdge',
+    // The empty mug's glass: a pale tint inside, a shine down the near wall.
+    z: 'hazeLight', i: 'skyLight',
 };
+
+// The beer's mug drunk dry: the same glass, a ring of foam left at the rim and drops of it down the walls.
+const MUG_ROWS = ['.....', 'gwcwg', 'gizwg', 'gizzg', 'gwzzg', 'ggggg'];
 
 // From the side the broom leans forward, so the stick clears the face.
 const BROOM_SIDE = [
@@ -1698,6 +1703,11 @@ const ITEM_DEFS = {
         label: named('Пиво', 'Beer'),
         front: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [4, 3], fx: [2, 0], keep: 'wcyY' },
         side: { rows: ['.wcw.', 'wwwww', 'yYYYg', 'yYYYg', 'yYYYg', 'ggggg'], grip: [-1, 3], fx: [2, 0], keep: 'wcyY' },
+    },
+    mug: {
+        label: named('Пустая кружка', 'Empty mug'),
+        front: { rows: MUG_ROWS, grip: [4, 3], fx: [2, 1], keep: 'wc' },
+        side: { rows: MUG_ROWS, grip: [-1, 3], fx: [2, 1], keep: 'wc' },
     },
     broom: {
         label: named('Метла', 'Broom'),
@@ -1922,6 +1932,31 @@ const RED_FX_LEGEND = { '.': null, W: 'columnCore', s: 'bloodMoonLight', Y: 'run
 const redFlashCache = new Map();
 const BUBBLE_LEGEND = { '.': null, w: 'white', W: 'hazeLight' };
 const fxSprite = (rows, legend) => ({ w: rows[0].length, h: rows.length, rows, legend, anchor: { x: rows[0].length >> 1, y: rows.length >> 1 } });
+const MUG_FLY = ['gwcwg..', 'gizwgg.', 'gizzg.g', 'gwzzg.g', 'gizzgg.', 'ggggg..'];
+const MUG_LEGEND = { '.': null, '#': 'outline', g: 'grayLight', w: 'white', c: 'cream', z: 'hazeLight', i: 'skyLight' };
+const GLINT_LEGEND = { '.': null, W: 'white', w: 'skyLight' };
+/** The rows turned `n` quarter turns clockwise. */
+function turnRows(rows, n) {
+    let out = rows;
+    for (let k = 0; k < n % 4; k++) out = [...out[0]].map((_, x) => out.map((row) => row[x]).reverse().join(''));
+    return out;
+}
+/** The rows with a one-pixel outline `#` round every opaque pixel (four neighbours), one pixel wider on each side. */
+function outlineRows(rows) {
+    const h = rows.length + 2;
+    const w = rows[0].length + 2;
+    const at = (x, y) => rows[y - 1]?.[x - 1] ?? '.';
+    const out = [];
+    for (let y = 0; y < h; y++) {
+        let row = '';
+        for (let x = 0; x < w; x++) {
+            const c = at(x, y);
+            row += c !== '.' ? c : [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(x + dx, y + dy) !== '.') ? '#' : '.';
+        }
+        out.push(row);
+    }
+    return out;
+}
 const flashCache = new Map();
 const PUFF_SIZES = [1, 2, 3, 4];
 const PUFF_DENSITY = [1, 0.62, 0.38, 0.18];
@@ -1959,6 +1994,12 @@ export const SHOT_FX = {
         fxSprite(['..R..', '.RhR.', 'RhwhR', '.RhR.', '..R..'], RED_FX_LEGEND),
         fxSprite(['r...r', '.hRh.', '.RwR.', '.hRh.', 'r...r'], RED_FX_LEGEND),
     ],
+    // The thrown empty mug, outlined like a held item, its handle out: upright, then a quarter turn clockwise each.
+    mug: [0, 1, 2, 3].map((n) => fxSprite(outlineRows(turnRows(MUG_FLY, n)), MUG_LEGEND)),
+    // Its burst: a glint where it hits, shards of glass (lit like the mug) and the foam left in it (light, like bubbles).
+    glint: fxSprite(['..w..', '.....', 'w.W.w', '.....', '..w..'], GLINT_LEGEND),
+    shards: [['i'], ['zi'], ['i.', '.g'], ['g', 'z'], ['iz', 'z.']].map((rows) => fxSprite(rows, MUG_LEGEND)),
+    foam: [['w'], ['wc'], ['c']].map((rows) => fxSprite(rows, MUG_LEGEND)),
 };
 
 /** Stamps the item; returns a mapper from item pixels to local coordinates (the flip mirrors the columns). */

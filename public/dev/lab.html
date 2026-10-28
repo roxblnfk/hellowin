@@ -40,7 +40,7 @@
   ?ui=0 hides the controls, ?sound=1 plays the real sound (unlocked by the first press; window.audio is the engine), ?hits=1 outlines the hit zones, ?reset=ms restarts the round at that frozen-clock moment, ?flyers=1 launches three flyers and shoots one (?shoot=0..2 picks the depth, ?shotAt=ms the moment, ?kind=<id> the kind — the sunset has none of its own), ?fps=1 logs the frame rate, ?skew=ms shifts the client clock.
   Characters: ?walkers=N wandering bots (default 3, 0 with ?freeze; frozen bots all set off at once), ?me=1 puts
   your own character on the field at once (click the ground to walk), ?join=1 opens the join screen, ?shooter=1 makes
-  the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene, ?bodies=id,id… gives the
+  the ?flyers=1 shot one of the first walker, ?item=<id> hands that item out in every scene (the bar too), ?bodies=id,id… gives the
   bots those bodies in order (no hat, no cloak). The "выстрел" button
   launches a bird that a walker shoots down. ?clink=1 stands the bots in little groups a few steps apart and keeps them
   there: with ?finale=5 (beer in every hand) they clink glasses, ?finale=5&clink=1&walkers=8&freeze=ms catches a clink.
@@ -115,6 +115,11 @@
   drink). With ?me=1: the counter takes a mug, Space or «Выпить» drinks; my character, ?me=1 or from the join screen,
   walks in through the door. ?walkin=N — N bots walk in through the door 1.5 s apart (?walkin=1&freeze=300 — the
   door wide open, 1200 — closing).
+  The empty mug (docs/spec/frontend.md, «Бросок кружки»): `drink` leaves `mug` in hand, `bar.take` and `beer` swap it for
+  beer, and a `shoot` with it sends `throw` before the `shot` (hit or miss) and empties the hand. ?item=mug hands it out:
+  ?item=mug&flies=3&walkers=3&flyshot=1000&freeze=1300 — the mug in the air, 1600 — the burst; ?throwmiss=ms has the
+  second walker throw at the same flyer (after ?flyshot — a miss at a falling one); ?scene=1&item=mug&flyers=1&shooter=1
+  — at a duck by day; ?finale=5&item=mug — in the cursed world (a click on a reachable pumpkin fetches beer).
   Click shots (docs/spec/frontend.md, «Выстрел по клику»): a click event carries its clicker like the server's — your
   click your character when it is on the field, a random or automatic click a random bot, or nobody with the share
   ?anon=0..1 (default 0.25); a standing clicker shoots the element with what it holds. ?still=1 keeps the bots where
@@ -618,7 +623,7 @@
             id: `lab-bot-${String(i).padStart(9, '0')}`,
             name: botName(i),
             look: botBodies[i] ? { ...randomLook(random), body: botBodies[i], cloak: 'none', hat: 'none' } : randomLook(random),
-            item: barStart ? (barPairs || (rrClinkStart && i === 0) ? 'beer' : null) : i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
+            item: barStart ? params.get('item') ?? (barPairs || (rrClinkStart && i === 0) ? 'beer' : null) : i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
             walk: standing(barPairs ? clampToBar(BAR_SPOTS[i] ?? spawnPoint(random)) : barDemo ? clampToBar(DEMO_SPOTS[i] ?? spawnPoint(random))
                 : barStart ? spawnPoint(random)
                 : pumpkinBeerStart ? beerPoint(i) : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
@@ -627,7 +632,7 @@
     const walkStop = params.get('walkstop');
     if (params.get('me') === '1' || walkStop) {
         const walk = barStart && BAR.door ? doorWalk(serverTime()) : standing(zoneClamp({ x: 50, y: 93 }), serverTime());
-        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: null, walk });
+        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: barStart ? params.get('item') : null, walk });
     }
     root.dataset.walkers = JSON.stringify(startWalkers);
 
@@ -1254,6 +1259,11 @@
     }
 
     function engineShoot(id, player = null) {
+        // An empty mug in hand is thrown, hit or miss (protocol.md, `throw`): out before the `shot`, the hands empty.
+        if (player?.item === 'mug') {
+            player.item = null;
+            deliver({ type: 'throw', player: { id: player.id }, flyer: id, at: serverTime() });
+        }
         const f = live.get(id);
         if (!f || f.shot || f.kind === 'roadrunner' || serverTime() > f.until) return { ok: true, hit: false };
         f.shot = true;
@@ -1511,7 +1521,8 @@
         if (w.item !== 'beer') return { ok: false, error: 'no beer' };
         if (!w.clinked && engine.walkers.length > 1) return { ok: false, error: 'not clinked' };
         if (drinkBusy(id) || serverTime() < (clinkedUntil.get(id) ?? -Infinity)) return { ok: false, error: 'busy' };
-        w.item = null;
+        // The empty mug stays in hand (protocol.md, `mug`).
+        w.item = 'mug';
         w.clinked = false;
         drankAt.set(id, serverTime());
         stats.drinks++;
@@ -2453,6 +2464,7 @@
         let firefly = null;
         let fly = null;
         const flyShotAt = params.has('flyshot') ? Math.round(Number.parseInt(params.get('flyshot'), 10) / 16) * 16 : -1;
+        const throwMissAt = params.has('throwmiss') ? Math.round(Number.parseInt(params.get('throwmiss'), 10) / 16) * 16 : -1;
         const fireflyShotAt = params.has('fshot') ? Math.round(Number.parseInt(params.get('fshot'), 10) / 16) * 16 : -1;
         const zombieShotAt = params.has('zshot') ? Math.round(Number.parseInt(params.get('zshot'), 10) / 16) * 16 : -1;
         const wormShotAt = params.has('wshot') ? Math.round(Number.parseInt(params.get('wshot'), 10) / 16) * 16 : -1;
@@ -2480,6 +2492,10 @@
             if (flyersOn && simTime === shotAt) engineShoot(target, params.get('shooter') === '1' ? engine.walkers[0] : null);
             if (simTime === 0) ({ zombie, worm, firefly, fly } = startEvents());
             if (fly && simTime === flyShotAt) engineShoot(fly, engine.walkers[0] ?? null);
+            // ?throwmiss=ms: the second walker shoots the first fly (or worm, or the ?flyers=1 target) too — after
+            // ?flyshot a miss at a flyer already falling.
+            if (simTime === throwMissAt && engine.walkers[1]) engineShoot(fly ?? worm ?? target, engine.walkers[1]);
+            if (simTime === 0 && pumpkinBeerStart) pumpkinBeerRound();
             if (simTime === 0 && clickClinkStart) {
                 clinkRounds = 0;
                 startClinks();
