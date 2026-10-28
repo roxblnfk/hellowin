@@ -8,7 +8,7 @@ import {
     Texture,
     TextureSource,
 } from 'https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs';
-import { BAR_LAYOUT, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, jumpedOut, shownItem, spreadLeft, spreadX } from '../layout.js';
+import { BAR_LAYOUT, PUMPKIN_STAND, ROOT, SCENE, floats, fromDoor, isBar, isPumpkin, jumpOut, jumpedOut, pumpkinStand, shownItem, spreadLeft, spreadX } from '../layout.js';
 import { ASH, BONFIRE, BONFIRE_STAGES, EXPLOSION, magicCircle } from './bonfire.js';
 import { FRAME, POSES, SHOT_FX, characterFrame } from './characters.js';
 import { createBubbles } from './bubble.js';
@@ -26,7 +26,7 @@ import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColo
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
 import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, counterMugs, mugSlots, paintBar, pourBatch } from './bar.js';
 import { PALETTE } from './palette.js';
-import { DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
+import { ARMS_FRAME, DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
 
 const SIZES = ['s', 'm', 'l'];
 // Back to front: the aura under everything, the glow above back and under body (hidden by day), the fire on top.
@@ -1175,6 +1175,42 @@ export async function createScene(rootEl, snapshot) {
         p.arms.children[1].texture = f.beer;
     };
 
+    // The walker's glass in the side clink pose, art px from its feet toward a pumpkin whose mug is on side 1 or -1
+    // (characters.js: the hand 5 px forward, the 5 px mug past it; the mirrored frame of a walker facing left lands a
+    // pixel further), and how far the walker leans in at the strike. The pumpkin's frames meet that glass.
+    const WALKER_MUG = { 1: { near: 7, far: 11, top: -12, bottom: -7 }, [-1]: { near: 6, far: 10, top: -12, bottom: -7 } };
+    const PUMPKIN_LEAN = 3;
+    const armsOf = (p) => pumpkinArms(clamp(p.stage, 0, PUMPKIN_STAGES), p.size, p.seed, p.mug, { lift: FLOAT_LIFT, lean: PUMPKIN_LEAN, mug: WALKER_MUG[p.mug] });
+
+    // Where a walker stands at pumpkin `p`'s mug, art px: by its drawn place, so on every screen it is at the mug.
+    function standArt(p) {
+        const rest = out ? p.out : p.home;
+        const { stand } = armsOf(p);
+        return { x: rest.x + p.mug * stand.x, y: rest.y + stand.y };
+    }
+
+    /**
+     * A walk as the scene draws it: in the cursed world one ending where the server stands a walker at a reachable
+     * pumpkin (layout.js, pumpkinStand) ends at that pumpkin's drawn mug instead — the drawn pumpkins jump out by a
+     * factor of the screen's width, the server's point cannot know it.
+     */
+    function drawnWalk(walk) {
+        const path = walk?.path;
+        if (!path?.length || !inFinale() || finale.step < 5) return walk;
+        const end = path[path.length - 1];
+        for (const element of pumpkinElements()) {
+            const p = pumpkins.get(element.id);
+            if (!p || !element.reachable) continue;
+            const spot = pumpkinStand(element, p.mug);
+            if (Math.hypot(spot.x - end.x, spot.y - end.y) > PUMPKIN_STAND.near) continue;
+            const art = standArt(p);
+            const x = (art.x * layout.cssPx * 100) / layout.width;
+            const at = { x: ROOT.x + (x - ROOT.x) / spreadX(layout.width), y: (art.y * layout.cssPx * 100) / layout.height };
+            return { ...walk, path: [...path.slice(0, -1), at] };
+        }
+        return walk;
+    }
+
     function applyArt(p) {
         // Lit where it will stand: after the jump out a pumpkin may leave the firelight.
         const at = out ? p.out : p.home;
@@ -1196,7 +1232,7 @@ export async function createScene(rootEl, snapshot) {
         if (p.arms.visible) {
             const lit = lightAt(at.x, at.y);
             p.armsArt = artTexture(`pumpkin-arms:${clamp(p.stage, 0, PUMPKIN_STAGES)}:${p.size}:${p.seed}:${p.mug}:${lit}`, () => {
-                const { anchor, frames } = pumpkinArms(p.stage, p.size, p.seed, p.mug);
+                const { anchor, frames } = armsOf(p);
                 return { anchor, frames: frames.map((f) => ({ lit: texture(litBake(f.lit, lit)), beer: texture(keepHueBake(f.beer, lit)) })) };
             });
             showArms(p, 0);
@@ -2458,30 +2494,54 @@ export async function createScene(rootEl, snapshot) {
     const SPRING = { ms: 1100, air: 0.3, h: 3 };
 
     /*
-     * A pumpkin of step 5 hands a fresh mug to a walker (`take` with `pumpkin`): its own mug set down, the hand into
-     * the top cut, a new mug pulled out with a splash of foam, held out (sprites.js, pumpkinArms frames 3–6). The walker
-     * holds the beer once it is handed over.
+     * A pumpkin of step 5 hands its mug to a walker (`take` with `pumpkin`), on the server clock over the GIVE_MS
+     * before the event's `until` (sprites.js, ARMS_FRAME): the mug lowered and held out, the walker's empty hand
+     * closing on it from GIVE.reach, the walker holding it from GIVE.pass while the pumpkin lets go, the empty arm back.
+     * Past `until` the pumpkin pulls a new mug out of its top cut with a splash of foam (REFILL). One mug at a time.
      */
     const GIVE_MS = 900;
-    const GIVE_FOAM_MS = 450;
-    function giveFrame(p) {
-        const t = clock - (p.give?.at ?? -1e9);
-        if (reduced || t < 0 || t >= GIVE_MS) return null;
-        if (t >= GIVE_FOAM_MS && !p.give.foamed) {
+    const GIVE = { offer: 150, reach: 250, pass: 480, back: 620, empty: 760 };
+    const REFILL = { dip: 200, pull: 450, end: 700 };
+    function giveFrame(p, now) {
+        const t = now - (p.give?.until ?? -1e12) + GIVE_MS;
+        if (reduced || t < 0 || t >= GIVE_MS + REFILL.end) return null;
+        const refill = t - GIVE_MS;
+        if (refill >= REFILL.pull && !p.give.foamed) {
             p.give.foamed = true;
-            const at = emitPoint(p, 'top');
-            const lit = lightAt(at.x, at.y);
-            const foam = FOAM.map((key) => artTexture(`foam-px:${key}:${lit}`, () => {
-                const c = canvas(1, 1);
-                const ctx = c.getContext('2d');
-                ctx.fillStyle = css(keepHueColor(PALETTE[key], lit));
-                ctx.fillRect(0, 0, 1, 1);
-                return texture(c);
-            }));
-            spawn([defTexture(SHOT_FX.pop)], at.x - 2, at.y - 6, 0, 0, 0, 0.16);
-            for (let i = 0; i < 6; i++) ember(at.x + between(-2, 2), at.y - 4, between(-22, 22), -between(20, 45), 90, between(0.3, 0.5), 0, FOAM).frames = foam;
+            // A viewer who comes in later misses the splash rather than seeing it late.
+            if (refill < REFILL.pull + 150) refillFoam(p);
         }
-        return 3 + Math.min(3, Math.floor(t / (GIVE_MS / 4)));
+        const F = ARMS_FRAME;
+        if (t < GIVE.offer) return F.lower;
+        if (t < GIVE.pass) return F.offer;
+        if (t < GIVE.back) return F.letGo;
+        if (t < GIVE.empty) return F.lowerEmpty;
+        if (refill < REFILL.dip) return F.holdEmpty;
+        return refill < REFILL.pull ? F.dip : F.pull;
+    }
+
+    function refillFoam(p) {
+        const at = emitPoint(p, 'top');
+        const lit = lightAt(at.x, at.y);
+        const foam = FOAM.map((key) => artTexture(`foam-px:${key}:${lit}`, () => {
+            const c = canvas(1, 1);
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = css(keepHueColor(PALETTE[key], lit));
+            ctx.fillRect(0, 0, 1, 1);
+            return texture(c);
+        }));
+        spawn([defTexture(SHOT_FX.pop)], at.x - 2, at.y - 6, 0, 0, 0, 0.16);
+        for (let i = 0; i < 6; i++) ember(at.x + between(-2, 2), at.y - 4, between(-22, 22), -between(20, 45), 90, between(0.3, 0.5), 0, FOAM).frames = foam;
+    }
+
+    /** A walker being handed a mug by a pumpkin now: turned to it, the empty hand out, then the mug in it; or null. */
+    function giveView(w, at, now) {
+        const t = now - (w.give?.until ?? -1e12) + GIVE_MS;
+        const p = pumpkins.get(w.give?.pumpkin);
+        if (reduced || !p || t < 0 || t >= GIVE_MS) return null;
+        const item = t >= GIVE.pass ? 'beer' : null;
+        const reaching = t >= GIVE.reach && t < GIVE.back;
+        return { dir: 'side', flip: p.pos.x < at.x, pose: reaching ? 'clink' : 'idle', frame: 0, item };
     }
 
     function animatePumpkin(p) {
@@ -2518,6 +2578,10 @@ export async function createScene(rootEl, snapshot) {
         const floating = staged ? staged.lift > 0 : floats(p.stage, state.scene, state.sceneStages);
         // Floats bob like a float on water; under the blood moon slower, with a slight tilt.
         p.lift = staged ? staged.lift : floating ? FLOAT_LIFT + (reduced ? 0 : Math.round(2 * Math.sin((clock + p.phase) / (final ? 520 : 650)))) : 0;
+        const now = serverNow();
+        const engaged = p.arms.visible ? giveFrame(p, now) ?? pumpkinClinkFrame(p, now) : null;
+        // Steady while it hands a mug over or clinks: its frames meet the walker's glass at FLOAT_LIFT.
+        if (engaged !== null && p.lift > 0) p.lift = FLOAT_LIFT;
 
         const hit = Math.floor((clock - p.hit) / 50);
         const bounce = Math.floor((clock - p.bounce) / 60);
@@ -2560,10 +2624,7 @@ export async function createScene(rootEl, snapshot) {
             const frames = p.art.frames[name];
             if (frames && !reduced) p.layers[name].texture = frames[Math.floor((clock + p.phase) / FRAME_MS[name]) % frames.length];
         }
-        if (p.arms.visible) {
-            const clinkFrame = pumpkinClinkFrame(p, serverNow());
-            showArms(p, giveFrame(p) ?? clinkFrame ?? (reduced ? 0 : raiseFrame(p.seed, serverNow())));
-        }
+        if (p.arms.visible) showArms(p, engaged ?? (reduced ? 0 : raiseFrame(p.seed, now)));
         p.halo.position.set(Math.round(at.x), Math.round(at.y));
         p.shadow.visible = p.lift > 0;
         if (p.shadow.visible) {
@@ -2784,7 +2845,8 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /** A new walk for walker `w`: continue from the drawn point, or start where the server has it now. */
-    function retrack(w, walk) {
+    function retrack(w, served) {
+        const walk = drawnWalk(served);
         const path = walk?.path?.length ? walk.path : [{ x: ROOT.x, y: 94 }];
         const span = (walk?.arrivesAt ?? 0) - (walk?.startedAt ?? 0);
         const total = pathLength(path);
@@ -2894,8 +2956,16 @@ export async function createScene(rootEl, snapshot) {
 
     function buildWalkers() {
         // Sprites went with groundLayer; labels live outside it and are made again with the new layout.
-        for (const w of walkers.values()) addWalkerSprites(w);
+        for (const w of walkers.values()) {
+            addWalkerSprites(w);
+            restand(w);
+        }
         animateWalkers();
+    }
+
+    // The drawn end of a walk follows the layout and the finale's step (drawnWalk): a change walks the walker there.
+    function restand(w) {
+        if (!w.halt) retrack(w, w.walk);
     }
 
     function setWalker(data) {
@@ -3092,10 +3162,9 @@ export async function createScene(rootEl, snapshot) {
     let toastSpeech = null;
     const FOAM = ['white', 'white', 'cream', 'hazeLight'];
     // How far a walker leans toward the meeting point to reach the glasses (art px), and the glass's reach from the
-    // anchor it leans by; a pumpkin's glass meets the walker's this far out from its middle.
+    // anchor it leans by.
     const LEAN_MAX = 6;
     const GLASS_REACH = 10;
-    const PUMPKIN_REACH = 6;
     // The toast's bubble: over a walker's anchor by this much, over a pumpkin's top by this much (art px).
     const WALKER_HEAD = 34;
     // A chat line stays up for seconds: its bubble rises over the name label (CSS px) instead of covering it.
@@ -3135,12 +3204,14 @@ export async function createScene(rootEl, snapshot) {
         clinks.set(c.key, c);
     }
 
-    // The pumpkin's top middle and where its glass meets a walker's, art px.
+    // The pumpkin's top middle and the meeting point a walker at `toward` leans to: PUMPKIN_LEAN at the strike, where
+    // the pumpkin's glass held out meets the walker's (art px).
     function pumpkinPoints(p, toward) {
         const { def } = p.art;
         const row = Math.max(0, def.rows.findIndex((r) => [...r].some((ch) => def.legend[ch])));
         const top = { x: p.pos.x, y: p.pos.y - p.lift - def.anchor.y + row - PUMPKIN_HEAD };
-        return { at: { ...p.pos }, head: top, meet: { x: p.pos.x + (p.mug || Math.sign(toward.x - p.pos.x)) * PUMPKIN_REACH, y: p.pos.y } };
+        const side = Math.sign(p.pos.x - toward.x) || -p.mug;
+        return { at: { ...p.pos }, head: top, meet: { x: toward.x + side * (GLASS_REACH + PUMPKIN_LEAN), y: toward.y } };
     }
 
     // A failed clink by click sends no event (protocol.md, `clink`): the heading is let go this long after both should
@@ -3218,18 +3289,24 @@ export async function createScene(rootEl, snapshot) {
         return { of, groups };
     }
 
-    // The arms frame of a pumpkin in a clink now (it raises its glass toward the walker with the walker's timeline), or
-    // null when it is in none.
+    // The arms frame of a pumpkin in a clink now, or null when it is in none: on the walker's timeline it lowers its
+    // glass and holds it out to the walker's, strikes, takes it back and raises it for the toast (sprites.js, ARMS_FRAME).
     function pumpkinClinkFrame(p, now) {
         if (!inFinale() || finale.step < 5) return null;
+        const F = ARMS_FRAME;
         for (const c of clinks.values()) {
             const t = now - c.at;
             if (c.pumpkin !== p.id || t < 0 || t >= CLINK.end) continue;
             const by = walkers.get(c.player);
             if (!by?.track || walkAt(by.track, clock).moving) continue;
-            if (t < CLINK.reach) return 0;
-            if (t < CLINK.raise) return reduced ? 0 : 1;
-            return 2;
+            if (reduced) return t < CLINK.raise ? F.hold : F.up;
+            if (t < CLINK.reach) return F.hold;
+            if (t < (CLINK.reach + CLINK.strike) / 2) return F.clinkLower;
+            if (t < CLINK.strike) return F.reach;
+            if (t < CLINK.back) return F.strike;
+            if (t < (CLINK.back + CLINK.raise) / 2) return F.clinkLower;
+            if (t < CLINK.raise) return F.hold;
+            return t < CLINK.raise + RAISE_EASE_MS ? F.half : F.up;
         }
         return null;
     }
@@ -4669,16 +4746,18 @@ export async function createScene(rootEl, snapshot) {
         },
 
         /**
-         * A pumpkin of step 5 hands walker `playerId` a fresh mug (`take` with `pumpkin`): ~GIVE_MS of its arms, the
-         * walker's beer showing once it is held out. `until` (server clock, the event's) is when the hand-over ends: the
-         * arms play the GIVE_MS before it, so a late viewer catches them midway; without it they start now.
+         * A pumpkin of step 5 hands walker `playerId` its mug (`take` with `pumpkin`), then pulls out a new one (giveFrame,
+         * giveView). `until` (server clock, the event's) is when the hand-over ends: it plays the GIVE_MS before it, so a
+         * late viewer catches it midway; without it, it starts now.
          */
         takeFromPumpkin(pumpkinId, playerId, until = null) {
-            const end = clock + (until === null ? GIVE_MS : Math.max(0, until - serverNow()));
+            const end = until ?? serverNow() + GIVE_MS;
             const p = pumpkins.get(pumpkinId);
-            if (p && !reduced) p.give = { at: end - GIVE_MS, player: playerId };
+            if (p) p.give = { until: end, player: playerId };
             const w = walkers.get(playerId);
-            if (w && p && !reduced) w.beerAt = end;
+            if (!w || !p) return;
+            w.give = { until: end, pumpkin: pumpkinId };
+            w.beerAt = clock + end - serverNow() - (reduced ? 0 : GIVE_MS - GIVE.pass);
         },
 
         /** The point over FrankenPHP's head in CSS pixels of the scene root (also published as --boss-x|y). */
@@ -4716,6 +4795,7 @@ export async function createScene(rootEl, snapshot) {
             }
             if (lightingOf(state.scene) !== lighting) rebuild();
             else pumpkins.forEach(applyArt);
+            walkers.forEach(restand);
         },
 
         /**

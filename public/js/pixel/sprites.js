@@ -1060,32 +1060,49 @@ const ARM_POSES = {
     half: (r, rise) => [[0, 0], [1, -1], ...Array.from({ length: Math.round(rise / 2) }, (_, i) => [2 + (i >> 2), -2 - i])],
     up: (r, rise) => [[0, 0], [1, -1], [2, -2], ...Array.from({ length: rise - 2 }, (_, i) => [2 + (i >> 2), -3 - i])],
 };
-// Handing a fresh mug to a walker (finale step 5): its own mug set down by the foot, the hand into the top cut, a new
-// mug pulled out over the top, held out to the side. `at` — the hand's [dx, dy] of the set-down mug, `top` — the top
-// cut. Each is { arm, glass: where the hand's mug is ('hand' or none), ground: the own mug stands on the ground }.
 const line = ([x0, y0], [x1, y1]) => {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
     return Array.from({ length: n }, (_, i) => [Math.round(x0 + ((x1 - x0) * (i + 1)) / n), Math.round(y0 + ((y1 - y0) * (i + 1)) / n)]);
 };
-const GIVE_POSES = [
-    { arm: (r, rise, { at }) => [[0, 0], ...line([0, 0], [1, 2]), ...line([1, 2], at)], glass: 'hand' },
-    { arm: (r, rise, { top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1]]), ...line([2, top[1]], top)], ground: true },
-    { arm: (r, rise, { top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1] - 3]), ...line([2, top[1] - 3], [Math.round(top[0] / 2), top[1] - 5])], glass: 'hand', ground: true },
-    { arm: (r) => [[0, 0], ...line([0, 0], [r + 4, -1])], glass: 'hand', ground: true },
-];
+// Out of the shoulder, bent at the elbow most of the way out and a little down, then to the hand.
+const reachTo = (hand) => {
+    const elbow = [Math.max(1, Math.round(hand[0] * 0.6)), Math.round(hand[1] * 0.3)];
+    return [[0, 0], ...line([0, 0], elbow), ...line(elbow, hand)];
+};
+const between = (a, b) => [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)];
+// The hand in the top cut, and a new mug pulled out over the top; `top` — the top cut's [dx, dy].
+const DIP = ({ top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1]]), ...line([2, top[1]], top)];
+const PULL = ({ top }) => [[0, 0], ...line([0, 0], [2, -2]), ...line([2, -2], [2, top[1] - 3]), ...line([2, top[1] - 3], [Math.round(top[0] / 2), top[1] - 5])];
 const FREE_ARM = (r) => [[0, 0], [1, 1], ...Array.from({ length: r - 1 }, (_, i) => [2 + (i >> 1), 2 + i])];
 const armsCache = new Map();
 
+/** The frames of pumpkinArms by name. */
+export const ARMS_FRAME = { hold: 0, half: 1, up: 2, lower: 3, offer: 4, letGo: 5, lowerEmpty: 6, holdEmpty: 7, dip: 8, pull: 9, reach: 10, strike: 11, clinkLower: 12 };
+
+// A walker comes up to a pumpkin's mug and stands STAND_GAP art px past its outer edge, a pixel in front of the
+// pumpkin's foot, so it is drawn over the arm held out to it.
+const STAND_GAP = 15;
+const STAND_DY = 1;
+
 /**
- * Arms with a beer mug for a pumpkin of the cursed world: { anchor, frames } with frames hold, half, up (raised over
- * the head), then the four of handing a fresh mug out (~225 ms each): 3 — its own mug set down by the foot, 4 — the
- * hand in the top cut, 5 — a new mug pulled out over the top, 6 — held out to the side; each { lit, beer } sprites of
- * one w×h and that anchor at the pumpkin's foot, like pumpkinLayers. The mug's side follows the seed. The frames reach
- * past the pumpkin's own grid, so the scene places them by their own anchor.
+ * Arms with a beer mug for a pumpkin of the cursed world: { anchor, frames, stand }. `frames` by ARMS_FRAME, each
+ * { lit, beer } sprites of one w×h and that anchor at the pumpkin's foot, like pumpkinLayers; they reach past the
+ * pumpkin's own grid, so the scene places them by their own anchor:
+ * - hold, half, up — the mug at rest, halfway up, raised over the top;
+ * - the hand-over to a walker: lower and offer (held out over the walker's hand), letGo (the walker has it),
+ *   lowerEmpty and holdEmpty on the way back, dip (the hand in the top cut), pull (a new mug out over the top);
+ * - the clink: clinkLower, reach (a pixel short of the walker's glass), strike (touching it).
+ * There is one mug in every frame at most. `stand` — where the walker stands for both: `x` art px from the foot
+ * toward the mug, `y` below the foot. `meet` places the walker's glass: `mug` — its {near, far, top, bottom} in art px
+ * from the walker's feet in the clink pose (forward, up negative), a pixel further forward at the strike; `lean` — how
+ * far the walker leans in at the strike; `lift` — how high the pumpkin floats meanwhile. The mug's side follows the seed.
  */
-export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
+export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1, meet = {}) {
     const sz = ARMS[size] ? size : 'm';
-    const key = `${sz}:${Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0))}:${seed >>> 0}:${side < 0 ? -1 : 1}`;
+    const lift = meet.lift ?? 0;
+    const lean = meet.lean ?? 0;
+    const mug = meet.mug ?? { near: 6, far: 10, top: -12, bottom: -7 };
+    const key = `${sz}:${Math.max(0, Math.min(PUMPKIN_STAGES, stage | 0))}:${seed >>> 0}:${side < 0 ? -1 : 1}:${lift}:${lean}:${mug.near},${mug.far},${mug.top},${mug.bottom}`;
     if (armsCache.has(key)) return armsCache.get(key);
     const L = pumpkinLayers(stage, sz, seed);
     const rows = L.layers.body.rows.map((row) => [...row].map((ch, x) => (ch !== '.' ? x : -1)).filter((x) => x >= 0));
@@ -1101,14 +1118,40 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
     const gw = glass[0].length;
     const gh = glass.length;
     const rise = shoulder - y0 + gh - grip[1] + 1;
-    const foot = solid[solid.length - 1];
     const sx = dir > 0 ? xr + 1 : xl - 1;
-    const ctx = {
-        at: [2, foot - gh + 1 + grip[1] - shoulder],
-        top: [Math.round(((xl + xr) / 2 - sx) * dir), y0 - shoulder - 1],
-    };
-    let ground = null;
-    const poses = [...Object.values(ARM_POSES).map((arm) => ({ arm, glass: 'hand' })), ...GIVE_POSES];
+    const gripX = dir > 0 ? grip[0] : gw - 1 - grip[0];
+    // A hand [dx, dy] from the shoulder ↔ the top-left corner of the glass it holds by the handle, in grid px.
+    const glassOf = ([dx, dy]) => [sx + dir * dx + dir - gripX, shoulder + dy - grip[1]];
+    const handOf = ([gx, gy]) => [(gx - dir + gripX - sx) * dir, gy + grip[1] - shoulder];
+    // The hand whose glass has its outer edge `edge` art px from the foot, level with the walker's glass.
+    const ax = L.anchor.x;
+    const glassY = Math.round(L.anchor.y + lift + STAND_DY + (mug.top + mug.bottom) / 2 - (gh - 1) / 2);
+    const edgeAt = (edge) => handOf([dir > 0 ? ax + edge - gw + 1 : ax - edge, glassY]);
+    const hold = ARM_POSES.hold(reach);
+    const holdHand = hold[hold.length - 1];
+    const [hgx] = glassOf(holdHand);
+    const stand = (dir > 0 ? hgx + gw - 1 - ax : ax - hgx) + STAND_GAP;
+    // Offered: the glass over the walker's, where its reaching hand closes on it. The clink: the glasses touch at the
+    // strike, the walker's a pixel further forward and leaning in.
+    const offer = edgeAt(stand - mug.near + Math.floor((gw - (mug.far - mug.near + 1)) / 2));
+    const strike = edgeAt(stand - mug.far - 2 - lean);
+    const short = edgeAt(stand - mug.far - 3 - lean);
+    const ctx = { top: [Math.round(((xl + xr) / 2 - sx) * dir), y0 - shoulder - 1] };
+    const poses = [
+        { arm: hold, glass: true },
+        { arm: ARM_POSES.half(reach, rise), glass: true },
+        { arm: ARM_POSES.up(reach, rise), glass: true },
+        { arm: reachTo(between(holdHand, offer)), glass: true },
+        { arm: reachTo(offer), glass: true },
+        { arm: reachTo(offer), glass: false },
+        { arm: reachTo(between(holdHand, offer)), glass: false },
+        { arm: hold, glass: false },
+        { arm: DIP(ctx), glass: false },
+        { arm: PULL(ctx), glass: true },
+        { arm: reachTo(short), glass: true },
+        { arm: reachTo(strike), glass: true },
+        { arm: reachTo(between(holdHand, short)), glass: true },
+    ];
     const frames = poses.map((pose) => {
         const px = new Map();
         const put = (x, y, ch) => px.set(`${x},${y}`, { x, y, ch });
@@ -1126,19 +1169,13 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
             put(x, y + 1, 'O');
             put(x + d, y + 1, 'O');
         };
-        const arm = pose.arm(reach, rise, ctx);
-        if (pose.ground && ground) glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(ground[0] + dx, ground[1] + dy, ch)));
-        stroke(sx, dir, arm);
-        const [hx, hy] = arm[arm.length - 1];
-        const handX = sx + dir * hx;
-        const handY = shoulder + hy;
-        const gripX = dir > 0 ? grip[0] : gw - 1 - grip[0];
-        const gx = handX + dir - gripX;
-        const gy = handY - grip[1];
-        if (pose.glass === 'hand') glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(gx + dx, gy + dy, ch)));
-        // The first give pose sets the mug down: where it stands from then on.
-        if (pose === GIVE_POSES[0]) ground = [gx, gy];
-        mitten(handX, handY, dir);
+        stroke(sx, dir, pose.arm);
+        const hand = pose.arm[pose.arm.length - 1];
+        if (pose.glass) {
+            const [gx, gy] = glassOf(hand);
+            glass.forEach((row, dy) => [...row].forEach((ch, dx) => ch !== '.' && put(gx + dx, gy + dy, ch)));
+        }
+        mitten(sx + dir * hand[0], shoulder + hand[1], dir);
         const fx = dir > 0 ? xl - 1 : xr + 1;
         const free = FREE_ARM(Math.max(2, reach - 1));
         stroke(fx, -dir, free);
@@ -1159,7 +1196,7 @@ export function pumpkinArms(stage, size, seed = 0, side = seed & 1 ? -1 : 1) {
         });
         return layerSprite(grid, legend, anchor);
     };
-    const result = { anchor, frames: frames.map((px) => ({ lit: layer(px, ARMS_LIT), beer: layer(px, ARMS_BEER) })) };
+    const result = { anchor, stand: { x: stand, y: STAND_DY }, frames: frames.map((px) => ({ lit: layer(px, ARMS_LIT), beer: layer(px, ARMS_BEER) })) };
     armsCache.set(key, result);
     return result;
 }

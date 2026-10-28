@@ -48,7 +48,9 @@
   `move`, then `clink` at the arrival), a click on a reachable pumpkin (the front ones by the lawn, `reachable`)
   clinks with it. ?clickclink=1 stands the bots apart and keeps them there, and they clink by click themselves: bot 1
   with bot 2 (a two-voice toast), bot 3 with pumpkin-10, bot 4 with bot 5 — at the start and every 9 s; ?toast=N gives
-  all of them toast N. ?finale=5&clickclink=1&walkers=5&freeze=1900 catches the strike, 2700 the toasts, 3700 the reply.
+  all of them toast N. ?pumpkinbeer=1 (?finale=5&walkers=9&zmin=0) — a bot by each reachable pumpkin: it drinks up, walks
+  to the mug and takes a beer, clinks with the pumpkin, steps back, every 9 s; with ?freeze — 1600 on the way, 2000–2800
+  the hand-over, 2900–3500 the new mug, 4000–4450 the reach and the strike, 5200 the toast. ?finale=5&clickclink=1&walkers=5&freeze=1900 catches the strike, 2700 the toasts, 3700 the reply.
   Items in the final scene follow `finale_items`: the red flame at step 0, empty hands on steps 1–4, beer from step 5.
   Story: ?mod=1 makes this page the moderator (the console shows; without it console RPCs answer `forbidden`),
   ?scene=N starts in scene N, ?ready=1 starts with every pumpkin done and the scene ready, ?finale=N starts at finale
@@ -275,7 +277,8 @@
 <script type="module">
     import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
     import { deathOf } from '/js/sound.js';
-    import { BAR_LAYOUT, barCounterOf } from '/js/layout.js';
+    import { BAR_LAYOUT, barCounterOf, pumpkinStand } from '/js/layout.js';
+    import { seedOf } from '/js/pixel/sprites.js';
     import { initDebugPanel } from '/js/debug.js';
     import { bindChat } from '/js/chat.js';
     import { EMOTE_COOLDOWN_MS, bindEmotes, emotesOf } from '/js/emote.js';
@@ -468,6 +471,12 @@
         return round1(q);
     }
 
+    // Where a walker stands at a reachable pumpkin for a beer or a clink, like WalkService (protocol.md, RPC `beer`):
+    // layout.js's pumpkinStand on the side of its mug, brought onto the lawn.
+    function pumpkinSpot(p) {
+        return clampToZone(pumpkinStand(p, Math.sign(p.x - WALK.patch.cx) || (seedOf(p.id) & 1 ? -1 : 1)));
+    }
+
     // A straight line when it misses the patch, else along the rim on the shorter side that stays on the lawn (the
     // far rim is beyond the lawn's top edge, so in practice around the near side).
     function route(from, to) {
@@ -576,6 +585,17 @@
     const CLINK_GROUPS = [{ x: 22, y: 93, n: 2 }, { x: 70, y: 94, n: 3 }, { x: 9, y: 66, n: 2 }, { x: 91, y: 64, n: 1 }, { x: 46, y: 95, n: 2 }];
     // ?clickclink=1: the bots stand apart, off the patch, and do not wander; in the cursed world they walk up and clink.
     const clickClinkStart = params.get('clickclink') === '1';
+    // ?pumpkinbeer=1 (with ?finale=5): one bot per reachable pumpkin, standing a few steps out from its mug; every 9 s
+    // each drinks up, walks to the mug for a beer, clinks with the pumpkin and steps back (pumpkinBeerRound).
+    const pumpkinBeerStart = params.get('pumpkinbeer') === '1';
+    const BEER_PUMPKINS = ELEMENTS.map(([x, y, size], i) => ({ id: `pumpkin-${i + 1}`, x, y, size })).filter((e, i) => REACHABLE.has(i + 1));
+    const BEER_STEP_OUT = 6;
+    function beerPoint(i) {
+        const p = BEER_PUMPKINS[i];
+        if (!p) return spawnPoint();
+        const spot = pumpkinSpot(p);
+        return clampToZone({ x: spot.x + Math.sign(spot.x - p.x) * BEER_STEP_OUT, y: spot.y });
+    }
     const CLICK_SPOTS = [{ x: 14, y: 93 }, { x: 30, y: 92 }, { x: 66, y: 95 }, { x: 78, y: 93 }, { x: 92, y: 80 }];
     function clinkPoint(i) {
         if (clickClinkStart) return CLICK_SPOTS[i] ? clampToZone(CLICK_SPOTS[i]) : spawnPoint();
@@ -601,7 +621,7 @@
             item: barStart ? (barPairs || (rrClinkStart && i === 0) ? 'beer' : null) : i % 3 === 1 && ITEMS.length ? ITEMS[i % ITEMS.length].id : null,
             walk: standing(barPairs ? clampToBar(BAR_SPOTS[i] ?? spawnPoint(random)) : barDemo ? clampToBar(DEMO_SPOTS[i] ?? spawnPoint(random))
                 : barStart ? spawnPoint(random)
-                : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
+                : pumpkinBeerStart ? beerPoint(i) : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
     const walkStop = params.get('walkstop');
@@ -1281,7 +1301,7 @@
 
     // RPC `clink` like WalkService::clink (engine.md, «Чоканье по клику»; walk.clink_gap, walk.clink_duration): to a
     // walker — beside the end of its path, CLINK_GAP in x on the clinker's side (the other side when the lawn's edge
-    // pushed the spot onto it); to a reachable pumpkin — the nearest lawn point. The move carries `clink`; once both
+    // pushed the spot onto it); to a reachable pumpkin — beside its mug (pumpkinSpot). The move carries `clink`; once both
     // have arrived (plus the ticker's delay) and neither was sent elsewhere, `clink` with a random toast. `busy` while
     // the player's last clink plays; a clink with a mug already clinked is `{ok: true}` and changes nothing.
     // The mug's busy spells like the server's (docs/spec/frontend.md, «Ввод в баре»): `clinkedUntil` — a clink by click
@@ -1321,7 +1341,7 @@
         } else {
             const p = engine.elements.find((e) => e.id === pumpkin);
             if (!p || p.type !== 'pumpkin' || !p.reachable || engine.finale?.step !== CURSED_STEP) return { ok: false, error: 'no target' };
-            spot = clampToZone(p);
+            spot = pumpkinSpot(p);
             target = { pumpkin: { id: pumpkin } };
         }
         if (w.item === 'beer' && w.clinked) return { ok: true };
@@ -1382,6 +1402,24 @@
             if (!bots[by] || (typeof target === 'number' && !bots[target])) continue;
             engineClink(bots[by].id, typeof target === 'number' ? { walker: bots[target].id } : { pumpkin: target }, forced ?? (first ? toast : null));
         }
+    }
+
+    // ?pumpkinbeer=1: from now (ms) — 0 drink up (counted as clinked), 1300 walk to the mug for a beer (the hand-over
+    // from ~1900 to ~2800, the new mug pulled out until ~3500), 3600 clink with the pumpkin (strike ~4450), 7500 step back
+    // out; again in 9 s.
+    function pumpkinBeerRound() {
+        const bots = wanderers().slice(0, BEER_PUMPKINS.length);
+        bots.forEach((w, i) => {
+            const pumpkin = BEER_PUMPKINS[i].id;
+            if (w.item === 'beer') {
+                w.clinked = true;
+                engineDrink(w.id);
+            }
+            later(() => engineBeer(w.id, { pumpkin }), 1300);
+            later(() => engineClink(w.id, { pumpkin }), 3600);
+            later(() => engineMove(w.id, beerPoint(i)), 7500);
+        });
+        later(pumpkinBeerRound, 9000);
     }
 
     // The bar as the server plays it (protocol.md, «Бар»). The ticker pours a batch at a time while there is room: by
@@ -1562,7 +1600,7 @@
         if (drinkBusy(id)) return { ok: false, error: 'busy' };
         const p = engine.elements.find((e) => e.id === pumpkin);
         if (!p || p.type !== 'pumpkin' || !p.reachable) return { ok: false, error: 'no target' };
-        const { walk } = engineMove(id, clampToZone(p));
+        const { walk } = engineMove(id, pumpkinSpot(p));
         const token = ++takeSeq;
         w.taking = token;
         later(() => {
@@ -2236,7 +2274,7 @@
     if (params.get('join') === '1') join.open();
     root.querySelector('[data-lab-shot]').addEventListener('click', engineShotByWalker);
     const still = params.get('still') === '1';
-    if (!simulated && !clinkStart && !clickClinkStart && !barPairs && !barDemo && !rrClinkStart && !still) wanderers().forEach((w) => wander(w.id));
+    if (!simulated && !clinkStart && !clickClinkStart && !pumpkinBeerStart && !barPairs && !barDemo && !rrClinkStart && !still) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
     window.lab = { client, engine, scene, walkTrace };
     if (startStage > 4) engineJump(startStage);
@@ -2344,6 +2382,7 @@
             later(startClinks, 800);
             setInterval(startClinks, 9000);
         }
+        if (pumpkinBeerStart) pumpkinBeerRound();
     }
     root.querySelector('[data-lab-stage]').addEventListener('change', (event) => {
         if (event.target.value !== '') engineJump(Number(event.target.value));

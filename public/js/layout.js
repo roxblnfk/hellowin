@@ -24,6 +24,20 @@ export const spreadLeft = (x, width) => ROOT.x + (x - ROOT.x) * spreadX(width);
 export const jumpOut = (width) => 1 + 0.18 / spreadX(width) ** 3;
 
 /**
+ * Where a walker stands at a reachable pumpkin of the cursed world for a beer or a clink (docs/spec/protocol.md, RPC
+ * `beer`), in config percents, before the server brings it onto the lawn: on the side of the mug (`side`, 1 or -1),
+ * `gap[size]` past the pumpkin where it floats after the jump out on a wide screen (`out` = jumpOut there), level with
+ * it. The scene draws a walker whose walk ends within `near` of it at the drawn mug, on every screen: the lawn's
+ * nearest point is that close for every reachable pumpkin of the config.
+ */
+export const PUMPKIN_STAND = { out: 1.18, gap: { l: 10, m: 9, s: 8 }, near: 2.5 };
+export function pumpkinStand(element, side) {
+    const out = (v, root) => root + (v - root) * PUMPKIN_STAND.out;
+    const gap = PUMPKIN_STAND.gap[element.size] ?? PUMPKIN_STAND.gap.m;
+    return { x: Math.round((out(element.x, ROOT.x) + side * gap) * 10) / 10, y: Math.round(out(element.y, ROOT.y) * 10) / 10 };
+}
+
+/**
  * Scene numbers the art depends on (docs/spec/scenario.md, «Сцена»): the bar opens the evening, the day, the sunset
  * and the night follow; the final scene is `sceneStages` of the snapshot, never a constant here.
  */
