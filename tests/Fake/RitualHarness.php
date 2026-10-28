@@ -308,7 +308,7 @@ final class RitualHarness
         );
         $this->transitions = new TransitionHandler($this->store, $policy, $publisher, $metrics, $this->players, $this->walks, bar: $this->bar, limits: $this->limits);
         $this->reset = new ResetService($this->store, $publisher, $metrics, $this->walks, $this->bar, $this->flyers, $this->limits, $this->tally, $this->reveal);
-        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally);
+        $this->story = new StoryService($this->store, $policy, $queue, $publisher, $this->reveal, $this->walks, $this->reset, $this->cursed, $this->rapier, $metrics, $this->dice, $this->clock, $this->flyers, $this->limits, $this->tally, $this->playMetrics, new Randomizer(new Mt19937(17)));
         $this->autoStore = new AutoStore($this->storage, new Locks($this->lock));
         $this->autopilot = new AutopilotService(
             $this->autoStore,

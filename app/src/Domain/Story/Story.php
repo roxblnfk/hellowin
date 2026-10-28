@@ -53,6 +53,8 @@ final readonly class Story
      *        only the moderator's reset sends him away.
      * @param int<0, max> $players Figures on the floor the limits are counted for: the ticker moves it once a count has
      *        held for a while, so a flickering connection does not shake the goals. Like `$k`, it is about the room.
+     * @param HorizonRun|null $runner The moderator's last run of RoadRunner across the horizon in the round, finished or
+     *        not: a page opened during it picks it up.
      */
     public function __construct(
         public ?int $ready = null,
@@ -64,6 +66,7 @@ final readonly class Story
         public int $barBonus = 0,
         public bool $roadrunner = false,
         public int $players = 0,
+        public ?HorizonRun $runner = null,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -97,6 +100,7 @@ final readonly class Story
             \is_int($barBonus) ? $barBonus : 0,
             ($value['roadrunner'] ?? false) === true,
             \is_int($players) && $players > 0 ? $players : 0,
+            HorizonRun::fromArray($value['runner'] ?? null),
         );
     }
 
@@ -114,7 +118,7 @@ final readonly class Story
      */
     public function readyIn(int $scene, ?string $player): self
     {
-        return new self($scene, $this->finale, $this->paused, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self($scene, $this->finale, $this->paused, $player ?? $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     /**
@@ -122,7 +126,7 @@ final readonly class Story
      */
     public function bonfireOpenIn(int $scene): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $scene, $this->k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $scene, $this->k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     /**
@@ -130,7 +134,7 @@ final readonly class Story
      */
     public function nextScene(bool $final): self
     {
-        return new self(null, $final ? 0 : null, $this->paused, $this->lastPumpkin, null, $this->k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self(null, $final ? 0 : null, $this->paused, $this->lastPumpkin, null, $this->k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     /**
@@ -147,7 +151,7 @@ final readonly class Story
         // The dice and the cursed world are ready by their own goal, not by the circle closed long ago
         $ready = $step === self::DICE_STEP || $step === self::CURSED_STEP ? null : $this->ready;
 
-        return new self($ready, $step, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self($ready, $step, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     /**
@@ -168,17 +172,17 @@ final readonly class Story
 
     public function withPaused(bool $paused): self
     {
-        return new self($this->ready, $this->finale, $paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self($this->ready, $this->finale, $paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     public function withK(float $k): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $k, $this->barBonus, $this->roadrunner, $this->players);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $k, $this->barBonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     public function withBarBonus(int $bonus): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $bonus, $this->roadrunner, $this->players);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $bonus, $this->roadrunner, $this->players, $this->runner);
     }
 
     /**
@@ -186,12 +190,26 @@ final readonly class Story
      */
     public function withPlayers(int $players): self
     {
-        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $players);
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $players, $this->runner);
+    }
+
+    public function withRunner(HorizonRun $runner): self
+    {
+        return new self($this->ready, $this->finale, $this->paused, $this->lastPumpkin, $this->bonfire, $this->k, $this->barBonus, $this->roadrunner, $this->players, $runner);
+    }
+
+    /**
+     * RoadRunner runs across the horizon outside the finale, and in it but on the two steps after the scatter, where he
+     * plays a part of his own on the stage. Whether the scene is the bar, where he never runs, is for the caller.
+     */
+    public function horizon(): bool
+    {
+        return $this->finale === null || $this->finale <= self::SCATTER_STEP || $this->finale >= self::CURSED_STEP;
     }
 
     /**
      * A new round starts the story over; the multiplier and the figures the limits are counted for stay, they are about
-     * the room rather than the story, while the moderator's bonuses and the pause go with the round: a forgotten pause
+     * the room rather than the story, while the moderator's bonuses, his run of RoadRunner and the pause go with the round: a forgotten pause
      * must not hold the next evening. RoadRunner comes to the bar with a new cycle from the dawn and leaves with the
      * moderator's reset.
      */
@@ -230,7 +248,7 @@ final readonly class Story
     }
 
     /**
-     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barBonus: int, roadrunner: bool, players: int<0, max>}
+     * @return array{ready: int<0, max>|null, finale: int<0, 7>|null, paused: bool, lastPumpkin: non-empty-string|null, bonfire: int<0, max>|null, k: float, barBonus: int, roadrunner: bool, players: int<0, max>, runner: array{at: int, ltr: bool}|null}
      */
     public function toArray(): array
     {
@@ -244,6 +262,7 @@ final readonly class Story
             'barBonus' => $this->barBonus,
             'roadrunner' => $this->roadrunner,
             'players' => $this->players,
+            'runner' => $this->runner?->toArray(),
         ];
     }
 }

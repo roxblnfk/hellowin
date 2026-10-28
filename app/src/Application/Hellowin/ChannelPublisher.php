@@ -385,6 +385,16 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * The moderator sent RoadRunner across the horizon.
+     *
+     * @param int $at Unix time in milliseconds when the run starts.
+     */
+    public function runner(int $round, int $at, bool $ltr): void
+    {
+        $this->publish(['type' => 'runner', 'round' => $round, 'at' => $at, 'ltr' => $ltr]);
+    }
+
+    /**
      * A player said something in the chat.
      *
      * @param array{id: non-empty-string, name: non-empty-string|null} $player

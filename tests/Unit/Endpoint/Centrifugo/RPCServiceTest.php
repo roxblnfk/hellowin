@@ -12,6 +12,7 @@ use App\Domain\Flyer\Flyer;
 use App\Domain\Lock\Locks;
 use App\Domain\RateLimit\RateLimiter;
 use App\Domain\RateLimit\TokenBucket;
+use App\Domain\Story\HorizonRun;
 use App\Domain\Story\Story;
 use App\Endpoint\Centrifugo\ConnectService;
 use App\Endpoint\Centrifugo\RPCService;
@@ -139,6 +140,7 @@ final class RPCServiceTest
             'dice' => null,
             'top' => ['board' => []],
             'flyers' => [],
+            'runner' => null,
             'emotes' => RitualHarness::EMOTES,
             'startedAt' => $ritual->clock->now,
             'now' => $ritual->clock->now,
@@ -466,6 +468,7 @@ final class RPCServiceTest
     #[DataSet(['boss.hp'])]
     #[DataSet(['dice.owl'])]
     #[DataSet(['meep'])]
+    #[DataSet(['runner'])]
     #[DataSet(['stats.reset'])]
     public function consoleIsForbiddenToEveryoneButTheModerator(string $method): void
     {
@@ -1020,6 +1023,85 @@ final class RPCServiceTest
             ['type' => 'meep', 'round' => 1, 'at' => 1_760_900_001_500],
             ['type' => 'meep', 'round' => 1, 'flyer' => 'f-0a1b2c3d', 'at' => 1_760_900_001_500],
         ]);
+    }
+
+    public function moderatorSendsRoadrunnerAcrossTheHorizonForEveryone(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+        $ritual->story->pause(true);
+
+        $response = $this->call($ritual, 'runner', [], moderator: true);
+
+        Assert::same(\array_keys($response), ['ok', 'at', 'ltr']);
+        Assert::true($response['ok']);
+        Assert::same($response['at'], 1_760_900_001_500);
+        Assert::bool($response['ltr']);
+        Assert::same($ritual->broadcast->ofType('runner'), [
+            ['type' => 'runner', 'round' => 1, 'at' => 1_760_900_001_500, 'ltr' => $response['ltr']],
+        ]);
+        Assert::same($this->call($ritual, 'state', [])['state']['runner'], ['at' => 1_760_900_001_500, 'ltr' => $response['ltr']]);
+        Assert::same($ritual->counters()[PlayMetrics::RUNNER_RUNS . '{}'] ?? null, 1.0);
+    }
+
+    public function nextRunWaitsForTheLastOneToEnd(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+        $this->call($ritual, 'runner', [], moderator: true);
+
+        $ritual->clock->now += HorizonRun::DURATION - 1;
+        $busy = $this->call($ritual, 'runner', [], moderator: true);
+        $ritual->clock->now += 1;
+        $next = $this->call($ritual, 'runner', [], moderator: true);
+
+        Assert::same($busy, ['ok' => false, 'error' => 'busy']);
+        Assert::same($next['at'] ?? null, 1_760_900_001_500 + HorizonRun::DURATION);
+        Assert::same(\array_column($ritual->broadcast->ofType('runner'), 'at'), [1_760_900_001_500, 1_760_900_001_500 + HorizonRun::DURATION]);
+        Assert::same($this->call($ritual, 'state', [])['state']['runner']['at'] ?? null, 1_760_900_001_500 + HorizonRun::DURATION);
+    }
+
+    public function roadrunnerDoesNotRunAcrossTheBar(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2]);
+
+        Assert::same($this->call($ritual, 'runner', [], moderator: true), ['ok' => false, 'error' => 'not here']);
+        Assert::blank($ritual->broadcast->ofType('runner'));
+        Assert::null($this->call($ritual, 'state', [])['state']['runner']);
+    }
+
+    #[DataSet([0, true])]
+    #[DataSet([2, true])]
+    #[DataSet([3, false])]
+    #[DataSet([4, false])]
+    #[DataSet([5, true])]
+    #[DataSet([7, true])]
+    public function roadrunnerRunsInTheFinaleButOnItsOwnSteps(int $step, bool $runs): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $ritual->transitions->scene(1, 1);
+        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: $step));
+
+        $response = $this->call($ritual, 'runner', [], moderator: true);
+
+        Assert::same($response['ok'], $runs);
+        Assert::count($ritual->broadcast->ofType('runner'), $runs ? 1 : 0);
+        $runs or Assert::same($response, ['ok' => false, 'error' => 'not here']);
+    }
+
+    public function newRoundForgetsTheRun(): void
+    {
+        $ritual = new RitualHarness(stageMax: [1]);
+        $this->call($ritual, 'runner', [], moderator: true);
+        $this->call($ritual, 'reset', ['round' => 1], moderator: true);
+        Assert::null($this->call($ritual, 'state', [])['state']['runner']);
+        $this->call($ritual, 'runner', [], moderator: true);
+        $ritual->transitions->scene(2, 1);
+        $ritual->store->updateStory(static fn(Story $story): Story => new Story(finale: Story::DAWN_STEP, runner: $story->runner));
+
+        $this->call($ritual, 'scene.next', ['scene' => 1], moderator: true);
+
+        Assert::null($this->call($ritual, 'state', [])['state']['runner']);
     }
 
     public function moderatorIsNeverRateLimited(): void

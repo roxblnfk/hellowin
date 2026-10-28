@@ -41,7 +41,7 @@
 | Кто подключён | `Application/Walk/Presence`, `CentrifugoPresence` (presence канала через API Centrifugo), `Online` (игроки и подключения одного чтения), `Domain/Walk/PresenceStore` (сказанные клиентам числа) |
 | Бар: стойка, розлив, «взять», «выпить», цель | `Domain/Bar/Bar`, `BarStore`, `BarLayout` (геометрия), `Application/Bar/BarService` (тикер, RPC `drink`, `bar.target`, `bar.ready`), `WalkService::toCounter` (RPC `bar.take`), `WalkService::clinkAuto` (RPC `clink.auto`) |
 | Зона прогулки и препятствия | `Domain/Walk/WalkZone`, `Obstacle`, `Ellipse`, `Box` |
-| Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
+| Сюжет: состояние, пульт, разоблачение | `Domain/Story/Story`, `HorizonRun` (пробежка RoadRunner по кнопке), `Reveal`, `ShotTally`, `Application/Story/StoryService` (RPC пульта), `RevealBuilder`, `OwlLine` (id реплик совы) |
 | Рапира: цель проклятого мира, слово, зомби-игроки, босс | `Domain/Story/Cursed`, `CursedStore`, `Boss`, `BossStore`, `MagicWord`, `Application/Story/CursedService` (RPC `cursed.target`, тикер), `RapierService` (RPC `word`, `cure`, `strike`, `boss.hp`, тикер), `WalkService::toPumpkin` (RPC `beer`), `Job/TransitionFinale`, `DawnBoard`, `DawnStore`, `DawnService` (топ рассвета, из RPC `shoot`) |
 | Кости 6-6-6: запись, грани | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 | Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
@@ -538,6 +538,13 @@
 - **Мип-мип** (`meep {flyer?}`, `StoryService::meep`): только публикация `meep {flyer?, at}` — ни лока, ни записи; `flyer`,
   не похожий на id, отбрасывается. Клиент шлёт `meep {}` и `flyer` не читает: поле — только эхо. Виден ли RoadRunner,
   решает фронтенд.
+- **Пробежка RoadRunner** (`runner {}`, `StoryService::runner`; протокол — «Пробежка RoadRunner по кнопке»): под
+  RR-локом `scene` через `RitualStore::updateStory` по порядку — сцена бара (`RitualPolicy::bar`) или финал на шагах 3–4
+  (`Story::horizon`) — `not here`; прошлая пробежка ещё идёт (`HorizonRun::running`: `now < at + HorizonRun::DURATION`,
+  6500 мс — длина анимации `HORIZON.runMs` в `public/js/pixel/runner-horizon.js`, не число игры) — `busy`; иначе в
+  сюжет пишется `runner {at, ltr}` (`at` — сейчас, `ltr` — случайно). После лока — событие `runner {at, ltr}` и
+  `hellowin_runner_runs_total`. Одна последняя пробежка раунда, в снимке — как есть, даже закончившаяся; пауза не
+  мешает. Сброс и `again` её снимают (`Story::restarted`).
 - **Онлайн для пульта** (**реализовано**): событие `presence {players, connections}` и `presence` в снимке — кто
   подключён к каналу вообще, а не стоит на поле (`online` снимка и `players` в `limits` — фигурки); считает тикер,
   см. «Периодический процесс (тикер)», «Кто онлайн». Событие идёт всем: числа не секретны, отдельного канала ради них нет.
@@ -546,12 +553,12 @@
 
 Правила — [`scenario.md`](scenario.md), «Модератор и сова», «Финал»; RPC пульта — [`protocol.md`](protocol.md).
 
-- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, lastPumpkin, bonfire, k, barBonus, roadrunner, players}` (`Domain/Story/Story`;
+- **Состояние** — ключ `hellowin:story`: `{ready, finale, paused, lastPumpkin, bonfire, k, barBonus, roadrunner, players, runner}` (`Domain/Story/Story`;
   `k` — множитель лимитов, вне 0,1–10 или нет поля — читается как 1; `players` — n лимитов после дебаунса,
   `barBonus` — надбавка модератора к цели бара;
   `bonfire` — сцена, в которой открыт костёр, чтобы `bonfire-open` прозвучал один раз), пишется
   только под RR-локом `scene`, читается снимком вместе с раундом и тыквами одним `getMultiple`. Один лок со сценой —
-  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; `k` и `players` при этом остаются, `barBonus` и пауза — нет (`Story::restarted`).
+  поэтому сброс (он берёт `scene`, все `pumpkin:{id}`, `bonfire` и `circle`) атомарно возвращает и сюжет; `k` и `players` при этом остаются, `barBonus`, `runner` и пауза — нет (`Story::restarted`).
 - **Пульт** (`Application/Story/StoryService`): `finale.step`, `pause`, `thresholds` меняют сюжет под локом через
   `RitualStore::updateStory` и сравнивают «до» и «после»: событие и реплика уходят только при изменении, поэтому повтор
   нажатия безопасен. Шаг финала меняется, только если запрошен следующий (`Story::stepTo`). `owl.say` ничего не хранит —
@@ -896,6 +903,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
 | `hellowin_farts_total` | counter | слоны, выпустившие газ: первый выстрел по слону (RPC `shoot`) |
+| `hellowin_runner_runs_total` | counter | пробежки RoadRunner по горизонту, пущенные модератором (успешный RPC `runner`) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 | `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
 | `hellowin_online_connections` | gauge | все подключения к каналу сейчас: вкладки и анонимы; там же |

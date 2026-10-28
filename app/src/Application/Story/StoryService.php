@@ -7,6 +7,7 @@ namespace App\Application\Story;
 use App\Application\Balance\LimitsService;
 use App\Application\Flyer\FlyerService;
 use App\Application\Hellowin\ChannelPublisher;
+use App\Application\Hellowin\PlayMetrics;
 use App\Application\Hellowin\ResetService;
 use App\Application\Hellowin\RitualMetrics;
 use App\Application\Hellowin\TransitionQueue;
@@ -17,7 +18,9 @@ use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
 use App\Domain\Ritual\RitualPolicy;
 use App\Domain\Ritual\RitualStore;
+use App\Domain\Story\HorizonRun;
 use App\Domain\Story\Story;
+use Random\Randomizer;
 
 /**
  * The moderator's console (docs/spec/protocol.md, «Модератор»). Every call is safe to repeat: it names the state the
@@ -44,6 +47,8 @@ final readonly class StoryService
         private ?FlyerService $flyers = null,
         private ?LimitsService $limits = null,
         private ?EveningTally $tally = null,
+        private ?PlayMetrics $play = null,
+        private Randomizer $random = new Randomizer(),
     ) {}
 
     /**
@@ -162,6 +167,31 @@ final readonly class StoryService
         $flyer = \is_string($flyer) && $flyer !== '' && \preg_match('/^[A-Za-z0-9_-]{1,64}$/', $flyer) === 1 ? $flyer : null;
 
         $this->publisher->meep($this->store->round(), $flyer, $this->clock->now());
+    }
+
+    /**
+     * Sends RoadRunner across the horizon now, in a random direction, for the whole room. The pause does not hold him:
+     * he is no progress.
+     *
+     * @return array{at: int, ltr: bool}
+     * @throws StoryRefusedException `not here` where he does not run across the horizon, `busy` while the last run lasts.
+     * @throws RitualBusyException
+     */
+    public function runner(): array
+    {
+        $run = new HorizonRun($this->clock->now(), $this->random->getInt(0, 1) === 1);
+        $this->store->updateStory(function (Story $story) use ($run): Story {
+            // The scene moves under the same lock the change holds, so a read without a lock is still current here
+            $this->policy->bar($this->store->scene()) || !$story->horizon() and throw new StoryRefusedException('not here');
+            $story->runner?->running($run->at) and throw new StoryRefusedException('busy');
+
+            return $story->withRunner($run);
+        });
+
+        $this->publisher->runner($this->store->round(), $run->at, $run->ltr);
+        $this->play?->runnerRun();
+
+        return $run->toArray();
     }
 
     /**

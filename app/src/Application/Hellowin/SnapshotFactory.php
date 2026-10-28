@@ -52,6 +52,7 @@ use App\Domain\Walk\WalkerStore;
  *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
  *     top: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}>},
  *     flyers: list<array>,
+ *     runner: array{at: int, ltr: bool}|null,
  *     emotes: list<non-empty-string>,
  *     startedAt: int,
  *     now: int,
@@ -150,6 +151,8 @@ final readonly class SnapshotFactory
             'dice' => $this->dice?->state($ritual->round, $ritual->story),
             'top' => $this->top?->state() ?? ['board' => []],
             'flyers' => $this->flyers?->wanderers($ritual->story) ?? [],
+            // The last run, finished or not: the client draws only what is left of it
+            'runner' => $ritual->story->runner?->toArray(),
             'emotes' => $this->emotes,
             // Server time in ms: the client derives its clock offset from it to judge flyer `expiresAt`
             // When the server started, ms: the uptime of the finale; without the record — now

@@ -8,6 +8,7 @@ use App\Domain\Balance\Limit;
 use App\Domain\Ritual\LockstepPolicy;
 use App\Domain\Ritual\Pumpkin;
 use App\Domain\Ritual\RitualSnapshot;
+use App\Domain\Story\HorizonRun;
 use App\Domain\Story\Reveal;
 use App\Domain\Story\Story;
 use Testo\Assert;
@@ -17,6 +18,7 @@ use Testo\Test;
 #[Test]
 #[Covers(Story::class)]
 #[Covers(Reveal::class)]
+#[Covers(HorizonRun::class)]
 final class StoryTest
 {
     public function finaleMovesOnlyToTheNextStep(): void
@@ -59,7 +61,7 @@ final class StoryTest
 
     public function storyRoundTripsThroughItsRecord(): void
     {
-        $story = new Story(2, null, true, 'aaaaaaaaaaaaaaaa', 2, 0.5, -3, true, 7);
+        $story = new Story(2, null, true, 'aaaaaaaaaaaaaaaa', 2, 0.5, -3, true, 7, new HorizonRun(1_760_900_001_500, true));
 
         Assert::equals(Story::fromArray($story->toArray()), $story);
         Assert::equals(Story::fromArray('garbage'), new Story());

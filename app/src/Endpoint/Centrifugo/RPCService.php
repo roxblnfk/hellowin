@@ -63,7 +63,7 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'meep', 'runner', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
     private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal'];
@@ -186,6 +186,7 @@ final readonly class RPCService implements ServiceInterface
             'roll' => $player === null ? self::fail('anonymous') : ['ok' => true] + $this->diceService()->roll($player, $request->getData()['attempt'] ?? null),
             'dice.owl' => ['ok' => true] + $this->diceService()->owl(),
             'meep' => $this->meep($request->getData()),
+            'runner' => ['ok' => true] + $this->story->runner(),
             'say' => $this->chatSay($request->getData(), $player),
             'emote' => $this->emote($request->getData(), $player),
             'chat.history' => ['ok' => true] + $this->chatService()->history(),
