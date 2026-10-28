@@ -7,6 +7,11 @@ server:
   command: 'php app.php'
   relay: pipes
 
+# Every lock and metric call is logged at debug; the production image sets production/info
+logs:
+  mode: ${RR_LOG_MODE:-development}
+  level: ${RR_LOG_LEVEL:-debug}
+
 # RoadRunner faces the browser itself, with no proxy in front: it serves the static files, compresses, sets the
 # security headers and limits requests by IP. Middleware wrap each other from left to right, so http_metrics counts
 # everything, the headers and gzip cover the static files too, and rate_limiter after static guards only the PHP pages.

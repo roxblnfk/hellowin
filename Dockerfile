@@ -49,12 +49,20 @@ RUN php -r 'require "vendor/autoload.php"; $yaml = Symfony\Component\Yaml\Yaml::
         $yaml::parseFile(".rr.yaml"), $yaml::parseFile(".rr.tls.yaml")), 10, 2));'
 COPY public ./public
 COPY app ./app
-# Workers of every pool boot at once and race to create these on the first start; acme is the certificate's volume.
-RUN mkdir -p runtime/cache/views runtime/cache/listeners runtime/acme && chown -R www-data:www-data runtime
-USER www-data
 ENV APP_ENV=prod \
     DEBUG=false \
-    VERBOSITY_LEVEL=basic
+    VERBOSITY_LEVEL=basic \
+    TOKENIZER_CACHE_TARGETS=true \
+    VIEW_CACHE=true \
+    MONOLOG_DEFAULT_LEVEL=INFO \
+    TELEMETRY_DRIVER=null \
+    RR_LOG_MODE=production \
+    RR_LOG_LEVEL=info
+# Workers of every pool boot at once: the tokenizer and view caches are warmed here, or each worker would scan the
+# classes and race the others to write them, slow on one core. acme is the certificate's volume.
+RUN php app.php views:compile >/dev/null \
+    && mkdir -p runtime/cache/views runtime/cache/listeners runtime/acme && chown -R www-data:www-data runtime
+USER www-data
 EXPOSE 8080 10001 2112
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1
