@@ -1743,8 +1743,8 @@ body:not([data-final]) .circle,
 }
 
 /*
- * The moderator's hit zone over RoadRunner of the finale (--rr-meep-*, from the scene): shown only while he is on
- * screen (#app[data-rr-shown]) and the client lets it (the moderator, finale step 3+).
+ * The moderator's hit zone over RoadRunner on the horizon and of the finale (--rr-meep-*, from the scene): shown only
+ * while he is on screen (#app[data-rr-shown]) and the client lets it (the moderator, anywhere but the bar).
  */
 .rr-meep {
     position: absolute;

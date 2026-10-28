@@ -257,4 +257,10 @@ export const PALETTE = {
     cap: 0x4a4e58,
     capShade: 0x383b46,
     capLogo: 0xe2e4ea,
+    // The elephant's fart: the green cloud of the PHP Fart Time logo — its lime spots, base and shade — and the dark
+    // green that rims its white «fart! time».
+    fartLight: 0xa6e000,
+    fart: 0x84cc00,
+    fartDark: 0x6ab300,
+    fartInk: 0x4f9600,
 };

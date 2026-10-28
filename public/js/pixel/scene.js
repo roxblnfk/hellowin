@@ -17,12 +17,14 @@ import { BAR_TOASTS, TOASTS, rrToastAt } from '../toasts.js';
 import { CLINK, CLINK_STALE_MS, SLOT_MS, clinkOf, createClinks } from './clink.js';
 import { MEEP, T as FINALE_T, createFinaleStage, downOf, lightsOut, nightOf, ritualOf, rumbleAt } from './finale-stage.js';
 import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
+import { horizonAt } from './runner-horizon.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { EMOTE_MS } from '../emote.js';
 import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
+import { ELEPHANT, FART, PUFFS as FART_PUFFS, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
 import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, counterMugs, mugSlots, paintBar, pourBatch } from './bar.js';
@@ -1778,7 +1780,7 @@ export async function createScene(rootEl, snapshot) {
         const toast = runnerShown() ? runnerToast(now) : null;
         if (!toast) return;
         // The moderator's meep has the bubble over his head for its moment.
-        if (!meepOf || meepOf.flyer) toastSpeech.say('rr', toast.text, runnerHead());
+        if (!meepOf) toastSpeech.say('rr', toast.text, runnerHead());
         if (rrToastSaid === toast.at) return;
         rrToastSaid = toast.at;
         if (now - toast.at < RR_TOAST_FRESH_MS) cue({ type: 'rr-toast', x: (hall.runner.x / layout.artW) * 100 });
@@ -1952,9 +1954,6 @@ export async function createScene(rootEl, snapshot) {
 
     function pathAt(f, t) {
         const p = basePath(f, t);
-        // The road-runner keeps the server's x but runs on the scene's horizon line, along the foot of the hills: the
-        // config's horizon (38 %) lands a little in front of ours (37 % of the art height) and would put it on the lawn.
-        if (f.kind === 'roadrunner') return { x: toScreenArt(p).x, y: layout.horizon - 1 };
         // `wobble` (protocol.md, bats): a sideways sway across the path, amp · sin(2π · waves · t), in screen percents.
         if (f.wobble) {
             const len = Math.hypot(p.dx, p.dy) || 1;
@@ -1966,7 +1965,7 @@ export async function createScene(rootEl, snapshot) {
 
     // Wingbeat period per depth, far to near (public/dev/flyers.html); the ground runners step at their own pace.
     const FLAP = [260, 130, 90];
-    const STEP_MS = { roadrunner: 70, zombie: 150, worm: 150 };
+    const STEP_MS = { zombie: 150, worm: 150 };
     const RUSTLE_MS = 600;
     // Kinds that walk on the lawn: in groundLayer, sorted by their feet, on the walkers' coordinates.
     const GROUND = new Set(['zombie', 'worm']);
@@ -2087,6 +2086,13 @@ export async function createScene(rootEl, snapshot) {
 
     function animateFlyers() {
         for (const [id, f] of flyers) {
+            if (f.kind === 'elephant') {
+                if (!animateElephant(f)) {
+                    dropFlyer(f);
+                    flyers.delete(id);
+                }
+                continue;
+            }
             const set = FLYERS[f.kind]?.[f.depth] ?? FLYERS.duck[0];
             let art;
             let flip = f.flip;
@@ -2217,6 +2223,7 @@ export async function createScene(rootEl, snapshot) {
         f.sprite.destroy();
         f.glow?.destroy();
         f.halo?.destroy();
+        f.parts?.forEach((s) => s.destroy());
     }
 
     /**
@@ -2245,10 +2252,102 @@ export async function createScene(rootEl, snapshot) {
         f.halo.position.set(x - h.anchor.x, y - h.anchor.y);
     }
 
+    // The elephant (elephant.js) and its banner take the scene's light, then the haze of the far plan in that light.
+    const elephantTextures = new Map();
+    function elephantArt(def) {
+        if (!elephantTextures.has(lighting)) elephantTextures.set(lighting, new Map());
+        const cache = elephantTextures.get(lighting);
+        if (!cache.has(def)) {
+            const c = relightCanvas(flyerBake(def), lighting);
+            const ctx = c.getContext('2d');
+            const img = ctx.getImageData(0, 0, c.width, c.height);
+            const hazeColor = litColor(PALETTE.hazeLight, lighting);
+            const haze = [(hazeColor >> 16) & 255, (hazeColor >> 8) & 255, hazeColor & 255];
+            for (let i = 0; i < img.data.length; i += 4) {
+                for (let k = 0; k < 3; k++) img.data[i + k] = Math.round(img.data[i + k] * 0.85 + haze[k] * 0.15);
+            }
+            ctx.putImageData(img, 0, 0);
+            cache.set(def, { texture: texture(c), ax: def.anchor.x / def.w, ay: def.anchor.y / def.h, def });
+        }
+        return cache.get(def);
+    }
+
+    // The banner under the elephant; the fart's puffs and cloud over both, in the far plan's layer.
+    function elephantParts(f) {
+        const layer = f.sprite.parent;
+        f.banner = new Sprite();
+        layer.addChildAt(f.banner, layer.getChildIndex(f.sprite));
+        f.puffs = Array.from({ length: FART.puffCount }, () => layer.addChild(new Sprite()));
+        f.cloud = layer.addChild(new Sprite());
+        f.parts = [f.banner, f.cloud, ...f.puffs];
+        f.fart = null;
+    }
+
+    /**
+     * The elephant's anchor `t` into its flight, art px: the whole train comes in beyond one edge and leaves beyond the
+     * other (elephant.js, trainX); the server's y between `from` and `to`, kept in the sky above the hills.
+     */
+    function elephantPath(f, t) {
+        const y = toScreenArt({ x: 0, y: f.from.y + (f.to.y - f.from.y) * t }).y;
+        return { x: trainX(layout.artW, !f.flip, t), y: clamp(y, 16, Math.max(16, layout.horizon - 14)) };
+    }
+
+    // Puffs and the cloud of the fart are unlit: the logo keeps its greens in every light.
+    const fartTextures = new Map();
+    function fartArt(def) {
+        if (!fartTextures.has(def)) fartTextures.set(def, { texture: texture(flyerBake(def)), ax: def.anchor.x / def.w, ay: def.anchor.y / def.h });
+        return fartTextures.get(def);
+    }
+
+    function placeArt(sprite, art, x, y) {
+        sprite.texture = art.texture;
+        sprite.anchor.set(art.ax, art.ay);
+        sprite.position.set(Math.round(x), Math.round(y));
+    }
+
+    /**
+     * One frame of the elephant on server time: the flap, the bob, the waving banner; from a `fart` its strain, the
+     * puffs and the cloud rising from where its rump was at `at`. False once the flight and the cloud are both over.
+     */
+    function animateElephant(f) {
+        const now = serverNow();
+        const fart = f.fart ? fartAt(now - f.fart.at, reduced) : null;
+        const flying = now < f.expiresAt;
+        if (!flying && !(fart?.cloud)) return false;
+        const ltr = !f.flip;
+        const local = Math.max(0, now - f.launchedAt);
+        const fly = flightAt(local, reduced);
+        const path = elephantPath(f, clamp(local / f.duration, 0, 1));
+        f.pos = { x: path.x, y: path.y + fly.dy };
+        f.sprite.visible = flying;
+        f.banner.visible = flying;
+        if (flying) {
+            const art = elephantArt(fart?.strain ? ELEPHANT.strain : ELEPHANT.fly[fly.frame]);
+            placeArt(f.sprite, art, f.pos.x, f.pos.y);
+            f.sprite.scale.x = ltr ? 1 : -1;
+            f.art = art;
+            const hook = hookOf(Math.round(f.pos.x), Math.round(f.pos.y), ltr);
+            placeArt(f.banner, elephantArt(bannerFrame(fly.wave, ltr ? 'right' : 'left')), hook.x, hook.y);
+        } else f.art = null;
+        const rump = fart && elephantPath(f, clamp((f.fart.at - f.launchedAt) / f.duration, 0, 1));
+        const origin = rump && hookOf(rump.x, rump.y, ltr);
+        const back = ltr ? -1 : 1;
+        f.puffs.forEach((s, i) => {
+            const p = fart?.puffs[i];
+            s.visible = Boolean(p);
+            if (p) placeArt(s, fartArt(FART_PUFFS[p.size]), origin.x + back * p.back, origin.y - p.up);
+        });
+        const cloud = fart?.cloud;
+        f.cloud.visible = Boolean(cloud);
+        if (cloud) placeArt(f.cloud, fartArt(fartCloud(cloud.scale, cloud.melt)), origin.x + back * cloud.back, origin.y - cloud.up);
+        return true;
+    }
+
     // Flights run on server time, so every player sees a bird at the same spot and a late event picks the flight
     // up midway; a bird past `expiresAt` (say, events held back in a background tab) is never drawn.
     function launch(event) {
-        if (flyers.has(event.flyer)) return;
+        // RoadRunner on the horizon is the client's own (runner-horizon.js): a server `roadrunner` would be a second one.
+        if (flyers.has(event.flyer) || event.kind === 'roadrunner') return;
         const now = serverNow();
         const launchedAt = event.launchedAt ?? now;
         // A wandering zombie has no path end and no expiry: it walks until shot or `gone`.
@@ -2294,6 +2393,7 @@ export async function createScene(rootEl, snapshot) {
             shotAt: null,
             pos: ground ? walkerArt(event.from) : toScreenArt(event.from),
         });
+        if (event.kind === 'elephant') elephantParts(flyers.get(event.flyer));
         const bush = event.bush && bushes.get(event.bush);
         if (bush && now - launchedAt < RUSTLE_MS) bush.rustleUntil = clock + RUSTLE_MS - (now - launchedAt);
         animateFlyers();
@@ -4036,6 +4136,7 @@ export async function createScene(rootEl, snapshot) {
         animateWalkers();
         animateThrows();
         animateOwl();
+        animateHorizonRunner();
         stage.animate(inFinale() ? finale.step : null, sinceStep());
         publishRunnerZone();
         drawHits();
@@ -4279,28 +4380,56 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /*
-     * The moderator's «Мип-мип!» (docs/spec/frontend.md, «Пульт модератора»): over a runner on the horizon (`flyer`) or
-     * over RoadRunner of the scene — behind the bar's counter, or the finale's (finale-stage.js draws him with his
-     * `meep` frame). Whoever is not on screen says nothing.
+     * RoadRunner on the horizon (docs/spec/frontend.md, «RoadRunner на горизонте») in every scene but the bar, until
+     * the finale's step 3 hands him to finale-stage.js: the far flyer's run on the server schedule of
+     * runner-horizon.js, drawn like a far flyer — behind the tree and the fence, hazy, feet on our horizon line.
+     */
+    const HORIZON_OFF_STEP = 3;
+    const horizonSprite = new Sprite();
+    horizonSprite.visible = false;
+    farFlyerLayer.addChild(horizonSprite);
+    // As the last frame drew him: { def, x, y, flip } in art px, or null off screen.
+    let horizonRunner = null;
+
+    function animateHorizonRunner() {
+        const off = isBar(state.scene) || (state.scene >= state.sceneStages && (finale.step ?? 0) >= HORIZON_OFF_STEP);
+        const h = off ? null : horizonAt(serverNow());
+        horizonRunner = null;
+        horizonSprite.visible = false;
+        if (!h) return;
+        const def = RUNNER.far[Math.floor(h.run / 100) % RUNNER.far.length];
+        const x = h.ltr ? -8 + (layout.artW + 16) * h.k : layout.artW + 8 - (layout.artW + 16) * h.k;
+        horizonRunner = { def, x, y: layout.horizon - 1, flip: !h.ltr };
+        const art = flyerArt(def, true);
+        horizonSprite.visible = true;
+        horizonSprite.texture = art.texture;
+        horizonSprite.anchor.set(art.ax, art.ay);
+        horizonSprite.scale.x = horizonRunner.flip ? -1 : 1;
+        horizonSprite.position.set(Math.round(x), horizonRunner.y);
+    }
+
+    /*
+     * The moderator's «Мип-мип!» (docs/spec/frontend.md, «Пульт модератора»): over RoadRunner of the scene — on the
+     * horizon, behind the bar's counter, or the finale's (finale-stage.js draws him with his `meep` frame). Whoever is
+     * not on screen says nothing.
      */
     const MEEP_MS = 1600;
     let meepOf = null;
 
     // RoadRunner a meep is for: { x } in art px and the point over his head, `finale` — the finale stage's; or null.
-    function runnerSpot(flyer) {
-        if (flyer) {
-            const f = flyers.get(flyer);
-            if (!f || f.kind !== 'roadrunner' || f.shotAt !== null || !f.art) return null;
-            return { x: f.pos.x, head: { x: f.pos.x, y: f.pos.y - f.art.def.anchor.y - 1 } };
-        }
+    function runnerSpot() {
         if (runnerShown()) return { x: hall.runner.x, head: runnerHead() };
+        if (horizonRunner) {
+            const { x, y, def } = horizonRunner;
+            return { x, head: { x, y: y - def.anchor.y - 1 } };
+        }
         const r = inFinale() ? stage.runner() : null;
         return r ? { x: r.x, finale: true } : null;
     }
 
     function meepSpeech() {
         if (!meepOf) return;
-        const spot = clock < meepOf.until ? runnerSpot(meepOf.flyer) : null;
+        const spot = clock < meepOf.until ? runnerSpot() : null;
         if (!spot?.head) {
             meepOf = null;
             return;
@@ -4308,12 +4437,12 @@ export async function createScene(rootEl, snapshot) {
         toastSpeech.say('meep', MEEP, spot.head);
     }
 
-    // The moderator's hit zone over RoadRunner of the finale (`[data-rr-meep]`): his sprite box in CSS px, at least
-    // RR_ZONE_MIN wide and tall (the far speck is a few art px); `#app[data-rr-shown]` while he is on screen.
+    // The moderator's hit zone over RoadRunner on the horizon or of the finale (`[data-rr-meep]`): his sprite box in CSS
+    // px, at least RR_ZONE_MIN wide and tall (the far speck is a few art px); `#app[data-rr-shown]` while he is on screen.
     const RR_ZONE_MIN = 28;
     let rrZone = '';
     function publishRunnerZone() {
-        const r = inFinale() ? stage.runner() : null;
+        const r = horizonRunner ?? (inFinale() ? stage.runner() : null);
         let zone = '';
         if (r) {
             const px = layout.cssPx;
@@ -4531,6 +4660,18 @@ export async function createScene(rootEl, snapshot) {
             down(event);
         },
 
+        /**
+         * Channel event `fart`: the elephant strains and lets out the Fart Time cloud, timed from `at` on the server clock
+         * (a late one joins midway, an old one shows what is left of the cloud); once per elephant. The shooter fires at
+         * it, if the event is fresh.
+         */
+        fart(event) {
+            const f = flyers.get(event.flyer);
+            if (f?.kind !== 'elephant' || f.fart) return;
+            f.fart = { at: Number.isFinite(event.at) ? event.at : serverNow() };
+            if (serverNow() - f.fart.at < FART.staleMs) walkerShot(event);
+        },
+
         /** Channel event `throw`: the walker's empty mug flies at the flyer and bursts; its hands are empty from now. */
         throwMug(event) {
             throwMug(event);
@@ -4664,11 +4805,6 @@ export async function createScene(rootEl, snapshot) {
             addClink(event);
         },
 
-        /** The kind of flyer `id` (`roadrunner`, `duck`…), or null: the moderator's click on a runner is a meep. */
-        flyerKind(id) {
-            return flyers.get(id)?.kind ?? null;
-        },
-
         /** Channel event `roll`: three little dice over the walker `player` (or the owl) for ~2 s from `at`. */
         roll(event) {
             addRoll(event);
@@ -4680,20 +4816,20 @@ export async function createScene(rootEl, snapshot) {
         },
 
         /**
-         * Channel event `meep`: «Мип-мип!» over the runner `flyer` on the horizon, or (null) over RoadRunner of the scene.
-         * Returns his x in percent of the width, or null when he is not on screen (and nothing is drawn).
+         * Channel event `meep`: «Мип-мип!» over RoadRunner of the scene. Returns his x in percent of the width, or null
+         * when he is not on screen (and nothing is drawn).
          */
-        meep(flyer = null) {
-            const spot = runnerSpot(flyer);
+        meep() {
+            const spot = runnerSpot();
             if (!spot) return null;
             if (spot.finale) stage.meep();
-            else meepOf = { flyer, until: clock + MEEP_MS };
+            else meepOf = { until: clock + MEEP_MS };
             return (spot.x / layout.artW) * 100;
         },
 
         /** Where RoadRunner of a meep is, percent of the width (null — not on screen): the pan of his voice. */
-        runnerAt(flyer = null) {
-            const spot = runnerSpot(flyer);
+        runnerAt() {
+            const spot = runnerSpot();
             return spot ? (spot.x / layout.artW) * 100 : null;
         },
 

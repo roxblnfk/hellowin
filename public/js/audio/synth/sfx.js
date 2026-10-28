@@ -38,6 +38,39 @@ function bubbles(r, out, t, count, { spread = 0.4, amp = 0.15, low = 300, high =
     }
 }
 
+/**
+ * A raspberry: a low buzz gliding from f0 to f1 Hz with a wobbling vibrato, chopped by a flapping flutter whose rate
+ * drifts and which now and then drops out — the tearing of a fart — with breath noise on the same flaps, low-passed.
+ */
+function raspberry(r, out, t, dur, { f0 = 95, f1 = 62, vib = 6, vibRate = 7, flutter = 22, amp = 0.7, cutoff = 900, noise = 0.35, pan = 0, send = 0.12 } = {}) {
+    const sr = r.sr;
+    const i0 = r.at(t);
+    const n = Math.round(dur * sr);
+    const [pl, pr] = panLR(pan);
+    const lp = new SVF(sr).set(cutoff, 1.3);
+    const breath = new SVF(sr).set(cutoff * 1.4, 0.8);
+    let ph = 0;
+    let fl = 0;
+    let rate = flutter;
+    let gate = 1;
+    let gateTo = 1;
+    for (let i = 0; i < n; i++) {
+        const k = i / n;
+        const sec = i / sr;
+        if (r.rnd() < 9 / sr) rate = flutter * (0.7 + r.rnd() * 0.7);
+        if (r.rnd() < 6 / sr) gateTo = r.rnd() < 0.35 ? 0.2 : 1;
+        gate += (gateTo - gate) * 0.004;
+        fl += rate / sr;
+        ph += (f0 * (f1 / f0) ** k + vib * Math.sin(TAU * vibRate * sec)) / sr;
+        const flap = (0.5 + 0.5 * Math.sin(TAU * fl)) ** 1.6;
+        const buzz = Math.tanh(3 * Math.sin(TAU * ph)) + 0.45 * Math.sin(2 * TAU * ph + 0.6);
+        const air = breath.tick(r.noise()) * noise * 2;
+        const e = Math.min(1, sec / 0.012) * (1 - k ** 4) * gate;
+        const v = lp.tick((buzz * (0.45 + 0.55 * flap) + air * flap) * e) * amp;
+        out.put(i0 + i, v * pl, v * pr, send);
+    }
+}
+
 /** Steps: soft low ticks on grass, `n` of them `gap` seconds apart. */
 function steps(r, out, t, n, gap, { amp = 0.3, tone = 700, accel = 1, crescendo = 0, pan = 0 } = {}) {
     let st = t;
@@ -544,6 +577,20 @@ export const SFX = {
                 partials(r, out, t, f, [[1, 1, 35 + r.rnd() * 25], [2.76, 0.5, 50]], { amp: 0.13 * (1 - t), dur: 0.12, pan: (r.rnd() - 0.5) * 0.7, send: 0.25 });
             }
             noiseSweep(r, out, 0.02, 0.14, { from: 700, to: 1800, q: 1.4, amp: 0.18, attack: 0.008, curve: 1.5, grain: 90 });
+        },
+    }),
+
+    // The elephant's fart (frontend.md, «Слон»): a long low raspberry sagging in pitch, two sputters and a hiss of the
+    // last of it.
+    'elephant.fart': fx({
+        dur: 2.0, variants: 3, voices: 1, level: -8, jitter: 0.06, duck: 0.8,
+        render(r, out) {
+            const low = 0.9 + r.rnd() * 0.2;
+            const main = 0.95 + r.rnd() * 0.25;
+            raspberry(r, out, 0, main, { f0: 98 * low, f1: 60 * low, vib: 5 + r.rnd() * 3, vibRate: 6 + r.rnd() * 2, flutter: 20 + r.rnd() * 6 });
+            raspberry(r, out, main + 0.07, 0.13, { f0: 82 * low, f1: 70 * low, flutter: 30, amp: 0.55 });
+            raspberry(r, out, main + 0.26, 0.07, { f0: 76 * low, f1: 72 * low, flutter: 34, amp: 0.4, noise: 0.5 });
+            noiseSweep(r, out, main + 0.3, 0.45, { from: 1300, to: 450, q: 0.9, amp: 0.22, attack: 0.02, curve: 1.6, grain: 60, send: 0.25 });
         },
     }),
 

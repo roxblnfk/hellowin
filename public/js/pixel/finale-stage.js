@@ -380,8 +380,8 @@ export function createFinaleStage(env) {
             const from = step === 5 && t < T.leave + T.back ? lerp(front.x, front.away, dashOf(step, t, now - t).k) : front.x;
             if (step === 5 && t < T.leave) return on(1, 'stop', true, from);
             if (step === 5 && t < T.leave + T.back) return on(along(1 - (t - T.leave) / T.back), 'run', false, from);
-            // Then it keeps running along the horizon, now and then, like in scene 0: one run per slot, on the server
-            // clock so every viewer sees the same; at the dawn he stops in some of them for a «Мип-мип!».
+            // Then it keeps running along the horizon on the schedule of the other scenes (scene.js draws him there
+            // until step 3); at the dawn he stops in some of the runs for a «Мип-мип!».
             const h = horizonAt(now, step >= 7);
             if (!h) return null;
             return { ...far(h.ltr ? lerp(-8, artW + 8, h.k) : lerp(artW + 8, -8, h.k), !h.ltr, h.run), meep: h.meep, meepAt: h.meepAt ?? undefined };

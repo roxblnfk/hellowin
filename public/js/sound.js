@@ -6,6 +6,7 @@ import { flyAt, flyPlan } from './pixel/fly-path.js';
 import { wanderAt } from './pixel/wander.js';
 import { T } from './pixel/finale-timeline.js';
 import { THROW, THROW_STALE_MS, throwElapsed } from './pixel/mug-throw.js';
+import { FART } from './pixel/elephant.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar, shownItem } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
@@ -109,7 +110,7 @@ export function deathOf(id) {
  * @param {(fn: Function, ms: number) => number} [options.later]  setTimeout
  * @param {Document|null} [options.doc]  for the visibility of the tab; null — always visible
  * @param {() => number|null} [options.owlX]  where the owl sits, percent of the width (the pan of its rolls)
- * @param {(flyer: string|null) => number|null} [options.runnerAt]  x of RoadRunner of a `meep` in percent, null when
+ * @param {() => number|null} [options.runnerAt]  x of RoadRunner of a `meep` in percent, null when
  *   he is not on screen (scene.runnerAt)
  */
 export function createSound(audio, { serverNow, now = () => performance.now(), owlGone = () => false, later = (fn, ms) => setTimeout(fn, ms), cancel = (id) => clearTimeout(id), doc = globalThis.document ?? null, owlX = () => null, runnerAt = () => null }) {
@@ -397,8 +398,19 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         // The moderator's click on RoadRunner: his «мип-мип», wherever he stands on screen; silent when he is not there.
         meep(model, event) {
             if (!(serverNow() - event.at < MEEP_FRESH_MS)) return;
-            const x = runnerAt(event.flyer ?? null);
+            const x = runnerAt();
             if (x !== null && x !== undefined) play('rr.meep', { pan: panOf(x) });
+        },
+        // The elephant's fart, from where it flies, and the shot of whoever let it out; silent once FART.staleMs late.
+        fart(model, event) {
+            const at = serverNow();
+            if (!(at - event.at < FART.staleMs)) return;
+            const f = flyers.get(event.flyer);
+            play('elephant.fart', { pan: panOf(f ? flyerX(f, at) : 50), delay: 0.08 });
+            const id = event.player?.id;
+            const walker = id && model.walkers.find((w) => w.id === id);
+            const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
+            if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
         },
         drink(model, event) {
             const id = event.player?.id;

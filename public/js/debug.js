@@ -11,12 +11,11 @@ const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
 const NOTE_MS = 3000;
 const DONE_MS = 900;
-// The finale's steps (docs/spec/scenario.md, «Кости 6-6-6», «Рапира»): the dice at 1, RoadRunner's entrance at 3, the
-// cursed world's goal at 5, the boss at 6, the dawn at 7.
+// The finale's steps (docs/spec/scenario.md, «Кости 6-6-6», «Рапира»): the dice at 1, the cursed world's goal at 5,
+// the boss at 6, the dawn at 7.
 const DICE_STEP = 1;
 // The owl's third roll is the 6-6-6 (scenario.md, «Кости 6-6-6»).
 const OWL_ROLLS = 3;
-const RUNNER_STEP = 3;
 const CURSED_STEP = 5;
 const BOSS_STEP = 6;
 const LAST_STEP = 7;
@@ -82,7 +81,8 @@ const TEXT = pick({
         owlText: 'Свой текст совы',
         say: 'Сказать',
         witch: 'Ведьма',
-        runner: 'Бегун',
+        elephant: 'Слон',
+        elephantTitle: 'Слон с плакатом «ROADRUNNER 3 RELEASED» пролетает по небу; выстрел по нему — пук и «Fart Time!»',
         burstTitle: 'Внеочередная волна летунов: больше игроков — больше летунов',
         burst: 'Пуск летунов',
         kDown: 'Множитель меньше: все лимиты меньше',
@@ -189,7 +189,8 @@ const TEXT = pick({
         owlText: 'The owl\'s own text',
         say: 'Say',
         witch: 'Witch',
-        runner: 'Runner',
+        elephant: 'Elephant',
+        elephantTitle: 'An elephant towing «ROADRUNNER 3 RELEASED» flies across the sky; a shot at it — a fart and «Fart Time!»',
         burstTitle: 'An extra wave of flyers: more players, more flyers',
         burst: 'Launch flyers',
         kDown: 'Smaller multiplier: all limits lower',
@@ -448,7 +449,7 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
 
     const night = group(TEXT.groups.night);
     const witch = button(night, { 'data-action': 'witch' }, TEXT.witch);
-    const runner = button(night, { 'data-action': 'roadrunner' }, TEXT.runner);
+    const elephant = button(night, { 'data-action': 'elephant', title: TEXT.elephantTitle }, TEXT.elephant);
     // A wave of the current set's flyers at once (protocol.md, `flyers.burst`): only where the set has any.
     const burst = button(night, { 'data-action': 'flyers-burst', title: TEXT.burstTitle }, TEXT.burst);
 
@@ -585,7 +586,7 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
         if (await send(say, 'owl.say', { text }, { done: true })) input.value = '';
     });
     witch.addEventListener('click', () => send(witch, 'flyer.special', { kind: 'witch' }, { done: true }));
-    runner.addEventListener('click', () => send(runner, 'flyer.special', { kind: 'roadrunner' }, { done: true }));
+    elephant.addEventListener('click', () => send(elephant, 'flyer.special', { kind: 'elephant' }, { done: true }));
     const launched = (reply) => {
         const n = Number.isInteger(reply?.count) ? reply.count : 0;
         return TEXT.launched(n);
@@ -660,11 +661,10 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
             // Only while FrankenPHP is up: before he wakes and after he falls there is no health to change.
             bossGroup.hidden = !(final && current === BOSS_STEP && boss?.hp > 0);
             bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : '';
-            // Each one where it works (docs/spec/frontend.md, «Пульт модератора»): the witch anywhere but the bar, the
-            // runner wherever he is the scene's rare flyer of HELLOWIN_FLYER_RARE: all but the bar, in the finale until his
-            // own entrance at step 3 — the wave where the set has flyers.
+            // Each one where it works (docs/spec/frontend.md, «Пульт модератора»): the witch and the elephant anywhere but the
+            // bar, the wave where the set has flyers.
             witch.hidden = bar;
-            runner.hidden = bar || (final && current >= RUNNER_STEP);
+            elephant.hidden = bar;
             burst.hidden = model.limits?.burst !== true;
             pause.setAttribute('aria-pressed', String(model.paused));
             setLabel(pause, model.paused ? TEXT.pauseOn : TEXT.pauseOff);

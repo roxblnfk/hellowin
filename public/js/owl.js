@@ -46,6 +46,8 @@ const RU_LINES = {
     'bonfire-done': { auto: true, text: 'Костёр разжёг {player}! Ух, как пылает.' },
     'circle-done': { auto: true, hoot: true, text: 'Круг замкнул {player}! Земля дрожит…' },
     'witch-down': { auto: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
+    // The first shot at the elephant: the name of the PHP Fart Time channel, the same in both languages.
+    'fart-time': { auto: true, text: 'Fart Time!' },
     'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!', then: 'Чтобы он восстал, нужна версия, которой никогда не было… Бросайте кости! Нужно шесть-шесть-шесть!' },
     'dice-win': { auto: true, hoot: true, text: '{player} выбросил 6-6-6 с {attempt}-й попытки! PHP 6 всё-таки вышел!' },
     'dice-owl-win': { auto: true, hoot: true, text: 'Шесть-шесть-шесть! С третьей попытки — как и положено.' },
@@ -96,6 +98,7 @@ const EN_LINES = {
     'bonfire-done': { text: '{player} lit the bonfire! Whoa, look at it blaze.' },
     'circle-done': { text: '{player} closed the circle! The ground trembles…' },
     'witch-down': { text: "{player} shoots down the witch! The broom's yours to keep." },
+    'fart-time': { text: 'Fart Time!' },
     'finale-1': { text: "There he is! He's coming back!", then: 'To rise, he needs a version that never existed… Roll the dice! We need six-six-six!' },
     'dice-win': { text: '{player} rolled 6-6-6 on try #{attempt}! PHP 6 finally shipped!' },
     'dice-owl-win': { text: "Six-six-six! Third time's the charm — as it should be." },

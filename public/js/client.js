@@ -574,10 +574,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         dawnTable.paint({ dawn: model.dawn, me: model.me, atDawn: step() === DAWN_STEP, compact: width <= DAWN_COMPACT_PX });
     }
 
-    // The moderator's hit zone over RoadRunner of the finale (shown by the scene only while he is on screen).
+    // The moderator's hit zone over RoadRunner on the horizon and of the finale (shown by the scene only while he is on
+    // screen); in the bar the button over him behind the counter takes his meep.
     function paintMeep() {
         const zone = root.querySelector('[data-rr-meep]');
-        if (zone) zone.hidden = !(model.moderator && (step() ?? -1) >= RUNNER_STEP);
+        if (zone) zone.hidden = !(model.moderator && !isBar(model.scene));
     }
 
     // «Чат» and «😀» in the HUD: for a player with a walker, a zombie too (its words come out as a zombie line); without
@@ -988,7 +989,12 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         // The moderator's click on RoadRunner: a «Мип-мип!» over him, if he is on screen; no state.
         meep(event) {
             if (now() + offset - event.at > MEEP_STALE_MS) return;
-            scene?.meep?.(event.flyer ?? null);
+            scene?.meep?.();
+        },
+
+        // The first shot at the elephant: its fart, drawn by the scene from `at`; the owl's «Fart Time!» comes as `owl`.
+        fart(event) {
+            scene?.fart?.(event);
         },
 
         // The top changed (any scene, at most every HELLOWIN_TOP_INTERVAL): the whole ranking again, which replaces ours.
@@ -1291,11 +1297,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         clinksRoadrunner,
 
         meepsRoadrunner,
-
-        /** Whether a click on a flyer is the moderator's RPC `meep {flyer}`: a runner on the horizon (players shoot it). */
-        meepsFlyer(kind) {
-            return model.moderator && kind === 'roadrunner';
-        },
 
         rolls,
 
@@ -1677,7 +1678,8 @@ export function bindDice(root, client, doc = globalThis.document) {
 }
 
 /**
- * The moderator's hit zone over RoadRunner of the finale: RPC `meep {}`; the bubble comes back as the `meep` event.
+ * The moderator's hit zone over RoadRunner on the horizon and of the finale: RPC `meep {}`; the bubble comes back as the
+ * `meep` event.
  */
 export function bindMeep(root, meep) {
     root.querySelector('[data-rr-meep]')?.addEventListener('click', (event) => {

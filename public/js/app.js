@@ -91,7 +91,7 @@ async function startSound(modules, scene, serverNow) {
                 const perch = scene?.perch?.();
                 return perch && root.clientWidth ? (perch.x / root.clientWidth) * 100 : null;
             },
-            runnerAt: (flyer) => scene?.runnerAt?.(flyer) ?? null,
+            runnerAt: () => scene?.runnerAt?.() ?? null,
         });
     } catch (error) {
         console.warn('sound failed to start', error);
@@ -219,20 +219,15 @@ async function main() {
         else click(id);
     });
 
-    // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back. The moderator's click on a
-    // runner on the horizon makes him meep instead (the players still shoot at him and miss).
+    // A miss sends nothing; a hit is only drawn when the channel's `shot` event comes back.
     bindShooting(root, scene, (flyer) => {
-        if (client.meepsFlyer(scene?.flyerKind?.(flyer))) {
-            rpc('meep', { flyer });
-            return;
-        }
         centrifuge.rpc('shoot', { flyer })
             .then(({ data }) => {
                 if (data?.ok === false) console.warn('shot rejected', data.error);
             })
             .catch((error) => console.warn('shoot rpc failed', error));
     });
-    // RoadRunner of the finale (step 3+) meeps on the moderator's click; the dice roll by «Бросить» or Space.
+    // RoadRunner on the horizon and of the finale meeps on the moderator's click; the dice roll by «Бросить» or Space.
     bindMeep(root, () => rpc('meep'));
     bindObjectKeys();
     bindDice(root, client);

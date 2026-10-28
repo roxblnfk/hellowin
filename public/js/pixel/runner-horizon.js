@@ -1,13 +1,16 @@
-// RoadRunner's runs along the horizon in the finale's steps 5–7 (docs/spec/frontend.md, «Финал»): a function of the
+// RoadRunner's runs along the horizon (docs/spec/frontend.md, «RoadRunner на горизонте»): every scene but the bar —
+// the day, the sunset, the night, the finale until his entrance at step 3 and again from step 5. A function of the
 // server time alone, without PixiJS, so every viewer sees the same run and hears the same «Мип-мип!».
 
 /**
- * One run of RUN_MS at the start of every slot of LOOP_MS, its direction a hash of the slot. With meeps (the dawn),
- * about half the slots stop him for STOP_MS by the right edge of the screen, with a «Мип-мип!» MEEP_MS long from
- * MEEP_DELAY_MS after he stops.
+ * One run of RUN_MS per slot of LOOP_MS, starting up to JITTER_MS into the slot (a hash of the slot), so the runs come
+ * 20–30 s apart; the direction is a hash of the slot too. With meeps (the dawn), about half the slots stop him for
+ * STOP_MS by the right edge of the screen, with a «Мип-мип!» MEEP_MS long from MEEP_DELAY_MS after he stops.
+ * JITTER_MS + RUN_MS + STOP_MS stays under LOOP_MS: a run never spills into the next slot.
  */
 export const HORIZON = {
-    loopMs: 15000,
+    loopMs: 25000,
+    jitterMs: 5000,
     runMs: 6500,
     stopMs: 1700,
     meepDelayMs: 200,
@@ -22,6 +25,9 @@ function mix(a, b) {
 }
 
 const ltrOf = (slot) => mix(0x7a11, slot) % 2 === 0;
+
+/** Server ms when slot `slot`'s run starts. */
+export const horizonStart = (slot) => slot * HORIZON.loopMs + (mix(0x0ff5, slot) % (HORIZON.jitterMs + 1));
 
 /**
  * Where slot `slot`'s meeping run stops, as a share of the way across (`k` of horizonAt); null — the slot runs
@@ -41,8 +47,9 @@ export function horizonStop(slot) {
  */
 export function horizonAt(now, meeps = false) {
     const slot = Math.floor(now / HORIZON.loopMs);
-    const start = slot * HORIZON.loopMs;
+    const start = horizonStart(slot);
     const into = now - start;
+    if (into < 0) return null;
     const ltr = ltrOf(slot);
     const stop = meeps ? horizonStop(slot) : null;
     if (stop === null) {
@@ -57,12 +64,23 @@ export function horizonAt(now, meeps = false) {
     return { slot, k: run / HORIZON.runMs, ltr, run, meepAt, meep };
 }
 
+/**
+ * The server ms of the first run at or after `from` when he is `x` of the way across the screen from its left edge,
+ * whichever way he runs: for the lab.
+ */
+export function nextHorizonRun(from, x = 0.5) {
+    for (let slot = Math.floor(from / HORIZON.loopMs); ; slot++) {
+        const at = horizonStart(slot) + Math.round(HORIZON.runMs * (ltrOf(slot) ? x : 1 - x));
+        if (at >= from) return at;
+    }
+}
+
 /** The server ms in the middle of the first meep of the horizon at or after `from`: for the lab. */
 export function nextHorizonMeep(from) {
     for (let slot = Math.floor(from / HORIZON.loopMs); ; slot++) {
         const stop = horizonStop(slot);
         if (stop === null) continue;
-        const mid = slot * HORIZON.loopMs + Math.round(HORIZON.runMs * stop) + HORIZON.meepDelayMs + HORIZON.meepMs / 2;
+        const mid = horizonStart(slot) + Math.round(HORIZON.runMs * stop) + HORIZON.meepDelayMs + HORIZON.meepMs / 2;
         if (mid >= from) return Math.round(mid);
     }
 }
