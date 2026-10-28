@@ -11,11 +11,12 @@ const STORAGE_KEY = 'hellowin:console';
 const CONFIRM_MS = 3000;
 const NOTE_MS = 3000;
 const DONE_MS = 900;
-// The finale's steps (docs/spec/scenario.md, «Кости 6-6-6», «Рапира»): the dice at 1, the cursed world's goal at 5, the
-// boss at 6, the dawn at 7.
+// The finale's steps (docs/spec/scenario.md, «Кости 6-6-6», «Рапира»): the dice at 1, RoadRunner's entrance at 3, the
+// cursed world's goal at 5, the boss at 6, the dawn at 7.
 const DICE_STEP = 1;
 // The owl's third roll is the 6-6-6 (scenario.md, «Кости 6-6-6»).
 const OWL_ROLLS = 3;
+const RUNNER_STEP = 3;
 const CURSED_STEP = 5;
 const BOSS_STEP = 6;
 const LAST_STEP = 7;
@@ -660,9 +661,10 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
             bossGroup.hidden = !(final && current === BOSS_STEP && boss?.hp > 0);
             bossInfo.textContent = boss ? `HP ${boss.hp} / ${boss.max}` : '';
             // Each one where it works (docs/spec/frontend.md, «Пульт модератора»): the witch anywhere but the bar, the
-            // runner in the day — the rare flyer of HELLOWIN_FLYER_RARE — the wave where the set has flyers.
+            // runner wherever he is the scene's rare flyer of HELLOWIN_FLYER_RARE: all but the bar, in the finale until his
+            // own entrance at step 3 — the wave where the set has flyers.
             witch.hidden = bar;
-            runner.hidden = model.scene !== SCENE.day;
+            runner.hidden = bar || (final && current >= RUNNER_STEP);
             burst.hidden = model.limits?.burst !== true;
             pause.setAttribute('aria-pressed', String(model.paused));
             setLabel(pause, model.paused ? TEXT.pauseOn : TEXT.pauseOff);
