@@ -91,7 +91,7 @@ Push в `master` запускает `.github/workflows/deploy.yml`: CI отда�
 (`DEPLOY_HOST`). У ключа CI (секрет `DEPLOY_SSH_KEY`) в `authorized_keys` стоят `restrict` и forced command
 `/usr/local/bin/hellowin-deploy`, то есть копия `docker/deploy.sh`. Поэтому ключ умеет только деплоить, а серверу
 не нужен доступ к GitHub. Скрипт разворачивает архив в `/opt/hellowin` через rsync, оставляя на месте `.env` сервера
-(порты, `CENTRIFUGO_ALLOWED_ORIGINS`, пароли), затем выполняет `docker compose up -d --build --wait`. Centrifugo,
+(порты, `CENTRIFUGO_ALLOWED_ORIGINS`, пароли), затем выполняет `docker compose up -d --build` и до двух минут ждёт, пока все сервисы станут healthy. Centrifugo,
 Prometheus и Grafana он перезапускает, если изменились их конфиги в `docker/`. Сам скрипт деплоем не обновляется:
 после правки `docker/deploy.sh` его копируют на сервер вручную.
 

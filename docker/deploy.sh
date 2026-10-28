@@ -18,7 +18,19 @@ tar -x -C "$incoming"
 changed=$(rsync -a --delete --inplace --checksum --exclude=/.env --itemize-changes "$incoming/" "$root/" | awk '{print $2}')
 
 cd "$root"
-docker compose up -d --build --remove-orphans --wait
+docker compose up -d --build --remove-orphans
+
+# Not `up --wait`: Compose 5 gives up on the first failed probe, while RoadRunner is still starting its workers.
+wait_healthy() {
+    for _ in $(seq 60); do
+        docker compose ps --format '{{.Health}}' | grep -qv '^healthy$' || return 0
+        sleep 2
+    done
+    echo 'the stack is not healthy after 2 minutes' >&2
+    docker compose ps --format 'table {{.Service}}\t{{.Status}}' >&2
+    return 1
+}
+wait_healthy
 
 # Configs mounted from docker/ are read on start only.
 for service in centrifugo prometheus grafana; do
@@ -26,6 +38,7 @@ for service in centrifugo prometheus grafana; do
         docker compose restart "$service"
     fi
 done
+wait_healthy
 
 docker image prune -f >/dev/null
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
