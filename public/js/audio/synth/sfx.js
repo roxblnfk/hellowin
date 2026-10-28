@@ -3,6 +3,7 @@ import {
     bell, bird, blip, brass, chip, choir, crackle, heart, impact, kick, meep, murmur, musicbox, noiseSweep, partials, pizz,
     riser, theremin, toll, tom, vox, xylo,
 } from './instruments.js';
+import { SYLLABLE_LENGTHS } from '../../owl-speech.js';
 
 /**
  * Sound effects: every sound is its own short buffer, rendered once per variant with the seed of its name and
@@ -615,11 +616,27 @@ export const SFX = {
             }
         },
     }),
-    // One syllable of the owl's muffled murmur; the engine strings them under a line (speak).
+    // One syllable of the owl's muttered «ху»: a breath, then a round hoot that scoops up and sags. The variant is its
+    // length (SYLLABLE_LENGTHS); the engine strings them under a line by owl-speech.js (speak).
     'owl.babble': fx({
-        dur: 0.2, variants: 6, voices: 2, level: -17, bus: 'ui', jitter: 0.03,
-        render(r, out) {
-            murmur(r, out, 0, 0.13 + r.rnd() * 0.05, 64 + r.rnd() * 4, { glide: (r.rnd() - 0.5) * 1.5, cutoff: 1100, amp: 0.4 });
+        dur: 0.34, variants: SYLLABLE_LENGTHS.length, voices: 2, level: -17, bus: 'ui', jitter: 0.03,
+        render(r, out, variant) {
+            const sr = r.sr;
+            const n = Math.round(SYLLABLE_LENGTHS[variant] * sr);
+            const base = 64.5 + r.rnd() * 2;
+            const sag = 0.6 + r.rnd() * 0.8;
+            const lp = new SVF(sr).set(950 + r.rnd() * 250, 0.8);
+            const breath = new SVF(sr).set(1400, 1.2);
+            let ph = 0;
+            for (let i = 0; i < n; i++) {
+                const k = i / n;
+                const sec = i / sr;
+                ph += mtof(base + 0.7 * Math.min(1, k * 5) - sag * k * k) / sr;
+                const e = Math.min(1, sec / 0.012) * (1 - k) ** 1.3;
+                const h = breath.tick(r.noise()) * Math.max(0, 1 - sec / 0.03) * 0.8;
+                const v = lp.tick((Math.sin(TAU * ph) + 0.25 * Math.sin(2 * TAU * ph) + h) * e) * 0.45;
+                out.put(i, v, v, 0.15);
+            }
         },
     }),
     'franken.grumble': fx({
@@ -824,6 +841,26 @@ export const SFX = {
             blip(r, out, 0, 520, 90, 0.9, { amp: 0.3, send: 0.3 });
             bubbles(r, out, 0.1, 4, { spread: 0.5, low: 120, high: 300, amp: 0.3 });
             noiseSweep(r, out, 0.5, 1, { from: 160, to: 70, q: 0.7, amp: 0.8, mode: 'lp', attack: 0.1, curve: 1.2, grain: 8 });
+        },
+    }),
+    // Burns out in FrankenPHP's fire at step 6: a bright whoomph as it catches, then a hissing, crackling flame dying down.
+    'zombie.burn': fx({
+        group: 'finale', dur: 1.8, variants: 3, voices: 3, lowpass: 5000, attack: 0.005, level: -20,
+        render(r, out) {
+            thump(r, out, 0, { f0: 180, f1: 60, dur: 0.25, amp: 0.7 });
+            noiseSweep(r, out, 0, 0.35, { from: 500, to: 4000, q: 0.8, amp: 0.7, mode: 'lp', attack: 0.02, curve: 0.6 });
+            noiseSweep(r, out, 0.08, 1.4, { from: 7000, to: 3000, q: 0.7, amp: 0.35, mode: 'hp', attack: 0.1, curve: 1.4, grain: 500 });
+            crackle(r, out, 0.1, 1.3, { rate: 70, amp: 0.3 });
+            noiseSweep(r, out, 0.1, 1.2, { from: 300, to: 120, q: 0.7, amp: 0.3, mode: 'lp', attack: 0.15, curve: 1.5 });
+        },
+    }),
+    // The wisp of a burnt zombie reaches FrankenPHP: a short chime climbing a fifth and an octave, a glassy shimmer.
+    'zombie.heal': fx({
+        group: 'finale', dur: 1.2, variants: 2, voices: 3, level: -15, jitter: 0,
+        render(r, out) {
+            [79, 84, 86, 91].forEach((m, k) => bell(r, out, k * 0.05, m, { amp: 0.18, decay: 4, dur: 0.8, pan: (k - 1.5) * 0.15 }));
+            blip(r, out, 0, 700, 1600, 0.2, { amp: 0.1, send: 0.4 });
+            noiseSweep(r, out, 0.05, 0.6, { from: 6000, to: 11000, q: 2, amp: 0.05, attack: 0.1, curve: 1, send: 0.6 });
         },
     }),
     // A pumpkin pulls a mug out of itself: a hollow pop, foam fizzing, a little glassy tick.

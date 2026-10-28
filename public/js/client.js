@@ -2,7 +2,7 @@
 // Shared by app.js (live channel) and public/dev/lab.html (generated events).
 
 import { SCENE, bonfireOpen, circleOpen, floats, isBar, isPumpkin, jumpOut, jumpedOut, spreadX } from './layout.js';
-import { REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf, winsRoll } from './dice.js';
+import { OWL_EXPLAINS, REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRoller, diceNote, diceOf, facesOf, inputOpen, winsRoll } from './dice.js';
 import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
 import { emoteOf } from './emote.js';
@@ -32,8 +32,10 @@ const TEXT = pick({
             'invalid text': 'От 1 до 40 знаков',
             'no character': 'Сначала выйди на поле',
             'rate limited': 'Не так быстро',
+            wait: 'Сова ещё объясняет',
         },
         wordEmpty: 'Молви хоть что-нибудь',
+        zombieLeft: (left) => `Ты зомби-воркер. Человеком снова через ${left}`,
         failed: 'Не вышло',
     },
     en: {
@@ -57,8 +59,10 @@ const TEXT = pick({
             'invalid text': '1 to 40 characters',
             'no character': 'Join the field first',
             'rate limited': 'Not so fast',
+            wait: 'The owl is still explaining',
         },
         wordEmpty: 'Say something, anything',
+        zombieLeft: (left) => `You're a zombie worker. Human again in ${left}`,
         failed: "Didn't work",
     },
 });
@@ -153,17 +157,32 @@ export const pumpkinsDoneOf = (pumpkins, stageMax) => meterOf(TEXT.done, pumpkin
 
 const count = (n, fallback = 0) => (Number.isInteger(n) && n >= 0 ? n : fallback);
 
+/** A countdown as «0:42»: whole seconds rounded up, so it reads 0:01 to its last moment. */
+export function formatLeft(ms) {
+    const seconds = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 /** `cursed` of a snapshot or an event (the goal of finale step 5), or null. */
 export function cursedOf(cursed) {
     if (!cursed || typeof cursed !== 'object') return null;
     return { drunk: count(cursed.drunk), slain: count(cursed.slain), drinksTarget: count(cursed.drinksTarget), zombiesTarget: count(cursed.zombiesTarget) };
 }
 
-/** `boss` of a snapshot or an event — FrankenPHP's {hp, max} once awake — or null. */
+/**
+ * `boss` of a snapshot or an event — FrankenPHP's {hp, max} once awake — or null; with `burnMs` and `awakeAt` when
+ * the server sends them: how long a wandering zombie stands before it burns out and heals him, counted from its rise
+ * or his waking (protocol.md, «Рапира», `burn`).
+ */
 export function bossOf(boss) {
     if (!boss || !Number.isInteger(boss.hp)) return null;
     const hp = Math.max(0, boss.hp);
-    return { hp, max: Math.max(hp, count(boss.max)) };
+    return {
+        hp,
+        max: Math.max(hp, count(boss.max)),
+        ...(Number.isInteger(boss.burnMs) && boss.burnMs > 0 ? { burnMs: boss.burnMs } : {}),
+        ...(Number.isFinite(boss.awakeAt) ? { awakeAt: boss.awakeAt } : {}),
+    };
 }
 
 // The keys a `limits` event may carry (protocol.md, «Лимиты и баланс»); only the current context's come.
@@ -338,6 +357,12 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const step = () => (model.scene >= model.sceneStages ? (summon ? 0 : model.finale?.step ?? null) : null);
     // My word was answered: the form stays closed until the `word` (or `cure`) event about me says what came of it.
     let wordClosed = false;
+    // The zombie line's own words from the markup, for a server that sends no `zombieUntil`.
+    let zombieLine = null;
+    // The next server moment the page changes by itself (the dice or the word opening, my zombie countdown's second)
+    // and the timer's token: a new moment supersedes the armed one.
+    let wakeAt = null;
+    let wakes = 0;
     // My dice (docs/spec/frontend.md, «Кости»): the attempts of RPC `roll`, my roll drawn big, the attempt whose event
     // has come (a reply without one is a repeat).
     const roller = createRoller((attempt) => (roll ? roll(attempt) : Promise.resolve(null)));
@@ -537,9 +562,30 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             franken.setAttribute('aria-disabled', String(!strikes()));
         }
         const word = root.querySelector('[data-word]');
-        if (word) word.hidden = wordClosed || !asksWord();
+        if (word) {
+            word.hidden = wordClosed || !asksWord();
+            // Until the owl has explained the word (protocol.md, «Сова объясняет») the form stands disabled under
+            // OWL_EXPLAINS instead of «Молви слово».
+            const wait = !word.hidden && !wordOpen();
+            word.toggleAttribute('data-word-wait', wait);
+            const label = word.querySelector?.('[data-word-label]');
+            if (label) {
+                label.dataset.text ??= label.textContent;
+                label.textContent = wait ? OWL_EXPLAINS : label.dataset.text;
+            }
+            const input = word.querySelector?.('[data-word-input]');
+            if (input) input.disabled = wait;
+            const submit = word.querySelector?.('[data-word-submit]');
+            if (submit) submit.disabled = wait;
+        }
         const zombie = root.querySelector('[data-word-zombie]');
-        if (zombie) zombie.hidden = !zombified();
+        if (zombie) {
+            zombie.hidden = !zombified();
+            zombieLine ??= zombie.textContent;
+            const until = myWalker()?.zombieUntil;
+            zombie.textContent = zombified() && Number.isFinite(until) ? TEXT.zombieLeft(formatLeft(until - (now() + offset))) : zombieLine;
+        }
+        armWake();
     }
 
     // The dice at the top (docs/spec/frontend.md, «Кости»): the call or the winner, «Бросить», my roll drawn big.
@@ -550,12 +596,38 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         const panel = root.querySelector('[data-dice]');
         if (panel) panel.hidden = !(step() === DICE_STEP && (on || Boolean(model.dice?.winner)));
         const note = root.querySelector('[data-dice-note]');
-        if (note) note.textContent = diceNote(model.dice) ?? '';
+        if (note) note.textContent = diceNote(model.dice, diceOpen()) ?? '';
         const button = root.querySelector('[data-dice-roll]');
         if (button) {
             button.hidden = !on;
             button.setAttribute('aria-disabled', String(!rolls()));
         }
+        armWake();
+    }
+
+    // The page's own moments on the server clock: the dice and the word open at their `openAt`, my zombie line counts
+    // down by the second. One timer for the nearest of them; paintDice and paintRapier re-arm it.
+    function nextWake() {
+        const t = now() + offset;
+        const moments = [];
+        if (step() === DICE_STEP && model.dice?.on === true && !diceOpen()) moments.push(model.dice.openAt);
+        if (step() === RAPIER_STEP && !wordOpen()) moments.push(model.finale.wordAt);
+        const until = zombified() ? myWalker().zombieUntil : null;
+        if (Number.isFinite(until) && until > t) moments.push(t + ((until - t) % 1000 || 1000));
+        return moments.length ? Math.min(...moments) : null;
+    }
+    function armWake() {
+        const at = nextWake();
+        if (at === wakeAt) return;
+        wakeAt = at;
+        const mine = ++wakes;
+        if (at === null) return;
+        later(() => {
+            if (mine !== wakes) return;
+            paintDice();
+            paintRapier();
+            onChange(model);
+        }, Math.max(0, at - (now() + offset)) + 5);
     }
 
     // My dice move on the animation frames until they have landed and dimmed; the button comes back as they land.
@@ -777,6 +849,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             scene?.gone?.(Array.isArray(event.flyers) ? event.flyers : []);
         },
 
+        // A wandering zombie stood its time at step 6 and burned out, healing FrankenPHP; his health follows as `boss`.
+        burn(event) {
+            scene?.burn?.(event);
+        },
+
         // Characters on the field survive a reset: they live in the snapshot's `walkers`, not in the round.
         walker(event) {
             const w = event.walker;
@@ -936,7 +1013,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
 
         finale(event) {
-            model.finale = event.reveal ? { step: event.step, reveal: event.reveal } : { step: event.step };
+            model.finale = { step: event.step, ...(event.reveal ? { reveal: event.reveal } : {}), ...(Number.isFinite(event.wordAt) ? { wordAt: event.wordAt } : {}) };
             // Into step 5 the closed circle's readiness is gone: from here only the cursed world's goals give it. Step 1
             // likewise waits for the first 6-6-6 (the dice come on with their own event).
             if (event.step === CURSED_STEP || event.step === DICE_STEP) model.ready = false;
@@ -1034,14 +1111,15 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 
         // FrankenPHP woke up with the first rapier (glasses, health), or the moderator changed his health.
         boss(event) {
-            model.boss = bossOf(event);
+            // A `boss` without the burn's fields keeps the ones already known.
+            model.boss = bossOf({ ...model.boss, ...event });
             scene?.boss?.(model.boss && { ...model.boss });
             paintRapier();
         },
 
         // A rapier's blow: the golden chain lightning from the striker, the health the server counted after it.
         strike(event) {
-            if (Number.isInteger(event.hp)) model.boss = bossOf({ hp: event.hp, max: Math.max(event.hp, model.boss?.max ?? 0) });
+            if (Number.isInteger(event.hp)) model.boss = bossOf({ ...model.boss, hp: event.hp, max: Math.max(event.hp, model.boss?.max ?? 0) });
             scene?.strike?.(event);
             scene?.boss?.(model.boss && { ...model.boss });
             paintRapier();
@@ -1052,7 +1130,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (w) {
                 if (event.ok) w.item = 'rapier';
-                else w.zombie = true;
+                else {
+                    w.zombie = true;
+                    if (Number.isFinite(event.until)) w.zombieUntil = event.until;
+                }
                 scene?.word?.(event);
                 scene?.walker({ ...w });
             }
@@ -1061,11 +1142,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintRapier();
         },
 
-        // A zombie player cured by someone else: the item stays, and the word is offered again.
+        // A zombie player cured by someone else, or by itself at its `zombieUntil` (`auto`, no `by`: no spark flies):
+        // the item stays, and the word is offered again.
         cure(event) {
             const w = model.walkers.find((x) => x.id === event.player?.id);
             if (w) {
                 delete w.zombie;
+                delete w.zombieUntil;
                 scene?.cure?.(event);
                 scene?.walker({ ...w });
             }
@@ -1230,11 +1313,19 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         return inBar() && model.bar.roadrunner && model.moderator;
     }
     /**
-     * Whether «Бросить» or Space sends RPC `roll`: step 1 with the dice on, my walker on the field and no zombie, and my
-     * last roll has landed (nor is one on its way).
+     * Whether «Бросить» or Space sends RPC `roll`: step 1 with the dice on and explained by the owl, my walker on the
+     * field and no zombie, and my last roll has landed (nor is one on its way).
      */
     function rolls() {
-        return step() === DICE_STEP && model.dice?.on === true && canWalk() && !dicePanel.rolling() && !roller.pending;
+        return step() === DICE_STEP && model.dice?.on === true && diceOpen() && canWalk() && !dicePanel.rolling() && !roller.pending;
+    }
+    /** Whether the owl has explained the dice: `dice.openAt` has come on the server clock (none — open). */
+    function diceOpen() {
+        return inputOpen(model.dice?.openAt, now() + offset);
+    }
+    /** Whether the owl has explained the word: `finale.wordAt` has come on the server clock (none — open). */
+    function wordOpen() {
+        return inputOpen(model.finale?.wordAt, now() + offset);
     }
     /** Whether Space or «Выпить» sends RPC `drink`: in the bar or the cursed world with beer in hand — the server says. */
     function drinks() {
@@ -1267,6 +1358,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         setMe(id) {
             model.me = id ?? null;
             paintBar();
+            // My walker decides the dice button, the word form and the zombie line.
+            paintRapier();
+            paintDice();
             scene?.setMe(model.me);
             paintDawn();
             paintChat();
@@ -1306,6 +1400,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         strikes,
 
         asksWord,
+
+        wordOpen,
 
         zombified,
 
@@ -1719,7 +1815,7 @@ const WORD_NOTE_MS = 3000;
  * Only the server knows the word and its forms: the page turns down nothing but an empty line. An answer closes the
  * form (`client.closeWord`); the rapier or the zombie comes as the `word` event, a refusal is a note under the field.
  *
- * @param {{closeWord: () => void}} client
+ * @param {{closeWord: () => void, wordOpen?: () => boolean}} client
  * @param {(text: string) => Promise<{ok: boolean, correct?: boolean, error?: string}|undefined>} say  RPC `word`
  */
 export function bindWord(root, client, say) {
@@ -1736,6 +1832,7 @@ export function bindWord(root, client, say) {
     };
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        if (client.wordOpen?.() === false) return;
         const text = input.value.trim();
         if (!text) {
             tell(TEXT.wordEmpty);
@@ -1755,7 +1852,7 @@ export function bindWord(root, client, say) {
             console.warn('word rpc failed', error);
             tell(TEXT.failed);
         } finally {
-            submit.disabled = false;
+            submit.disabled = client.wordOpen?.() === false;
         }
     });
 }

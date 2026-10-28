@@ -54,6 +54,8 @@ const EYES = {
     blink: { 5: 'OFFFFFMFFFFFO', 6: 'OFDDDFbFDDDFO', 7: 'OFFFFFbFFFFFO' },
     // Beak open: the lower mandible drops a pixel and the mouth shows dark.
     open: { 7: 'OFEEEFKFEEEFO', 8: 'OMFFFFbFFFFMO' },
+    // Wide, on a stressed syllable: the mandible drops one more, into the top of the breast.
+    wide: { 7: 'OFEEEFKFEEEFO', 8: 'OMFFFFKFFFFMO', 9: 'ODMLLLbLLLMDO' },
     // Half and full swivel to the viewer's left: the face slides across the head, the pupils lead.
     half: {
         0: 'O.........O..', 1: 'OD.......DO..', 2: 'ODMOOOOOMDOO.',
@@ -126,16 +128,20 @@ const full = frame({ rows: EYES.full });
  * idle — 2 frames, breathing (~700 ms each); blink — 1 frame (~120 ms) over either idle frame;
  * turnLeft / turnRight — [half, full] swivel, play forward and back; back — the head turned all the way round;
  * talk — 3 frames: closed, beak open, open with the wing raised (alternate the first two, add the third for
- * emphasis); hoot — puffed up, tufts raised, eyes staring, beak wide: the dramatic lines.
+ * emphasis); beak — shut, open, wide: the speech's syllables (owl-speech.js, beakAt), beakWing — the same with the
+ * wing raised (wingAt); hoot — puffed up, tufts raised, eyes staring, beak wide: the dramatic lines.
  * All frames are 19 × 18 with the anchor at (9, 17), on the talons.
  */
+const talk = [frame(), frame({ rows: EYES.open }), frame({ rows: EYES.open, patches: WING })];
 export const OWL = {
     idle: [frame(), frame(BREATH)],
     blink: frame({ rows: EYES.blink }),
     turnLeft: [half, full],
     turnRight: [mirror(half), mirror(full)],
     back: frame({ rows: EYES.back }),
-    talk: [frame(), frame({ rows: EYES.open }), frame({ rows: EYES.open, patches: WING })],
+    talk,
+    beak: [talk[0], talk[1], frame({ rows: EYES.wide })],
+    beakWing: [frame({ patches: WING }), talk[2], frame({ rows: EYES.wide, patches: WING })],
     hoot: frame({ rows: EYES.hoot, wide: PUFF, patches: TUFTS_UP }),
 };
 
@@ -375,7 +381,8 @@ export const BAR_HIDE = 3;
  * idle — 2 breathing frames (~700 ms) and `blink` (~120 ms) over either; pour — 6 frames, the head turned to the tap,
  * the wing holding the mug under the stream, foam rising: frame min(5, ⌊phase · 6⌋) with phase = (now − since) /
  * (until − since); set — 2 frames (~180 ms each) after `mugs`: the full mug let go, then the wing folding back (the
- * mug itself is a counter mug from then on); talk — closed, beak open, open with the raised wing, as OWL.talk.
+ * mug itself is a counter mug from then on); talk — closed, beak open, open with the raised wing, as OWL.talk;
+ * beak, beakWing — as OWL's.
  * Mug and stream pixels use the beer colours: bar.js beerLayer() picks them out for the keep-hue overlay.
  */
 export const OWL_BAR = {
@@ -384,6 +391,8 @@ export const OWL_BAR = {
     pour: MUG_LEVELS.map((_, level) => barFrame(lookRight, { mug: level, stream: true, wing: HOLD_WING })),
     set: [barFrame(OWL.idle[0], { mug: 5, wing: HOLD_WING }), barFrame(OWL.idle[0], { wing: FOLDING_WING })],
     talk: OWL.talk.map((f) => barFrame(f)),
+    beak: OWL.beak.map((f) => barFrame(f)),
+    beakWing: OWL.beakWing.map((f) => barFrame(f)),
     anchor: { x: PAD_X + 6, y: BAR_H - 1 },
     tap: { x: STREAM_X - (PAD_X + 6), y: STREAM_TOP - 1 - (BAR_H - 1) },
     mug: { x: MUG_X + 2 - (PAD_X + 6), y: MUG_Y + 5 - (BAR_H - 1) },

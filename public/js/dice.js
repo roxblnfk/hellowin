@@ -41,13 +41,22 @@ const isFace = (d) => Number.isInteger(d) && d >= 1 && d <= 6;
 /** Three faces of an event or a reply, or null when they are not three numbers 1–6. */
 export const facesOf = (dice) => (Array.isArray(dice) && dice.length === 3 && dice.every(isFace) ? [...dice] : null);
 
-/** `dice` of the snapshot or the event: {on, winner?}, or null without dice. */
+/**
+ * `dice` of the snapshot or the event: {on, winner?, openAt?}, or null without dice. `openAt` — the server time the
+ * owl has explained the dice by and `roll` is taken (protocol.md, «Сова объясняет»).
+ */
 export function diceOf(dice) {
     if (!dice || typeof dice !== 'object' || typeof dice.on !== 'boolean') return null;
     const w = dice.winner;
     const winner = w && Number.isInteger(w.attempt) && (w.owl === true || w.player?.id) ? (w.owl === true ? { owl: true, attempt: w.attempt } : { player: { id: w.player.id, name: w.player.name ?? null }, attempt: w.attempt }) : null;
-    return winner ? { on: dice.on, winner } : { on: dice.on };
+    return { on: dice.on, ...(winner ? { winner } : {}), ...(Number.isFinite(dice.openAt) ? { openAt: dice.openAt } : {}) };
 }
+
+/** Over the dice and the word while the owl still explains them: the input waits for `openAt`. */
+export const OWL_EXPLAINS = pick({ ru: 'Сова объясняет…', en: 'The owl is explaining…' });
+
+/** Whether the input opened by server time `openAt` is open at `serverNow`; without `openAt` it always is. */
+export const inputOpen = (openAt, serverNow) => !Number.isFinite(openAt) || serverNow >= openAt;
 
 // Non-breaking hyphens: a narrow panel must not break «6-6-6» or «3-й» across lines.
 const SIX_TEXT = '6‑6‑6';
@@ -68,14 +77,18 @@ const TEXT = pick({
     },
 });
 
-/** The line over the dice: the call to roll while the dice are on, who rolled 6-6-6 after it; null — nothing to say. */
-export function diceNote(dice) {
+/**
+ * The line over the dice: the call to roll while the dice are on (OWL_EXPLAINS until they open, `open` false), who rolled
+ * 6-6-6 after it; null — nothing to say.
+ */
+export function diceNote(dice, open = true) {
     if (dice?.winner) {
         const { attempt } = dice.winner;
         if (dice.winner.owl) return TEXT.owl(attempt);
         return TEXT.player(dice.winner.player.name?.trim() || TEXT.someone, attempt);
     }
-    return dice?.on ? TEXT.roll : null;
+    if (!dice?.on) return null;
+    return open ? TEXT.roll : OWL_EXPLAINS;
 }
 
 /**

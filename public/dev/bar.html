@@ -265,6 +265,7 @@
         ...OWL_BAR.pour.map((f, i) => owlCell(f, `pour${i}`)),
         ...OWL_BAR.set.map((f, i) => owlCell(f, `set${i}`)),
         ...OWL_BAR.talk.map((f, i) => owlCell(f, `talk${i}`)),
+        owlCell(OWL_BAR.beak[2], 'beak2'),
     ]);
 
     heading(`Позы drink (${POSES.drink.frames}×${POSES.drink.ms} мс) и shrug (${POSES.shrug.frames}×${POSES.shrug.ms} мс), ${zoom}×`);

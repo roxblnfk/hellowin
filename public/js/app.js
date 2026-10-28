@@ -107,7 +107,7 @@ async function main() {
     root.classList.add(scene ? 'has-canvas' : 'no-canvas');
     let client = null;
     const sound = await startSound(soundModules, scene, () => client?.serverNow() ?? Date.now());
-    const owl = createOwl(root, scene, { onShow: (line) => sound?.owl(line) });
+    const owl = createOwl(root, scene, { onShow: (line) => sound?.owl(line), onHide: () => sound?.owlHush() });
     // The panel's fresh numbers come over the connection made below; until then (and without one) it keeps its own.
     let requestReveal = () => Promise.reject(new Error('no connection'));
     const reveal = createReveal(root, { request: () => requestReveal(), onToggle: () => owl.place() });

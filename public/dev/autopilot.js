@@ -7,8 +7,9 @@ import { STEP_MS, SUMMON_MS } from '../js/pixel/finale-timeline.js';
 // `{player}` is counted at the longest name the server takes (PlayerName::MAX_LENGTH), `{attempt}` at three digits.
 const NAME_CHARS = 24;
 const fill = (text) => text.replaceAll('{player}', 'W'.repeat(NAME_CHARS)).replaceAll('{attempt}', '999');
-// A line the client holds back: the countdown before finale step 1 comes first (frontend.md, «Призыв»).
-const DELAY = { 'finale-1': SUMMON_MS };
+// A line the client holds back: the countdown before finale step 1 comes first (frontend.md, «Призыв»); at step 6 the
+// owl flies back to its branch before it speaks.
+const DELAY = { 'finale-1': SUMMON_MS, 'finale-6': STEP_MS[6] };
 
 function timesOf(line) {
     const firsts = [line.text, ...Object.values(line.scenes ?? {}), ...Object.values(line.steps ?? {})].map((t) => showMs(fill(t)));
@@ -17,20 +18,23 @@ function timesOf(line) {
     return {
         ms: first + then.reduce((sum, ms) => sum + ms, 0),
         hold: then.length ? first + Math.min(then[0], HOLD_MS) : Math.min(first, HOLD_MS),
+        // The parts follow one another as each ends: the last one starts after all the others.
+        lead: then.length ? first + then.slice(0, -1).reduce((sum, ms) => sum + ms, 0) : 0,
     };
 }
 
 /**
  * The content of public/autopilot.json: how long each catalog line keeps the owl talking (`ms`, all its parts, the
  * longest of its scene and step variants and of both languages) and holds the bubble against the next line (`hold`),
- * `delay` before it starts; the rule for the moderator's own text (`showMs`, `holdMs`); each finale step's staging
+ * `delay` before it starts, `lead` from its start to its last part (a line in parts; the later of both languages); the rule for the moderator's own text (`showMs`, `holdMs`); each finale step's staging
  * (`steps`, ms from its event).
  */
 export function speechTimes() {
     const lines = {};
     for (const id of Object.keys(LINES_BY_LANG.ru).sort()) {
         const [a, b] = Object.values(LINES_BY_LANG).map((catalog) => timesOf(catalog[id]));
-        lines[id] = { ms: Math.max(a.ms, b.ms), hold: Math.max(a.hold, b.hold), ...(DELAY[id] ? { delay: DELAY[id] } : {}) };
+        const lead = Math.max(a.lead, b.lead);
+        lines[id] = { ms: Math.max(a.ms, b.ms), hold: Math.max(a.hold, b.hold), ...(DELAY[id] ? { delay: DELAY[id] } : {}), ...(lead > 0 ? { lead } : {}) };
     }
     return { showMs: { ...SHOW }, holdMs: HOLD_MS, nameChars: NAME_CHARS, lines, steps: { ...STEP_MS } };
 }
@@ -53,12 +57,21 @@ export function speechOf(times, event) {
 export function createSpeech(times) {
     let until = 0;
     let hold = 0;
+    const startOf = (line, now) => Math.max(now + line.delay, hold);
     return {
         said(event, now) {
             const line = speechOf(times, event);
-            const start = Math.max(now + line.delay, hold);
+            const start = startOf(line, now);
             until = Math.max(until, start + line.ms);
             hold = start + line.hold;
+        },
+        /**
+         * When the last part of `event` would show if it were said now, without saying it: an instruction line opens
+         * its input then (`dice.openAt`, `finale.wordAt`; protocol.md, «Сова объясняет»), told before the line goes out.
+         */
+        opensAt(event, now) {
+            const line = speechOf(times, event);
+            return startOf(line, now) + (line.lead ?? 0);
         },
         until: () => until,
     };

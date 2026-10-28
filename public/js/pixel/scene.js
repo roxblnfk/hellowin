@@ -20,13 +20,15 @@ import { DICE, FX, RR_BAR_HIDE, RUNNER } from './finale.js';
 import { horizonRunAt } from './runner-horizon.js';
 import { ROLL_BLINK_MS, ROLL_SHOW_MS, ROLL_STALE_MS, ROLL_TUMBLE_MS, winsRoll } from '../dice.js';
 import { EMOTE_MS } from '../emote.js';
-import { DEATH_MS, GONE_MS, createDeaths, wanderArt } from './deaths.js';
+import { DEATH_MS, GONE_MS, createDeaths, healDigitsOf, smoulderOf, wanderArt, zombieBurnArt } from './deaths.js';
+import { BURN_END, HEAL_AT, ZBURN, ZOMBIE_SPARKS, burnBodyAt, burnDeadline, burnFlameAt, burnGlowAt, healAt, smoulderAt, smoulderSparksAt, sparksAt, wispAt, wispPoint } from './zombie-burn.js';
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
 import { ELEPHANT, FART, PUFFS as FART_PUFFS, addFart, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
+import { HOOT_LEAD_MS, beakAt, wingAt } from '../owl-speech.js';
 import { BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, bakeBar, barDoor, barLights, barOwlSpot, barProps, barRunnerSpot, counterBox, counterMugs, mugSlots, paintBar, pourBatch } from './bar.js';
 import { PALETTE } from './palette.js';
 import { ARMS_FRAME, DECOR, PARTICLES, PUMPKIN_SHADOW, PUMPKIN_STAGES, bake, pumpkinArms, pumpkinLayers, pumpkinSprite, seedOf, silhouette } from './sprites.js';
@@ -349,7 +351,7 @@ export async function createScene(rootEl, snapshot) {
     // The owl on the branch: its sprite (made again with groundLayer on every rebuild) and the line it is saying.
     let owlSprite = null;
     let owlAt = { x: 0, y: 0 };
-    let owlTalk = { at: -1e9, until: -1e9, hoot: false };
+    let owlTalk = { at: -1e9, until: -1e9, hoot: false, speech: null };
     let clock = 0;
     // The bonfire in the middle from the sunset (its sprites, stage and click shake), the pit in the final scene.
     let bonfire = null;
@@ -772,7 +774,6 @@ export async function createScene(rootEl, snapshot) {
     // Idle on the server clock, so the whole room sees the same blink and the same swivel: 5 s slots, a blink in
     // each, a swivel to one side in some of them and, rarely, all the way round.
     const OWL_SLOT_MS = 5000;
-    const OWL_HOOT_MS = 900;
     const owlNight = new WeakMap();
     function idleOwl(now) {
         const slot = Math.floor(now / OWL_SLOT_MS);
@@ -796,15 +797,25 @@ export async function createScene(rootEl, snapshot) {
         return breath;
     }
 
+    /**
+     * The speaking frame of `set` (OWL or OWL_BAR) while the line is up: the hoot, then the beak on the speech's
+     * syllables (owl-speech.js) with the wing on its gestures; null once the speech is over — the owl falls quiet and
+     * waits while the bubble is read.
+     */
+    function talkFrame(set) {
+        if (clock < owlTalk.at || clock >= owlTalk.until) return null;
+        const t = clock - owlTalk.at;
+        // Behind the counter there is no room to puff up: the bartender hoots with its beak wide.
+        if (owlTalk.hoot && t < HOOT_LEAD_MS) return set === OWL ? OWL.hoot : set.beak[2];
+        const s = t - (owlTalk.hoot ? HOOT_LEAD_MS : 0);
+        if (s < 0 || s >= (owlTalk.speech?.ms ?? 0)) return null;
+        if (reduced) return set.talk[0];
+        return (wingAt(owlTalk.speech, s) ? set.beakWing : set.beak)[beakAt(owlTalk.speech, s)];
+    }
+
     function owlFrame() {
-        if (clock >= owlTalk.at && clock < owlTalk.until) {
-            const t = clock - owlTalk.at;
-            if (owlTalk.hoot && t < OWL_HOOT_MS) return OWL.hoot;
-            if (reduced) return OWL.talk[0];
-            // Beak open and shut, and now and then the wing comes up for emphasis.
-            const beat = Math.floor(t / 160);
-            return beat % 10 >= 7 ? OWL.talk[2] : OWL.talk[beat % 2];
-        }
+        const talk = talkFrame(OWL);
+        if (talk) return talk;
         return reduced ? OWL.idle[0] : idleOwl(serverNow());
     }
 
@@ -1690,11 +1701,8 @@ export async function createScene(rootEl, snapshot) {
         if (phase !== null) return reduced ? OWL_BAR.set[0] : pourFrame(phase);
         const set = clock - barState.setAt;
         if (!reduced && set >= 0 && set < 2 * SET_FRAME_MS) return OWL_BAR.set[set < SET_FRAME_MS ? 0 : 1];
-        if (clock >= owlTalk.at && clock < owlTalk.until) {
-            if (reduced) return OWL_BAR.talk[0];
-            const beat = Math.floor((clock - owlTalk.at) / 160);
-            return beat % 10 >= 7 ? OWL_BAR.talk[2] : OWL_BAR.talk[beat % 2];
-        }
+        const talk = talkFrame(OWL_BAR);
+        if (talk) return talk;
         if (reduced) return OWL_BAR.idle[0];
         const now = serverNow();
         return idleOwl(now) === OWL.blink ? OWL_BAR.blink : OWL_BAR.idle[Math.floor(now / 700) % 2];
@@ -2076,7 +2084,7 @@ export async function createScene(rootEl, snapshot) {
     /** `gone`: an unshot wanderer sinks into the ground where it stands (blinks out at once with reduced motion). */
     function sink(id) {
         const f = flyers.get(id);
-        if (!f?.wander || f.shotAt !== null || f.sinkAt !== null) return;
+        if (!f?.wander || f.shotAt !== null || f.sinkAt !== null || f.burn) return;
         if (reduced) {
             dropFlyer(f);
             flyers.delete(id);
@@ -2086,10 +2094,170 @@ export async function createScene(rootEl, snapshot) {
         clods(f.pos);
     }
 
+    // A zombie burning out at step 6 and its smouldering before it (zombie-burn.js, frontend.md «Зомби сгорают»): the
+    // sprites live in f.parts, made on first need, so dropFlyer clears them with the zombie.
+    function partOf(f, key, layer, add = false) {
+        f.burnParts ??= {};
+        if (!f.burnParts[key]) {
+            const s = new Sprite();
+            if (add) s.blendMode = 'add';
+            layer.addChild(s);
+            (f.parts ??= []).push(s);
+            f.burnParts[key] = s;
+        }
+        return f.burnParts[key];
+    }
+    function sparkPool(f, key, layer) {
+        return Array.from({ length: ZOMBIE_SPARKS }, (_, i) => partOf(f, `${key}${i}`, layer));
+    }
+    function hideParts(f) {
+        for (const s of Object.values(f.burnParts ?? {})) s.visible = false;
+    }
+    // A light def on its sprite, baked as drawn (no scene light), anchored at art px (x, y).
+    function placeLight(sprite, def, x, y, z) {
+        placeArt(sprite, flyerArt(def), x, y);
+        sprite.visible = true;
+        if (z !== undefined) sprite.zIndex = z;
+    }
+    function drawSparks(pool, list, x, y, z) {
+        const art = zombieBurnArt().sparks;
+        pool.forEach((s, i) => {
+            const p = list[i];
+            s.visible = Boolean(p) && (p.fade < 2 || Math.floor(clock / 60 + i) % 2 === 0);
+            if (s.visible) placeLight(s, art[p.kind][p.fade], x + p.x, y + p.y, z);
+        });
+    }
+
+    /**
+     * The last ZBURN.warnMs before a wanderer's deadline (the boss awake at step 6): embers flicker on its outline and
+     * green sparks leave it, thicker as the moment nears — the hint to shoot it first. Still embers, no sparks, with
+     * reduced motion.
+     */
+    function smoulder(id, f, art, flip) {
+        const now = serverNow();
+        const deadline = finale.step === 6 && f.shotAt === null && f.sinkAt === null ? burnDeadline(f.launchedAt, boss) : null;
+        const level = deadline === null || now - f.launchedAt < RISE_MS ? null : smoulderAt(deadline - now);
+        if (level === null) {
+            hideParts(f);
+            return;
+        }
+        const x = Math.round(f.pos.x);
+        const y = Math.round(f.pos.y);
+        const mask = partOf(f, 'smoulder', groundLayer);
+        placeLight(mask, smoulderOf(art.def)[level][reduced ? 0 : Math.floor(clock / 110) % 2], x, y, f.sprite.zIndex + 0.5);
+        mask.scale.x = flip ? -1 : 1;
+        const glow = partOf(f, 'smoulderGlow', lightLayer, true);
+        placeLight(glow, BURN_GLOW, x, y);
+        glow.alpha = [0.2, 0.3, 0.45][level] * (reduced || Math.floor(clock / 110) % 2 ? 1 : 0.7);
+        const pool = sparkPool(f, 'ember', groundLayer);
+        drawSparks(pool, reduced ? [] : smoulderSparksAt(now, deadline, seedOf(id)), x, y, f.sprite.zIndex + 0.6);
+    }
+
+    /**
+     * One frame of a burning zombie, `t` ms after its `burn` on the server clock: the body (zombieBurnArt().body),
+     * the lime fire and its light, the sparks; the wisp flying to FrankenPHP and, as it lands, «+heal» over him and
+     * his green flash. False once it is all over. Reduced motion: the heap and the «+heal», no fire, no flight.
+     */
+    function animateBurnOut(f) {
+        const b = f.burn;
+        const t = serverNow() - b.at;
+        if (t >= BURN_END) return false;
+        const a = zombieBurnArt();
+        const { x, y } = b.pos;
+        const z = depthKey(x, y);
+        hideParts(f);
+        const k = reduced ? (t < ZBURN.bodyEnd ? a.body.length - 2 : null) : burnBodyAt(t);
+        f.sprite.visible = k !== null && (t < ZBURN.blink || Math.floor(t / 100) % 2 === 0);
+        if (k !== null) {
+            const art = flyerArt(a.body[k], false, b.lit);
+            placeArt(f.sprite, art, x, y);
+            f.sprite.scale.x = b.left ? -1 : 1;
+            f.sprite.zIndex = z;
+            f.art = art;
+        }
+        const flame = reduced ? null : burnFlameAt(t);
+        if (flame) {
+            const def = (flame.over === 'body' ? a.flames : a.heapFlames)[flame.level][flame.phase];
+            const s = partOf(f, 'flame', groundLayer);
+            placeLight(s, def, x, y, z + 0.5);
+            s.scale.x = b.left ? -1 : 1;
+        }
+        const glow = reduced ? 0 : burnGlowAt(t);
+        if (glow > 0) {
+            const s = partOf(f, 'glow', lightLayer, true);
+            placeLight(s, BURN_GLOW, x, y);
+            s.alpha = 0.55 * glow;
+        }
+        if (!reduced) drawSparks(sparkPool(f, 'spark', groundLayer), sparksAt(t, b.seed), x, y, z + 0.6);
+        const wisp = reduced ? null : wispAt(t);
+        const to = bossChest();
+        if (wisp) {
+            const p = wispPoint({ x, y: y - 16 }, to, wisp.k);
+            placeLight(partOf(f, 'wisp', particleLayer), a.wisp[Math.floor(t / 80) % 2], p.x, p.y);
+            // A trail of lime embers behind it.
+            if (clock >= (b.trailAt ?? 0)) {
+                b.trailAt = clock + 40;
+                ember(Math.round(p.x), Math.round(p.y), between(-6, 6), between(-6, 4), 0, between(0.2, 0.35), 0, LIME_EMBERS);
+            }
+        }
+        const heal = healAt(t);
+        if (heal && b.heal > 0 && boss && boss.hp > 0) {
+            if (!b.landed && !reduced) {
+                b.landed = true;
+                for (let i = 0; i < 8; i++) {
+                    const ang = (i / 8) * Math.PI * 2;
+                    ember(to.x, to.y, Math.cos(ang) * 34, Math.sin(ang) * 26 - 10, 30, between(0.3, 0.5), 0, LIME_EMBERS);
+                }
+            }
+            const top = bossTop();
+            const digits = healDigitsOf(`+${b.heal}`, digitsSprite);
+            const s = partOf(f, 'digits', particleLayer);
+            // Beside his head, clear of the health bar over it.
+            placeLight(s, digits, top.x + 36 + (b.seed % 5) - 2, top.y + 14 - (reduced ? 0 : heal.rise));
+            s.visible = heal.shown;
+            if (heal.flash > 0 && !reduced) {
+                // Over him, not on the ground: the light washes his own body lime for a moment.
+                const fl = partOf(f, 'flash', particleLayer, true);
+                placeLight(fl, BOSS_HEAL_FLASH, to.x, to.y + 6);
+                fl.alpha = 0.4 * heal.flash;
+            }
+        }
+        return true;
+    }
+
+    // The burning zombie's light on the ground, FrankenPHP's upright flash as a heal lands, the embers of the wisp.
+    const BURN_GLOW = halo(16, 6, 'franken');
+    const BOSS_HEAL_FLASH = halo(24, 42, 'franken');
+    const LIME_EMBERS = ['frankenGlowCore', 'frankenGlowHot', 'fartLight', 'fart', 'fartDark'];
+
+    /** `burn`: wanderer `id` stops where its route had it at `at` (server ms) and burns out there; `heal` — the HP it gave. */
+    function burnOut(id, at, heal) {
+        const f = flyers.get(id);
+        if (!f?.wander || f.shotAt !== null || f.sinkAt !== null || f.burn) return;
+        const now = serverNow();
+        const from = Math.min(at, now);
+        if (now - from >= BURN_END) {
+            dropFlyer(f);
+            flyers.delete(id);
+            return;
+        }
+        const set = FLYERS.zombie[f.depth] ?? FLYERS.zombie[1];
+        const w = wandererAt(id, f, set, Math.max(RISE_MS, from - f.launchedAt));
+        f.burn = { at: from, heal, pos: w.pos, left: w.left, seed: seedOf(id), lit: lightAt(w.pos.x, w.pos.y), landed: false, trailAt: 0 };
+        f.pos = w.pos;
+    }
+
     function animateFlyers() {
         for (const [id, f] of flyers) {
             if (f.kind === 'elephant') {
                 if (!animateElephant(f)) {
+                    dropFlyer(f);
+                    flyers.delete(id);
+                }
+                continue;
+            }
+            if (f.burn) {
+                if (!animateBurnOut(f)) {
                     dropFlyer(f);
                     flyers.delete(id);
                 }
@@ -2206,6 +2374,7 @@ export async function createScene(rootEl, snapshot) {
             if (f.ground) f.sprite.zIndex = depthKey(f.pos.x, f.pos.y);
             f.art = art;
             if (f.glow) lantern(f, set, art, flip);
+            if (f.wander) smoulder(id, f, art, flip);
         }
         for (const bush of bushes.values()) {
             const art = clock < bush.rustleUntil ? flyerArt(BUSH.rustle[Math.floor(clock / 90) % BUSH.rustle.length], false, bush.lit) : bush.idle;
@@ -2442,8 +2611,9 @@ export async function createScene(rootEl, snapshot) {
 
     function down(event) {
         const f = flyers.get(event.flyer);
-        if (!f || f.shotAt !== null || f.sinkAt !== null) return;
+        if (!f || f.shotAt !== null || f.sinkAt !== null || f.burn) return;
         f.shotAt = clock;
+        hideParts(f);
         f.shotPos = { ...f.pos };
         f.drift = (f.flip ? -1 : 1) * 12;
         f.shotSitting = f.sitting;
@@ -2511,7 +2681,7 @@ export async function createScene(rootEl, snapshot) {
         const rect = app.canvas.getBoundingClientRect();
         const x = (clientX - rect.left) / layout.cssPx;
         const y = (clientY - rect.top) / layout.cssPx;
-        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.sinkAt === null && f.art).sort(([, a], [, b]) => b.depth - a.depth);
+        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.sinkAt === null && !f.burn && f.art).sort(([, a], [, b]) => b.depth - a.depth);
         for (const [id, f] of live) {
             if (hits(f, x, y)) return id;
         }
@@ -2523,7 +2693,7 @@ export async function createScene(rootEl, snapshot) {
         hitOverlay.clear();
         if (!showHits) return;
         for (const f of flyers.values()) {
-            if (f.shotAt !== null || !f.art) continue;
+            if (f.shotAt !== null || f.burn || !f.art) continue;
             const b = hitBox(f);
             hitOverlay.rect(b.left + 0.5, b.top + 0.5, b.w - 1, b.h - 1).stroke({ width: 1, color: 0xff00ff });
         }
@@ -4498,12 +4668,13 @@ export async function createScene(rootEl, snapshot) {
     }
 
     /*
-     * FrankenPHP as the boss of step 6 (docs/spec/frontend.md, «Рапира»): { hp, max, woke, downAt, hitAt } — whether he
-     * ever woke (his glasses end up on the ash), when his health ran out and when a strike last hit him, scene clock
-     * (-1e9: long ago); null without a boss.
+     * FrankenPHP as the boss of step 6 (docs/spec/frontend.md, «Рапира»): { hp, max, burnMs, awakeAt, woke, downAt, hitAt }
+     * — how long a zombie stands before it burns out and when he woke (server ms, zombie-burn.js), whether he ever woke
+     * (his glasses end up on the ash), when his health ran out and when a strike last hit him, scene clock (-1e9: long
+     * ago); null without a boss.
      */
     let boss = null;
-    const bossOf = (b, prev = null) => (b ? { hp: b.hp, max: b.max, woke: true, downAt: prev?.downAt ?? -1e9, hitAt: prev?.hitAt ?? -1e9 } : null);
+    const bossOf = (b, prev = null) => (b ? { hp: b.hp, max: b.max, burnMs: b.burnMs ?? null, awakeAt: b.awakeAt ?? null, woke: true, downAt: prev?.downAt ?? -1e9, hitAt: prev?.hitAt ?? -1e9 } : null);
     boss = bossOf(snapshot.boss);
     // The point over FrankenPHP's head for the DOM health bar, art px.
     const bossTop = () => {
@@ -4697,6 +4868,15 @@ export async function createScene(rootEl, snapshot) {
         /** Channel event `throw`: the walker's empty mug flies at the flyer and bursts; its hands are empty from now. */
         throwMug(event) {
             throwMug(event);
+        },
+
+        /**
+         * Channel event `burn` {flyer, at, heal}: a wandering zombie that stood its time at step 6 burns out in
+         * FrankenPHP's green fire where it was at `at`, and a wisp carries `heal` HP to him (zombie-burn.js).
+         */
+        burn(event) {
+            const at = Number.isFinite(event?.at) ? event.at : serverNow();
+            burnOut(event?.flyer, at, Number.isInteger(event?.heal) ? Math.max(0, event.heal) : 0);
         },
 
         /** Channel event `gone` {flyers}: the wandering zombies left unshot sink into the ground; null — all of them. */
@@ -4938,11 +5118,12 @@ export async function createScene(rootEl, snapshot) {
         },
 
         /**
-         * The owl says a line for `ms`: beak and wing; a dramatic line (`hoot`) starts puffed up. Returns the ms
-         * until it starts. After the owl has flown away (finale step 5) the line is just shown over FrankenPHP.
+         * The owl says a line shown for `ms`: the beak and the wing follow `speech` (owl-speech.js, speechPlan), then it
+         * waits quietly; a dramatic line (`hoot`) starts puffed up. Returns the ms until it starts. After the owl has
+         * flown away (finale step 5) the line is just shown over FrankenPHP.
          */
-        owl({ ms, hoot = false, rapier = false }) {
-            if (!owlGone()) owlTalk = { at: clock, until: clock + ms, hoot };
+        owl({ ms, hoot = false, rapier = false, speech = null }) {
+            if (!owlGone()) owlTalk = { at: clock, until: clock + ms, hoot, speech };
             // Step 6: the owl draws its rapier with the second part of `finale-6`, or with a line that asks for it.
             if (inFinale() && finale.step >= 6 && !owlGone()) {
                 owlLines++;

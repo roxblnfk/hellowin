@@ -2,6 +2,7 @@
 // The server sends a line id with params, or the moderator's own text; the words live here.
 
 import { pick } from './i18n.js';
+import { speechPlan } from './owl-speech.js';
 
 /**
  * id → { text, scenes?: {[scene]: text} — the line in that scene instead, steps?: {[step]: text} — the line at that
@@ -57,6 +58,8 @@ const RU_LINES = {
     'finale-5': { auto: true, hoot: true, text: 'Живите теперь в этом проклятом мире, который создали сами.' },
     'cursed-ready': { auto: true, text: 'Готово… ждём.' },
     'finale-6': { auto: true, hoot: true, text: 'Веселитесь?', then: ['Я знаю, как положить этому конец.', 'Молви слово — и получишь оружие.'], rapier: 1 },
+    // Nobody has the word HELLOWIN_WORD_HINT_MS after the field opened: the owl holds the rapier up by then.
+    'word-hint': { auto: true, text: 'Это оружие у меня в руке. Как оно называется?' },
     'boss-down': { auto: true, hoot: true, text: '{player} нанёс последний удар!' },
     'finale-7': { auto: true, hoot: true, text: 'Рассвет! Проклятие снято. Рапиры оставьте себе — утки сами себя не собьют.' },
     'bar-again': { auto: true, hoot: true, text: 'Ну что, по пиву?' },
@@ -108,6 +111,7 @@ const EN_LINES = {
     'finale-5': { text: 'Now live in this cursed world you made yourselves.' },
     'cursed-ready': { text: 'All set… now we wait.' },
     'finale-6': { text: 'Having fun?', then: ['I know how to put an end to this.', 'Speak the word, and a weapon is yours.'] },
+    'word-hint': { text: "It's the weapon in my hand. What's it called?" },
     'boss-down': { text: '{player} landed the final blow!' },
     'finale-7': { text: "Dawn! The curse is lifted. Keep the rapiers — ducks won't skewer themselves." },
     'bar-again': { text: 'So… another round?' },
@@ -275,8 +279,9 @@ export function bubbleSpot(perch, { w, h }, { width, height }, avoid = []) {
  * @param {object} [options]
  * @param {(line: {text: string, hoot: boolean, x: number|null}) => void} [options.onShow]  the bubble has just opened with
  *   a line (the sound voices it); x — the speaker in percent of the width, null without a canvas
+ * @param {() => void} [options.onHide]  the bubble has closed with nothing after it (the sound cuts the speech off)
  */
-export function createOwl(root, scene, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), onShow = () => {} } = {}) {
+export function createOwl(root, scene, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), onShow = () => {}, onHide = () => {} } = {}) {
     const bubble = document.createElement('div');
     bubble.className = 'owl-bubble';
     bubble.dataset.owlBubble = '';
@@ -376,7 +381,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         holdUntil = now() + hold;
         shown = { until: now() + ms };
         // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
-        const delay = Number(scene?.owl?.({ ms, hoot, line, part, rapier: line !== null && LINES[line]?.rapier === part })) || 0;
+        // `speech` — the syllables the beak moves to, the same plan the sound speaks (owl-speech.js); none for a number.
+        const speech = count ? null : speechPlan(text);
+        const delay = Number(scene?.owl?.({ ms, hoot, line, part, rapier: line !== null && LINES[line]?.rapier === part, speech })) || 0;
         const open = () => {
             speaking = true;
             place();
@@ -394,6 +401,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             place();
             // A line in parts goes on at once, unless another line has taken the bubble meanwhile.
             if (then.length) show({ text: then[0], hoot: false, then: then.slice(1), line, part: part + 1 });
+            else onHide();
         }, delay + ms);
     }
 
@@ -479,6 +487,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             token++;
             speaking = false;
             place();
+            onHide();
             holdUntil = -1e9;
             shown = { until: -1e9 };
         },

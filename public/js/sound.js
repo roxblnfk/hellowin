@@ -7,6 +7,7 @@ import { wanderAt } from './pixel/wander.js';
 import { T } from './pixel/finale-timeline.js';
 import { THROW, THROW_STALE_MS, throwElapsed } from './pixel/mug-throw.js';
 import { FART } from './pixel/elephant.js';
+import { HEAL_AT, ZBURN } from './pixel/zombie-burn.js';
 import { trackOf } from './audio/engine.js';
 import { SCENE, fromDoor, isBar, shownItem } from './layout.js';
 import { seedOf } from './pixel/sprites.js';
@@ -14,6 +15,7 @@ import { ROLL_LAND_MS, ROLL_TUMBLE_MS, winsRoll } from './dice.js';
 // A namespace import: the zombies' deaths (`DEATHS`) may not be there yet, and a missing name must not break the sound.
 import * as FLYER_ART from './pixel/flyers.js';
 import { pick } from './i18n.js';
+import { HOOT_LEAD_MS } from './owl-speech.js';
 
 const TEXT = pick({
     ru: { soundOn: 'Звук: вкл', soundOff: 'Звук: выкл', soundOnLabel: 'Звук включён', soundOffLabel: 'Звук выключен', musicOn: 'Музыка включена', musicOff: 'Музыка выключена' },
@@ -45,7 +47,7 @@ const STRIKE_GAP_MS = 120;
 const ZOMBIFY_S = 0.3;
 const DEPTH_VOLUME = [0.5, 0.75, 1];
 const OTHERS_VOLUME = 0.6;
-const HOOT_S = 0.95;
+const HOOT_S = HOOT_LEAD_MS / 1000;
 // The scoop stage of the day (scenario.md, «Сцена 1»): the sprites draw it at stage 3, whatever HELLOWIN_SCENE_STAGE_MAX says.
 const SCOOP_STAGE = 3;
 // A flyer heard later than this after its launch (a burst of held-back events) stays silent; it may still fly on screen.
@@ -154,6 +156,12 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
     let breaking = null;
     const walkerX = (model, id) => lastPoint(model.walkers.find((w) => w.id === id)?.walk)?.x;
     const volumeOf = (model, ...ids) => (model.me !== null && ids.includes(model.me) ? 1 : OTHERS_VOLUME);
+    // The line being spoken (audio.speak's handle): the next line or the bubble closing cuts it off.
+    let speech = null;
+    const hush = () => {
+        speech?.stop?.();
+        speech = null;
+    };
 
     /** 0.2 + 0.8 × the share of the scene passed; the whole way from the scene's readiness and finale step 1. */
     function intensity(model) {
@@ -382,6 +390,17 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         boss(model) {
             music(model);
         },
+        // A zombie burning out at step 6: the flash and the hissing fire where it stood, the heal's chime over FrankenPHP
+        // as the wisp reaches him (zombie-burn.js, HEAL_AT); nothing once ZBURN.staleMs late.
+        burn(model, event) {
+            const f = flyers.get(event.flyer);
+            flyers.delete(event.flyer);
+            const at = Number.isFinite(event.at) ? event.at : serverNow();
+            const late = serverNow() - at;
+            if (!(late < ZBURN.staleMs)) return;
+            play('zombie.burn', { pan: panOf(f ? flyerX(f, at) : null) });
+            if (event.heal > 0) play('zombie.heal', { pan: panOf(FRANKEN_X), delay: Math.max(0, (HEAL_AT - late) / 1000) });
+        },
         // The dice of finale step 1: the throw, the landing (mine lands big at the top, a little later), the toll of 6-6-6.
         roll(model, event) {
             const late = serverNow() - event.at;
@@ -514,6 +533,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
          * the countdown before finale step 1 (`count`) is a beat of the circle's drum, not speech.
          */
         owl({ text, hoot = false, x = null, count = false }) {
+            hush();
             if (quiet()) return;
             const pan = panOf(x);
             if (count) {
@@ -521,12 +541,17 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
                 return;
             }
             if (owlGone()) {
-                audio.speak('franken', text, { pan });
+                speech = audio.speak('franken', text, { pan });
                 return;
             }
             if (hoot) audio.play('owl.hoot', { pan });
             // The speech starts as the hoot dies away.
-            audio.speak('owl', text, { pan, delay: hoot ? HOOT_S : 0 });
+            speech = audio.speak('owl', text, { pan, delay: hoot ? HOOT_S : 0 });
+        },
+
+        /** The owl's bubble has closed: what is left of its line fades out. */
+        owlHush() {
+            hush();
         },
 
         /** A moment of the scene's clock (scene.onCue). */

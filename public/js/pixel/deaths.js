@@ -44,12 +44,13 @@ function rng(seed) {
 }
 
 // Keys of the death sprites on top of the zombie's own legend: grey dust, char and embers of the green fire, soil,
-// blood and the flash.
+// blood and the flash; the lime of FrankenPHP's own fire, which burns out the zombies at step 6.
 const EXTRA = {
     s: 'grayLight', S: 'gray', u: 'duckGrayDark',
     X: 'ashDark', A: 'ash', e: 'frankenGlowHot', E: 'frankenGlowCore', f: 'frankenGlow', F: 'frankenGlowDark', j: 'frankenGlowDeep',
     k: 'soilDark', i: 'soil', I: 'soilLight',
     c: 'crimson', C: 'crimsonDark', w: 'white', h: 'eerieHot',
+    1: 'fartLight', 2: 'fart', 3: 'fartDark',
 };
 
 const sprite = (grid, legend, anchor) => ({ w: grid[0].length, h: grid.length, rows: grid.map((r) => r.join('')), legend: { '.': null, ...legend }, anchor: { ...anchor } });
@@ -127,11 +128,14 @@ function ashFrame(src, k) {
     return sprite(g, legendOf(src), src.anchor);
 }
 
+// The green fire of the 'fire' death: its tongues on the body and its colours by distance from it, 0 — at the body.
+const FIRE_TONES = { tongue: ['E', 'e', 'f'], on: 0.52, ramp: [[0.2, 'E'], [0.45, 'e'], [0.75, 'f'], [Infinity, 'F']] };
+
 /**
  * Green fire over a silhouette, `frame` 0–3 rising; `size` 1 — full, 0.4 — dying down. On a canvas 6 px wider and
  * 10 taller than the body, anchored like it: light, bake it as is.
  */
-function fireFrame(src, frame, size = 1) {
+function fireFrame(src, frame, size = 1, tones = FIRE_TONES) {
     const pad = 3;
     const up = 10;
     const g = blank(src.w + pad * 2, src.h + up);
@@ -154,13 +158,13 @@ function fireFrame(src, frame, size = 1) {
             const n = noise(x * 0.45, (y + frame * 2.5) * 0.35, 21);
             // On the body itself the fire burns in tongues, the char showing between them.
             if (d === 0) {
-                if (n > 0.52) g[y][x] = n > 0.72 ? 'E' : n > 0.6 ? 'e' : 'f';
+                if (n > tones.on) g[y][x] = n > 0.72 ? tones.tongue[0] : n > 0.6 ? tones.tongue[1] : tones.tongue[2];
                 continue;
             }
             const reach = (3 + n * 9) * size;
             if (d > reach) continue;
             const t = d / reach;
-            const ch = t < 0.2 ? 'E' : t < 0.45 ? 'e' : t < 0.75 ? 'f' : 'F';
+            const ch = tones.ramp.find(([edge]) => t < edge)?.[1] ?? tones.ramp[tones.ramp.length - 1][1];
             if (t > 0.6 && dither(x, y + frame) > (1 - t) * 2.2) continue;
             g[y][x] = ch;
         }
@@ -307,6 +311,111 @@ export function wanderArt() {
         under: Array.from({ length: 8 }, (_, k) => sinkFrame(walk, Math.round((k * walk.h) / 7))),
     };
     return wander;
+}
+
+// FrankenPHP's own fire burning a zombie out (zombie-burn.js): hotter and yellower than the 'fire' death — the glow's
+// core at the body, then the Fart Time limes out to its dark edge; fewer tongues on the body, so its char shows.
+const LIME_FIRE = { tongue: ['E', 'e', '1'], on: 0.64, ramp: [[0.15, 'E'], [0.35, 'e'], [0.6, '1'], [0.8, '2'], [Infinity, '3']] };
+
+/** The zombie lit up by its own catching fire: the outline flares lime-white, the rest as it stood. */
+function flashFrame(src) {
+    const g = gridOf(src);
+    g.forEach((r) => r.forEach((c, x) => {
+        if (c === 'O' || c === 'K') r[x] = 'E';
+    }));
+    return sprite(g, legendOf(src), src.anchor);
+}
+
+/**
+ * The char climbing from the feet: the lower `up` of the body ash and coal under a lime front two rows thick, the rest
+ * scorched darker.
+ */
+function charUpFrame(src, up) {
+    const g = gridOf(src);
+    const top = g.findIndex((r) => r.some((c) => c !== '.'));
+    const front = Math.round(src.anchor.y - (src.anchor.y - top) * up);
+    for (let y = 0; y < g.length; y++) {
+        for (let x = 0; x < g[0].length; x++) {
+            const ch = g[y][x];
+            if (ch === '.') continue;
+            if (y < front) g[y][x] = DARKER[ch] ?? ch;
+            else if (y < front + 2) g[y][x] = hash(x, y, 11) < 0.5 ? 'e' : '1';
+            else g[y][x] = ch === 'O' || ch === 'K' ? 'X' : hash(x, y, 5) < 0.1 ? 'e' : LIGHT.has(ch) ? 'A' : 'X';
+        }
+    }
+    return sprite(g, legendOf(src), src.anchor);
+}
+
+/** What is left on the ground: a heap of ash `rx` wide with a few embers, as wide as the body was. */
+function heapFrame(src, rx, hh, embers) {
+    const g = blank(src.w, src.h);
+    heapOn(g, src.anchor.x, rx, hh, ['A', 'X', 'X'], 2);
+    g.forEach((r, y) => r.forEach((c, x) => {
+        if (c !== '.' && hash(x, y, 13) < embers) r[x] = 'e';
+    }));
+    return sprite(g, legendOf(src), src.anchor);
+}
+
+/**
+ * Embers on a zombie's outline before it burns: the edge pixels of `def` that catch at `level` 0–2 (more of them, the
+ * feet first), lime and hot; `phase` 0–1 picks another set — the flicker. A light mask laid over the body.
+ */
+function smoulderFrame(def, level, phase) {
+    const g = blank(def.w, def.h);
+    const solid = (x, y) => (def.rows[y]?.[x] ?? '.') !== '.';
+    const density = [0.14, 0.26, 0.42][level];
+    for (let y = 0; y < def.h; y++) {
+        for (let x = 0; x < def.w; x++) {
+            if (!solid(x, y) || (solid(x - 1, y) && solid(x + 1, y) && solid(x, y - 1) && solid(x, y + 1))) continue;
+            if (hash(x, y, 31 + phase * 7 + level) < density * (0.35 + 0.65 * (y / def.h))) g[y][x] = hash(x, y, 41 + phase) < 0.4 ? 'e' : '1';
+        }
+    }
+    return sprite(g, EXTRA, def.anchor);
+}
+
+const smoulders = new WeakMap();
+
+/** smoulderFrame() of a zombie frame, made once: [level][phase]. */
+export function smoulderOf(def) {
+    if (!smoulders.has(def)) smoulders.set(def, [0, 1, 2].map((level) => [0, 1].map((phase) => smoulderFrame(def, level, phase))));
+    return smoulders.get(def);
+}
+
+const healDigits = new Map();
+
+/** «+3» of a heal over FrankenPHP: the score font (flyers.js, digitsSprite) in his lime. */
+export function healDigitsOf(text, digits) {
+    if (!healDigits.has(text)) {
+        const def = digits(text);
+        healDigits.set(text, { ...def, legend: { ...def.legend, Y: 'frankenGlowCore', k: 'fartLight' } });
+    }
+    return healDigits.get(text);
+}
+
+let burnArtCache = null;
+
+/**
+ * A wandering zombie burning out at step 6 (zombie-burn.js), made on first use: `body` — 9 frames on the zombie's
+ * standing pose (ZBURN.bodyAt): the flash, the char climbing in two steps, charred, crumbling in three, the heap
+ * and the heap cooling; `flames` — the lime fire over the standing body, 3 sizes × 4 flicker frames, `heapFlames`
+ * over the heap, 2 × 4; `sparks` — { small, big }, each 3 fades; `wisp` — the heal's two-frame orb flying to the boss.
+ */
+export function zombieBurnArt() {
+    if (burnArtCache) return burnArtCache;
+    const src = FLYERS.zombie[1].idle[0];
+    const heap = heapFrame(src, 7, 3.5, 0.12);
+    const bit = (rows) => sprite(rows.map((r) => [...r]), EXTRA, { x: rows[0].length >> 1, y: rows.length >> 1 });
+    burnArtCache = {
+        body: [flashFrame(src), charUpFrame(src, 0.35), charUpFrame(src, 0.75), charFrame(src, 3), ashFrame(src, 0), ashFrame(src, 1), ashFrame(src, 2), heap, heapFrame(src, 5, 2, 0.05)],
+        flames: [0.55, 0.8, 1.1].map((size) => [0, 1, 2, 3].map((f) => fireFrame(src, f, size, LIME_FIRE))),
+        heapFlames: [0.75, 0.4].map((size) => [0, 1, 2, 3].map((f) => fireFrame(heap, f, size, LIME_FIRE))),
+        sparks: {
+            small: [bit(['E']), bit(['1']), bit(['3'])],
+            big: [bit(['.e.', 'eEe', '.e.']), bit(['.1.', '1e1', '.1.']), bit(['2'])],
+        },
+        wisp: [bit(['..1..', '.1e1.', '1eEe1', '.1e1.', '..1..']), bit(['.....', '..e..', '.eEe.', '..e..', '.....'])],
+    };
+    return burnArtCache;
 }
 
 /**

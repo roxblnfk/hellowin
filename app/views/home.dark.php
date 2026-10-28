@@ -81,7 +81,7 @@
         <button type="button" class="franken" data-franken aria-disabled="true" hidden aria-label="[[FrankenPHP: ударить рапирой]]" title="[[Ударить рапирой]]"><span class="franken__emoji" aria-hidden="true">🧟</span></button>
         <div class="boss-hp" data-boss-hp role="progressbar" aria-label="[[Здоровье FrankenPHP]]" aria-valuemin="0" hidden><span class="boss-hp__bar" aria-hidden="true"><span class="boss-hp__fill"></span></span><span class="boss-hp__text" data-boss-hp-text></span></div>
         <form class="word" data-word hidden>
-            <label class="word__label" for="word-input">[[Молви слово]]</label>
+            <label class="word__label" for="word-input" data-word-label>[[Молви слово]]</label>
             <input class="word__input" id="word-input" data-word-input name="word" maxlength="40" autocomplete="off" spellcheck="false">
             <button type="submit" class="word__button" data-word-submit>[[Молвить]]</button>
             <p class="word__note" data-word-note role="alert"></p>

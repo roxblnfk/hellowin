@@ -1,4 +1,5 @@
 import { SFX } from './synth/sfx.js';
+import { speechPlan } from '../owl-speech.js';
 
 /**
  * Audio engine: plays buffers rendered by the worker, synthesises nothing in real time.
@@ -13,7 +14,9 @@ const DEFAULT_VOLUME = { master: 1, music: 0.5, sfx: 0.5, ui: 0.4 };
 const MIX = 2;
 const CEILING = 10 ** (-1 / 20);
 const MAX_VOICES = 32;
-const SPEAKERS = { owl: { sound: 'owl.babble', gap: 0.16 }, franken: { sound: 'franken.grumble', gap: 0.21 } };
+// The owl speaks by its plan (owl-speech.js), which the beak on the branch follows too; FrankenPHP grumbles a few
+// syllables a line.
+const SPEAKERS = { owl: { sound: 'owl.babble', plan: speechPlan }, franken: { sound: 'franken.grumble', gap: 0.21 } };
 
 /** Tracks of the final scene by finale step, [first step, track] in rising order: each holds until the next. */
 export const FINALE_TRACKS = [[0, 'blood'], [1, 'rise'], [3, 'blood'], [5, 'cursed'], [7, 'dawn']];
@@ -428,7 +431,8 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
         while (order.length >= limit) order.shift().voices.forEach((v) => release(v, 15, at));
     }
 
-    function playVoice(name, { pan = 0, pitch = 0, volume: vol = 1, delay = 0 } = {}, utterance = null) {
+    // `variant` picks the buffer and `steady` drops the rate spread: a planned syllable sounds the same everywhere.
+    function playVoice(name, { pan = 0, pitch = 0, volume: vol = 1, delay = 0, variant = null, steady = false } = {}, utterance = null) {
         const def = SFX[name];
         if (!def || !ctx || muted) return null;
         if (!offline && ctx.state !== 'running') return null;
@@ -438,8 +442,8 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
         const now = ctx.currentTime;
         for (let i = voices.length - 1; i >= 0; i--) if (voices[i].end <= now) voices.splice(i, 1);
         const at = now + Math.max(0, delay);
-        const buffer = variants[Math.floor(rand() * variants.length)];
-        const rate = 2 ** (pitch / 12) * (1 + (rand() * 2 - 1) * def.jitter);
+        const buffer = variants[variant === null ? Math.floor(rand() * variants.length) : variant % variants.length];
+        const rate = 2 ** (pitch / 12) * (steady ? 1 : 1 + (rand() * 2 - 1) * def.jitter);
         const end = at + buffer.duration / rate;
         const others = (v) => v.utterance === null || v.utterance !== utterance;
         makeRoom(voices.filter((v) => v.name === name && others(v)), at, end, def.voices);
@@ -539,11 +543,31 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
         /**
          * Beep-speech under a speech bubble: `who` — 'owl' or 'franken'; syllables follow the text's length and tone.
          * `delay` in seconds, e.g. to start after an owl.hoot. The syllables of one line never limit each other.
+         * Returns a handle whose stop(fadeMs) fades what sounds and drops the syllables still to come; null — silent.
          */
         speak(who, text, { pan = 0, volume: vol = 1, delay = 0 } = {}) {
             const speaker = SPEAKERS[who];
-            if (!speaker) return;
+            if (!speaker || !ctx || muted) return null;
             const utterance = ++utterances;
+            const handle = {
+                stop(fadeMs = 80) {
+                    const now = ctx.currentTime;
+                    for (const v of voices.filter((x) => x.utterance === utterance)) {
+                        if (v.start <= now) release(v, fadeMs, now);
+                        else {
+                            voices.splice(voices.indexOf(v), 1);
+                            v.gain.gain.value = 0;
+                            v.src.stop();
+                        }
+                    }
+                },
+            };
+            if (speaker.plan) {
+                for (const s of speaker.plan(text).syllables) {
+                    playVoice(speaker.sound, { pan, pitch: s.pitch, volume: vol * s.volume, delay: Math.max(0, delay) + s.at / 1000, variant: s.variant, steady: true }, utterance);
+                }
+                return handle;
+            }
             const words = String(text ?? '').trim();
             const count = Math.max(2, Math.min(9, Math.round(words.replace(/\s+/g, '').length / 7)));
             const question = words.endsWith('?');
@@ -553,6 +577,7 @@ export function createAudio({ context = null, musicRate = (globalThis.navigator?
                 const pitch = (question && last ? 1.5 : 0) - (!question && last ? 0.8 : 0) + (rand() - 0.5) * 0.8;
                 playVoice(speaker.sound, { pan, pitch, volume: vol * (shout ? 1.05 : 1), delay: Math.max(0, delay) + k * speaker.gap + rand() * 0.02 }, utterance);
             }
+            return handle;
         },
 
         /** Switches the music to `name` (or silence with null) on the playing track's next bar line, ~1 bar crossfade. */

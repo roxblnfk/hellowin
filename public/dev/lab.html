@@ -152,7 +152,12 @@
   word, the wrong ones shamble as zombies (the engine walks them every 2–4 s), other bots cure them. ?boss=hp,max — the
   boss awake at once (his addition makes up max); otherwise he wakes with the limit `boss`; ?strike=1 — bots with a rapier strike FrankenPHP every 600 ms; the last blow says `boss-down` and
   goes to step 7; ?bossdown=ms (with ?freeze) — the first walker lands that last blow at that moment, so
-  ?finale=6&boss=10,100&bossdown=0&freeze=1200 catches FrankenPHP burning (docs/spec/frontend.md, «Груда пепла»). ?zombified=1 (with ?me=1) — my walker a zombie. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
+  ?finale=6&boss=10,100&bossdown=0&freeze=1200 catches FrankenPHP burning (docs/spec/frontend.md, «Груда пепла»). ?zombified=1 (with ?me=1) — my walker a zombie.
+  Zombies burn out while the boss stands (`burn`): a wanderer ?burnms=N (HELLOWIN_ZOMBIE_BURN_MS, 5000; 0 — never) after
+  its rise or his waking burns in green fire and heals him ?heal=N (3); no bot shoots them at step 6. ?zburn=ms[,ms…] —
+  wanderers whose time runs out at those moments, the boss awake long before, no other wanderers (add ?zmin=0 so none
+  rise): ?finale=6&boss=60,100&walkers=1&zmin=0&zburn=9000,1000&freeze=1450 — the second zombie (on the right)
+  burning, 1960 — the wisp landing on FrankenPHP, 850 — still smouldering. ?finale=7 — the dawn, FrankenPHP an ash pile, ducks and
   chickens more often; «В бар» on the console (?mod=1) is a new round of the evening (`reset` with `again`, `bar-again`).
   RoadRunner behind the counter (`bar.roadrunner`): ?roadrunner=1 opens the bar as «В бар» from the dawn does, with him
   there (the console's reset sends him away, «В бар» brings him back); ?rrclink=1 — and the first bot, beer in hand,
@@ -167,6 +172,13 @@
   behind the counter is `meep`; ?meep=ms sends one at that frozen moment.
   ?owlroll=ms[,ms…] — «Сова бросает» at those frozen moments (?finale=1&dice=1&owlroll=0&freeze=900 — the owl's dice);
   ?owlrolls=N — the owl has rolled N times already (`dice.owl` of the snapshot, as after a reload).
+  The owl explains first (protocol.md, «Сова объясняет»): `roll` and `word` answer `wait` until the last part of
+  `finale-1` / `finale-6` shows by the engine's count of its speech (`lead` of public/autopilot.json; `dice.openAt`,
+  `finale.wordAt`; ?aptalk=0.1 counts it ten times shorter); started at a step, ?diceopen=ms / ?wordopen=ms — the input opens that long after the start
+  (?finale=1&dice=1&me=1&diceopen=3000&freeze=1000 — «Сова объясняет…» over a dead «Бросить»). ?wordhint=ms
+  (HELLOWIN_WORD_HINT_MS, 180000) — the owl's `word-hint` that long after the word opened with no rapier won; ?zcure=ms
+  (HELLOWIN_ZOMBIE_PLAYER_MS, 60000) — a zombie player cures itself that long after turning (`cure` with `auto`);
+  ?zombified=1 counts down from the start: ?finale=6&me=1&zombified=1&zcure=42000&freeze=500 — «Человеком снова через 0:42».
   The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»): every hit of a player in any scene adds the flyer's
   points; the whole board (`top`, rows `{player, points}`, ordered like the server) goes out at most every 500 ms
   (HELLOWIN_TOP_INTERVAL) and stands in the snapshot; neither a reset nor «В бар» clears it. ?dawntop=N — N shooters of
@@ -215,7 +227,7 @@
     <button type="button" class="franken" data-franken aria-disabled="true" hidden aria-label="FrankenPHP: ударить рапирой" title="Ударить рапирой"><span class="franken__emoji" aria-hidden="true">🧟</span></button>
     <div class="boss-hp" data-boss-hp role="progressbar" aria-label="Здоровье FrankenPHP" aria-valuemin="0" hidden><span class="boss-hp__bar" aria-hidden="true"><span class="boss-hp__fill"></span></span><span class="boss-hp__text" data-boss-hp-text></span></div>
     <form class="word" data-word hidden>
-        <label class="word__label" for="word-input">Молви слово</label>
+        <label class="word__label" for="word-input" data-word-label>Молви слово</label>
         <input class="word__input" id="word-input" data-word-input name="word" maxlength="40" autocomplete="off" spellcheck="false">
         <button type="submit" class="word__button" data-word-submit>Молвить</button>
         <p class="word__note" data-word-note role="alert"></p>
@@ -904,6 +916,9 @@
             if ((step === 1 || step === 2 || step === BOSS_STEP) && !engine.ready && force !== true) throw new Error('not ready');
             if (step === LAST_STEP && !(engine.boss?.hp === 0) && force !== true) throw new Error('not ready');
             engine.finale = finaleOf(step);
+            // The instruction opens its input as its last part shows, told before the line goes out.
+            const opensAt = Math.max(serverTime(), autoState.speech?.opensAt({ line: `finale-${step}` }, serverTime()) ?? 0);
+            if (step === BOSS_STEP) engine.finale.wordAt = opensAt;
             // Step 1 waits for the first 6-6-6; a forced step 2 turns the dice off without a winner.
             if (step === 1) engine.ready = false;
             const diceOff = step === 2 && engine.dice?.on === true;
@@ -930,7 +945,7 @@
             // Step 2 scatters the walkers: each one outward from the patch to the edge of the lawn.
             if (step === 2) engine.walkers.forEach((w) => engineMove(w.id, scatterTarget(walkPoint(w.walk, serverTime()))));
             deliver({ type: 'owl', line: `finale-${step}` });
-            if (step === 1) diceBegin();
+            if (step === 1) diceBegin(opensAt);
             settleLimits();
         }
         return { ok: true, step: engine.finale.step };
@@ -1036,7 +1051,7 @@
             const max = limitOf('boss');
             const hp = Math.max(1, max - (boss.max - boss.hp));
             if (max !== boss.max || hp !== boss.hp) {
-                engine.boss = { hp, max };
+                engine.boss = { ...boss, hp, max };
                 if (!silent) deliver({ type: 'boss', ...engine.boss });
             }
         }
@@ -1086,7 +1101,7 @@
         ...speechTable,
         showMs: Object.fromEntries(Object.entries(speechTable.showMs).map(([key, ms]) => [key, ms * talkScale])),
         holdMs: scaled(speechTable.holdMs),
-        lines: Object.fromEntries(Object.entries(speechTable.lines).map(([id, l]) => [id, { ms: scaled(l.ms), hold: scaled(l.hold), ...(l.delay ? { delay: l.delay } : {}) }])),
+        lines: Object.fromEntries(Object.entries(speechTable.lines).map(([id, l]) => [id, { ms: scaled(l.ms), hold: scaled(l.hold), ...(l.delay ? { delay: l.delay } : {}), ...(l.lead ? { lead: scaled(l.lead) } : {}) }])),
     };
     const AUTO_CFG = {
         ...AUTO,
@@ -1271,6 +1286,10 @@
     // and a reset send them away with `gone`. Seeded under ?freeze, so a frozen screenshot shows the same crowd.
     const ZOMBIE_MIN = Math.max(0, Number.parseInt(params.get('zmin') ?? '5', 10) || 0);
     const ZOMBIE_PER = Math.max(0, Number.parseInt(params.get('zper') ?? '5', 10) || 0);
+    const BURN_MS = Math.max(0, Number.parseInt(params.get('burnms') ?? '5000', 10) || 0);
+    const ZOMBIE_HEAL = Math.max(0, Number.parseInt(params.get('heal') ?? '3', 10) || 0);
+    // ?zburn=ms[,ms…]: wanderers whose time runs out at those moments of the run (with ?freeze — of the frozen clock).
+    const zburnAt = (params.get('zburn') ?? '').split(',').map((n) => Number.parseInt(n, 10)).filter(Number.isFinite);
     let wanderRandom = simulated ? seeded(6150) : Math.random;
     const wandering = () => [...live].filter(([, f]) => f.wander && !f.shot);
     const wanderOn = () => engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
@@ -1786,16 +1805,20 @@
         if (engine.scene < engine.sceneStages || engine.finale?.step !== BOSS_STEP) return { ok: false, error: 'not now' };
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (w.item === 'rapier') return { ok: false, error: 'has rapier' };
+        if (waitFor(engine.finale.wordAt)) return waitFor(engine.finale.wordAt);
         const said = typeof text === 'string' ? text.trim() : '';
         if (said.length < 1 || said.length > 40) return { ok: false, error: 'invalid text' };
         const mode = params.get('word');
         const correct = mode === 'ok' ? true : mode === 'fail' ? false : wordSeq++ % 2 === 0;
         if (correct) w.item = 'rapier';
-        else w.zombie = true;
-        deliver({ type: 'word', player: playerOf(w), ok: correct });
+        else {
+            w.zombie = true;
+            if (ZOMBIE_PLAYER_MS > 0) w.zombieUntil = serverTime() + ZOMBIE_PLAYER_MS;
+        }
+        deliver({ type: 'word', player: playerOf(w), ok: correct, ...(w.zombieUntil ? { until: w.zombieUntil } : {}) });
         if (correct && !engine.boss) {
             const max = limitOf('boss');
-            engine.boss = { hp: max, max };
+            engine.boss = { hp: max, max, burnMs: BURN_MS, awakeAt: serverTime() };
             deliver({ type: 'boss', ...engine.boss });
         }
         return { ok: true, correct };
@@ -1811,6 +1834,7 @@
         if (!t || walker === id) return { ok: false, error: 'no target' };
         if (!t.zombie) return { ok: true, cured: false };
         delete t.zombie;
+        delete t.zombieUntil;
         deliver({ type: 'cure', player: playerOf(t), by: playerOf(w) });
         return { ok: true, cured: true };
     }
@@ -1837,12 +1861,26 @@
         return { ok: true, hp: engine.boss.hp };
     }
 
-    // A zombie player is walked by the server: an ordinary move over the lawn every 2–4 s.
+    // The round the owl has given its word hint in: once a round.
+    let hintedRound = null;
+    // A zombie player is walked by the server: an ordinary move over the lawn every 2–4 s, until its `zombieUntil` cures
+    // it (`cure` with `auto`). The same ticker says the word hint.
     function zombieWalks() {
         for (const w of engine.walkers) {
+            if (w.zombie && w.zombieUntil && serverTime() >= w.zombieUntil) {
+                delete w.zombie;
+                delete w.zombieUntil;
+                deliver({ type: 'cure', player: playerOf(w), auto: true });
+                continue;
+            }
             if (!w.zombie || serverTime() < (w.shambleAt ?? 0)) continue;
             w.shambleAt = serverTime() + 2000 + Math.random() * 2000;
             engineMove(w.id, randomTarget());
+        }
+        const f = engine.finale;
+        if (engine.scene >= engine.sceneStages && f?.step === BOSS_STEP && !engine.boss && hintedRound !== engine.round && WORD_HINT_MS > 0 && Number.isFinite(f.wordAt) && serverTime() >= f.wordAt + WORD_HINT_MS) {
+            hintedRound = engine.round;
+            deliver({ type: 'owl', line: 'word-hint' });
         }
         later(zombieWalks, 500);
     }
@@ -1860,9 +1898,32 @@
         if (step === BOSS_STEP) {
             const zombie = engine.walkers.find((x) => x.zombie && x.id !== w.id);
             if (zombie && Math.random() < 0.6) return engineCure(w.id, { walker: zombie.id });
-            if (w.item !== 'rapier') return engineWord(w.id, { text: 'рапира' });
+            if (w.item !== 'rapier' && !waitFor(engine.finale.wordAt)) return engineWord(w.id, { text: 'рапира' });
         }
         return engineMove(w.id, randomTarget());
+    }
+
+    // Zombies burning out at step 6 (protocol.md, «Рапира», `burn`): while FrankenPHP stands, a wanderer HELLOWIN_ZOMBIE_BURN_MS
+    // (?burnms, 5000; ?burnms=0 — never) after its rise, or after his waking if it is older, burns out on the next tick
+    // and heals him HELLOWIN_ZOMBIE_HEAL (?heal, 3) up to his max; on the pause it burns without healing. `at` is its
+    // deadline; `boss` follows a heal.
+    function burnDue(f) {
+        const boss = engine.boss;
+        if (!boss || boss.hp <= 0 || !(BURN_MS > 0) || engine.finale?.step !== BOSS_STEP) return null;
+        return Math.max(f.event.launchedAt, boss.awakeAt ?? f.event.launchedAt) + BURN_MS;
+    }
+    function burnTick() {
+        later(burnTick, 100);
+        for (const [id, f] of wandering()) {
+            const at = burnDue(f);
+            if (at === null || at > serverTime()) continue;
+            live.delete(id);
+            const heal = engine.paused ? 0 : Math.min(engine.boss.max, engine.boss.hp + ZOMBIE_HEAL) - engine.boss.hp;
+            engine.boss.hp += heal;
+            deliver({ type: 'burn', flyer: id, at, heal, ...(engine.paused ? { counted: false } : {}) });
+            if (heal > 0) deliver({ type: 'boss', ...engine.boss });
+        }
+        wanderTopUp();
     }
 
     // ?strike=1: every bot with a rapier strikes FrankenPHP every 600 ms.
@@ -1898,13 +1959,19 @@
         diceState.owl = 0;
     }
 
-    function diceBegin() {
+    function diceBegin(openAt) {
         diceForget();
-        engine.dice = { on: true };
-        // The bots' first throws come one after another, once their pages have counted the owl's countdown down.
-        wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + SUMMON_MS + 300 + i * 450));
-        deliver({ type: 'dice', on: true });
+        engine.dice = { on: true, openAt };
+        // The bots' first throws come one after another, once the dice are open.
+        wanderers().forEach((w, i) => diceState.botAt.set(w.id, Math.max(openAt, serverTime() + SUMMON_MS) + 300 + i * 450));
+        deliver({ type: 'dice', on: true, openAt });
     }
+
+    // HELLOWIN_WORD_HINT_MS and HELLOWIN_ZOMBIE_PLAYER_MS (?wordhint, ?zcure; 0 — never).
+    const WORD_HINT_MS = params.has('wordhint') ? Math.max(0, Number.parseInt(params.get('wordhint'), 10) || 0) : 180000;
+    const ZOMBIE_PLAYER_MS = params.has('zcure') ? Math.max(0, Number.parseInt(params.get('zcure'), 10) || 0) : 60000;
+    // `wait` until `at` (protocol.md, «Сова объясняет»); null when the input is open.
+    const waitFor = (at) => (Number.isFinite(at) && serverTime() < at ? { ok: false, error: 'wait', openAt: at } : null);
 
     function diceWin(winner) {
         engine.dice = { on: false, winner };
@@ -1920,6 +1987,7 @@
         if (!w) return { ok: false, error: 'no character' };
         if (w.zombie) return { ok: false, error: 'zombified' };
         if (!(engine.scene >= engine.sceneStages && engine.finale?.step === 1 && engine.dice)) return { ok: false, error: 'not now' };
+        if (engine.dice.on && waitFor(engine.dice.openAt)) return waitFor(engine.dice.openAt);
         const last = diceState.last.get(id) ?? 0;
         if (last > 0 && attempt === last) return { ok: true, attempt, dice: diceState.thrown.get(`${id}:${last}`), ...diceState.uncounted.get(`${id}:${last}`) };
         if (!engine.dice.on) return { ok: false, error: 'not now' };
@@ -2304,23 +2372,28 @@
             }
             if (params.has('boss')) {
                 const [hp, max] = params.get('boss').split(',').map((n) => Math.max(0, Number.parseInt(n, 10) || 0));
-                engine.boss = { hp: Math.max(1, hp), max: Math.max(1, hp, max) };
+                // ?zburn: he woke a while ago, so a zombie risen any time burns on its own clock.
+                engine.boss = { hp: Math.max(1, hp), max: Math.max(1, hp, max), burnMs: BURN_MS, awakeAt: serverTime() - (zburnAt.length ? 60000 : 0) };
                 // The moderator's addition makes up the max asked for.
                 limitBonus.boss = engine.boss.max - formula('boss');
             }
             if (step >= LAST_STEP) engine.boss = { hp: 0, max: engine.boss?.max ?? 90 };
             // ?dice=1 at step 1: the dice on, the step not ready; past it the dice are off.
             if (step === 1 && params.get('dice') === '1') {
-                engine.dice = { on: true };
+                engine.dice = { on: true, ...(params.has('diceopen') ? { openAt: serverTime() + (Number.parseInt(params.get('diceopen'), 10) || 0) } : {}) };
                 engine.ready = false;
                 diceState.owl = Math.max(0, Math.min(2, Number.parseInt(params.get('owlrolls') ?? '0', 10) || 0));
                 wanderers().forEach((w, i) => diceState.botAt.set(w.id, serverTime() + 300 + i * 450));
             } else if (step >= 2) {
                 engine.dice = { on: false };
             }
+            if (step === BOSS_STEP && params.has('wordopen')) engine.finale.wordAt = serverTime() + (Number.parseInt(params.get('wordopen'), 10) || 0);
             if (step === BOSS_STEP && params.get('zombified') === '1') {
                 const me = engine.walkers.find((w) => w.id === ME);
-                if (me) me.zombie = true;
+                if (me) {
+                    me.zombie = true;
+                    if (ZOMBIE_PLAYER_MS > 0) me.zombieUntil = serverTime() + ZOMBIE_PLAYER_MS;
+                }
             }
         }
         dawnSeed();
@@ -2333,8 +2406,9 @@
     // Steps 5–6 open on a crowd already wandering: ?wander=N of them (HELLOWIN_ZOMBIE_MIN by default), risen 2–40 s ago.
     function seedWanderers() {
         const cursedNow = engine.scene >= engine.sceneStages && [CURSED_STEP, BOSS_STEP].includes(engine.finale?.step);
-        const n = params.has('wander') ? Math.max(0, Number.parseInt(params.get('wander'), 10) || 0) : cursedNow ? ZOMBIE_MIN : 0;
+        const n = params.has('wander') ? Math.max(0, Number.parseInt(params.get('wander'), 10) || 0) : cursedNow && !zburnAt.length ? ZOMBIE_MIN : 0;
         for (let i = 0; i < n; i++) engineWanderer(serverTime() - 2000 - Math.round(wanderRandom() * 38000));
+        zburnAt.forEach((ms) => engineWanderer(serverTime() + ms - BURN_MS));
     }
 
     // At the start of the run: the owl's line and the special flyers of the query; returns the zombie and the first
@@ -2410,7 +2484,7 @@
         });
         window.audio = audio;
     }
-    const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line) });
+    const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line), onHide: () => sound?.owlHush() });
     // RPC `reveal` of the panel: the engine's numbers now, on the lab's clock.
     // `calls` — every player action on the server; the lab counts only the ones it keeps numbers of.
     const reveal = createReveal(root, { request: async () => ({ ...structuredClone(stats), calls: stats.clicks + stats.shot + stats.drinks + stats.damage + stats.rolls }), later, onToggle: () => owl.place() });
@@ -2540,6 +2614,7 @@
         tickBar();
         zombieWalks();
         strikeBots();
+        burnTick();
         diceBots();
         dawnBots();
         if (barDemo) barDemoSteps();
@@ -2686,6 +2761,7 @@
                 tickBar();
                 zombieWalks();
                 strikeBots();
+                burnTick();
                 diceBots();
                 dawnBots();
                 // My «Бросить», pressed at the start of a frozen run.
