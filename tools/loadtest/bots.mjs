@@ -78,7 +78,11 @@ class Bot {
         const s = await this.rpc('state');
         if (s?.ok) {
             this.state = s.state;
-            this.beer = this.state.walkers?.find((w) => w.id === this.me)?.item === 'beer';
+            const mine = this.state.walkers?.find((w) => w.id === this.me);
+            this.beer = mine?.item === 'beer';
+            this.rapier = mine?.item === 'rapier';
+            this.zombie = !!mine?.zombie;
+            this.zombies = new Set((this.state.walkers ?? []).filter((w) => w.zombie).map((w) => w.id));
         }
     }
 
@@ -87,9 +91,65 @@ class Bot {
         if (!e || !this.state) return;
         if (e.type === 'flyer') this.flyers.set(e.flyer, e.expiresAt ?? Date.now() + 5000);
         if (e.type === 'shot') this.flyers.delete(e.flyer);
-        if (e.type === 'scene' || e.type === 'reset') this.refresh();
+        if (e.type === 'scene' || e.type === 'reset' || e.type === 'finale') this.refresh();
         if (e.type === 'take' && e.player?.id === this.me) this.beer = !!e.ok;
-        if (e.type === 'drink' && e.player?.id === this.me) this.beer = false;
+        if (e.type === 'drink' && e.player?.id === this.me) { this.beer = false; this.clinked = false; }
+        if (e.type === 'word') {
+            if (!e.ok) this.zombies.add(e.player?.id);
+            if (e.player?.id === this.me) { this.rapier = !!e.ok; this.zombie = !e.ok; }
+        }
+        if (e.type === 'cure') {
+            this.zombies.delete(e.player?.id);
+            if (e.player?.id === this.me) this.zombie = false;
+        }
+        if (e.type === 'roll' && !e.owl) this.attempt = Math.max(this.attempt ?? 0, e.player?.id === this.me ? e.attempt : 0);
+    }
+
+    // The bar and the cursed world: get a mug, clink, drink after the clink has played
+    async beerRound(s, now, get) {
+        if (!this.beer) return get();
+        const others = (s.walkers ?? []).filter((w) => w.id !== this.me && w.item === 'beer' && !w.zombie);
+        if (!this.clinked && others.length) {
+            const r = await this.rpc('clink', { walker: pick(others).id });
+            if (r?.ok) { this.clinked = true; this.drinkAt = now + 3500; }
+        } else if (now >= (this.drinkAt ?? 0)) {
+            const r = await this.rpc('drink');
+            if (r?.ok) { this.beer = false; this.clinked = false; }
+            if (r?.error === 'not clinked') this.clinked = false;
+        }
+    }
+
+    // Steps of the finale; false when the step has nothing of its own and the bot does the usual things
+    async finaleAct(s, now) {
+        const step = s.finale?.step;
+        if (step === 1) {
+            const r = await this.rpc('roll', { attempt: (this.attempt ?? 0) + 1 });
+            if (r?.ok) this.attempt = r.attempt;
+            else if (r?.error === 'bad attempt') this.attempt = r.last ?? 0;
+            return true;
+        }
+        if (step === 5 && Math.random() < 0.6) {
+            const pumpkins = (s.elements ?? []).filter((e) => e.type === 'pumpkin');
+            await this.beerRound(s, now, () => pumpkins.length && this.rpc('beer', { pumpkin: pick(pumpkins).id }));
+            return true;
+        }
+        if (step === 6) {
+            if (this.zombie) return true; // the server walks a zombie
+            const zombies = [...(this.zombies ?? [])].filter((id) => id !== this.me);
+            if (zombies.length && Math.random() < 0.4) { await this.rpc('cure', { walker: pick(zombies) }); return true; }
+            if (this.rapier) {
+                for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) await this.rpc('strike');
+                return true;
+            }
+            if (Math.random() < 0.5) {
+                const r = await this.rpc('word', { text: Math.random() < 0.7 ? pick(['рапира', 'Рапиру!', 'rapira', 'рапиры']) : pick(['пиво', 'шпага', 'roadrunner']) });
+                if (r?.ok) { this.rapier = r.correct; this.zombie = !r.correct; }
+                if (r?.error === 'has rapier') this.rapier = true;
+                if (r?.error === 'zombified') this.zombie = true;
+                return true;
+            }
+        }
+        return false;
     }
 
     async act() {
@@ -99,29 +159,21 @@ class Bot {
         for (const [id, exp] of this.flyers) if (exp < now) this.flyers.delete(id);
 
         const roll = Math.random();
+        if (this.zombie && s.finale?.step === 6) return;
         if (this.flyers.size && roll < 0.35) {
+            // Flyers, and the wandering zombies of the cursed world
             await this.rpc('shoot', { flyer: pick([...this.flyers.keys()]) });
-        } else if (s.scene === 0 && !s.finale && roll < 0.75) {
-            // The bar: take a mug, clink with somebody holding one, drink
-            if (!this.beer) {
-                await this.rpc('bar.take');
-            } else {
-                const others = (s.walkers ?? []).filter((w) => w.id !== this.me && w.item === 'beer');
-                if (!this.clinked && others.length) {
-                    // Walk over and clink; the sip waits for the clink to play out
-                    const r = await this.rpc('clink', { walker: pick(others).id });
-                    if (r?.ok) { this.clinked = true; this.drinkAt = now + 3500; }
-                } else if (now >= (this.drinkAt ?? 0)) {
-                    const r = await this.rpc('drink');
-                    if (r?.ok) { this.beer = false; this.clinked = false; }
-                    if (r?.error === 'not clinked') this.clinked = false;
-                }
-            }
+        } else if (s.finale && await this.finaleAct(s, now)) {
+            // done
+        } else if (s.scene === 0 && roll < 0.75) {
+            await this.beerRound(s, now, () => this.rpc('bar.take'));
         } else if (s.scene > 0 && roll < 0.75) {
             const els = (s.elements ?? []).filter((e) => e.type === 'pumpkin' || e.type === 'bonfire' || e.type === 'circle');
             if (els.length) for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) await this.rpc('click', { element: pick(els).id });
-        } else if (roll < 0.97) {
+        } else if (roll < 0.88) {
             await this.rpc('move', { x: rnd(5, 95), y: rnd(55, 95) });
+        } else if (roll < 0.97 && s.emotes?.length) {
+            await this.rpc('emote', { emoji: pick(s.emotes) });
         } else {
             await this.rpc('say', { text: pick(PHRASES) });
         }
