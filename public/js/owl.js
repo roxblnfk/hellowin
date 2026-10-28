@@ -214,9 +214,56 @@ export const summonText = (left, first) => (first ? `${SUMMON} ${left}…` : `${
 // The dice's aside lasts about as long as the throw it comes with.
 const ASIDE_MS = 2600;
 const OWL_HEIGHT = 18;
-const AVOID = '.dice:not([hidden]), .word:not([hidden])';
+// The open reveal panel is kept clear too, and when it leaves the bubble no room, the line moves into its inset.
+const PANEL = '.reveal:not([hidden])';
+const AVOID = `.dice:not([hidden]), .word:not([hidden]), ${PANEL}`;
 const GAP = 4;
 const EDGE = 8;
+// Clearance around a panel: its frame is a box-shadow up to 8 px wide (14 px down), the bubble's is 6 px.
+const MARGIN = 14;
+// The tail reaches the owl only this far in from the bubble's edges, so its two squares stay under the box.
+const TAIL_LEFT = 12;
+const TAIL_RIGHT = 16;
+const TAIL_H = 22;
+// A bubble narrowed to fit beside a panel is never narrower than this: a column of three words is not a speech.
+const MIN_WIDTH = 200;
+
+/**
+ * Where the owl's bubble goes: up and to the right of the owl, else under it, else slid sideways — wherever the box with
+ * its tail stays on screen, clear of every panel in `avoid`, and the tail still reaches the owl. Null when there is no
+ * such place, or a panel covers the owl itself (a tail into a panel would point at nothing).
+ *
+ * @param {{x: number, y: number, px?: number}} perch  the owl's talons on screen (scene.perch()), px — the art's pixel
+ * @param {{w: number, h: number}} size  the bubble without its tail
+ * @param {{width: number, height: number}} view  the scene's box
+ * @param {{left: number, top: number, right: number, bottom: number}[]} avoid  panels, in the scene's coordinates
+ * @returns {{left: number, top: number, below: boolean}|null}
+ */
+export function bubbleSpot(perch, { w, h }, { width, height }, avoid = []) {
+    const px = perch.px ?? 2;
+    const head = perch.y - OWL_HEIGHT * px;
+    const middle = (head + perch.y) / 2;
+    if (avoid.some((r) => perch.x > r.left && perch.x < r.right && middle > r.top && middle < r.bottom)) return null;
+    const clampLeft = (left) => Math.min(Math.max(EDGE, left), Math.max(EDGE, width - w - EDGE));
+    const lefts = [perch.x - 24, perch.x - TAIL_LEFT, perch.x - w + TAIL_RIGHT];
+    for (const r of avoid) lefts.push(r.left - MARGIN - w, r.right + MARGIN);
+    const tops = [[head - GAP * px - h - 24, false], [perch.y + 4 * px + 24, true]];
+    const fits = (left, top, below) => {
+        const tail = perch.x - left;
+        if (tail < TAIL_LEFT || tail > w - TAIL_RIGHT || left < EDGE || left + w > width - EDGE) return false;
+        if (top < EDGE || top + h > height - EDGE) return false;
+        const y0 = below ? top - TAIL_H : top;
+        const y1 = below ? top + h : top + h + TAIL_H;
+        return !avoid.some((r) => left < r.right + MARGIN && left + w > r.left - MARGIN && y0 < r.bottom + MARGIN && y1 > r.top - MARGIN);
+    };
+    // The usual place above, then under the owl, before any slide sideways.
+    for (const left of lefts.map((l) => Math.round(clampLeft(l)))) {
+        for (const [top, below] of tops) {
+            if (fits(left, top, below)) return { left, top: Math.round(top), below };
+        }
+    }
+    return null;
+}
 
 /**
  * Speech bubble over the scene, anchored at the owl on the branch (`scene.perch()`); without a canvas it sits at
@@ -236,6 +283,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     bubble.setAttribute('role', 'status');
     bubble.setAttribute('aria-live', 'polite');
     bubble.hidden = true;
+    // A line is on (its timers run) whether the bubble or the reveal panel's inset shows it.
+    let speaking = false;
     const textEl = document.createElement('p');
     textEl.className = 'owl-bubble__text';
     textEl.dataset.owlText = '';
@@ -252,13 +301,30 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     let counting = 0;
     let countdowns = 0;
 
+    function rectsOf(selector) {
+        const box = root.getBoundingClientRect();
+        return [...root.querySelectorAll(selector)].map((el) => {
+            const r = el.getBoundingClientRect();
+            return { left: r.left - box.left, top: r.top - box.top, right: r.right - box.left, bottom: r.bottom - box.top };
+        });
+    }
+
+    // The bubble at the owl, or — when the open reveal panel leaves it no room (a phone, or the owl under the panel) —
+    // the panel's inset `[data-reveal-owl]` with the same text; the line's timers do not care which.
     function place() {
-        if (bubble.hidden) return;
+        const inset = root.querySelector?.('[data-reveal-owl]') ?? null;
+        const into = (where) => {
+            bubble.hidden = where !== 'bubble';
+            if (!inset) return;
+            if (where === 'inset') inset.querySelector('[data-reveal-owl-text]').textContent = textEl.textContent;
+            inset.hidden = where !== 'inset';
+        };
+        if (!speaking) return into(null);
+        into('bubble');
         const perch = scene?.perch?.();
         const width = root.clientWidth;
-        const w = bubble.offsetWidth;
-        const h = bubble.offsetHeight;
         if (!perch) {
+            const w = bubble.offsetWidth;
             bubble.style.left = `${Math.max(EDGE, (width - w) / 2)}px`;
             bubble.style.top = `${EDGE + 56}px`;
             bubble.style.setProperty('--tail-x', `${w / 2}px`);
@@ -266,23 +332,39 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             return;
         }
         bubble.classList.remove('owl-bubble--free');
+        const view = { width, height: root.clientHeight };
+        const avoid = rectsOf(AVOID);
+        bubble.style.maxWidth = '';
+        let spot = bubbleSpot(perch, { w: bubble.offsetWidth, h: bubble.offsetHeight }, view, avoid);
+        // Beside a panel there may be room for a narrower bubble: each side's width is tried once, the widest first.
+        const rooms = avoid.flatMap((r) => [r.left - MARGIN - EDGE, width - EDGE - r.right - MARGIN]);
+        for (const room of rooms.filter((n) => n >= MIN_WIDTH && n < bubble.offsetWidth).sort((a, b) => b - a)) {
+            if (spot) break;
+            bubble.style.maxWidth = `${Math.floor(room)}px`;
+            spot = bubbleSpot(perch, { w: bubble.offsetWidth, h: bubble.offsetHeight }, view, avoid);
+        }
+        if (!spot && inset && root.querySelector(PANEL)) return into('inset');
+        if (!spot) {
+            bubble.style.maxWidth = '';
+            spot = fallbackSpot(perch);
+        }
+        bubble.classList.toggle('owl-bubble--below', spot.below);
+        bubble.style.left = `${spot.left}px`;
+        bubble.style.top = `${spot.top}px`;
+        bubble.style.setProperty('--tail-x', `${Math.round(Math.min(Math.max(TAIL_LEFT, perch.x - spot.left), bubble.offsetWidth - TAIL_RIGHT))}px`);
+    }
+
+    // No clear place and no panel to move into (the dice or the word form over a short screen): up and to the right
+    // of the owl, under it when the sky has no room or a panel covers that.
+    function fallbackSpot(perch) {
         const px = perch.px ?? 2;
-        const head = perch.y - OWL_HEIGHT * px;
-        // Up and to the right of the owl, the tail reaching down to its head; below it when the sky has no room.
-        const left = Math.min(Math.max(EDGE, perch.x - 24), Math.max(EDGE, width - w - EDGE));
-        let top = head - GAP * px - h - 24;
-        // The panels at the top in the middle (the dice, the word form) keep the bubble out: it goes under the owl.
-        const covers = [...root.querySelectorAll(AVOID)].some((panel) => {
-            const r = panel.getBoundingClientRect();
-            const box = root.getBoundingClientRect();
-            return left < r.right - box.left && left + w > r.left - box.left && top < r.bottom - box.top && top + h > r.top - box.top;
-        });
+        const w = bubble.offsetWidth;
+        const h = bubble.offsetHeight;
+        const left = Math.round(Math.min(Math.max(EDGE, perch.x - 24), Math.max(EDGE, root.clientWidth - w - EDGE)));
+        const top = perch.y - OWL_HEIGHT * px - GAP * px - h - 24;
+        const covers = rectsOf(AVOID).some((r) => left < r.right && left + w > r.left && top < r.bottom && top + h > r.top);
         const below = top < EDGE || covers;
-        if (below) top = perch.y + 4 * px + 24;
-        bubble.classList.toggle('owl-bubble--below', below);
-        bubble.style.left = `${Math.round(left)}px`;
-        bubble.style.top = `${Math.round(top)}px`;
-        bubble.style.setProperty('--tail-x', `${Math.round(Math.min(Math.max(12, perch.x - left), w - 16))}px`);
+        return { left, top: Math.round(below ? perch.y + 4 * px + 24 : top), below };
     }
 
     // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up. `then` — the parts still to
@@ -296,18 +378,20 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         // After the owl has flown away the scene anchors the bubble over FrankenPHP (scene.perch()).
         const delay = Number(scene?.owl?.({ ms, hoot, line, part, rapier: line !== null && LINES[line]?.rapier === part })) || 0;
         const open = () => {
-            bubble.hidden = false;
+            speaking = true;
             place();
             const perch = scene?.perch?.();
             const width = root.clientWidth;
             onShow({ text, hoot, count, x: perch && width ? (perch.x / width) * 100 : null });
         };
-        bubble.hidden = true;
+        speaking = false;
+        place();
         if (delay > 0) later(() => mine === token && open(), delay);
         else open();
         later(() => {
             if (mine !== token) return;
-            bubble.hidden = true;
+            speaking = false;
+            place();
             // A line in parts goes on at once, unless another line has taken the bubble meanwhile.
             if (then.length) show({ text: then[0], hoot: false, then: then.slice(1), line, part: part + 1 });
         }, delay + ms);
@@ -393,12 +477,13 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             if (!counting) return;
             counting = 0;
             token++;
-            bubble.hidden = true;
+            speaking = false;
+            place();
             holdUntil = -1e9;
             shown = { until: -1e9 };
         },
 
-        /** Re-anchors the bubble, e.g. after the scene rebuilt for a new size. */
+        /** Re-anchors the bubble, e.g. after the scene rebuilt for a new size or the reveal panel opened or closed. */
         place,
     };
 }

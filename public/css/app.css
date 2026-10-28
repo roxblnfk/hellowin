@@ -831,7 +831,7 @@ body:not([data-final]) .circle,
 /* The owl's speech bubble (public/js/owl.js), placed by script at the owl; the tail points at its head. */
 .owl-bubble {
     position: absolute;
-    /* Over the reveal panel: the owl explains its numbers. */
+    /* Over the panels: it steps round them (owl.js), and where it cannot, its text stays on top. */
     z-index: 1004;
     max-width: min(320px, calc(100% - 16px));
     padding: 8px 12px;
@@ -922,6 +922,49 @@ body:not([data-final]) .circle,
 
 .reveal[hidden] {
     display: none;
+}
+
+/* The owl's line when its bubble has no room beside the panel (public/js/owl.js): the same cream speech, at the top. */
+.reveal__owl {
+    /* Stuck to the panel's top edge while the numbers scroll under it: its frame covers the panel's padding. */
+    position: sticky;
+    top: -12px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 40px 12px 0;
+    padding: 6px 10px;
+    color: var(--outline);
+    background: var(--cream);
+    box-shadow: 0 0 0 2px var(--outline), 0 0 0 4px var(--soil), 0 0 0 6px var(--outline);
+    animation: reveal-owl-in 220ms steps(4) both;
+}
+
+.reveal__owl[hidden] {
+    display: none;
+}
+
+.reveal__owl-icon {
+    flex: none;
+}
+
+.reveal__owl-text {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+@keyframes reveal-owl-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reveal__owl {
+        animation: none;
+    }
 }
 
 .reveal__kicker {
@@ -1051,6 +1094,10 @@ body:not([data-final]) .circle,
 
     .reveal__title {
         font-size: 19px;
+    }
+
+    .reveal__owl {
+        top: -8px;
     }
 
     .reveal__grid {

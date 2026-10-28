@@ -110,7 +110,7 @@ async function main() {
     const owl = createOwl(root, scene, { onShow: (line) => sound?.owl(line) });
     // The panel's fresh numbers come over the connection made below; until then (and without one) it keeps its own.
     let requestReveal = () => Promise.reject(new Error('no connection'));
-    const reveal = createReveal(root, { request: () => requestReveal() });
+    const reveal = createReveal(root, { request: () => requestReveal(), onToggle: () => owl.place() });
 
     if (typeof Centrifuge === 'undefined') {
         scene?.onCue?.((cue) => sound?.cue(cue));

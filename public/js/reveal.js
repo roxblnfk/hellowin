@@ -3,6 +3,8 @@
 
 import { AFTER_STORY, formatUptime } from './client.js';
 import { lang, pick } from './i18n.js';
+import { OWL } from './pixel/owl.js';
+import { PALETTE } from './pixel/palette.js';
 
 const STEP = 4;
 // While the panel is open its numbers are asked for afresh this often (RPC `reveal`, docs/spec/protocol.md).
@@ -59,6 +61,19 @@ const SKIP_ZERO = new Set(['slain', 'damage', 'rolls']);
 // The card «обработал RoadRunner» counts every action (`calls`); a server without it gives the accepted clicks.
 const valueOf = (reveal, key) => (key === 'clicks' ? reveal.calls ?? reveal.clicks : reveal[key]);
 
+// The owl of the inset, drawn from its sprite as SVG: a path per colour, cropped to the body (the frame pads it for the
+// wing and the hoot).
+const OWL_ICON = (() => {
+    const sprite = OWL.idle[0];
+    const paths = new Map();
+    sprite.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        const key = sprite.legend[ch];
+        if (key) paths.set(key, `${paths.get(key) ?? ''}M${x} ${y}h1v1h-1z`);
+    }));
+    const d = [...paths].map(([key, path]) => `<path fill="#${PALETTE[key].toString(16).padStart(6, '0')}" d="${path}"/>`).join('');
+    return `<svg class="reveal__owl-icon" viewBox="3 1 13 17" width="26" height="34" shape-rendering="crispEdges" aria-hidden="true">${d}</svg>`;
+})();
+
 const plural = pick({ ru: pluralRu, en: (n, [one, many]) => (n === 1 ? one : many) });
 
 function pluralRu(n, [one, few, many]) {
@@ -79,9 +94,11 @@ function pluralRu(n, [one, few, many]) {
  * @param {object} [options]
  * @param {(() => Promise<object>)|null} [options.request]  the evening's numbers now, like `reveal` of the snapshot
  * @param {(fn: Function, ms: number) => void} [options.later]  timer (the lab's frozen clock)
+ * @param {(open: boolean) => void} [options.onToggle]  the panel has just shown or hidden: the owl moves its line into
+ *   the inset `[data-reveal-owl]` or back to its bubble
  * @returns {{update: (finale: {step: number, reveal?: object}|null, uptime?: number|null) => void}}
  */
-export function createReveal(root, { request = null, later = (fn, ms) => setTimeout(fn, ms) } = {}) {
+export function createReveal(root, { request = null, later = (fn, ms) => setTimeout(fn, ms), onToggle = () => {} } = {}) {
     const panel = document.createElement('section');
     panel.className = 'reveal';
     panel.dataset.reveal = '';
@@ -89,6 +106,7 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
     panel.hidden = true;
     panel.innerHTML = `
         <button type="button" class="reveal__close" data-reveal-close aria-label="${TEXT.close}">×</button>
+        <div class="reveal__owl" data-reveal-owl role="status" aria-live="polite" hidden>${OWL_ICON}<p class="reveal__owl-text" data-reveal-owl-text></p></div>
         <p class="reveal__kicker">${TEXT.kicker}</p>
         <h2 class="reveal__title" id="reveal-title">${TEXT.title}</h2>
         <p class="reveal__lead">${TEXT.lead}</p>
@@ -124,7 +142,9 @@ export function createReveal(root, { request = null, later = (fn, ms) => setTime
     let asking = false;
 
     function paint() {
+        const was = panel.hidden;
         panel.hidden = !shown || !open;
+        if (panel.hidden !== was) onToggle(!panel.hidden);
         if (opener) opener.hidden = !shown || open;
         const wanted = shown && open && request !== null;
         if (wanted === live) return;
