@@ -192,6 +192,21 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * The elephant farts at the first shot; an anonymous shot names no player.
+     *
+     * @param non-empty-string|null $player
+     * @param int $at Unix time in milliseconds of the shot.
+     */
+    public function fart(int $round, Flyer $flyer, ?string $player, int $at): void
+    {
+        $message = ['type' => 'fart', 'round' => $round, 'flyer' => $flyer->id];
+        $player === null or $message['player'] = ['id' => $player];
+        $message['at'] = $at;
+
+        $this->publish($message);
+    }
+
+    /**
      * @param non-empty-string|null $item
      */
     public function walker(int $round, Walker $walker, ?string $item): void

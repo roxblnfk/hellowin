@@ -30,6 +30,8 @@ final class FlyerConfig extends InjectableConfig
         'fly_sit' => '900-1600',
         'fly_leg' => 900,
         'fly_points' => 1,
+        'elephant_interval' => '180000,360000',
+        'elephant_duration' => 26000,
         'rare' => ';;;;',
         'rare_chance' => 0.08,
         'rare_points' => 10,
@@ -61,6 +63,24 @@ final class FlyerConfig extends InjectableConfig
     public function getDawnInterval(): array
     {
         return self::range($this->config['interval_dawn'] ?? null, 'interval_dawn', 'HELLOWIN_FLYER_INTERVAL_DAWN');
+    }
+
+    /**
+     * Milliseconds from one elephant to the next, like {@see getInterval()}: `"180000,360000"`.
+     *
+     * @return array{positive-int, positive-int}
+     */
+    public function getElephantInterval(): array
+    {
+        return self::range($this->config['elephant_interval'] ?? null, 'elephant_interval', 'HELLOWIN_ELEPHANT_INTERVAL');
+    }
+
+    /**
+     * @return positive-int Milliseconds an elephant takes across the sky.
+     */
+    public function getElephantDuration(): int
+    {
+        return self::positiveInt($this->config['elephant_duration'] ?? null, 'elephant_duration', 'HELLOWIN_ELEPHANT_DURATION');
     }
 
     /**
@@ -280,12 +300,12 @@ final class FlyerConfig extends InjectableConfig
         mixed $value,
         string $key,
         string $env,
-        string $expected = 'milliseconds like "3000-8000" or "5000"',
+        string $expected = 'milliseconds like "3000-8000", "3000,8000" or "5000"',
     ): array {
         \is_int($value) and $value = (string) $value;
         $error = self::invalid($key, $env, $expected, $value);
 
-        if (!\is_string($value) || \preg_match('/^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/', $value, $match) !== 1) {
+        if (!\is_string($value) || \preg_match('/^\s*(\d+)\s*(?:[-,]\s*(\d+)\s*)?$/', $value, $match) !== 1) {
             throw $error;
         }
         $min = (int) $match[1];

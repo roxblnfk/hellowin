@@ -36,6 +36,9 @@ use Random\Randomizer;
  * Kinds come by scene; the cursed world and the dawn have sets of their own instead of their scene's. Sometimes a launch
  * is the rare flyer of the scene instead — a special one, as the moderator launches by hand: from the edge, for the rare
  * points.
+ *
+ * The elephant comes only by itself — on the ticker's timer or by the moderator's hand: across the far sky from behind
+ * one side edge to behind the other, level within its band ({@see ELEPHANT_SKY}), for no points.
  */
 final readonly class FlyerFactory
 {
@@ -81,6 +84,18 @@ final readonly class FlyerFactory
     /** Share of a table's half-width a fly lands within, either side of its middle: on the top, not its rim. */
     private const FLY_TABLE_SPREAD = 0.5;
 
+    /**
+     * Where an elephant flies: behind the edges, wider than {@see OUT} — the client stretches the path anyway so the
+     * long banner enters and leaves whole; x gives only the direction.
+     */
+    private const ELEPHANT_OUT = [-10.0, 110.0];
+
+    /** Band of the sky an elephant flies in, percents from the top: well over the horizon. */
+    private const ELEPHANT_SKY = [8.0, 20.0];
+
+    /** How far an elephant's end may sit above or below its start, percents. */
+    private const ELEPHANT_DRIFT = 2.0;
+
     /** @var non-empty-list<FlyerDepth> */
     private array $depths;
 
@@ -108,6 +123,7 @@ final readonly class FlyerFactory
      * @param positive-int $flyLeg Milliseconds of a fly's flight from one point to the next.
      * @param positive-int $flyPoints Points for a fly.
      * @param list<non-empty-string> $dawn Kinds of the dawn in place of its scene's set.
+     * @param positive-int $elephantDuration Milliseconds an elephant takes across the sky.
      */
     public function __construct(
         array $depths,
@@ -129,6 +145,7 @@ final readonly class FlyerFactory
         private int $flyLeg = 900,
         private int $flyPoints = 1,
         private array $dawn = [],
+        private int $elephantDuration = 26000,
     ) {
         $all = \array_merge($cursed, $dawn, ...$kinds);
         $lawn !== null || !\in_array(Flyer::KIND_WORM, $all, true) or throw new \InvalidArgumentException(
@@ -221,13 +238,16 @@ final readonly class FlyerFactory
     }
 
     /**
-     * A flyer of the given kind from the edge, at a random depth, for the rare points.
+     * A flyer of the given kind from the edge, at a random depth, for the rare points; the elephant flies its own way.
      *
      * @param non-empty-string $kind
      * @param int $now Unix time in milliseconds.
      */
     public function special(string $kind, int $now): Flyer
     {
+        if ($kind === Flyer::KIND_ELEPHANT) {
+            return $this->elephant($now);
+        }
         $id = 'f-' . \bin2hex($this->random->getBytes(4));
 
         /** @var int<0, max> $depth */
@@ -245,6 +265,31 @@ final readonly class FlyerFactory
             points: $this->rarePoints,
             launchedAt: $now,
             kind: $kind,
+        );
+    }
+
+    /**
+     * @param int $now Unix time in milliseconds.
+     */
+    public function elephant(int $now): Flyer
+    {
+        $id = 'f-' . \bin2hex($this->random->getBytes(4));
+        $leftToRight = $this->chance(0.5);
+        [$low, $high] = self::ELEPHANT_SKY;
+        $y = $this->float($low, $high);
+        $end = \max($low, \min($high, $this->float($y - self::ELEPHANT_DRIFT, $y + self::ELEPHANT_DRIFT)));
+
+        return new Flyer(
+            id: $id,
+            depth: 0,
+            from: new Point($leftToRight ? self::ELEPHANT_OUT[0] : self::ELEPHANT_OUT[1], $y),
+            to: new Point($leftToRight ? self::ELEPHANT_OUT[1] : self::ELEPHANT_OUT[0], $end),
+            via: null,
+            bush: null,
+            duration: $this->elephantDuration,
+            points: 0,
+            launchedAt: $now,
+            kind: Flyer::KIND_ELEPHANT,
         );
     }
 

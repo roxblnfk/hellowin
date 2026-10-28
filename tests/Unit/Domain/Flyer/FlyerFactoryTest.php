@@ -34,6 +34,43 @@ final class FlyerFactoryTest
         }
     }
 
+    public function elephantCrossesTheFarSkyForNoPoints(): void
+    {
+        $factory = new FlyerFactory(
+            \array_map(static fn(array $d): FlyerDepth => new FlyerDepth(...$d), self::DEPTHS),
+            [],
+            1.0,
+            1.0,
+            new Randomizer(new Mt19937(7)),
+            elephantDuration: 31_000,
+        );
+        $directions = [];
+
+        for ($i = 0; $i < 200; ++$i) {
+            $elephant = $factory->elephant(1_000);
+            Assert::same([$elephant->kind, $elephant->depth, $elephant->points], [Flyer::KIND_ELEPHANT, 0, 0]);
+            Assert::same([$elephant->duration, $elephant->expiresAt()], [31_000, 32_000]);
+            Assert::null($elephant->via);
+            Assert::null($elephant->bush);
+            Assert::null($elephant->wobble);
+            Assert::same([$elephant->from->x, $elephant->to->x], $elephant->from->x < 0 ? [-10.0, 110.0] : [110.0, -10.0]);
+            Assert::numeric($elephant->from->y)->between(8, 20);
+            Assert::numeric($elephant->to->y)->between(8, 20);
+            Assert::true(\abs($elephant->to->y - $elephant->from->y) <= 2.0);
+            $directions[$elephant->from->x < 0 ? 'right' : 'left'] = true;
+        }
+
+        Assert::array($directions)->hasCount(2);
+    }
+
+    public function elephantComesAsTheSpecialOne(): void
+    {
+        $elephant = self::factory(0.5, 0.5)->special(Flyer::KIND_ELEPHANT, 1_000);
+
+        Assert::same([$elephant->kind, $elephant->depth, $elephant->points, $elephant->duration], [Flyer::KIND_ELEPHANT, 0, 0, 26_000]);
+        Assert::false($elephant->downable());
+    }
+
     public function everyDepthShowsUp(): void
     {
         $depths = \array_map(static fn(Flyer $f): int => $f->depth, self::flyers(self::factory(0.5, 0.5), 300));

@@ -685,6 +685,32 @@ final class RPCServiceTest
         Assert::same($flyer['kind'], 'witch');
     }
 
+    public function moderatorLaunchesAnElephantEvenOnAPause(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'pause', ['on' => true], moderator: true);
+
+        $response = $this->call($ritual, 'flyer.special', ['kind' => 'elephant'], moderator: true);
+
+        $flyer = $ritual->broadcast->ofType('flyer')[0];
+        Assert::same($response, ['ok' => true, 'flyer' => $flyer['flyer']]);
+        Assert::same([$flyer['kind'], $flyer['depth'], $flyer['points']], ['elephant', 0, 0]);
+    }
+
+    public function shotAtTheElephantMissesAndMakesItFartOnce(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'flyer.special', ['kind' => 'elephant'], moderator: true);
+        $elephant = $ritual->broadcast->ofType('flyer')[0]['flyer'];
+
+        $first = $this->call($ritual, 'shoot', ['flyer' => $elephant], self::PLAYER);
+        $second = $this->call($ritual, 'shoot', ['flyer' => $elephant], self::PLAYER);
+
+        Assert::same([$first, $second], [['ok' => true, 'hit' => false], ['ok' => true, 'hit' => false]]);
+        Assert::count($ritual->broadcast->ofType('fart'), 1);
+        Assert::blank($ritual->broadcast->ofType('shot'));
+    }
+
     #[DataSet([['kind' => 'duck']], 'ordinary kind')]
     #[DataSet([['kind' => 'roadrunner']], 'the runner on the horizon is the client\'s')]
     #[DataSet([['kind' => 42]], 'number')]

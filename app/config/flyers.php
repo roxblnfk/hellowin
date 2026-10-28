@@ -43,6 +43,11 @@ return [
     'fly_leg' => env('HELLOWIN_FLYER_FLY_LEG', 900),
     'fly_points' => env('HELLOWIN_FLYER_FLY_POINTS', 1),
 
+    // The elephant with the release banner comes on a timer of its own, not by chance: milliseconds from the last one
+    // (min,max, a random value between, or a fixed number) and milliseconds it takes across the sky
+    'elephant_interval' => env('HELLOWIN_ELEPHANT_INTERVAL', '180000,360000'),
+    'elephant_duration' => env('HELLOWIN_ELEPHANT_DURATION', 26000),
+
     // The rare flyer of each scene (empty — none), how often a launch is it, and its points
     'rare' => env('HELLOWIN_FLYER_RARE', ';;;;'),
     'rare_chance' => env('HELLOWIN_FLYER_RARE_CHANCE', 0.08),

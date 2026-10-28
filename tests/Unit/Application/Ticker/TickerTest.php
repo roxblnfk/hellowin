@@ -351,6 +351,80 @@ final class TickerTest
         Assert::same(self::escaped($ritual), 0.0);
     }
 
+    public function elephantComesWithinItsIntervalCountedFromTheLastOne(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::elephantTicker($ritual, [30_000, 40_000]);
+
+        for ($now = 0; $now <= 120_000; $now += 1_000) {
+            $ticker->tick($now);
+        }
+
+        $launches = \array_column(self::elephants($ritual), 'launchedAt');
+        Assert::count($launches, 3);
+        $from = 0;
+        foreach ($launches as $launchedAt) {
+            Assert::int($launchedAt - $from)->greaterThanOrEqual(30_000)->lessThanOrEqual(40_000);
+            $from = $launchedAt;
+        }
+        Assert::same($ritual->counters()[PlayMetrics::FLYERS_LAUNCHED . '{0}'] ?? null, 3.0);
+    }
+
+    public function moderatorsElephantRestartsThePause(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::elephantTicker($ritual, [30_000, 30_000]);
+        $ticker->tick(0);
+        $ritual->flyers->launchSpecial(Flyer::KIND_ELEPHANT, 20_000);
+
+        for ($now = 1_000; $now <= 50_000; $now += 1_000) {
+            $ticker->tick($now);
+        }
+
+        Assert::same(\array_column(self::elephants($ritual), 'launchedAt'), [20_000, 50_000]);
+    }
+
+    public function secondElephantWaitsForTheFirstToLeave(): void
+    {
+        $ritual = new RitualHarness();
+        $ticker = self::elephantTicker($ritual, [1_000, 1_000]);
+
+        for ($now = 0; $now <= 30_000; $now += 1_000) {
+            $ticker->tick($now);
+        }
+
+        Assert::same(\array_column(self::elephants($ritual), 'launchedAt'), [1_000, 27_000]);
+    }
+
+    public function noElephantFliesIntoTheBar(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1]);
+        $ticker = self::elephantTicker($ritual, [1_000, 1_000]);
+
+        for ($now = 0; $now <= 5_000; $now += 1_000) {
+            $ticker->tick($now);
+        }
+        Assert::blank(self::elephants($ritual));
+        $ritual->story->nextScene(0, true);
+        $ritual->runJobs();
+        $ticker->tick(6_000);
+
+        Assert::count(self::elephants($ritual), 1);
+    }
+
+    public function pauseLeavesTheElephantAlone(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->story->pause(true);
+        $ticker = self::elephantTicker($ritual, [2_000, 2_000]);
+
+        $ticker->tick(0);
+        $ticker->tick(1_000);
+        $ticker->tick(2_000);
+
+        Assert::count(self::elephants($ritual), 1);
+    }
+
     /**
      * Takes the final scene of `$round` to the cursed world.
      */
@@ -369,6 +443,25 @@ final class TickerTest
     {
         $ritual->players->register($id, 'Jack', self::LOOK);
         $ritual->walks->move($id, 20, 90);
+    }
+
+    /**
+     * @param array{positive-int, positive-int} $interval
+     */
+    private static function elephantTicker(RitualHarness $ritual, array $interval): Ticker
+    {
+        return new Ticker($ritual->top, 500, $ritual->flyers, [999_999, 999_999], $ritual->walks, new NullLogger(), elephantInterval: $interval);
+    }
+
+    /**
+     * @return list<array>
+     */
+    private static function elephants(RitualHarness $ritual): array
+    {
+        return \array_values(\array_filter(
+            $ritual->broadcast->ofType('flyer'),
+            static fn(array $flyer): bool => $flyer['kind'] === Flyer::KIND_ELEPHANT,
+        ));
     }
 
     private static function ticker(RitualHarness $ritual): Ticker

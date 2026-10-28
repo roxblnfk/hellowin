@@ -34,6 +34,22 @@ final class FlyerConfigTest
         Assert::same((new FlyerConfig(['interval' => $value]))->getInterval(), $expected);
     }
 
+    public function elephantHasItsOwnPaceAndFlight(): void
+    {
+        $config = new FlyerConfig();
+        $custom = new FlyerConfig(['elephant_interval' => '60000, 90000', 'elephant_duration' => '30000']);
+
+        Assert::same([$config->getElephantInterval(), $config->getElephantDuration()], [[180000, 360000], 26000]);
+        Assert::same([$custom->getElephantInterval(), $custom->getElephantDuration()], [[60000, 90000], 30000]);
+    }
+
+    public function elephantIntervalRejectsGarbage(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ELEPHANT_INTERVAL');
+
+        (new FlyerConfig(['elephant_interval' => '360000,180000']))->getElephantInterval();
+    }
+
     #[DataSet(['900-500'], 'reversed')]
     #[DataSet(['0'], 'zero')]
     #[DataSet(['fast'], 'word')]

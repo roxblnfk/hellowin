@@ -20,6 +20,7 @@ final readonly class PlayMetrics
     public const FLYERS_LAUNCHED = 'hellowin_flyers_launched_total';
     public const FLYERS_SHOT = 'hellowin_flyers_shot_total';
     public const FLYERS_ESCAPED = 'hellowin_flyers_escaped_total';
+    public const FARTS = 'hellowin_farts_total';
     public const WALKERS = 'hellowin_walkers';
     public const ONLINE_PLAYERS = 'hellowin_online_players';
     public const ONLINE_CONNECTIONS = 'hellowin_online_connections';
@@ -53,6 +54,7 @@ final readonly class PlayMetrics
             self::FLYERS_LAUNCHED => Collector::counter()->withHelp('Flyers launched.')->withLabels('depth'),
             self::FLYERS_SHOT => Collector::counter()->withHelp('Flyers shot down.')->withLabels('depth'),
             self::FLYERS_ESCAPED => Collector::counter()->withHelp('Flyers that left the screen unhurt.')->withLabels('depth'),
+            self::FARTS => Collector::counter()->withHelp('Elephants that farted at a shot.'),
             self::WALKERS => Collector::gauge()->withHelp('Characters on the lawn.'),
             self::ONLINE_PLAYERS => Collector::gauge()->withHelp('Players connected to the channel now, each once.'),
             self::ONLINE_CONNECTIONS => Collector::gauge()->withHelp('Connections to the channel now: every tab, anonymous ones included.'),
@@ -169,6 +171,11 @@ final readonly class PlayMetrics
     public function flyerEscaped(Flyer $flyer): void
     {
         $this->safely(fn() => $this->metrics->add(self::FLYERS_ESCAPED, 1, [(string) $flyer->depth]));
+    }
+
+    public function fart(): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::FARTS, 1));
     }
 
     /**

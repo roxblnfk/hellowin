@@ -25,6 +25,7 @@ final class OwlLine
     public const BOSS_DOWN = 'boss-down';
     public const DICE_WIN = 'dice-win';
     public const DICE_OWL_WIN = 'dice-owl-win';
+    public const FART_TIME = 'fart-time';
 
     /**
      * What the owl says, naming the player, when the element of the type made the scene ready.

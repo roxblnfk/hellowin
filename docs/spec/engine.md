@@ -74,6 +74,7 @@
 | Работа | Когда | Что |
 |---|---|---|
 | Запуск летуна | случайно раз в `HELLOWIN_FLYER_INTERVAL` мс (на рассвете — `HELLOWIN_FLYER_INTERVAL_DAWN`); первый — через интервал после старта; на паузе пропускается | `FlyerFactory` (набор сцены или редкий) → ключ летуна + индекс → событие `flyer` → `hellowin_flyers_launched_total{depth}` |
+| Слон | раз в секунду (вместе со сверкой присутствия); пауза — случайно в `HELLOWIN_ELEPHANT_INTERVAL` мс, своя на каждого слона | отсчёт — от `launchedAt` последнего слона `hellowin:elephant` (тикерного или ручного; слонов ещё не было — от старта тикера) → `FlyerService::elephant(now)`: в баре (`RitualPolicy::bar`) и пока прошлый слон летит — ждёт и пробует на следующей секунде; пауза прогресса не держит → `FlyerFactory::elephant` → ключ + индекс → `flyer` → `hellowin_flyers_launched_total{depth}` |
 | Бродячие зомби | каждый тик; удар `HELLOWIN_ZOMBIE_INTERVAL` мс — своё расписание | `FlyerService::wander(now, due)`: в проклятом мире (`finale` 5–6), и на паузе прогресса, под RR-локом `wanderers` — живых меньше `HELLOWIN_ZOMBIE_MIN` → встают недостающие; на ударе и живых меньше `max(MIN, HELLOWIN_ZOMBIE_PER_PLAYER × фигурки)` → ещё один; каждый — `ZombieFactory::wander` → ключ + индекс → `flyer {wander: true}` → `hellowin_flyers_launched_total{depth}`. Вне шагов 5–6 оставшиеся снимаются (`retire`, событие `gone`) |
 | Учёт улетевших | каждый тик | просроченные из индекса → под локом `flyer:{id}` ключ ещё есть → удалить, `hellowin_flyers_escaped_total{depth}` |
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая партия с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
@@ -141,10 +142,21 @@
   ошибка конструктора.
 - **Редкие и особые.** С вероятностью `HELLOWIN_FLYER_RARE_CHANCE` запуск тикера — редкий летун сцены
   (`HELLOWIN_FLYER_RARE`); его же модератор запускает кнопкой (RPC `flyer.special`, и на паузе; виды —
-  `FlyerService::SPECIAL`, сейчас только `witch`, прочие — `unknown kind`). Особый летун — с края, на случайной
+  `FlyerService::SPECIAL`: `witch` и `elephant`, прочие — `unknown kind`). Особый летун — с края, на случайной
   глубине, очки `HELLOWIN_FLYER_RARE_POINTS`; сбитая ведьма — реплика `witch-down` с игроком. RoadRunner на горизонте —
   не летун: его рисует клиент по своим часам (решение пользователя от 2026-10-28, см. `scenario.md`), сервер о нём не
   знает.
+- **Слон** (`elephant`, [`protocol.md`](protocol.md), «Слон»; **реализовано**): `FlyerFactory::elephant` (им же
+  отвечает `special('elephant')`) — `depth` 0, 0 очков, без `via`, `bush` и `wobble`; `from.x`/`to.x` — −10 и 110 в
+  случайную сторону, `from.y` — случайно в 8–20 %, `to.y` — в пределах ±2 от него и в тех же 8–20 %; `duration` —
+  `HELLOWIN_ELEPHANT_DURATION`. Запускают тикер по своему таймеру (см. «Тикер») и модератор (`flyer.special`).
+  `FlyerStore::add` пишет слона ещё и в `hellowin:elephant` (без TTL) — от него тикер считает паузу.
+  Выстрел по слону (`Flyer::downable()` — нет) — всегда промах: ключ не удаляется, слон улетает и попадает в
+  `hellowin_flyers_escaped_total{depth}`. После броска кружки `FlyerService::shoot` зовёт `FlyerStore::fart`: под
+  RR-локом `flyer:{id}` ключ есть, это слон, полёт не кончился (+500 мс) и флага `farted` в ключе нет → флаг ставится
+  (ключ перезаписывается с прежним сроком жизни) → `fart {flyer, player?: {id}, at}`, `owl {line: fart-time}` (через
+  `ChannelPublisher::owl`, поэтому в счёт `OwlClock`), `hellowin_farts_total`. Так из любых одновременных выстрелов
+  пукает ровно один; сбой здесь — предупреждение в лог, ответ остаётся `hit:false`.
 - **Зомби** проклятого мира — тоже летуны (`kind: zombie`), чтобы выстрел, очки и метрики были общими, но бродячие
   (`Flyer::wanderer`, `wander: true`): полёта нет, встаёт в случайной точке прямоугольника лужайки `walk.area` (там и
   грядка), дальше его ведёт фронтенд. `depth` 1 (или последняя, если глубин меньше), без `via` и `bush`, очки
@@ -842,7 +854,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` и паузы эмоций `hellowin:rate:emote:{player}` (TTL) | память RoadRunner | тот же storage `process` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
-| Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers` | Valkey | тот же storage `hellowin` |
+| Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers`, последний слон `hellowin:elephant` (без TTL) | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
 | Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}` | Valkey | тот же storage `hellowin` |
@@ -883,6 +895,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_flyers_launched_total{depth}` | counter | запущенные летуны (тикер) |
 | `hellowin_flyers_shot_total{depth}` | counter | сбитые летуны (RPC `shoot`) |
 | `hellowin_flyers_escaped_total{depth}` | counter | улетевшие несбитыми (тикер) |
+| `hellowin_farts_total` | counter | слоны, выпустившие газ: первый выстрел по слону (RPC `shoot`) |
 | `hellowin_walkers` | gauge | фигурки на поле; выставляет тикер раз в секунду |
 | `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
 | `hellowin_online_connections` | gauge | все подключения к каналу сейчас: вкладки и анонимы; там же |
@@ -931,6 +944,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_FLYER_RARE_CHANCE` | 0.08 | вероятность, что запуск тикера — редкий летун сцены |
 | `HELLOWIN_FLYER_BURST_BASE`, `HELLOWIN_FLYER_BURST_PER_PLAYER` | 5, 0.2 | волна летунов модератора (`flyers.burst`), см. «Лимиты и баланс» (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_RARE_POINTS` | 10 | очки за редкого летуна |
+| `HELLOWIN_ELEPHANT_INTERVAL` | `180000,360000` | мс от слона до следующего: мин и макс через запятую (или дефис), случайно внутри, или число; отсчёт — от прошлого слона, и ручного тоже (`app/config/flyers.php`) |
+| `HELLOWIN_ELEPHANT_DURATION` | 26000 | мс полёта слона |
 | `HELLOWIN_ZOMBIE_INTERVAL` | `2000-5000` | мс между бродячими зомби сверх минимума в проклятом мире: диапазон или число |
 | `HELLOWIN_ZOMBIE_MIN` | 5 | бродячих зомби живы всегда (шаги финала 5–6) |
 | `HELLOWIN_ZOMBIE_PER_PLAYER` | 5 | до скольких бродячих зомби на фигурку на поле толпа растёт по интервалу |

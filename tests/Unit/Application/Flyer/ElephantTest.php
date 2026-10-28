@@ -1,0 +1,116 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Application\Flyer;
+
+use App\Application\Flyer\FlyerService;
+use App\Application\Hellowin\ChannelPublisher;
+use App\Application\Hellowin\PlayMetrics;
+use App\Domain\Flyer\Flyer;
+use Testo\Assert;
+use Testo\Codecov\Covers;
+use Testo\Test;
+use Tests\Fake\RitualHarness;
+
+/**
+ * The elephant with the release banner cannot be shot down; the first shot makes it fart (docs/spec/protocol.md,
+ * «Слон»).
+ */
+#[Test]
+#[Covers(FlyerService::class)]
+#[Covers(ChannelPublisher::class)]
+#[Covers(PlayMetrics::class)]
+final class ElephantTest
+{
+    private const A = 'aaaaaaaaaaaaaaaa';
+    private const B = 'bbbbbbbbbbbbbbbb';
+    private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
+
+    public function firstShotMakesItFartAndTheOwlSayItThenTheShotsJustMiss(): void
+    {
+        $ritual = new RitualHarness();
+        $elephant = self::launch($ritual);
+        $ritual->clock->now += 5_000;
+        $ritual->broadcast->published = [];
+
+        $first = $ritual->flyers->shoot($elephant->id, self::A);
+        $ritual->clock->now += 100;
+        $second = $ritual->flyers->shoot($elephant->id, self::B);
+        $third = $ritual->flyers->shoot($elephant->id, null);
+
+        Assert::same([$first, $second, $third], [null, null, null]);
+        Assert::same(\array_column($ritual->broadcast->published, 'message'), [
+            ['type' => 'fart', 'round' => 1, 'flyer' => $elephant->id, 'player' => ['id' => self::A], 'at' => $ritual->clock->now - 100],
+            ['type' => 'owl', 'round' => 1, 'line' => 'fart-time'],
+        ]);
+        Assert::same($ritual->counters()[PlayMetrics::FARTS . '{}'] ?? null, 1.0);
+        Assert::false(\array_key_exists(PlayMetrics::FLYERS_SHOT . '{0}', $ritual->counters()));
+    }
+
+    public function owlLineCountsInTheAutopilotSpeech(): void
+    {
+        $ritual = new RitualHarness();
+        $elephant = self::launch($ritual);
+        $before = $ritual->owl->until();
+
+        $ritual->flyers->shoot($elephant->id, self::A);
+
+        Assert::int($ritual->owl->until())->greaterThan(\max($before, $ritual->clock->now));
+    }
+
+    public function anonymousShotFartsWithoutAPlayer(): void
+    {
+        $ritual = new RitualHarness();
+        $elephant = self::launch($ritual);
+
+        $ritual->flyers->shoot($elephant->id, null);
+
+        Assert::same($ritual->broadcast->ofType('fart'), [
+            ['type' => 'fart', 'round' => 1, 'flyer' => $elephant->id, 'at' => $ritual->clock->now],
+        ]);
+    }
+
+    public function shotAfterTheFlightAndItsLatencyTellsNothing(): void
+    {
+        $ritual = new RitualHarness();
+        $elephant = self::launch($ritual);
+        $ritual->clock->now = $elephant->expiresAt() + 500;
+        $ritual->broadcast->published = [];
+
+        Assert::null($ritual->flyers->shoot($elephant->id, self::A));
+
+        Assert::blank($ritual->broadcast->published);
+        Assert::false(\array_key_exists(PlayMetrics::FARTS . '{}', $ritual->counters()));
+    }
+
+    public function emptyMugFliesBeforeTheFart(): void
+    {
+        $ritual = new RitualHarness(stageMax: [0, 1, 2]);
+        $ritual->players->register(self::A, 'Jack', self::LOOK);
+        $walk = $ritual->walks->move(self::A, 20, 90);
+        $ritual->clock->now = $walk->arrivesAt;
+        $ritual->walkerStore->update(static fn(array $walkers): array => [[self::A => $walkers[self::A]->drank(0)] + $walkers, null]);
+        $elephant = self::launch($ritual);
+        $ritual->broadcast->published = [];
+
+        $ritual->flyers->shoot($elephant->id, self::A);
+
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['throw', 'fart', 'owl']);
+    }
+
+    public function launchCountsAsAFlyerAtTheFarthestDepth(): void
+    {
+        $ritual = new RitualHarness();
+
+        self::launch($ritual);
+
+        Assert::same($ritual->counters()[PlayMetrics::FLYERS_LAUNCHED . '{0}'] ?? null, 1.0);
+        Assert::same($ritual->flyers->lastElephantAt(), $ritual->clock->now);
+    }
+
+    private static function launch(RitualHarness $ritual): Flyer
+    {
+        return $ritual->flyers->launchSpecial(Flyer::KIND_ELEPHANT, $ritual->clock->now) ?? Assert::fail('The elephant flies.');
+    }
+}

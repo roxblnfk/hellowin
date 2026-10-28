@@ -34,6 +34,12 @@ final class Ticker
     private ?int $nextFlyer = null;
     private ?int $nextZombie = null;
     private ?int $nextPresence = null;
+    private ?int $startedAt = null;
+
+    /** Unix time in milliseconds the elephant pause counts from: the last elephant's take-off or the start. */
+    private ?int $elephantFrom = null;
+
+    private int $elephantPause = 0;
 
     /** @var list<Row>|null The shooters' top the clients were told last; null — none since this ticker started. */
     private ?array $toldTop = null;
@@ -43,6 +49,8 @@ final class Ticker
      * @param array{positive-int, positive-int} $flyerInterval Milliseconds between launches, min and max.
      * @param array{positive-int, positive-int} $zombieInterval Milliseconds between zombies, min and max.
      * @param array{positive-int, positive-int} $dawnInterval Milliseconds between launches at dawn, min and max.
+     * @param array{positive-int, positive-int}|null $elephantInterval Milliseconds between elephants, min and max;
+     *        null — no elephant comes by itself.
      */
     public function __construct(
         private readonly TopService $top,
@@ -60,6 +68,7 @@ final class Ticker
         private readonly ?LimitsService $limits = null,
         private readonly ?PlayerCensus $census = null,
         private readonly ?AutopilotService $autopilot = null,
+        private readonly ?array $elephantInterval = null,
     ) {}
 
     /**
@@ -72,6 +81,7 @@ final class Ticker
      */
     public function tick(int $now): void
     {
+        $this->startedAt ??= $now;
         $this->nextFlyer ??= $now + $this->flyerPause();
         if ($now >= $this->nextFlyer) {
             $this->nextFlyer = $now + $this->flyerPause();
@@ -95,6 +105,7 @@ final class Ticker
             $this->safely('walkers', fn() => $this->walks->sync());
             $this->safely('limits', fn() => $this->limits?->follow());
             $this->safely('cursed goals', fn() => $this->cursed?->follow());
+            $this->safely('elephant', fn() => $this->elephant($now));
         }
 
         if ($this->nextTop === null || $now >= $this->nextTop) {
@@ -110,6 +121,26 @@ final class Ticker
         }
 
         $this->safely('autopilot', fn() => $this->autopilot?->tick($now));
+    }
+
+    /**
+     * The pause counts from the last elephant in the store rather than from this ticker's own launch: the moderator's
+     * elephant restarts it too, and so does a restart of the ticker. A pause is drawn once per elephant; an elephant
+     * that has to wait — in the bar, or another still up — is tried again on the next beat.
+     */
+    private function elephant(int $now): void
+    {
+        if ($this->elephantInterval === null) {
+            return;
+        }
+
+        $from = $this->flyers->lastElephantAt() ?? $this->startedAt ?? $now;
+        if ($from !== $this->elephantFrom) {
+            $this->elephantFrom = $from;
+            $this->elephantPause = $this->random->getInt(...$this->elephantInterval);
+        }
+
+        $now >= $from + $this->elephantPause and $this->flyers->elephant($now);
     }
 
     /**

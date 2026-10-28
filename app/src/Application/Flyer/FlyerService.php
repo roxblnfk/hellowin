@@ -37,7 +37,7 @@ use Psr\Log\NullLogger;
 final readonly class FlyerService
 {
     /** Kinds the moderator may launch by hand. */
-    public const SPECIAL = [Flyer::KIND_WITCH];
+    public const SPECIAL = [Flyer::KIND_WITCH, Flyer::KIND_ELEPHANT];
 
     public function __construct(
         private FlyerFactory $factory,
@@ -81,6 +81,34 @@ final readonly class FlyerService
         $flyer = $this->factory->launch($now, $ritual->scene, $story->cursed(), $story->dawn());
 
         return $flyer === null ? null : $this->release($ritual->round, $flyer);
+    }
+
+    /**
+     * @return int|null Unix time in milliseconds the last elephant took off, by the ticker or by hand; null — never.
+     */
+    public function lastElephantAt(): ?int
+    {
+        return $this->store->lastElephant()?->launchedAt;
+    }
+
+    /**
+     * The ticker's elephant: anywhere but in the bar — it flies over the open sky — and never while another one is
+     * still up. The pause holds the scene's progress, not the sky.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return Flyer|null Null when the elephant has to wait.
+     */
+    public function elephant(int $now): ?Flyer
+    {
+        if ($this->store->lastElephant()?->flyingAt($now) === true) {
+            return null;
+        }
+        $ritual = $this->ritual->snapshot();
+        if ($this->policy?->bar($ritual->scene) === true) {
+            return null;
+        }
+
+        return $this->release($ritual->round, $this->factory->elephant($now));
     }
 
     /**
@@ -202,7 +230,8 @@ final readonly class FlyerService
 
     /**
      * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops,
-     * and an empty mug in its hand flies at the flyer (docs/spec/protocol.md, «Пустая кружка»).
+     * and an empty mug in its hand flies at the flyer (docs/spec/protocol.md, «Пустая кружка»). An elephant is always
+     * missed, and the first shot at it makes it fart (docs/spec/protocol.md, «Слон»).
      *
      * @param non-empty-string|null $player
      * @return int|null Points for a hit, null for a miss.
@@ -210,10 +239,13 @@ final readonly class FlyerService
      */
     public function shoot(string $flyerId, ?string $player): ?int
     {
-        $flyer = $this->store->shoot($flyerId, $this->clock->now());
+        $now = $this->clock->now();
+        $flyer = $this->store->shoot($flyerId, $now);
         $this->stops?->stop($player, ActionStop::SHOOT);
         $this->throwMug($player, $flyerId);
         if ($flyer === null) {
+            $this->fart($flyerId, $player, $now);
+
             return null;
         }
 
@@ -296,6 +328,32 @@ final readonly class FlyerService
         } catch (\Throwable $e) {
             $this->logger->warning('Mug of {player} is not thrown: {message}', [
                 'player' => $player,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+        }
+    }
+
+    /**
+     * The fart is a show beside the miss: a failure there must not turn the miss into an error.
+     *
+     * @param non-empty-string|null $player
+     * @param int $now Unix time in milliseconds of the shot.
+     */
+    private function fart(string $flyerId, ?string $player, int $now): void
+    {
+        try {
+            $elephant = $this->store->fart($flyerId, $now);
+            if ($elephant === null) {
+                return;
+            }
+            $round = $this->ritual->round();
+            $this->publisher->fart($round, $elephant, $player, $now);
+            $this->publisher->owl($round, OwlLine::FART_TIME);
+            $this->metrics->fart();
+        } catch (\Throwable $e) {
+            $this->logger->warning('Elephant {flyer} did not fart: {message}', [
+                'flyer' => $flyerId,
                 'message' => $e->getMessage(),
                 'exception' => $e,
             ]);

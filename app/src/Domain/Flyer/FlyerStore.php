@@ -20,11 +20,17 @@ use Psr\SimpleCache\CacheInterface;
  * The key expires on its own a little after the flight, in case the ticker is down; a flyer that expires that way
  * is counted neither as shot nor as escaped. A wandering zombie has no flight: its key outlives any evening and the
  * sweep passes it by, it ends shot or retired.
+ *
+ * An elephant is never shot down, it ends escaped: its key keeps a `farted` flag instead, set under its lock by the
+ * first shot ({@see fart()}), so it farts once however many shots come at once. The last elephant launched stays
+ * under `hellowin:elephant` with no expiry: the ticker counts the pause to the next one from it, wherever it came from.
  */
 final readonly class FlyerStore
 {
     private const KEY_FLYER = 'hellowin:flyer:';
     private const KEY_INDEX = 'hellowin:flyers';
+    private const KEY_ELEPHANT = 'hellowin:elephant';
+    private const FARTED = 'farted';
     private const LOCK_FLYER = 'flyer:';
     private const LOCK_INDEX = 'flyers';
     private const LOCK_WANDERERS = 'wanderers';
@@ -59,14 +65,54 @@ final readonly class FlyerStore
             $index = $this->index();
             $index[$flyer->id] = $flyer->wander ? null : $flyer->expiresAt();
             $this->storage->set(self::KEY_INDEX, $index);
+            $flyer->kind === Flyer::KIND_ELEPHANT and $this->storage->set(self::KEY_ELEPHANT, $flyer->toArray());
         });
     }
 
     /**
-     * Shoots the flyer down if it is still in the sky.
+     * The last elephant launched, flying or long gone.
+     */
+    public function lastElephant(): ?Flyer
+    {
+        return Flyer::fromArray($this->storage->get(self::KEY_ELEPHANT));
+    }
+
+    /**
+     * Marks the elephant as farted if it is still in the sky and has not farted yet.
      *
      * @param int $now Unix time in milliseconds.
-     * @return Flyer|null The flyer that was hit, null for a miss: already shot, gone or unknown.
+     * @return Flyer|null The elephant that farted now; null for any other flyer, a late shot or a repeated one.
+     * @throws LockBusyException
+     */
+    public function fart(string $id, int $now): ?Flyer
+    {
+        if (!Flyer::isId($id)) {
+            return null;
+        }
+
+        return $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Flyer {
+            /** @var mixed $data */
+            $data = $this->storage->get(self::KEY_FLYER . $id);
+            $flyer = Flyer::fromArray($data);
+            if (!\is_array($data) || $flyer === null || $flyer->downable() || !$flyer->flyingAt($now - self::LATENCY)
+                || ($data[self::FARTED] ?? false) === true) {
+                return null;
+            }
+
+            $data[self::FARTED] = true;
+            // The key keeps its expiry: the sweep still finds it, and it still goes away if the ticker is down
+            $ttl = (int) \ceil(($flyer->expiresAt() + $this->grace - $now) / 1000);
+            $this->storage->set(self::KEY_FLYER . $id, $data, \max(1, $ttl));
+
+            return $flyer;
+        });
+    }
+
+    /**
+     * Shoots the flyer down if it is still in the sky and a shot can bring it down.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return Flyer|null The flyer that was hit, null for a miss: already shot, gone, unknown or an elephant.
      * @throws LockBusyException
      */
     public function shoot(string $id, int $now): ?Flyer
@@ -77,7 +123,7 @@ final readonly class FlyerStore
 
         $flyer = $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Flyer {
             $flyer = Flyer::fromArray($this->storage->get(self::KEY_FLYER . $id));
-            if ($flyer === null || !$flyer->flyingAt($now - self::LATENCY)) {
+            if ($flyer === null || !$flyer->downable() || !$flyer->flyingAt($now - self::LATENCY)) {
                 return null;
             }
 

@@ -30,6 +30,12 @@ final readonly class Flyer
     public const KIND_FLY = 'fly';
 
     /**
+     * Crosses the far sky with a banner on its own timer: no shot brings it down, the first one makes it fart
+     * (docs/spec/protocol.md, «Слон»).
+     */
+    public const KIND_ELEPHANT = 'elephant';
+
+    /**
      * @param non-empty-string $id
      * @param int<0, max> $depth 0 is the farthest.
      * @param non-empty-string|null $bush Bush it takes off from; `from` is then the bush.
@@ -137,6 +143,14 @@ final readonly class Flyer
     public function flyingAt(int $now): bool
     {
         return $this->wander || $now < $this->expiresAt();
+    }
+
+    /**
+     * Whether a shot in time brings it down: the elephant only farts.
+     */
+    public function downable(): bool
+    {
+        return $this->kind !== self::KIND_ELEPHANT;
     }
 
     /**

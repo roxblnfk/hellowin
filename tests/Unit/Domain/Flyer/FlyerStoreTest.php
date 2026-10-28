@@ -13,8 +13,11 @@ use Spiral\Cache\Storage\ArrayStorage;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
+use Testo\Fiber\Coroutine;
+use Testo\Fiber\RunInFiber;
 use Testo\Test;
 use Tests\Fake\FakeLock;
+use Tests\Fake\YieldingLock;
 
 #[Test]
 #[Covers(FlyerStore::class)]
@@ -80,6 +83,66 @@ final class FlyerStoreTest
         Assert::blank($store->sweep(120_000));
     }
 
+    public function elephantIsNeverShotDownAndFartsOnce(): void
+    {
+        $store = self::store();
+        $store->add(self::elephant('f-0000000e'));
+
+        Assert::null($store->shoot('f-0000000e', 2_000));
+        Assert::same($store->fart('f-0000000e', 2_000)?->id, 'f-0000000e');
+        Assert::null($store->fart('f-0000000e', 2_001));
+        Assert::same(\array_map(static fn(Flyer $f): string => $f->id, $store->sweep(5_500)), ['f-0000000e'], 'escapes, farted or not');
+    }
+
+    #[RunInFiber]
+    public function twoShotsAtOnceMakeTheElephantFartOnce(): void
+    {
+        $lock = new YieldingLock();
+        $store = new FlyerStore(new ArrayStorage(), new Locks($lock));
+        $store->add(self::elephant('f-0000000e'));
+
+        $farts = Coroutine::concurrently(
+            static fn(): ?Flyer => $store->fart('f-0000000e', 2_000),
+            static fn(): ?Flyer => $store->fart('f-0000000e', 2_000),
+        );
+
+        Assert::contains($lock->waited, 'flyer:f-0000000e', 'the second shot came while the first was inside');
+        Assert::count(\array_filter($farts), 1);
+    }
+
+    public function elephantFartsUntilItsFlightAndLatencyAreOver(): void
+    {
+        $store = self::store();
+        $store->add(self::elephant('f-0000000e'));
+        $store->add(self::elephant('f-0000000f'));
+
+        Assert::notNull($store->fart('f-0000000e', 5_000 + 499));
+        Assert::null($store->fart('f-0000000f', 5_000 + 500));
+    }
+
+    public function onlyAnElephantFarts(): void
+    {
+        $store = self::store();
+        $store->add(self::flyer('f-00000001'));
+
+        Assert::null($store->fart('f-00000001', 2_000));
+        Assert::null($store->fart('f-missing', 2_000));
+        Assert::notNull($store->shoot('f-00000001', 2_000));
+    }
+
+    public function lastElephantOutlivesItsFlight(): void
+    {
+        $store = self::store();
+        Assert::null($store->lastElephant());
+
+        $store->add(self::elephant('f-0000000e'));
+        $store->add(self::elephant('f-0000000f', launchedAt: 3_000));
+        $store->add(self::flyer('f-00000001', launchedAt: 4_000));
+        $store->sweep(60_000);
+
+        Assert::same([$store->lastElephant()?->id, $store->lastElephant()?->launchedAt], ['f-0000000f', 3_000]);
+    }
+
     public function sweptFlyerCannotBeShot(): void
     {
         $store = self::store();
@@ -119,5 +182,15 @@ final class FlyerStoreTest
     private static function flyer(string $id, int $launchedAt = 1_000): Flyer
     {
         return new Flyer($id, 1, new Point(-8, 20), new Point(108, 10), null, null, 4_000, 2, $launchedAt);
+    }
+
+    /**
+     * Flies from 1000 to 5000 ms.
+     *
+     * @param non-empty-string $id
+     */
+    private static function elephant(string $id, int $launchedAt = 1_000): Flyer
+    {
+        return new Flyer($id, 0, new Point(-10, 12), new Point(110, 14), null, null, 4_000, 0, $launchedAt, Flyer::KIND_ELEPHANT);
     }
 }

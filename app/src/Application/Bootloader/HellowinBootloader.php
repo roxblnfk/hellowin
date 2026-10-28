@@ -468,6 +468,7 @@ final class HellowinBootloader extends Bootloader
                 flyLeg: $flyers->getFlyLeg(),
                 flyPoints: $flyers->getFlyPoints(),
                 dawn: $flyers->getDawnKinds(),
+                elephantDuration: $flyers->getElephantDuration(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),
@@ -509,6 +510,7 @@ final class HellowinBootloader extends Bootloader
                 limits: $limits,
                 census: $census,
                 autopilot: $autopilot,
+                elephantInterval: $flyerConfig->getElephantInterval(),
             ),
         ];
     }
