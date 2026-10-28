@@ -9,6 +9,7 @@ use App\Application\Story\DiceService;
 use App\Application\Story\EveningTally;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
+use App\Application\Story\WaitException;
 use App\Application\Walk\NoCharacterException;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Story\DiceRoller;
@@ -45,12 +46,64 @@ final class DiceTest
 
         $ritual->story->finaleStep(1);
 
+        $openAt = $ritual->diceStore->get(1)->openAt;
+        Assert::notNull($openAt);
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['finale', 'limits', 'owl', 'dice']);
-        Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => true]]);
+        Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => true, 'openAt' => $openAt]]);
         $snapshot = $ritual->snapshot->create();
         Assert::false($snapshot['ready']);
-        Assert::same($snapshot['dice'], ['on' => true, 'owl' => 0]);
+        Assert::same($snapshot['dice'], ['on' => true, 'owl' => 0, 'openAt' => $openAt]);
         Assert::same(self::refusal(static fn() => $ritual->story->finaleStep(2)), 'not ready');
+    }
+
+    public function diceOpenAtTheInstructionOfTheirLine(): void
+    {
+        $ritual = self::finale();
+        $ritual->clock->now += 60_000;
+
+        $ritual->story->finaleStep(1, force: true);
+
+        // `finale-1` starts after the countdown's delay, its instruction `lead` into it
+        Assert::same($ritual->broadcast->ofType('dice')[0]['openAt'] ?? null, $ritual->clock->now + 3000 + 1500);
+    }
+
+    public function diceOpenAfterTheLineTheOwlIsStillHolding(): void
+    {
+        $ritual = self::finale();
+        $ritual->clock->now += 60_000;
+        // Each line holds the bubble 3000 ms, the second one from the end of the first one's hold
+        $ritual->story->say('scene-ready', null);
+        $ritual->story->say('scene-ready', null);
+
+        $ritual->story->finaleStep(1, force: true);
+
+        Assert::same($ritual->broadcast->ofType('dice')[0]['openAt'] ?? null, $ritual->clock->now + 6000 + 1500);
+    }
+
+    public function throwBeforeTheInstructionWaitsAndSpendsNothing(): void
+    {
+        $ritual = self::finale();
+        self::place($ritual, self::JACK);
+        $ritual->clock->now = $ritual->walkerStore->all()[self::JACK]->walk->arrivesAt;
+        $ritual->story->finaleStep(1, force: true);
+        $openAt = $ritual->diceStore->get(1)->openAt;
+        Assert::notNull($openAt);
+        $ritual->broadcast->published = [];
+
+        $ritual->clock->now = $openAt - 1;
+        $wait = self::wait(static fn() => $ritual->dice->roll(self::JACK, 1));
+
+        Assert::same($wait, $openAt);
+        Assert::blank($ritual->broadcast->published);
+        Assert::same($ritual->diceStore->get(1)->last(self::JACK), 0);
+        Assert::same($ritual->diceStore->get(1)->rolls, 0);
+        Assert::same($ritual->playerStore->find(self::JACK)?->rolls, 0);
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 0);
+        // The owl's throw is the moderator's: it does not wait
+        Assert::same($ritual->dice->owl()['attempt'], 1);
+
+        $ritual->clock->now = $openAt;
+        Assert::same($ritual->dice->roll(self::JACK, 1)['attempt'], 1);
     }
 
     public function newAttemptThrowsForEveryone(): void
@@ -232,7 +285,7 @@ final class DiceTest
         Assert::same($ritual->broadcast->ofType('owl'), [['type' => 'owl', 'round' => 1, 'line' => 'dice-win', 'params' => $winner]]);
         $snapshot = $ritual->snapshot->create();
         Assert::true($snapshot['ready']);
-        Assert::same($snapshot['dice'], ['on' => false, 'winner' => $winner, 'owl' => 0]);
+        Assert::same($snapshot['dice'], ['on' => false, 'winner' => $winner, 'owl' => 0, 'openAt' => $ritual->diceStore->get(1)->openAt]);
 
         // The winning request again, its answer lost on the way: the same throw and nothing new
         Assert::same($ritual->dice->roll(self::JACK, $attempt), $result);
@@ -273,7 +326,7 @@ final class DiceTest
         Assert::same($ritual->story->finaleStep(2), 2);
 
         Assert::blank($ritual->broadcast->ofType('dice'));
-        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'winner' => ['owl' => true, 'attempt' => 3], 'owl' => 3]);
+        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'winner' => ['owl' => true, 'attempt' => 3], 'owl' => 3, 'openAt' => $ritual->diceStore->get(1)->openAt]);
     }
 
     public function forcedSecondStepTurnsTheDiceOffWithoutWinner(): void
@@ -285,7 +338,7 @@ final class DiceTest
 
         Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => false]]);
         Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type')[0], 'dice');
-        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'owl' => 0]);
+        Assert::same($ritual->snapshot->create()['dice'], ['on' => false, 'owl' => 0, 'openAt' => $ritual->diceStore->get(1)->openAt]);
     }
 
     public function owlWinsOnItsThirdThrow(): void
@@ -377,6 +430,7 @@ final class DiceTest
         foreach ($ritual->walkerStore->all() as $walker) {
             $ritual->clock->now = \max($ritual->clock->now, $walker->walk->arrivesAt);
         }
+        $ritual->owlExplained();
 
         return $ritual;
     }
@@ -399,6 +453,21 @@ final class DiceTest
             $call();
         } catch (StoryRefusedException $e) {
             return $e->error;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param \Closure(): mixed $call
+     * @return int|null The moment the refusal names.
+     */
+    private static function wait(\Closure $call): ?int
+    {
+        try {
+            $call();
+        } catch (WaitException $e) {
+            return $e->openAt;
         }
 
         return null;

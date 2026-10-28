@@ -567,7 +567,7 @@ final readonly class WalkService
                     } elseif ($now - $walker->seenAt >= $this->leaveAfter) {
                         unset($walkers[$walker->id]);
                         $left[] = $walker->id;
-                        $walker->zombie() and $zombies[] = $walker->id;
+                        $walker->zombie() and $zombies[$walker->id] = $walker->zombieUntil;
                     }
                 }
                 $zombies === [] or $this->store->bench($this->ritual->round(), $zombies);
@@ -706,9 +706,12 @@ final readonly class WalkService
         ));
         $walker = new Walker($id, $name, $look, Walk::standing(self::rounded($at), $now), $now);
 
-        // A zombie whose player left comes back a zombie; the bench is read only while there are zombies at all
-        return $this->ritual->story()->rapier() && $this->store->unbench($this->ritual->round(), $id)
-            ? $walker->zombified($now, $now + $this->random->getInt(...Walker::SHAMBLE_PAUSE))
+        // A zombie whose player left comes back a zombie with the same deadline, or human once it has passed; the bench
+        // is read only on the step with zombies
+        [$benched, $until] = $this->ritual->story()->rapier() ? $this->store->unbench($this->ritual->round(), $id) : [false, null];
+
+        return $benched && ($until === null || $now < $until)
+            ? $walker->zombified($now, $now + $this->random->getInt(...Walker::SHAMBLE_PAUSE), $until)
             : $walker;
     }
 

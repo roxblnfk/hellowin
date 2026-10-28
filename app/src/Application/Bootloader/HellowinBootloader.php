@@ -61,6 +61,7 @@ use App\Domain\Story\ShotTally;
 use App\Domain\Story\SpeechTable;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
+use App\Domain\Story\WordStore;
 use App\Domain\Walk\PresenceStore;
 use App\Domain\Walk\WalkerStore;
 use Psr\Container\ContainerInterface;
@@ -297,6 +298,11 @@ final class HellowinBootloader extends Bootloader
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
             ): BossStore => new BossStore($cache->storage($config->getStorage()), new Locks($lock)),
+            WordStore::class => static fn(
+                HellowinConfig $config,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): WordStore => new WordStore($cache->storage($config->getStorage()), new Locks($lock)),
             CursedService::class => static fn(
                 HellowinConfig $config,
                 CursedStore $store,
@@ -327,6 +333,8 @@ final class HellowinBootloader extends Bootloader
                 FlyerStore $flyers,
                 PlayMetrics $metrics,
                 FlyerConfig $flyerConfig,
+                WordStore $words,
+                OwlClock $owl,
             ): RapierService => new RapierService(
                 $walkers,
                 $ritual,
@@ -344,6 +352,10 @@ final class HellowinBootloader extends Bootloader
                 metrics: $metrics,
                 burnMs: $flyerConfig->getZombieBurnMs(),
                 heal: $flyerConfig->getZombieHeal(),
+                words: $words,
+                owl: $owl,
+                zombieMs: $config->getZombiePlayerMs(),
+                hintMs: $config->getWordHintMs(),
             ),
             BarStore::class => static fn(
                 HellowinConfig $config,

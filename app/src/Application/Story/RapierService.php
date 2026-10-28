@@ -21,8 +21,10 @@ use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Boss;
 use App\Domain\Story\BossStore;
 use App\Domain\Story\MagicWord;
+use App\Domain\Story\OwlClock;
 use App\Domain\Story\Story;
 use App\Domain\Story\UncountedTally;
+use App\Domain\Story\WordStore;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
 use App\Domain\Walk\WalkerStore;
@@ -52,6 +54,10 @@ final readonly class RapierService
      * @param Limit $hp FrankenPHP's health as it wakes, before the moderator's bonus.
      * @param int<0, max> $burnMs Milliseconds a wandering zombie stands before FrankenPHP burns it; 0 — none burns.
      * @param int<0, max> $heal Health a burnt zombie gives back.
+     * @param WordStore|null $words When the word opens; null — at once, and the owl never hints.
+     * @param int<0, max> $zombieMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
+     * @param int<0, max> $hintMs Milliseconds after the word opens that the owl hints at it while nobody has the
+     *        rapier; 0 — never.
      */
     public function __construct(
         private WalkerStore $walkers,
@@ -71,6 +77,10 @@ final readonly class RapierService
         private ?PlayMetrics $metrics = null,
         private int $burnMs = 0,
         private int $heal = 0,
+        private ?WordStore $words = null,
+        private ?OwlClock $owl = null,
+        private int $zombieMs = 0,
+        private int $hintMs = 0,
     ) {}
 
     /**
@@ -82,35 +92,97 @@ final readonly class RapierService
      * @throws NoCharacterException
      * @throws ZombifiedException
      * @throws StoryRefusedException `not now` — not the rapier step, `has rapier` or `invalid text`.
+     * @throws WaitException The owl has not reached the instruction yet.
      * @throws LockBusyException
      */
     public function word(string $id, mixed $text): bool
     {
         $now = $this->clock->now();
         $text = \is_string($text) ? \trim($text) : '';
+        $round = $this->ritual->round();
+        $wordAt = $this->words?->wordAt($round);
+        $until = $this->zombieMs > 0 ? $now + $this->zombieMs : null;
         [$walker, $correct] = $this->walkers->update(
             /** @param array<non-empty-string, Walker> $walkers */
-            function (array $walkers) use ($id, $text, $now): array {
+            function (array $walkers) use ($id, $text, $now, $wordAt, $until): array {
                 $walker = $walkers[$id] ?? throw new NoCharacterException('no character');
                 $this->ritual->story()->rapier() or throw new StoryRefusedException('not now');
                 $walker->zombie() and throw new ZombifiedException();
                 $walker->hasRapier() and throw new StoryRefusedException('has rapier');
+                $wordAt !== null && $now < $wordAt and throw new WaitException($wordAt);
                 $text !== '' && \mb_check_encoding($text, 'UTF-8') && \mb_strlen($text) <= self::TEXT_MAX
                     or throw new StoryRefusedException('invalid text');
 
                 $correct = MagicWord::matches($text);
-                $walker = $correct ? $walker->armed() : $walker->zombified($now, $now + $this->shamblePause());
+                $walker = $correct ? $walker->armed() : $walker->zombified($now, $now + $this->shamblePause(), $until);
                 $walkers[$id] = $walker;
 
                 return [$walkers, [$walker, $correct]];
             },
         );
 
-        $round = $this->ritual->round();
-        $this->publisher->word($round, self::player($walker), $correct);
+        $this->publisher->word($round, self::player($walker), $correct, $correct ? null : $until);
         $correct and $this->wake($round, $now);
 
         return $correct;
+    }
+
+    /**
+     * The rapier step begins: fixes when the word opens — as the owl reaches the instruction of `finale-6`, by her
+     * speech before the line goes out. A busy lock loses the moment for the server, not for the event that carries it.
+     *
+     * @return int|null Unix time in milliseconds; null — the word is open at once.
+     */
+    public function openWord(int $round): ?int
+    {
+        if ($this->words === null || $this->owl === null) {
+            return null;
+        }
+
+        $wordAt = $this->owl->opens(OwlLine::finale(Story::RAPIER_STEP));
+        try {
+            return $this->words->open($round, $wordAt);
+        } catch (LockBusyException) {
+            return $wordAt;
+        }
+    }
+
+    /**
+     * When the word opens, as the snapshot carries it on the rapier step.
+     *
+     * @return int|null Unix time in milliseconds; null — open at once.
+     */
+    public function wordAt(int $round): ?int
+    {
+        return $this->words?->wordAt($round);
+    }
+
+    /**
+     * The ticker's work: `hintMs` after the word opened with FrankenPHP still asleep — nobody has the rapier — the owl
+     * hints at the word, once in a round. A pause of the progress does not hold it.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return bool Whether the owl hinted now.
+     * @throws LockBusyException
+     */
+    public function hint(int $now): bool
+    {
+        $words = $this->words;
+        if ($words === null || $this->hintMs <= 0) {
+            return false;
+        }
+        $round = $this->ritual->round();
+        $wordAt = $words->wordAt($round);
+        if ($wordAt === null || $now < $wordAt + $this->hintMs || !$this->ritual->story()->rapier() || $this->boss->get($round) !== null) {
+            return false;
+        }
+        if (!$words->hint($round)) {
+            return false;
+        }
+
+        $this->publisher->owl($round, OwlLine::WORD_HINT);
+
+        return true;
     }
 
     /**
@@ -152,6 +224,43 @@ final readonly class RapierService
         $this->publisher->cure($this->ritual->round(), self::player($zombie), self::player($by));
 
         return true;
+    }
+
+    /**
+     * The ticker's work: a zombie player whose own time is up turns human under the lawn lock, like a cure by a click
+     * — of the two only the first finds a zombie.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return list<non-empty-string> Ids of the players that turned human.
+     * @throws LockBusyException
+     */
+    public function recover(int $now): array
+    {
+        $due = static fn(Walker $walker): bool => $walker->zombieDue($now);
+        if (\array_filter($this->walkers->all(), $due) === []) {
+            return [];
+        }
+
+        $cured = $this->walkers->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            static function (array $walkers) use ($due): array {
+                $cured = [];
+                foreach ($walkers as $id => $walker) {
+                    $due($walker) and $cured[] = $walkers[$id] = $walker->cured();
+                }
+
+                return [$walkers, $cured];
+            },
+        );
+
+        $round = $this->ritual->round();
+        $ids = [];
+        foreach ($cured as $walker) {
+            $this->publisher->cure($round, self::player($walker), null);
+            $ids[] = $walker->id;
+        }
+
+        return $ids;
     }
 
     /**

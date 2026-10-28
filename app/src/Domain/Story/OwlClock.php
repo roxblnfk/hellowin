@@ -27,9 +27,32 @@ final readonly class OwlClock
         private Clock $clock,
     ) {}
 
-    public function line(string $id): void
+    /**
+     * @return int Unix time in milliseconds the line's last part starts: the moment its instruction opens the input.
+     */
+    public function line(string $id): int
     {
-        $this->said($this->table->line($id));
+        $speech = $this->table->line($id);
+
+        return $this->said($speech) + $speech['lead'];
+    }
+
+    /**
+     * The moment {@see line()} would answer now, without counting the line: for an event that has to carry it before
+     * the line goes out. A failing store counts only the delay, like {@see said()}.
+     *
+     * @return int Unix time in milliseconds.
+     */
+    public function opens(string $id): int
+    {
+        $speech = $this->table->line($id);
+        try {
+            $hold = $this->read()[1];
+        } catch (\Throwable) {
+            $hold = 0;
+        }
+
+        return \max($this->clock->now() + $speech['delay'], $hold) + $speech['lead'];
     }
 
     public function text(string $text): void
@@ -46,15 +69,18 @@ final readonly class OwlClock
     }
 
     /**
-     * The line has gone out already: a busy lock or a failing store loses the mark, and the autopilot only waits less.
+     * The line has gone out already: a busy lock or a failing store loses the mark, and the autopilot only waits less;
+     * the start answered then counts only the delay.
      *
      * @param Speech $speech
+     * @return int Unix time in milliseconds the line starts.
      */
-    private function said(array $speech): void
+    private function said(array $speech): int
     {
         $now = $this->clock->now();
+        $start = $now + $speech['delay'];
         try {
-            $this->locks->run([self::LOCK], function () use ($speech, $now): void {
+            $this->locks->run([self::LOCK], function () use ($speech, $now, &$start): void {
                 [$until, $hold] = $this->read();
                 $start = \max($now + $speech['delay'], $hold);
                 $this->storage->set(self::KEY, [
@@ -64,6 +90,8 @@ final readonly class OwlClock
             });
         } catch (\Throwable) {
         }
+
+        return $start;
     }
 
     /**

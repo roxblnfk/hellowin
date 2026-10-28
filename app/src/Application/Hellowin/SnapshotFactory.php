@@ -19,6 +19,7 @@ use App\Domain\Clock\SystemClock;
 use App\Domain\Element\ElementRegistry;
 use App\Domain\Flyer\Bush;
 use App\Domain\Ritual\RitualPolicy;
+use App\Domain\Ritual\RitualSnapshot;
 use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Autopilot;
 use App\Domain\Story\Story;
@@ -41,7 +42,7 @@ use App\Domain\Walk\WalkerStore;
  *     walkers: list<array>,
  *     bar: array{mugs: int<0, max>, max: positive-int, pouring: array|null, drunk: int<0, max>, target: positive-int, roadrunner: bool}|null,
  *     ready: bool,
- *     finale: array{step: int, reveal?: array}|null,
+ *     finale: array{step: int, reveal?: array, wordAt?: int}|null,
  *     paused: bool,
  *     k: float,
  *     online: int<0, max>,
@@ -49,7 +50,7 @@ use App\Domain\Walk\WalkerStore;
  *     limits: array{players: positive-int, k: float, burst: bool, limits: array|\stdClass}|null,
  *     cursed: array{drunk: int<0, max>, slain: int<0, max>, drinksTarget: positive-int, zombiesTarget: positive-int}|null,
  *     boss: array{hp: int<0, max>, max: positive-int, burnMs: int<0, max>, awakeAt: int}|null,
- *     dice: array{on: bool, winner?: array, owl: int<0, max>}|null,
+ *     dice: array{on: bool, winner?: array, owl: int<0, max>, openAt?: int}|null,
  *     top: array{board: list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}>},
  *     flyers: list<array>,
  *     runner: array{at: int, ltr: bool}|null,
@@ -139,7 +140,7 @@ final readonly class SnapshotFactory
             )),
             'bar' => $this->bar?->state($ritual->round, $ritual->scene, $ritual->story, \count($walkers)),
             'ready' => $ritual->ready(),
-            'finale' => $this->reveal?->finale($ritual),
+            'finale' => $this->finale($ritual),
             'paused' => $ritual->story->paused,
             'k' => $k,
             'online' => \count($walkers),
@@ -163,5 +164,17 @@ final readonly class SnapshotFactory
         $this->autopilot === null or $snapshot['auto'] = $this->autopilot->state();
 
         return $snapshot;
+    }
+
+    /**
+     * @return array{step: int, reveal?: array, wordAt?: int}|null
+     */
+    private function finale(RitualSnapshot $ritual): ?array
+    {
+        $finale = $this->reveal?->finale($ritual);
+        $wordAt = $finale !== null && $ritual->story->rapier() ? $this->rapier?->wordAt($ritual->round) : null;
+        $wordAt === null or $finale['wordAt'] = $wordAt;
+
+        return $finale;
     }
 }

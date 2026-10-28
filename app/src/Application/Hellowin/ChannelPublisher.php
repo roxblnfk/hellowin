@@ -273,12 +273,14 @@ final readonly class ChannelPublisher
      * the clients leave the items as they are.
      *
      * @param array|null $reveal From step {@see Story::REVEAL_STEP} on.
+     * @param int|null $wordAt Unix time in milliseconds from which the players may say the word.
      */
-    public function finale(int $round, int $scene, int $step, ?array $reveal = null): void
+    public function finale(int $round, int $scene, int $step, ?array $reveal = null, ?int $wordAt = null): void
     {
         $message = ['type' => 'finale', 'round' => $round, 'step' => $step];
         $step === Story::RAPIER_STEP or $message['item'] = $this->items->held($scene, $step);
         $reveal === null or $message['reveal'] = $reveal;
+        $wordAt === null or $message['wordAt'] = $wordAt;
 
         $this->publish($message);
     }
@@ -307,19 +309,27 @@ final readonly class ChannelPublisher
 
     /**
      * The player said the word: right — the rapier in hand, wrong — a zombie. The word itself stays on the server.
+     *
+     * @param int|null $until Unix time in milliseconds the zombie turns human by itself.
      */
-    public function word(int $round, Player $player, bool $ok): void
+    public function word(int $round, Player $player, bool $ok, ?int $until = null): void
     {
-        $this->publish(['type' => 'word', 'round' => $round, 'player' => $player->ref(), 'ok' => $ok]);
+        $message = ['type' => 'word', 'round' => $round, 'player' => $player->ref(), 'ok' => $ok];
+        $until === null or $message['until'] = $until;
+
+        $this->publish($message);
     }
 
     /**
      * @param Player $player The zombie, cured.
-     * @param Player $by Who cured it.
+     * @param Player|null $by Who cured it; null — its time ran out.
      */
-    public function cure(int $round, Player $player, Player $by): void
+    public function cure(int $round, Player $player, ?Player $by): void
     {
-        $this->publish(['type' => 'cure', 'round' => $round, 'player' => $player->ref(), 'by' => $by->ref()]);
+        $message = ['type' => 'cure', 'round' => $round, 'player' => $player->ref()];
+        $message += $by === null ? ['auto' => true] : ['by' => $by->ref()];
+
+        $this->publish($message);
     }
 
     /**
@@ -359,11 +369,13 @@ final readonly class ChannelPublisher
      * The dice of finale step 1 come on or go off; off with the winner after the first 6-6-6.
      *
      * @param array|null $winner `{player: {id, name}, attempt}` or `{owl: true, attempt}`.
+     * @param int|null $openAt Unix time in milliseconds from which the players may throw.
      */
-    public function dice(int $round, bool $on, ?array $winner = null): void
+    public function dice(int $round, bool $on, ?array $winner = null, ?int $openAt = null): void
     {
         $message = ['type' => 'dice', 'round' => $round, 'on' => $on];
         $winner === null or $message['winner'] = $winner;
+        $openAt === null or $message['openAt'] = $openAt;
 
         $this->publish($message);
     }
@@ -459,14 +471,17 @@ final readonly class ChannelPublisher
      *
      * @param non-empty-string $line
      * @param array<non-empty-string, mixed> $params
+     * @return int|null Unix time in milliseconds the line's last part starts ({@see OwlClock::line()}); null — the
+     *         owl's speech is not counted.
      */
-    public function owl(int $round, string $line, array $params = []): void
+    public function owl(int $round, string $line, array $params = []): ?int
     {
         $message = ['type' => 'owl', 'round' => $round, 'line' => $line];
         $params === [] or $message['params'] = $params;
 
         $this->publish($message);
-        $this->owlClock?->line($line);
+
+        return $this->owlClock?->line($line);
     }
 
     /**

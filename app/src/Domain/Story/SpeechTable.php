@@ -9,7 +9,9 @@ namespace App\Domain\Story;
  * «Автопилот»): the texts are on the frontend, the server knows only their durations. Also how long each finale
  * step's staging plays.
  *
- * @psalm-type Speech = array{ms: int<0, max>, hold: int<0, max>, delay: int<0, max>}
+ * A line's `lead` is how far into it its last part starts: for an instruction, the part that opens the step's input.
+ *
+ * @psalm-type Speech = array{ms: int<0, max>, hold: int<0, max>, delay: int<0, max>, lead: int<0, max>}
  */
 final readonly class SpeechTable
 {
@@ -58,7 +60,12 @@ final readonly class SpeechTable
         foreach (\is_array($given) ? $given : [] as $id => $line) {
             $id = (string) $id;
             if ($id !== '' && \is_array($line)) {
-                $lines[$id] = ['ms' => self::ms($line['ms'] ?? null), 'hold' => self::ms($line['hold'] ?? null), 'delay' => self::ms($line['delay'] ?? null)];
+                $lines[$id] = [
+                    'ms' => self::ms($line['ms'] ?? null),
+                    'hold' => self::ms($line['hold'] ?? null),
+                    'delay' => self::ms($line['delay'] ?? null),
+                    'lead' => self::ms($line['lead'] ?? null),
+                ];
             }
         }
 
@@ -98,7 +105,7 @@ final readonly class SpeechTable
      */
     public function line(string $id): array
     {
-        return $this->lines[$id] ?? ['ms' => $this->show['max'], 'hold' => $this->holdMs, 'delay' => 0];
+        return $this->lines[$id] ?? ['ms' => $this->show['max'], 'hold' => $this->holdMs, 'delay' => 0, 'lead' => 0];
     }
 
     /**
@@ -110,7 +117,7 @@ final readonly class SpeechTable
     {
         $ms = \min($this->show['max'], \max($this->show['min'], $this->show['base'] + \mb_strlen(\trim($text)) * $this->show['perChar']));
 
-        return ['ms' => $ms, 'hold' => \min($ms, $this->holdMs), 'delay' => 0];
+        return ['ms' => $ms, 'hold' => \min($ms, $this->holdMs), 'delay' => 0, 'lead' => 0];
     }
 
     /**

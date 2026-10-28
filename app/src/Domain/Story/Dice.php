@@ -22,12 +22,15 @@ final readonly class Dice
      * @param Winner|null $winner
      * @param int<0, max> $owl The owl's throws.
      * @param int<0, max> $rolls New throws of the players: the reveal's number.
+     * @param int|null $openAt Unix time in milliseconds from which the players may throw: the owl has reached the
+     *        instruction of `finale-1`. Fixed once, as the dice come on.
      */
     public function __construct(
         public array $players = [],
         public ?array $winner = null,
         public int $owl = 0,
         public int $rolls = 0,
+        public ?int $openAt = null,
     ) {}
 
     public static function fromArray(mixed $value): self
@@ -54,7 +57,16 @@ final readonly class Dice
             }
         }
 
-        return new self($players, self::winner($value['winner'] ?? null), self::count($value['owl'] ?? null), self::count($value['rolls'] ?? null));
+        /** @var mixed $openAt */
+        $openAt = $value['openAt'] ?? null;
+
+        return new self(
+            $players,
+            self::winner($value['winner'] ?? null),
+            self::count($value['owl'] ?? null),
+            self::count($value['rolls'] ?? null),
+            \is_int($openAt) ? $openAt : null,
+        );
     }
 
     /**
@@ -98,12 +110,12 @@ final readonly class Dice
         $players[$player] = ['attempt' => $attempt, 'at' => $at, 'dice' => $dice];
         $counted or $players[$player]['counted'] = false;
 
-        return new self($players, $this->winner, $this->owl, $this->rolls + 1);
+        return new self($players, $this->winner, $this->owl, $this->rolls + 1, $this->openAt);
     }
 
     public function owlRolled(): self
     {
-        return new self($this->players, $this->winner, $this->owl + 1, $this->rolls);
+        return new self($this->players, $this->winner, $this->owl + 1, $this->rolls, $this->openAt);
     }
 
     /**
@@ -111,15 +123,28 @@ final readonly class Dice
      */
     public function won(array $winner): self
     {
-        return new self($this->players, $winner, $this->owl, $this->rolls);
+        return new self($this->players, $winner, $this->owl, $this->rolls, $this->openAt);
     }
 
     /**
-     * @return array{players: array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces, counted?: false}>, winner: Winner|null, owl: int<0, max>, rolls: int<0, max>}
+     * The dice come on: throws are taken from `$openAt` on. A moment fixed already stays.
+     *
+     * @param int $openAt Unix time in milliseconds.
+     */
+    public function opening(int $openAt): self
+    {
+        return $this->openAt === null ? new self($this->players, $this->winner, $this->owl, $this->rolls, $openAt) : $this;
+    }
+
+    /**
+     * @return array{players: array<non-empty-string, array{attempt: positive-int, at: int, dice: Faces, counted?: false}>, winner: Winner|null, owl: int<0, max>, rolls: int<0, max>, openAt?: int}
      */
     public function toArray(): array
     {
-        return ['players' => $this->players, 'winner' => $this->winner, 'owl' => $this->owl, 'rolls' => $this->rolls];
+        $record = ['players' => $this->players, 'winner' => $this->winner, 'owl' => $this->owl, 'rolls' => $this->rolls];
+        $this->openAt === null or $record['openAt'] = $this->openAt;
+
+        return $record;
     }
 
     /**

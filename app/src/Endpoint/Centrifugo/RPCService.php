@@ -29,6 +29,7 @@ use App\Application\Story\EveningTally;
 use App\Application\Story\RapierService;
 use App\Application\Story\StoryRefusedException;
 use App\Application\Story\StoryService;
+use App\Application\Story\WaitException;
 use App\Application\Walk\ClinkRefusedException;
 use App\Application\Walk\NoCharacterException;
 use App\Application\Walk\WalkService;
@@ -110,7 +111,8 @@ final readonly class RPCService implements ServiceInterface
         } finally {
             $known = \in_array($method, self::PUBLIC, true) || \in_array($method, self::CONSOLE, true);
             $this->metrics->rpc($known ? $method : 'unknown', $result, (float) (\hrtime(true) - $started) / 1e9);
-            $known && !\in_array($method, self::READS, true) and $this->tally?->add(EveningTally::CALLS);
+            // A `wait` spends nothing: the owl held the input back, the player did not act
+            $known && $result !== 'wait' && !\in_array($method, self::READS, true) and $this->tally?->add(EveningTally::CALLS);
         }
     }
 
@@ -237,6 +239,8 @@ final readonly class RPCService implements ServiceInterface
             return $call();
         } catch (StoryRefusedException|BarRefusedException|ClinkRefusedException|ZombifiedException|ChatRefusedException $e) {
             return self::fail($e->error);
+        } catch (WaitException $e) {
+            return self::fail('wait') + ['openAt' => $e->openAt];
         } catch (BadAttemptException $e) {
             return self::fail('bad attempt') + ['last' => $e->last];
         } catch (NoCharacterException) {

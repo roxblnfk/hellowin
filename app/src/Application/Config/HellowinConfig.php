@@ -64,7 +64,7 @@ final class HellowinConfig extends InjectableConfig
         ],
         'valkey_dsn' => 'tcp://valkey:6379',
         'bar' => ['mugs' => 60, 'pour_ms' => 2500, 'pour_per' => 10, 'rumor_chance' => 0.33, 'drink_ms' => 1200, 'mug_litres' => 0.5],
-        'rapier' => ['beer_handover_ms' => 900],
+        'rapier' => ['beer_handover_ms' => 900, 'word_hint_ms' => 180000, 'zombie_player_ms' => 60000],
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
         'autopilot' => ['pause_ms' => 4000, 'dawn_min_ms' => 300000, 'dawn_max_ms' => 600000, 'dice_ms' => 90000, 'stall_ms' => 0],
@@ -338,6 +338,23 @@ final class HellowinConfig extends InjectableConfig
     public function getBeerHandoverMs(): int
     {
         return self::positiveInt($this->rapier()['beer_handover_ms'] ?? null, 'rapier.beer_handover_ms', 'HELLOWIN_BEER_HANDOVER_MS');
+    }
+
+    /**
+     * @return int<0, max> Milliseconds after the word opens that the owl hints at it while nobody has the rapier;
+     *         0 — never.
+     */
+    public function getWordHintMs(): int
+    {
+        return self::nonNegativeInt($this->rapier()['word_hint_ms'] ?? null, 'rapier.word_hint_ms', 'HELLOWIN_WORD_HINT_MS');
+    }
+
+    /**
+     * @return int<0, max> Milliseconds a zombie player stays one with no cure; 0 — until a cure.
+     */
+    public function getZombiePlayerMs(): int
+    {
+        return self::nonNegativeInt($this->rapier()['zombie_player_ms'] ?? null, 'rapier.zombie_player_ms', 'HELLOWIN_ZOMBIE_PLAYER_MS');
     }
 
     /**
@@ -870,6 +887,23 @@ final class HellowinConfig extends InjectableConfig
             ? $value
             : throw new \InvalidArgumentException(\sprintf(
                 'Config "hellowin.%s" (env %s) must be a positive integer, got %s.',
+                $key,
+                $env,
+                \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),
+            ));
+    }
+
+    /**
+     * @return int<0, max>
+     */
+    private static function nonNegativeInt(mixed $value, string $key, string $env): int
+    {
+        \is_string($value) && \preg_match('/^\s*\d+\s*$/', $value) === 1 and $value = (int) $value;
+
+        return \is_int($value) && $value >= 0
+            ? $value
+            : throw new \InvalidArgumentException(\sprintf(
+                'Config "hellowin.%s" (env %s) must be a non-negative integer, got %s.',
                 $key,
                 $env,
                 \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),

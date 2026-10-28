@@ -212,6 +212,7 @@ final class ZombieBurnTest
     {
         $ritual = self::cursed();
         $ritual->story->finaleStep(6, force: true);
+        $ritual->owlExplained();
         $ritual->clock->now += self::WAKE_AFTER;
         Assert::true($ritual->rapier->word(self::JACK, 'rapira'));
         for ($i = 0; $i < $strikes; ++$i) {

@@ -113,6 +113,7 @@ final class PauseTest
         for ($step = 1; $step <= 6; ++$step) {
             $ritual->story->finaleStep($step, force: true);
         }
+        $ritual->owlExplained();
         $ritual->story->pause(true);
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike('bbbbbbbbbbbbbbbb')), NoCharacterException::class);
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JACK)), 'not now');

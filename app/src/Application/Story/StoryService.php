@@ -255,7 +255,8 @@ final readonly class StoryService
         }
 
         $before->finale === Story::DICE_STEP and $this->dice?->end($round);
-        $this->publisher->finale($round, $ritual->scene, $step, $this->reveal->finale($ritual)['reveal'] ?? null);
+        $wordAt = $step === Story::RAPIER_STEP ? $this->rapier?->openWord($round) : null;
+        $this->publisher->finale($round, $ritual->scene, $step, $this->reveal->finale($ritual)['reveal'] ?? null, $wordAt);
         if ($step === Story::CURSED_STEP) {
             try {
                 $this->cursed?->begin($round);
@@ -264,8 +265,9 @@ final readonly class StoryService
         }
         $this->limits?->nudge();
         $this->herd($step);
-        $this->publisher->owl($round, OwlLine::finale($step));
-        $step === Story::DICE_STEP and $this->dice?->begin($round);
+        // The dice open as the owl reaches the instruction: the moment comes from counting her line
+        $opens = $this->publisher->owl($round, OwlLine::finale($step));
+        $step === Story::DICE_STEP and $this->dice?->begin($round, $opens);
         $step === Story::SCATTER_STEP and $this->scatter();
     }
 

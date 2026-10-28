@@ -85,6 +85,7 @@ final readonly class DiceService
      * @throws ZombifiedException
      * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw
      *         or the same attempt is being thrown right now.
+     * @throws WaitException The owl has not reached the instruction yet: no attempt is spent.
      * @throws BadAttemptException
      * @throws LockBusyException
      */
@@ -95,6 +96,8 @@ final readonly class DiceService
         $ritual = $this->ritual->snapshot();
         $round = $ritual->round;
         $ritual->story->dice() or throw new StoryRefusedException('not now');
+        $openAt = $this->store->get($round)->openAt;
+        $openAt !== null && $this->clock->now() < $openAt and throw new WaitException($openAt);
 
         // A repeat is answered from the lease without the throw, or by the throw from the record
         $repeat = true;
@@ -159,7 +162,7 @@ final readonly class DiceService
      * The dice as the snapshot carries them: from step 1 on, on until the first 6-6-6 or until the step is taken
      * without it; `owl` — the owl's throws so far, for the console.
      *
-     * @return array{on: bool, winner?: Winner, owl: int<0, max>}|null
+     * @return array{on: bool, winner?: Winner, owl: int<0, max>, openAt?: int}|null
      */
     public function state(int $round, Story $story): ?array
     {
@@ -168,18 +171,34 @@ final readonly class DiceService
         }
 
         $dice = $this->store->get($round);
-
-        return $dice->winner === null
+        $state = $dice->winner === null
             ? ['on' => $story->dice(), 'owl' => $dice->owl]
             : ['on' => false, 'winner' => $dice->winner, 'owl' => $dice->owl];
+        $dice->openAt === null or $state['openAt'] = $dice->openAt;
+
+        return $state;
     }
 
     /**
-     * The dice come on with step 1.
+     * The dice come on with step 1, open for the players from `$openAt`. A busy lock loses the moment for the server,
+     * not for the clients: the event carries it all the same.
+     *
+     * @param int|null $openAt Unix time in milliseconds; null — open at once.
      */
-    public function begin(int $round): void
+    public function begin(int $round, ?int $openAt = null): void
     {
-        $this->publisher->dice($round, true);
+        if ($openAt !== null) {
+            try {
+                $openAt = $this->store->update($round, static function (Dice $dice) use ($openAt): array {
+                    $dice = $dice->opening($openAt);
+
+                    return [$dice, $dice->openAt];
+                });
+            } catch (LockBusyException) {
+            }
+        }
+
+        $this->publisher->dice($round, true, openAt: $openAt);
     }
 
     /**

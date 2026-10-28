@@ -896,6 +896,10 @@ final class RPCServiceTest
         Assert::same($this->call($ritual, 'cursed.target', ['goal' => 'drinks', 'delta' => 5], moderator: true), ['ok' => true, 'target' => 7]);
         Assert::same($this->call($ritual, 'finale.step', ['step' => 6], moderator: true), ['ok' => false, 'error' => 'not ready']);
         Assert::same($this->call($ritual, 'finale.step', ['step' => 6, 'force' => true], moderator: true), ['ok' => true, 'step' => 6]);
+        $wordAt = $ritual->wordStore->wordAt(1);
+        Assert::notNull($wordAt);
+        Assert::same($this->call($ritual, 'word', ['text' => ''], self::PLAYER), ['ok' => false, 'error' => 'wait', 'openAt' => $wordAt]);
+        $ritual->owlExplained();
         Assert::same($this->call($ritual, 'word', ['text' => 'шпага'], self::PLAYER), ['ok' => true, 'correct' => false]);
         Assert::same($this->call($ritual, 'move', ['x' => 30, 'y' => 90], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
         Assert::same($this->call($ritual, 'word', ['text' => 'rapira'], self::PLAYER), ['ok' => false, 'error' => 'zombified']);
@@ -909,6 +913,7 @@ final class RPCServiceTest
         for ($step = 1; $step <= 6; ++$step) {
             $this->call($ritual, 'finale.step', ['step' => $step, 'force' => true], moderator: true);
         }
+        $ritual->owlExplained();
 
         Assert::same($this->call($ritual, 'word', ['text' => 'Рапира'], self::PLAYER), ['ok' => true, 'correct' => true]);
         Assert::same($this->call($ritual, 'boss.hp', ['delta' => -44], moderator: true), ['ok' => true, 'hp' => 1, 'max' => 1]);
@@ -996,6 +1001,12 @@ final class RPCServiceTest
         $ritual->walks->move(self::PLAYER, 20, 90);
         Assert::same($this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER), ['ok' => false, 'error' => 'not now']);
         $this->call($ritual, 'finale.step', ['step' => 1, 'force' => true], moderator: true);
+        $openAt = $ritual->diceStore->get(1)->openAt;
+        Assert::notNull($openAt);
+        $calls = $ritual->tally->count(EveningTally::CALLS);
+        Assert::same($this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER), ['ok' => false, 'error' => 'wait', 'openAt' => $openAt]);
+        Assert::same($ritual->tally->count(EveningTally::CALLS), $calls);
+        $ritual->owlExplained();
 
         $response = $this->call($ritual, 'roll', ['attempt' => 1], self::PLAYER);
 

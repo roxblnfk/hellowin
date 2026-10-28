@@ -9,7 +9,7 @@ use App\Domain\Lock\Locks;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * The dice of a round in `hellowin:dice` — `{round, players, winner, owl, rolls}` — changed under the lock `dice`:
+ * The dice of a round in `hellowin:dice` — `{round, players, winner, owl, rolls, openAt?}` — changed under the lock `dice`:
  * every throw of the room takes this one lock, so of two 6-6-6 the one that got it first wins. A record of an earlier
  * round reads as fresh dice, so a reset needs not touch it.
  */

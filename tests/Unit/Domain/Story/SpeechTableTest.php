@@ -44,27 +44,36 @@ final class SpeechTableTest
         Assert::same($table->step(42), 0);
     }
 
-    public function lineCarriesItsDelay(): void
+    public function tableLeadsToTheInstructionsThatOpenTheInput(): void
     {
-        $table = SpeechTable::fromArray(['lines' => ['finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000], 'scene-1' => ['ms' => 100, 'hold' => 50]]]);
+        $table = SpeechTable::fromFile(self::FILE);
 
-        Assert::same($table->line('finale-1'), ['ms' => 5000, 'hold' => 2000, 'delay' => 3000]);
-        Assert::same($table->line('scene-1'), ['ms' => 100, 'hold' => 50, 'delay' => 0]);
+        Assert::true($table->line(OwlLine::finale(Story::DICE_STEP))['lead'] > 0);
+        Assert::true($table->line(OwlLine::finale(Story::RAPIER_STEP))['lead'] > 0);
+        Assert::true($table->line(OwlLine::finale(Story::RAPIER_STEP))['delay'] > 0);
+    }
+
+    public function lineCarriesItsDelayAndLead(): void
+    {
+        $table = SpeechTable::fromArray(['lines' => ['finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000, 'lead' => 1500], 'scene-1' => ['ms' => 100, 'hold' => 50]]]);
+
+        Assert::same($table->line('finale-1'), ['ms' => 5000, 'hold' => 2000, 'delay' => 3000, 'lead' => 1500]);
+        Assert::same($table->line('scene-1'), ['ms' => 100, 'hold' => 50, 'delay' => 0, 'lead' => 0]);
     }
 
     public function unknownLineTalksAsLongAsAnyText(): void
     {
         $table = SpeechTable::fromArray(['showMs' => ['base' => 1000, 'perChar' => 100, 'min' => 2000, 'max' => 9000], 'holdMs' => 3000]);
 
-        Assert::same($table->line('never-written'), ['ms' => 9000, 'hold' => 3000, 'delay' => 0]);
+        Assert::same($table->line('never-written'), ['ms' => 9000, 'hold' => 3000, 'delay' => 0, 'lead' => 0]);
     }
 
     public function ownTextHoldsNoLongerThanItTalks(): void
     {
         $table = SpeechTable::fromArray(['showMs' => ['base' => 1000, 'perChar' => 100, 'min' => 2000, 'max' => 9000], 'holdMs' => 3000]);
 
-        Assert::same($table->text(' Hi '), ['ms' => 2000, 'hold' => 2000, 'delay' => 0]);
-        Assert::same($table->text(\str_repeat('ы', 40)), ['ms' => 5000, 'hold' => 3000, 'delay' => 0]);
+        Assert::same($table->text(' Hi '), ['ms' => 2000, 'hold' => 2000, 'delay' => 0, 'lead' => 0]);
+        Assert::same($table->text(\str_repeat('ы', 40)), ['ms' => 5000, 'hold' => 3000, 'delay' => 0, 'lead' => 0]);
     }
 
     public function missingFileIsAnError(): never

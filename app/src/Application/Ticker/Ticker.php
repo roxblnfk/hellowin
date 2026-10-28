@@ -100,7 +100,9 @@ final class Ticker
         $this->safely('clinks', fn() => $this->walks->clinks());
         $this->safely('bar', fn() => $this->bar?->tick());
         $this->safely('beers', fn() => $this->walks->beers());
+        $this->safely('zombie cures', fn() => $this->rapier?->recover($now));
         $this->safely('zombie players', fn() => $this->rapier?->shamble());
+        $this->safely('word hint', fn() => $this->rapier?->hint($now));
 
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;

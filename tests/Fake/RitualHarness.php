@@ -68,6 +68,7 @@ use App\Domain\Story\SpeechTable;
 use App\Domain\Story\Story;
 use App\Domain\Story\TopStore;
 use App\Domain\Story\UncountedTally;
+use App\Domain\Story\WordStore;
 use App\Domain\Walk\Box;
 use App\Domain\Walk\Ellipse;
 use App\Domain\Walk\Items;
@@ -98,6 +99,8 @@ final class RitualHarness
     public const AUTO_DICE = 90000;
     public const ZOMBIE_BURN_MS = 5000;
     public const ZOMBIE_HEAL = 3;
+    public const WORD_HINT_MS = 180000;
+    public const ZOMBIE_PLAYER_MS = 60000;
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -131,6 +134,7 @@ final class RitualHarness
     public readonly CursedStore $cursedStore;
     public readonly CursedService $cursed;
     public readonly BossStore $bossStore;
+    public readonly WordStore $wordStore;
     public readonly RapierService $rapier;
     public readonly DiceStore $diceStore;
     public readonly DiceService $dice;
@@ -169,6 +173,8 @@ final class RitualHarness
      * @param Limit|null $pumpkin Clicks a pumpkin stage takes, in place of the flat `$threshold`.
      * @param positive-int $barPourPer Free places on the counter per mug of a batch.
      * @param int<0, max> $autoStall Milliseconds without the room's task before the autopilot moves with `force`.
+     * @param int<0, max> $wordHintMs Milliseconds after the word opens that the owl hints at it; 0 — never.
+     * @param int<0, max> $zombiePlayerMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
      */
     public function __construct(
         int $threshold = 2,
@@ -189,6 +195,8 @@ final class RitualHarness
         ?Limit $pumpkin = null,
         int $barPourPer = 10,
         int $autoStall = 0,
+        int $wordHintMs = self::WORD_HINT_MS,
+        int $zombiePlayerMs = self::ZOMBIE_PLAYER_MS,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -233,9 +241,10 @@ final class RitualHarness
         $this->cursedStore = new CursedStore($this->storage, new Locks($this->lock));
         $this->cursed = new CursedService($this->cursedStore, $this->store, $policy, $publisher, new Limit(2, 2), new Limit(2, 2), $this->uncounted);
         $this->bossStore = new BossStore($this->storage, new Locks($this->lock));
+        $this->wordStore = new WordStore($this->storage, new Locks($this->lock));
         $this->playMetrics = new PlayMetrics($this->metrics, new NullLogger());
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
-        $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted, $this->flyerStore, $this->playMetrics, self::ZOMBIE_BURN_MS, self::ZOMBIE_HEAL);
+        $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted, $this->flyerStore, $this->playMetrics, self::ZOMBIE_BURN_MS, self::ZOMBIE_HEAL, $this->wordStore, $this->owl, $zombiePlayerMs, $wordHintMs);
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics, uncounted: $this->uncounted, pourPer: $barPourPer);
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
@@ -330,8 +339,9 @@ final class RitualHarness
     }
 
     /**
-     * A speech table of public/autopilot.json's shape with round numbers: `bar-intro` and `finale-1` (with the
-     * countdown's delay) are known, any other line talks `max`.
+     * A speech table of public/autopilot.json's shape with round numbers: `bar-intro`, `finale-1` (with the
+     * countdown's delay) and `finale-6` (with the owl's flight) are known, any other line talks `max`; the two finale
+     * lines lead to their instructions.
      */
     public static function speech(): SpeechTable
     {
@@ -340,7 +350,8 @@ final class RitualHarness
             'holdMs' => 3000,
             'lines' => [
                 'bar-intro' => ['ms' => 6000, 'hold' => 3000],
-                'finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000],
+                'finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000, 'lead' => 1500],
+                'finale-6' => ['ms' => 9000, 'hold' => 3000, 'delay' => 2650, 'lead' => 4000],
             ],
             'steps' => ['1' => 5200, '2' => 2200, '3' => 6800, '4' => 0, '5' => 5600, '6' => 2650, '7' => 8000],
         ]);
@@ -386,6 +397,15 @@ final class RitualHarness
             doorIn: 6.0,
             roadrunner: new Point(74, 46),
         );
+    }
+
+    /**
+     * Moves the clock on to the moment the owl's instruction opens the dice or the word of the round, if it is ahead.
+     */
+    public function owlExplained(): void
+    {
+        $round = $this->store->round();
+        $this->clock->now = \max($this->clock->now, $this->diceStore->get($round)->openAt ?? 0, $this->wordStore->wordAt($round) ?? 0);
     }
 
     /**

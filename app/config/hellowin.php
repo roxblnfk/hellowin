@@ -60,9 +60,13 @@ return [
     ],
 
     // The end of the night (docs/spec/scenario.md, «Рапира»): a pumpkin hands its beer over for `beer_handover_ms`
-    // milliseconds after the character arrives
+    // milliseconds after the character arrives; `word_hint_ms` milliseconds after the word opens with no rapier yet the
+    // owl hints at it (0 — never); a zombie player turns human by itself `zombie_player_ms` milliseconds after the wrong
+    // word (0 — only a cure)
     'rapier' => [
         'beer_handover_ms' => env('HELLOWIN_BEER_HANDOVER_MS', 900),
+        'word_hint_ms' => env('HELLOWIN_WORD_HINT_MS', 180000),
+        'zombie_player_ms' => env('HELLOWIN_ZOMBIE_PLAYER_MS', 60000),
     ],
 
     // The shooters' top of the evening (docs/spec/protocol.md, «Топ стрелков»): `board` rows at most, published by the

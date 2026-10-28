@@ -48,30 +48,38 @@ final readonly class WalkerStore
     }
 
     /**
-     * Zombies whose players left the lawn in the round: a zombie that comes back is a zombie still. The caller holds
-     * the lock ({@see update()}). A list of an earlier round reads as empty.
+     * Zombies whose players left the lawn in the round, each with the moment it turns human by itself: a zombie that
+     * comes back before it is a zombie still. The caller holds the lock ({@see update()}). A list of an earlier round
+     * reads as empty.
      *
-     * @param list<non-empty-string> $ids
+     * @param array<non-empty-string, int|null> $zombies Unix time in milliseconds by id; null — only a cure.
      */
-    public function bench(int $round, array $ids): void
+    public function bench(int $round, array $zombies): void
     {
-        $this->storage->set(self::KEY_BENCH, ['round' => $round, 'ids' => \array_values(\array_unique([...$this->benched($round), ...$ids]))]);
+        // Not array_merge(): an id of digits only is an int key, and it would be renumbered
+        $all = $this->benched($round);
+        foreach ($zombies as $id => $until) {
+            $all[$id] = $until;
+        }
+        $this->storage->set(self::KEY_BENCH, self::record($round, $all));
     }
 
     /**
      * Takes the player off the bench of the round; the caller holds the lock ({@see update()}).
      *
-     * @return bool Whether the player's character left as a zombie.
+     * @return array{bool, int|null} Whether the player's character left as a zombie, and when it turns human by itself.
      */
-    public function unbench(int $round, string $id): bool
+    public function unbench(int $round, string $id): array
     {
-        $ids = $this->benched($round);
-        if (!\in_array($id, $ids, true)) {
-            return false;
+        $zombies = $this->benched($round);
+        if (!\array_key_exists($id, $zombies)) {
+            return [false, null];
         }
-        $this->storage->set(self::KEY_BENCH, ['round' => $round, 'ids' => \array_values(\array_diff($ids, [$id]))]);
+        $until = $zombies[$id];
+        unset($zombies[$id]);
+        $this->storage->set(self::KEY_BENCH, self::record($round, $zombies));
 
-        return true;
+        return [true, $until];
     }
 
     /**
@@ -94,18 +102,39 @@ final readonly class WalkerStore
     }
 
     /**
-     * @return list<non-empty-string>
+     * `ids` lists every zombie, `until` only those with a moment. An id of digits only is an int key here, so `ids`
+     * turns every key back into a string.
+     *
+     * @param array<non-empty-string, int|null> $zombies
+     */
+    private static function record(int $round, array $zombies): array
+    {
+        return [
+            'round' => $round,
+            'ids' => \array_map(\strval(...), \array_keys($zombies)),
+            'until' => \array_filter($zombies, static fn(?int $until): bool => $until !== null),
+        ];
+    }
+
+    /**
+     * @return array<non-empty-string, int|null>
      */
     private function benched(int $round): array
     {
         /** @var mixed $value */
         $value = $this->storage->get(self::KEY_BENCH);
+        $value = \is_array($value) && ($value['round'] ?? null) === $round ? $value : [];
         /** @var mixed $ids */
-        $ids = \is_array($value) && ($value['round'] ?? null) === $round ? $value['ids'] ?? null : null;
+        $ids = $value['ids'] ?? null;
+        /** @var mixed $until */
+        $until = $value['until'] ?? null;
+        \is_array($until) or $until = [];
         $valid = [];
         /** @var mixed $id */
         foreach (\is_array($ids) ? $ids : [] as $id) {
-            PlayerId::isValid($id) and $valid[] = $id;
+            /** @var mixed $at */
+            $at = PlayerId::isValid($id) ? $until[$id] ?? null : null;
+            PlayerId::isValid($id) and $valid[$id] = \is_int($at) ? $at : null;
         }
 
         return $valid;

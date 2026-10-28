@@ -251,7 +251,9 @@ final class RapierTest
         $ritual->broadcast->published = [];
 
         Assert::same($ritual->story->finaleStep(6), 6);
-        Assert::same($ritual->broadcast->ofType('finale'), [['type' => 'finale', 'round' => 1, 'step' => 6, 'reveal' => $ritual->broadcast->ofType('finale')[0]['reveal']]]);
+        $wordAt = $ritual->wordStore->wordAt(1);
+        Assert::notNull($wordAt);
+        Assert::same($ritual->broadcast->ofType('finale'), [['type' => 'finale', 'round' => 1, 'step' => 6, 'reveal' => $ritual->broadcast->ofType('finale')[0]['reveal'], 'wordAt' => $wordAt]]);
         Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['finale-6']);
     }
 
@@ -365,6 +367,7 @@ final class RapierTest
         Assert::same(self::refusal(static fn() => $ritual->rapier->cure(self::JACK, self::JILL)), 'not now');
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JACK)), 'not now');
         $ritual->story->finaleStep(6, force: true);
+        $ritual->owlExplained();
         Assert::same(self::refusal(static fn() => $ritual->rapier->word(self::JACK, '   ')), 'invalid text');
         Assert::same(self::refusal(static fn() => $ritual->rapier->word(self::JACK, \str_repeat('я', 41))), 'invalid text');
         Assert::same(self::refusal(static fn() => $ritual->rapier->strike(self::JACK)), 'not now');
@@ -505,6 +508,7 @@ final class RapierTest
         $ritual->bar->drink(self::JACK);
         self::slay($ritual, 3);
         $ritual->story->finaleStep(6, force: true);
+        $ritual->owlExplained();
         $ritual->rapier->word(self::JACK, 'rapira');
         $ritual->rapier->strike(self::JACK);
         $ritual->rapier->strike(self::JACK);
@@ -549,6 +553,7 @@ final class RapierTest
     {
         $ritual = self::cursed();
         $ritual->story->finaleStep(6, force: true);
+        $ritual->owlExplained();
 
         return $ritual;
     }

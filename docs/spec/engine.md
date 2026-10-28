@@ -11,7 +11,8 @@
 порогов модератора (`k`, «Сюжет») и число игроков на поле (`online`), лимиты RPC по игроку («Лимиты запросов»), бар
 — сцена 0 со стойкой, кружками, чоканьем и целью бара («Бар»), мухи (`fly`) — летуны бара, с посадками на места `walk.bar.perches`, рапира — шаги финала 5–7: цель проклятого мира,
 слово, зомби-игроки, босс FrankenPHP, сгорание бродячих зомби с лечением босса (решение пользователя от 2026-10-29) и
-рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), чат игроков («Чат»),
+рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), ввод костей и слова после инструкции совы, подсказка
+слова и авто-расколдовывание зомби-игроков (решение пользователя от 2026-10-29; «Кости», «Рапира»), чат игроков («Чат»),
 единая формула лимитов с пересчётом вживую и волна летунов модератора («Лимиты и баланс», бриф №22), автопилот вечера
 («Автопилот», решение пользователя от 2026-10-28).
 
@@ -84,7 +85,9 @@
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
 | Кто онлайн | раз в секунду, тем же чтением presence | `WalkService::sync`: `players` — уникальные валидные id игроков, `connections` — все записи presence (вкладки, анонимы с пустым `user` включительно) → gauge `hellowin_online_players`, `hellowin_online_connections` на каждом проходе; числа разошлись с `hellowin:presence` → событие `presence {round, players, connections}` и запись ключа. Снимок несёт `presence` из того же ключа (до первого счёта — нули) |
 | Пиво из тыкв | каждый тик | `WalkService::beers`: фигурки с наступившим `takeAt` у тыквы (`takeFrom`) под локом `walkers` получают пиво, если мир всё ещё на шаге 5 → событие `take` с `pumpkin`; см. «Рапира» |
+| Авто-расколдовывание | каждый тик, перед ходами зомби-игроков | `RapierService::recover(now)`: зомби-игроки с наступившим `zombieUntil` под локом `walkers` (тем же, что у `cure`) снова люди → `cure {player, auto: true}`; см. «Рапира» |
 | Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
+| Подсказка слова | каждый тик | `RapierService::hint(now)`: шаг 6, босс не проснулся, `now ≥ wordAt + HELLOWIN_WORD_HINT_MS`, флаг раунда в `hellowin:word` не стоял → флаг под локом `word`, реплика `word-hint`; см. «Рапира» |
 | Лимиты | раз в секунду, после фигурок | `LimitsService::follow`: число фигурок продержалось `LimitsService::DEBOUNCE` (3 с) → `Story::$players`; лимиты разошлись с последним `limits` → догон прогресса и событие `limits`; см. «Лимиты и баланс» |
 | Цели проклятого мира | раз в секунду, после лимитов | `CursedService::follow`: цели разошлись с последними сказанными (`drinksTold`, `zombiesTold`) → новое `cursed` и проверка готовности |
 | Топ стрелков | раз в `HELLOWIN_TOP_INTERVAL` мс | `TopService::tell`: доска `hellowin:top` (не больше `HELLOWIN_TOP_BOARD` строк) сравнивается с последней опубликованной этим тикером (в памяти тикера; после перезапуска — одна публикация сразу) → изменилась — событие `top {board}` |
@@ -377,14 +380,33 @@
   тыквы (`PumpkinStand`, та же, что у `clink {pumpkin}`), ожидание `takeAt` + `takeFrom` в записи фигурки. По прибытии тикер
   (`WalkService::beers`) под тем же локом выдаёт пиво, если мир ещё на шаге 5; тыквы бездонные — лока на тыкву нет.
 - **Слово** (`word`, `RapierService::word` → `Domain/Story/MagicWord`): под локом `walkers` — верно: `item: rapier`;
-  неверно: `zombieAt` — время первого хода. Проверка — только на сервере: нижний регистр, кириллица → латиница, `a-z`;
+  неверно: `zombieAt` — время первого хода, `zombieUntil = now + HELLOWIN_ZOMBIE_PLAYER_MS` (при 0 — нет), событие
+  `word {ok: false, until}`. Проверка — только на сервере: нижний регистр, кириллица → латиница, `a-z`;
   префикс `rapir`, или `levenshtein` ≤ 1 до `rapira`, или тот же `metaphone`; короче 4 букв — неверно.
+- **Слово после инструкции** (решение пользователя от 2026-10-29). Запись `hellowin:word` `{round, wordAt, hinted}` под
+  RR-локом `word` (`Domain/Story/WordStore`); запись другого раунда читается как пустая. На входе в шаг 6
+  `StoryService::entered` до `finale` зовёт `RapierService::openWord`: `OwlClock::opens('finale-6')` — `max(now + delay,
+  hold) + lead` без записи в счёт речи (реплика учтётся следом, при публикации `owl`), `WordStore::open` фиксирует
+  `wordAt` один раз за раунд; затем `finale {step: 6, wordAt}` и `owl finale-6`. Занятый лок теряет `wordAt` для
+  сервера, не для события. `word` раньше `wordAt` — `WaitException` → `{ok: false, error: 'wait', openAt}`; проверка
+  под локом `walkers` после `has rapier`, до `invalid text`; ничего не меняется и не публикуется. Снимок — `finale.wordAt`
+  на шаге 6.
+- **Подсказка** (`RapierService::hint(now)`, тикер): `HELLOWIN_WORD_HINT_MS` > 0, шаг 6, `hellowin:boss` раунда нет
+  (рапиры ни у кого), `now ≥ wordAt + HELLOWIN_WORD_HINT_MS`; `WordStore::hint` под локом `word` ставит `hinted` — кто
+  поставил, тот и говорит `owl {line: 'word-hint'}` (флаг раунда — ключ идемпотентности `{round}:word-hint`: второй
+  тикер и повтор видят его и молчат). Пауза прогресса не держит.
 - **Зомби-игрок.** Его RPC `move`, `clink`, `clink.auto`, `beer`, `drink`, `strike`, `word`, `cure` — `zombified`
   (`ZombifiedException`). Тикер (`RapierService::shamble`) раз в 2–4 с (`Walker::SHAMBLE_PAUSE`) ведёт его к случайной
-  точке лужайки в 6–12 % от него, обычным `move`. Ушедший с поля зомби записывается в `hellowin:zombies` `{round, ids}`
-  (под локом `walkers`, в той же синхронизации с presence) и, вернувшись на шаге 6, снова зомби.
-- **Расколдовать** (`cure`, `RapierService::cure`): под локом `walkers` — цель ещё зомби → `zombieAt` снят, событие
-  `cure`; уже нет — `cured: false`. Первый под локом — как первый сбивший летуна.
+  точке лужайки в 6–12 % от него, обычным `move`. Ушедший с поля зомби записывается в `hellowin:zombies` `{round, ids,
+  until: {id: zombieUntil}}` (под локом `walkers`, в той же синхронизации с presence) и, вернувшись на шаге 6 до
+  `zombieUntil` (или без него), снова зомби с тем же `zombieUntil`; после — выходит человеком, без `cure`.
+  `Walker` в снимке и в `walker` несёт `zombieUntil` рядом с `zombie: true`.
+- **Расколдовать** (`cure`, `RapierService::cure`): под локом `walkers` — цель ещё зомби → `zombieAt` и `zombieUntil`
+  сняты, событие `cure`; уже нет — `cured: false`. Первый под локом — как первый сбивший летуна.
+- **Авто-расколдовывание** (`RapierService::recover(now)`, тикер): зомби с наступившим `zombieUntil` под тем же локом
+  `walkers` — человек, событие `cure {player, auto: true}` без `by`. Из клика и тикера зомби находит только первый:
+  опоздавший клик — `cured: false`, расколдованного кликом тикер уже не видит. `HELLOWIN_ZOMBIE_PLAYER_MS` = 0 — только
+  руками.
 - **Босс** — ключ `hellowin:boss` `{round, hp, max, damage, bonus, awakeAt, healed}` под RR-локом `boss` (`BossStore`).
   Первое верное слово — `{hp: max, max, awakeAt: now}`, `max` — лимит `boss` («Лимиты и баланс») (под локом: проснётся
   один раз), событие `boss`. Событие `boss` и `boss` снимка всегда — `{hp, max, burnMs, awakeAt}` (`Boss::toEvent`,
@@ -438,12 +460,18 @@
 
 - **Шаг.** `Story::DICE_STEP` 1: `stepTo(1)` снимает `ready` (круг замкнут давно), `awaitsReady(2)` на шаге 1 ждёт
   `ready` — без него `not ready`, с `force` — можно. Режим «включён» не хранится: это шаг 1 без победителя.
-  `StoryService::entered` на шаге 1 после `finale-1` шлёт `dice {on: true}`, при уходе с шага 1 без победителя (только
-  `force`) — `dice {on: false}` перед `finale {step: 2}`.
+  `StoryService::entered` на шаге 1 после `finale-1` шлёт `dice {on: true, openAt}`, при уходе с шага 1 без победителя
+  (только `force`) — `dice {on: false}` перед `finale {step: 2}`.
+- **Сначала сова объясняет** (решение пользователя от 2026-10-29). `ChannelPublisher::owl('finale-1')` отмечает реплику
+  в счёте речи и возвращает `OwlClock::line` — `start + lead` (`start = max(now + delay, hold)`, `lead` из
+  `public/autopilot.json`); `DiceService::begin(round, openAt)` под локом `dice` пишет `openAt` в `hellowin:dice` один раз
+  за раунд и шлёт `dice {on: true, openAt}`. `roll` раньше `openAt` — `WaitException` → `{ok: false, error: 'wait',
+  openAt}`: проверка после `not now`, до хранилища идемпотентности, так что ни попытки, ни `busy`, ни `bad attempt`, ни
+  `rolls`, ни `dropped`; `RPCService` не считает `wait` в `calls` вечера. `dice.owl` не ждёт. Снимок — `dice.openAt`.
 - **Грани** — настоящий случайный выбор: `DiceRoller` берёт три раза `Randomizer::getInt(1, 6)`; по умолчанию движок —
   системный CSPRNG (как `random_int`), в тестах — подставной. Предсказать, на какой попытке выпадет 6-6-6, не может никто,
   и сервер тоже; поэтому бросок тянется один раз, а повтор отвечает сохранённым.
-- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at, dice, counted?}}, winner, owl, rolls}` под RR-локом `dice`
+- **Запись** `hellowin:dice` `{round, players: {id: {attempt, at, dice, counted?}}, winner, owl, rolls, openAt?}` под RR-локом `dice`
   (`DiceStore`); запись другого раунда читается как пустая — сброс её не трогает. У игрока — последняя попытка, время
   его последнего нового броска и её грани, записанные одной записью с номером попытки; `counted: false` — попытка брошена на паузе прогресса.
 - **Бросок** (`roll {attempt}`, `DiceService::roll`): без лока — фигурка (`no character`), не зомби, шаг 1 (`not now`).
@@ -473,7 +501,7 @@
 - **Сова** (`dice.owl`, `DiceService::owl`): под тем же локом `owl + 1`; броски 1 и 2 — случайные, выпавшее 6-6-6
   перебрасывается; бросок 3 — 6-6-6 и победа `{owl: true, attempt: 3}`, реплика `dice-owl-win`. Без ключа
   идемпотентности (это кнопка модератора: каждое нажатие — бросок). В `rolls` не идут.
-- **Снимок** — `dice`: с шага 1 `{on, winner?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
+- **Снимок** — `dice`: с шага 1 `{on, winner?, owl, openAt?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
 
 ## Автопилот
 
@@ -486,6 +514,9 @@
   — `Domain/Story/SpeechTable` из `public/autopilot.json` (`directory('public')`), читается один раз при создании
   синглтона в воркере и в тикере; нет файла или он не JSON — предупреждение в лог и пустая таблица (сова «говорит» 0 мс,
   автопилот её не ждёт). Занятый лок или сбой KV теряет отметку, а не реплику: автопилот лишь подождёт меньше.
+  `OwlClock::line` возвращает момент инструкции реплики — `start + lead` (`lead` из таблицы, нет — 0; при сбое лока
+  `start = now + delay`), `OwlClock::opens` считает его же без записи; по ним открываются кости и слово (см. «Кости»,
+  «Рапира»). `until` автопилота от `lead` не зависит.
 - **Запись** `hellowin:auto` (`Domain/Story/AutoStore`, RR-лок `auto`, TTL 10 с, ожидание 1 с) — `{on, next, ctx, since,
   readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`; `next` — последний сказанный клиентам ход (из него же
   `auto` снимка). Не в сюжете: `reset`, `again` и `Story::restarted` её не трогают, рестарт тоже. Выключение оставляет
@@ -886,7 +917,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers`, последний слон `hellowin:elephant` (без TTL) | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
-| Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss` (оба `{round, …}`) | Valkey | тот же storage `hellowin` |
+| Рапира: цель проклятого мира `hellowin:cursed`, босс `hellowin:boss`, слово `hellowin:word` (все `{round, …}`) | Valkey | тот же storage `hellowin` |
 | Кости: `hellowin:dice` `{round, …}` | Valkey | тот же storage `hellowin` |
 | Ответы попыток костей: `hellowin:lease:{round}:roll:{player}:{attempt}` (хэш лизинга, TTL `HELLOWIN_DICE_IDEMPOTENCY_TTL`) | Valkey | хранилище идемпотентности `dice` (`RedisLeaseConfig`) |
 | Топ стрелков: `hellowin:top` `{players}`, на весь вечер | Valkey | тот же storage `hellowin` |
@@ -959,6 +990,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_DRINK_MS` | 1200 | мс глотка: `busyUntil` фигурки после `drink` (`hellowin.bar.drink_ms`) |
 | `HELLOWIN_MUG_LITRES` | 0.5 | литров в кружке, число > 0: `hellowin_beer_litres` = кружки × объём (`hellowin.bar.mug_litres`) |
 | `HELLOWIN_BEER_HANDOVER_MS` | 900 | мс передачи пива тыквой: `until` события `take` и `busyUntil` (`hellowin.rapier.beer_handover_ms`) |
+| `HELLOWIN_WORD_HINT_MS` | 180000 | мс после `wordAt`, через которые сова подсказывает слово (`word-hint`), если рапиры ни у кого; целое ≥ 0, 0 — никогда (`hellowin.rapier.word_hint_ms`) |
+| `HELLOWIN_ZOMBIE_PLAYER_MS` | 60000 | мс, через которые зомби-игрок расколдовывается сам (`zombieUntil`); целое ≥ 0, 0 — только руками (`hellowin.rapier.zombie_player_ms`) |
 | `HELLOWIN_FLYER_INTERVAL` | `3000-8000` | мс между запусками летунов: диапазон (случайно внутри) или число (`app/config/flyers.php`) |
 | `HELLOWIN_FLYER_DURATION` | `16000,6500,4000` | мс полёта по глубинам, от дальней (0) к ближней |
 | `HELLOWIN_FLYER_POINTS` | `3,2,1` | очки за попадание по глубинам; длина — как у `HELLOWIN_FLYER_DURATION` |
