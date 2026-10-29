@@ -70,9 +70,14 @@ const MEEP_FRESH_MS = 1500;
 const RISE_GAP_MS = 400;
 const AMBIENT_MS = [6000, 10000];
 const AMBIENT_VOLUME = 0.4;
-// The bar's level: no pumpkins to make progress with.
-const BAR_INTENSITY = 0.2;
+// The floor every scene climbs from by its progress.
+const LOW_INTENSITY = 0.2;
 const BROKEN_INTENSITY = 0.1;
+// The fight with FrankenPHP starts half-way up: the rhythm is in from his first blow.
+const BOSS_INTENSITY = 0.5;
+// The finale's steps whose music follows their goals (frontend.md, «Звук», «Нарастание»).
+const CURSED_STEP = 5;
+const BOSS_STEP = 6;
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 /** Stereo position of a point x in percent of the width. */
@@ -163,25 +168,43 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         speech = null;
     };
 
-    /** 0.2 + 0.8 × the share of the scene passed; the whole way from the scene's readiness and finale step 1. */
+    const share = (n, of) => (of > 0 ? clamp(n / of, 0, 1) : 0);
+    const rising = (x) => LOW_INTENSITY + (1 - LOW_INTENSITY) * clamp(x, 0, 1);
+
+    /**
+     * 0.2 + 0.8 × the share of the scene passed, the whole way from its readiness: the pumpkins, the bar's mugs, the
+     * circle, the cursed world's two goals; FrankenPHP's fight climbs from BOSS_INTENSITY by the health he has lost (a heal
+     * brings it down again); the other finale steps from 1 on play in full.
+     */
     function intensity(model) {
-        // The bar stays low until it is ready: a page opened after the owl's go-ahead hears the same as the hall.
-        if (isBar(model.scene)) return model.ready ? 1 : BAR_INTENSITY;
+        const step = finalScene(model) ? (model.finale?.step ?? 0) : null;
         // The epic breaks on FrankenPHP: only the choir of the rise hangs on through step 2.
-        if (finalScene(model) && model.finale?.step === 2) return BROKEN_INTENSITY;
-        if (model.ready || (finalScene(model) && (model.finale?.step ?? 0) >= 1)) return 1;
-        let share;
+        if (step === 2) return BROKEN_INTENSITY;
+        // Step 6 keeps the readiness of step 5's goals: its own measure is FrankenPHP's health.
+        if (step === BOSS_STEP) {
+            const b = model.boss;
+            const lost = b?.max > 0 ? 1 - share(b.hp, b.max) : 0;
+            return BOSS_INTENSITY + (1 - BOSS_INTENSITY) * lost;
+        }
+        if (model.ready) return 1;
+        if (isBar(model.scene)) return rising(share(model.bar?.drunk ?? 0, model.bar?.target ?? 0));
+        if (step === CURSED_STEP) {
+            const c = model.cursed;
+            return c ? rising((share(c.drunk, c.drinksTarget) + share(c.slain, c.zombiesTarget)) / 2) : LOW_INTENSITY;
+        }
+        if (step !== null && step >= 1) return 1;
+        let part;
         if (finalScene(model)) {
             const circle = model.elements.find((e) => e.type === 'circle');
-            share = circle?.stageMax > 0 ? circle.stage / circle.stageMax : 0;
+            part = circle?.stageMax > 0 ? circle.stage / circle.stageMax : 0;
         } else {
             const pumpkins = model.elements.filter(isPumpkin);
             const span = model.stageMax - base.stage;
-            share = pumpkins.length && span > 0
+            part = pumpkins.length && span > 0
                 ? pumpkins.reduce((a, p) => a + clamp((p.stage - base.stage) / span, 0, 1), 0) / pumpkins.length
                 : 1;
         }
-        return 0.2 + 0.8 * clamp(share, 0, 1);
+        return rising(part);
     }
 
     function baseFor(model) {
@@ -386,10 +409,15 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             }
             if (event.hp === 0) play('franken.die', { pan: panOf(FRANKEN_X) });
             music(model);
+            progress(model);
         },
         boss(model) {
             music(model);
+            progress(model);
         },
+        // The bar's mugs and the cursed world's goals move its music up.
+        drinks: progress,
+        cursed: progress,
         // A zombie burning out at step 6: the flash and the hissing fire where it stood, the heal's chime over FrankenPHP
         // as the wisp reaches him (zombie-burn.js, HEAL_AT); nothing once ZBURN.staleMs late.
         burn(model, event) {
@@ -400,6 +428,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (!(late < ZBURN.staleMs)) return;
             play('zombie.burn', { pan: panOf(f ? flyerX(f, at) : null) });
             if (event.heal > 0) play('zombie.heal', { pan: panOf(FRANKEN_X), delay: Math.max(0, (HEAL_AT - late) / 1000) });
+            progress(model);
         },
         // The dice of finale step 1: the throw, the landing (mine lands big at the top, a little later), the toll of 6-6-6.
         roll(model, event) {
