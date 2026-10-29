@@ -240,7 +240,7 @@
         <button type="button" class="dice__roll" data-dice-roll aria-disabled="true">Бросить</button>
     </section>
     <!-- The evening's top shooters (docs/spec/frontend.md, «Топ стрелков»). -->
-    <section class="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
+    <section class="dawn-top" id="dawn-top" data-dawn-top hidden aria-labelledby="dawn-top-title">
         <h2 class="dawn-top__title" id="dawn-top-title">Лучшие стрелки вечера</h2>
         <button type="button" class="dawn-top__toggle" data-dawn-toggle aria-expanded="true" aria-controls="dawn-top-list"><span data-dawn-strip></span></button>
         <p class="dawn-top__row dawn-top__head" data-dawn-head aria-hidden="true"><span class="dawn-top__place">место</span><span class="dawn-top__name">имя</span><span class="dawn-top__shots">очки</span></p>
@@ -280,6 +280,7 @@
         <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="Готово тыкв" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>Готово</span></span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
+        <button type="button" class="hud__item hud__button hud__button--top" data-top-open aria-pressed="true" aria-controls="dawn-top" title="Лучшие стрелки: показать или спрятать" hidden>Топ</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
         <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="Эмоции" title="Эмоции" hidden><span aria-hidden="true">😀</span></button>
         <button type="button" class="hud__item hud__button" data-join-open>Персонаж</button>
@@ -2518,6 +2519,9 @@
     // ?dawnopen=0 at the dawn: the table folded back, as the player's own click would.
     const topTable = root.querySelector('[data-dawn-top]');
     if (params.get('dawnopen') === '0' && topTable && !topTable.hidden && !topTable.hasAttribute('data-folded')) root.querySelector('[data-dawn-toggle]')?.click();
+    // ?topshut=1|0: «Топ» in the HUD puts the table away / brings it back, as the player's own press would.
+    const topOpener = root.querySelector('[data-top-open]');
+    if (params.has('topshut') && topOpener && (topOpener.getAttribute('aria-pressed') === 'true') === (params.get('topshut') === '1')) topOpener.click();
     bindWalking(root, scene, () => client.canWalk(), (point) => engineMove(ME, point));
     const join = initJoin(document.querySelector('[data-join]'), { register: engineRegister });
     root.querySelector('[data-join-open]').addEventListener('click', () => join.open());

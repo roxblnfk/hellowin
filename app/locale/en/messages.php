@@ -59,6 +59,8 @@ return [
     'Числа вечера' => 'The evening in numbers',
     'Выпить' => 'Drink',
     'Чат' => 'Chat',
+    'Топ' => 'Top',
+    'Лучшие стрелки: показать или спрятать' => 'Top shooters: show or hide',
     'Эмоции' => 'Emotes',
     'Персонаж' => 'Character',
 

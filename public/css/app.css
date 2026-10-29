@@ -1140,6 +1140,12 @@ body:not([data-final]) .circle,
     pointer-events: auto;
 }
 
+/* «Топ» while the shooters' table is put away. */
+.hud__button--top[aria-pressed="false"] {
+    background: var(--cream);
+    opacity: 0.75;
+}
+
 /* «Выпить»: the drink a phone has no Space for, so it stands out from the other HUD buttons. */
 .hud__button--drink {
     background: var(--cream);

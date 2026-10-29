@@ -14,6 +14,7 @@ export const DAWN_FOLDED = 3;
 export const DAWN_MOVE_MS = 300;
 const FLASH_MS = 600;
 const STORAGE_KEY = 'hellowin:dawn-top';
+const SHUT_KEY = 'hellowin:top-shut';
 const TEXT = pick({
     ru: { empty: 'Сбивайте уток рапирой!', someone: 'кто-то', me: 'ты', top: 'топ', title: 'Топ стрелков', all: 'весь топ', fold: 'свернуть' },
     en: { empty: 'Knock the ducks down with the rapier!', someone: 'someone', me: 'you', top: 'top', title: 'Top shooters', all: 'show all', fold: 'fold' },
@@ -60,6 +61,23 @@ export function stripText(board, me) {
     return board.length ? TEXT.title : DAWN_EMPTY;
 }
 
+// The player's «Топ» in the HUD: whether the table is put away (`'1'`), remembered like the fold.
+function readShut(storage) {
+    try {
+        return storage?.getItem(SHUT_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function writeShut(storage, shut) {
+    try {
+        storage?.setItem(SHUT_KEY, shut ? '1' : '0');
+    } catch {
+        // Private mode or blocked storage: the table just shows next time.
+    }
+}
+
 function readFolded(storage) {
     try {
         return storage?.getItem(STORAGE_KEY) !== 'open';
@@ -79,7 +97,9 @@ function writeFolded(storage, folded) {
 /**
  * The table in `[data-dawn-top]`, shown whenever there is a board (an empty one only at the dawn, as its call). Folded
  * by default — the three leaders and my row; the toggle unfolds it to the ten, and the choice is remembered. Entering
- * the dawn unfolds it afresh: its contest is the stage's; leaving it brings the remembered choice back.
+ * the dawn unfolds it afresh: its contest is the stage's; leaving it brings the remembered choice back. «Топ» in the HUD
+ * (`[data-top-open]`, `aria-pressed` — the table is out) puts it away altogether and brings it back, remembered too;
+ * the dawn takes it out afresh the same way.
  *
  * Rows are keyed by player id, so a repaint moves the same nodes: their old y is read before the update and each slides
  * from there (FLIP); a row that climbed flashes, a new one rides in from the right, one pushed out of the top drops away.
@@ -99,7 +119,9 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
     const rows = new Map();
     const cellsOf = new WeakMap();
     const flashes = new Map();
+    const opener = root.querySelector('[data-top-open]');
     let folded = readFolded(storage);
+    let shut = readShut(storage);
     // Whether the last paint was at the dawn (null before the first): entering it unfolds, leaving it restores.
     let wasDawn = null;
     let lastShape = null;
@@ -215,6 +237,13 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
         if (strip) strip.textContent = compact ? stripText(board, me) : folded ? TEXT.all : TEXT.fold;
     }
 
+    opener?.addEventListener('click', (event) => {
+        event.preventDefault();
+        shut = !shut;
+        writeShut(storage, shut);
+        if (last) paint(last);
+    });
+
     toggle?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -230,10 +259,21 @@ export function createDawnTable(root, { reduced = () => false, storage = globalT
     function paint(view) {
         last = view;
         const { dawn, me, atDawn, compact } = view;
-        if (atDawn && wasDawn !== true) folded = false;
-        if (!atDawn && wasDawn === true) folded = readFolded(storage);
+        if (atDawn && wasDawn !== true) {
+            folded = false;
+            shut = false;
+        }
+        if (!atDawn && wasDawn === true) {
+            folded = readFolded(storage);
+            shut = readShut(storage);
+        }
         wasDawn = atDawn;
-        if (!dawn || (!dawn.board.length && !atDawn)) {
+        const none = !dawn || (!dawn.board.length && !atDawn);
+        if (opener) {
+            opener.hidden = none;
+            opener.setAttribute('aria-pressed', String(!shut));
+        }
+        if (none || shut) {
             el.hidden = true;
             lastShape = null;
             clear();
