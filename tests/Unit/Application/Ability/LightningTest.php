@@ -10,6 +10,7 @@ use App\Application\Flyer\FlyerService;
 use App\Application\Story\StoryRefusedException;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Ability;
+use App\Domain\Player\Player;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataSet;
@@ -124,27 +125,33 @@ final class LightningTest
         Assert::same($ritual->broadcast->ofType('fart')[0]['player'] ?? null, ['id' => self::JACK]);
     }
 
-    public function boltAtTheThresholdFlyerKeepsTheLightning(): void
+    public function boltAcrossAMarkKeepsTheLightning(): void
     {
-        $ritual = self::lawn(fartFlyers: 1);
+        $ritual = self::lawn(fartPoints: 1);
 
         $ritual->abilities->use(self::JACK, self::launch($ritual)->id);
 
-        Assert::same($ritual->playerStore->find(self::JACK)?->flyers, 1);
-        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::LIGHTNING, 'the threshold brings fart only to a player without an ability');
+        Assert::int($ritual->playerStore->find(self::JACK)?->points)->greaterThanOrEqual(1);
+        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::LIGHTNING, 'a mark brings fart only to a player without an ability');
         Assert::blank($ritual->broadcast->ofType('ability'));
     }
 
-    public function boltCountsTowardsTheThresholdOfAPlayerShootingOn(): void
+    public function boltsPointsCountTowardsTheMark(): void
     {
-        $ritual = self::lawn(fartFlyers: 2);
-        $ritual->abilities->use(self::JACK, self::launch($ritual)->id);
+        $ritual = self::lawn(fartPoints: 100);
+        $flyer = self::launch($ritual);
+        $ritual->playerStore->update(
+            self::JACK,
+            static fn(Player $player): Player => Player::fromArray(self::JACK, ['points' => 99 - $flyer->points] + $player->toArray()),
+        );
+        $ritual->abilities->use(self::JACK, $flyer->id);
+        Assert::same($ritual->playerStore->find(self::JACK)?->points, 99);
         $ritual->abilityGrants->grant(self::JACK, null);
         $ritual->broadcast->published = [];
 
         $ritual->flyers->shoot(self::launch($ritual)->id, self::JACK);
 
-        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::FART, 'the bolt was the first of the two');
+        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::FART);
         Assert::count($ritual->broadcast->ofType('ability'), 1);
     }
 
@@ -178,11 +185,11 @@ final class LightningTest
     /**
      * Jack standing on the lawn of scene 0 with the lightning; the events of getting there are cleared.
      *
-     * @param positive-int $fartFlyers
+     * @param positive-int $fartPoints
      */
-    private static function lawn(int $fartFlyers = 100): RitualHarness
+    private static function lawn(int $fartPoints = 100): RitualHarness
     {
-        $ritual = new RitualHarness(fartFlyers: $fartFlyers);
+        $ritual = new RitualHarness(fartPoints: $fartPoints);
         $ritual->walks->enter($ritual->players->register(self::JACK, 'Jack', self::LOOK));
         $ritual->abilityGrants->grant(self::JACK, Ability::LIGHTNING);
         $ritual->broadcast->published = [];

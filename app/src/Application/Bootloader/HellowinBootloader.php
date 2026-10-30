@@ -284,7 +284,7 @@ final class HellowinBootloader extends Bootloader
                 $metrics,
                 $clock,
                 new Cooldown($lock, 'owl-ability', $config->getAbilityOwlGap()),
-                $config->getAbilityFartFlyers(),
+                $config->getAbilityFartPoints(),
                 $logger,
             ),
             // The cooldowns live as long as the process, as the RPC limits do

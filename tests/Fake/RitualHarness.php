@@ -188,7 +188,7 @@ final class RitualHarness
      * @param int<0, max> $zombiePlayerMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
      * @param int<0, max> $autoEmptyReset Milliseconds without a connection before the autopilot starts the story over.
      * @param LockInterface|null $meepLock The lock of the meep's cooldown; by default one that expires by {@see $clock}.
-     * @param positive-int $fartFlyers The count of shot flyers that brings `fart`.
+     * @param positive-int $fartPoints The mark whose every multiple crossed by a player's points brings `fart`.
      */
     public function __construct(
         int $threshold = 2,
@@ -213,7 +213,7 @@ final class RitualHarness
         int $zombiePlayerMs = self::ZOMBIE_PLAYER_MS,
         ?LockInterface $meepLock = null,
         int $autoEmptyReset = self::AUTO_EMPTY_RESET,
-        int $fartFlyers = 100,
+        int $fartPoints = 100,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -263,7 +263,7 @@ final class RitualHarness
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted, $this->flyerStore, $this->playMetrics, self::ZOMBIE_BURN_MS, self::ZOMBIE_HEAL, $this->wordStore, $this->owl, $zombiePlayerMs, $wordHintMs);
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics, uncounted: $this->uncounted, pourPer: $barPourPer);
-        $this->abilityGrants = new AbilityGrants($this->playerStore, $this->walkerStore, $this->store, $publisher, $this->playMetrics, $this->clock, new Cooldown(new FakeLock(clock: $this->clock), 'owl-ability', self::ABILITY_OWL_GAP), $fartFlyers, new NullLogger(), new Randomizer(new Mt19937(19)));
+        $this->abilityGrants = new AbilityGrants($this->playerStore, $this->walkerStore, $this->store, $publisher, $this->playMetrics, $this->clock, new Cooldown(new FakeLock(clock: $this->clock), 'owl-ability', self::ABILITY_OWL_GAP), $fartPoints, new NullLogger(), new Randomizer(new Mt19937(19)));
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();

@@ -22,8 +22,8 @@ use Psr\Log\LoggerInterface;
 use Random\Randomizer;
 
 /**
- * Who gets an ability (docs/spec/scenario.md, «Способности»): a triple of a player's new throw, the flyer that brings
- * the player's `flyers` to the threshold, or the moderator. The record changes under the lock `player:{id}`, then
+ * Who gets an ability (docs/spec/scenario.md, «Способности»): a triple of a player's new throw, the hit that carries
+ * the player's `points` across a mark, or the moderator. The record changes under the lock `player:{id}`, then
  * everyone hears of it: the event `ability`, the character's copy and, at most once per gap, the owl's line.
  *
  * A grant by the dice or a flyer is a show beside the throw or the hit: a failure is logged and the action stands.
@@ -39,7 +39,7 @@ final readonly class AbilityGrants
 
     /**
      * @param Cooldown $owlGap One line of the owl about abilities per its window.
-     * @param positive-int $fartFlyers The count of shot flyers that brings `fart` to a player without an ability.
+     * @param positive-int $fartPoints The mark: each multiple of it a player's points cross brings `fart` to one without an ability.
      */
     public function __construct(
         private PlayerStore $players,
@@ -49,7 +49,7 @@ final readonly class AbilityGrants
         private PlayMetrics $metrics,
         private Clock $clock,
         private Cooldown $owlGap,
-        private int $fartFlyers,
+        private int $fartPoints,
         private LoggerInterface $logger,
         private Randomizer $random = new Randomizer(),
     ) {}
@@ -84,12 +84,17 @@ final readonly class AbilityGrants
     }
 
     /**
-     * A flyer shot down: the one on which the player's `flyers` became the threshold brings `fart`, unless the player
-     * has an ability already. The equality, not «at least», makes it one flyer of the player's whole life.
+     * A flyer shot down: the hit that carries the player's points across a multiple of the mark brings `fart`, unless
+     * the player has an ability already. A hit across several marks is one check.
+     *
+     * @param Player $shooter The record as the hit left it under the lock `player:{id}`: its points less the hit's are
+     *        the points before it, so of two concurrent hits each sees its own pair and only one crosses a mark.
+     * @param int<0, max> $points The hit's points.
      */
-    public function shot(int $round, Player $shooter): void
+    public function shot(int $round, Player $shooter, int $points): void
     {
-        if ($shooter->flyers !== $this->fartFlyers || $shooter->ability !== null) {
+        $crossed = \intdiv($shooter->points - $points, $this->fartPoints) < \intdiv($shooter->points, $this->fartPoints);
+        if (!$crossed || $shooter->ability !== null) {
             return;
         }
 

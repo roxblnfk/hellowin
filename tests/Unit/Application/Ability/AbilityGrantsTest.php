@@ -6,7 +6,9 @@ namespace Tests\Unit\Application\Ability;
 
 use App\Application\Ability\AbilityGrants;
 use App\Application\Story\StoryRefusedException;
+use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Ability;
+use App\Domain\Player\Player;
 use App\Domain\Story\Story;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -16,8 +18,8 @@ use Testo\Test;
 use Tests\Fake\RitualHarness;
 
 /**
- * Who gets an ability (docs/spec/scenario.md, «Способности»): a triple of the dice, the flyer that brings the count
- * to the threshold, the moderator.
+ * Who gets an ability (docs/spec/scenario.md, «Способности»): a triple of the dice, the hit that carries the points
+ * across a mark, the moderator.
  */
 #[Test]
 #[Covers(AbilityGrants::class)]
@@ -25,7 +27,7 @@ final class AbilityGrantsTest
 {
     private const JACK = 'aaaaaaaaaaaaaaaa';
     private const LOOK = ['body' => 'skeleton', 'cloak' => 'cape', 'face' => 'grin', 'eyes' => 'green', 'hat' => 'pumpkin'];
-    private const FART_FLYERS = 3;
+    private const MARK = 10;
 
     #[DataSet([[1, 1, 1]], '1-1-1')]
     #[DataSet([[4, 4, 4]], '4-4-4')]
@@ -107,12 +109,11 @@ final class AbilityGrantsTest
         Assert::same($ritual->playerStore->find(self::JACK)?->ability, $ability);
     }
 
-    public function flyerThatBringsTheCountToTheThresholdGrantsFart(): void
+    public function hitAcrossAMarkGrantsFart(): void
     {
         $ritual = self::lawn();
+        self::points($ritual, self::MARK - 1);
 
-        $this->shoot($ritual, self::FART_FLYERS - 1);
-        Assert::blank($ritual->broadcast->ofType('ability'));
         $this->shoot($ritual, 1);
 
         Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::FART);
@@ -122,29 +123,68 @@ final class AbilityGrantsTest
         Assert::equals($ritual->counters()['hellowin_abilities_granted_total{fart,flyers}'] ?? null, 1);
     }
 
-    public function flyersPastTheThresholdGrantNothing(): void
+    public function hitShortOfTheNextMarkGrantsNothing(): void
     {
         $ritual = self::lawn();
-        $this->shoot($ritual, self::FART_FLYERS);
-        $ritual->abilityGrants->grant(self::JACK, null);
-        $ritual->broadcast->published = [];
+        self::points($ritual, self::MARK);
 
-        $this->shoot($ritual, 2);
+        $this->shoot($ritual, 1);
 
+        Assert::int($ritual->playerStore->find(self::JACK)?->points)->lessThan(2 * self::MARK);
         Assert::null($ritual->playerStore->find(self::JACK)?->ability);
         Assert::blank($ritual->broadcast->ofType('ability'));
     }
 
-    public function thresholdFlyerLeavesAnAbilityThePlayerHas(): void
+    public function hitAcrossSeveralMarksGrantsOnce(): void
+    {
+        $ritual = self::lawn(mark: 3);
+        $witch = $ritual->flyers->launchSpecial(Flyer::KIND_WITCH, $ritual->clock->now) ?? Assert::fail('A witch is up.');
+
+        $ritual->flyers->shoot($witch->id, self::JACK);
+
+        Assert::int($ritual->playerStore->find(self::JACK)?->points)->greaterThanOrEqual(2 * 3);
+        Assert::same(\array_column($ritual->broadcast->ofType('ability'), 'ability'), [Ability::FART]);
+    }
+
+    public function markLeavesAnAbilityThePlayerHas(): void
     {
         $ritual = self::lawn();
         $ritual->abilityGrants->grant(self::JACK, Ability::MEEP);
+        self::points($ritual, self::MARK - 1);
         $ritual->broadcast->published = [];
 
-        $this->shoot($ritual, self::FART_FLYERS);
+        $this->shoot($ritual, 1);
 
         Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::MEEP);
         Assert::blank($ritual->broadcast->ofType('ability'));
+    }
+
+    public function nextMarkGrantsAgainOnceTheAbilityIsTaken(): void
+    {
+        $ritual = self::lawn();
+        self::points($ritual, self::MARK - 1);
+        $this->shoot($ritual, 1);
+        $ritual->abilityGrants->grant(self::JACK, null);
+        self::points($ritual, 2 * self::MARK - 1);
+
+        $this->shoot($ritual, 1);
+
+        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::FART);
+        Assert::same(\array_column($ritual->broadcast->ofType('ability'), 'source'), ['flyers', 'moderator', 'flyers']);
+    }
+
+    public function marksCountAnewAfterTheStatisticsReset(): void
+    {
+        $ritual = self::lawn();
+        self::points($ritual, self::MARK + 5);
+        $ritual->stats->reset();
+
+        while (($ritual->playerStore->find(self::JACK)?->points ?? 0) < self::MARK) {
+            $this->shoot($ritual, 1);
+        }
+
+        Assert::same($ritual->playerStore->find(self::JACK)?->ability, Ability::FART);
+        Assert::count($ritual->broadcast->ofType('ability'), 1);
     }
 
     public function owlNamesTheAbilityOncePerGap(): void
@@ -244,11 +284,13 @@ final class AbilityGrantsTest
     }
 
     /**
-     * Jack on the lawn of scene 0, its flyers ducks.
+     * Jack on the lawn of scene 0, its flyers ducks of one to three points.
+     *
+     * @param positive-int $mark
      */
-    private static function lawn(): RitualHarness
+    private static function lawn(int $mark = self::MARK): RitualHarness
     {
-        $ritual = new RitualHarness(fartFlyers: self::FART_FLYERS);
+        $ritual = new RitualHarness(fartPoints: $mark);
         $ritual->walks->enter($ritual->players->register(self::JACK, 'Jack', self::LOOK));
 
         return $ritual;
@@ -268,6 +310,17 @@ final class AbilityGrantsTest
         $ritual->broadcast->published = [];
 
         return $ritual;
+    }
+
+    /**
+     * @param int<0, max> $points
+     */
+    private static function points(RitualHarness $ritual, int $points): void
+    {
+        $ritual->playerStore->update(
+            self::JACK,
+            static fn(Player $player): Player => Player::fromArray(self::JACK, ['points' => $points] + $player->toArray()),
+        );
     }
 
     /**

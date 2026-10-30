@@ -470,11 +470,11 @@ final class HellowinConfigTest
     public function abilityNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();
-        Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [100, 10000, 3]);
+        Assert::same([$config->getAbilityFartPoints(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [100, 10000, 3]);
         Assert::same($config->getAbilityCooldowns(), ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000, 'lightning' => 5000, 'pumpkin' => 1000]);
 
-        $config = new HellowinConfig(['ability' => ['fart_flyers' => '5', 'owl_gap_ms' => '0', 'flyers_count' => '2', 'flyers_cooldown_ms' => '0', 'fart_cooldown_ms' => '7', 'meep_cooldown_ms' => '8', 'lightning_cooldown_ms' => '9', 'pumpkin_cooldown_ms' => '0']]);
-        Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [5, 0, 2]);
+        $config = new HellowinConfig(['ability' => ['fart_points' => '5', 'owl_gap_ms' => '0', 'flyers_count' => '2', 'flyers_cooldown_ms' => '0', 'fart_cooldown_ms' => '7', 'meep_cooldown_ms' => '8', 'lightning_cooldown_ms' => '9', 'pumpkin_cooldown_ms' => '0']]);
+        Assert::same([$config->getAbilityFartPoints(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [5, 0, 2]);
         Assert::same($config->getAbilityCooldowns(), ['flyers' => 0, 'fart' => 7, 'meep' => 8, 'lightning' => 9, 'pumpkin' => 0]);
     }
 
@@ -496,11 +496,11 @@ final class HellowinConfigTest
         (new HellowinConfig(['ability' => ['flyers_kinds' => $value]]))->getAbilityFlyersKinds();
     }
 
-    public function rejectsAZeroFlyersThreshold(): never
+    public function rejectsAZeroPointsMark(): never
     {
-        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ABILITY_FART_FLYERS');
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ABILITY_FART_POINTS');
 
-        (new HellowinConfig(['ability' => ['fart_flyers' => 0]]))->getAbilityFartFlyers();
+        (new HellowinConfig(['ability' => ['fart_points' => 0]]))->getAbilityFartPoints();
     }
 
     public function barNumbersComeFromTheConfig(): void

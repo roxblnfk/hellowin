@@ -117,12 +117,12 @@ return [
         'cooldown_ms' => env('HELLOWIN_MEEP_COOLDOWN_MS', 1500),
     ],
 
-    // The players' abilities (docs/spec/scenario.md, «Способности»): the shot flyer on which a player's count becomes
-    // `fart_flyers` brings `fart` to one without an ability; the owl names a new ability at most once per `owl_gap_ms`
+    // The players' abilities (docs/spec/scenario.md, «Способности»): a hit that carries a player's points across a
+    // multiple of `fart_points` brings `fart` to one without an ability; the owl names a new ability at most once per `owl_gap_ms`
     // milliseconds; `flyers` launches `flyers_count` flyers of the kinds `flyers_kinds` (comma-separated, at least one)
     // in any scene, whatever its own set; each ability's cooldown per player is `*_cooldown_ms`
     'ability' => [
-        'fart_flyers' => env('HELLOWIN_ABILITY_FART_FLYERS', 100),
+        'fart_points' => env('HELLOWIN_ABILITY_FART_POINTS', 100),
         'owl_gap_ms' => env('HELLOWIN_ABILITY_OWL_GAP_MS', 10000),
         'flyers_count' => env('HELLOWIN_ABILITY_FLYERS_COUNT', 3),
         'flyers_kinds' => env('HELLOWIN_ABILITY_FLYERS_KINDS', 'duck,chicken'),

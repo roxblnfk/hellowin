@@ -71,7 +71,7 @@ final class HellowinConfig extends InjectableConfig
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'meep' => ['cooldown_ms' => 1500],
-        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_kinds' => 'duck,chicken', 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000, 'lightning_cooldown_ms' => 5000, 'pumpkin_cooldown_ms' => 1000],
+        'ability' => ['fart_points' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_kinds' => 'duck,chicken', 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000, 'lightning_cooldown_ms' => 5000, 'pumpkin_cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -502,11 +502,11 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return positive-int The count of shot flyers that brings `fart` to a player without an ability.
+     * @return positive-int The mark: each multiple of it a player's points cross brings `fart` to one without an ability.
      */
-    public function getAbilityFartFlyers(): int
+    public function getAbilityFartPoints(): int
     {
-        return self::positiveInt($this->ability()['fart_flyers'] ?? null, 'ability.fart_flyers', 'HELLOWIN_ABILITY_FART_FLYERS');
+        return self::positiveInt($this->ability()['fart_points'] ?? null, 'ability.fart_points', 'HELLOWIN_ABILITY_FART_POINTS');
     }
 
     /**
