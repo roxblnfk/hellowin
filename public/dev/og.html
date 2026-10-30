@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Hellowin — link preview</title>
+    <!-- The source of public/og.png: serve public/ over HTTP, screenshot at 1200×630 (docs/spec/frontend.md, «Превью ссылки») -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block" rel="stylesheet">
+    <style>
+        html, body { margin: 0; background: #000; overflow: hidden; }
+        canvas { display: block; width: 1200px; height: 632px; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+<canvas id="og" width="300" height="158"></canvas>
+<script type="module">
+    import { pumpkinLayers, silhouette, DECOR, bake } from '../js/pixel/sprites.js';
+    import { paintSky, bakeLit, halo, NIGHT, LIT_PALETTE } from '../js/pixel/night.js';
+    import { OWL } from '../js/pixel/owl.js';
+    import { RUNNER } from '../js/pixel/finale.js';
+    import { characterFrame } from '../js/pixel/characters.js';
+    import { PALETTE } from '../js/pixel/palette.js';
+
+    const W = 300;
+    const H = 158;
+    const HORIZON = 104;
+    const ctx = document.getElementById('og').getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+
+    // Draws a sprite or a baked canvas by its anchor (the foot), so x, y is where it stands
+    const put = (canvas, anchor, x, y, { flip = false, alpha = 1, add = false } = {}) => {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        if (add) ctx.globalCompositeOperation = 'lighter';
+        if (flip) {
+            ctx.translate(Math.round(x), 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(canvas, -(canvas.width - anchor.x), Math.round(y - anchor.y));
+        } else {
+            ctx.drawImage(canvas, Math.round(x - anchor.x), Math.round(y - anchor.y));
+        }
+        ctx.restore();
+    };
+    const sprite = (s, x, y, opts, lighting = 'firelight') => put(bakeLit(s, lighting), s.anchor ?? { x: s.w >> 1, y: s.h }, x, y, opts);
+    const light = (s, x, y, opts) => put(bake(s), s.anchor ?? { x: s.w >> 1, y: s.h }, x, y, opts);
+
+    // Sky, blood moon, far hills and the ground
+    paintSky(ctx, W, HORIZON + 1, 'blood', { seed: 31 });
+    light(NIGHT.bloodMoonHalo, 262, 34, { add: true, alpha: 0.6 });
+    light(NIGHT.bloodMoon, 262, 34);
+    const hills = DECOR.hills;
+    for (let x = 0; x < W; x += hills.w) {
+        put(bakeLit(hills, 'blood'), { x: 0, y: hills.h }, x, HORIZON + 1);
+    }
+    ctx.fillStyle = hex(LIT_PALETTE.blood.soilDark);
+    ctx.fillRect(0, HORIZON + 1, W, H - HORIZON);
+    ctx.fillStyle = hex(LIT_PALETTE.blood.soil);
+    for (let y = HORIZON + 4; y < H; y += 3) {
+        for (let x = (y * 7) % 11; x < W; x += 11 + (y % 5)) ctx.fillRect(x, y, 2, 1);
+    }
+
+    // RoadRunner on the horizon: only a dark shape — is it dead?
+    const runner = silhouette(RUNNER.l.run[1], 'outline');
+    put(bake(runner), runner.anchor, 214, HORIZON + 2, { alpha: 0.9 });
+
+    // The owl on the dead tree, the narrator
+    const tree = DECOR.tree;
+    sprite(tree, 34, H - 6, {}, 'blood');
+    const perch = tree.perch;
+    const owl = OWL.hoot;
+    sprite(owl, 34 - tree.anchor.x + perch[0], H - 6 - tree.anchor.y + perch[1]);
+
+    // Lit pumpkins with fire on top and their warm halos
+    const pumpkin = (stage, size, seed, x, y) => {
+        const p = pumpkinLayers(stage, size, seed);
+        const r = { l: 30, m: 24, s: 18 }[size];
+        light(halo(r, Math.round(r * 0.55), 'warm'), x, y - 6, { add: true, alpha: 0.55 });
+        for (const name of ['aura', 'back', 'glow', 'body', 'rim', 'stem', 'fire']) {
+            const layer = p.layers[name];
+            if (!layer) continue;
+            const lit = name === 'glow' || name === 'fire' || name === 'aura';
+            put(lit ? bake(layer) : bakeLit(layer, 'firelight'), p.anchor, x, y, { add: name === 'glow' });
+        }
+    };
+    pumpkin(7, 'm', 7, 96, 146);
+    pumpkin(7, 'l', 3, 150, 150);
+    pumpkin(7, 's', 11, 118, 150);
+    pumpkin(7, 'm', 21, 208, 140);
+    pumpkin(7, 's', 5, 252, 152);
+
+    // Players with beer around the pumpkins
+    const walker = (look, x, y, opts = {}) => {
+        const f = characterFrame(look, { dir: opts.dir ?? 'front', pose: opts.pose ?? 'idle', item: 'beer' });
+        put(f.canvas, f.anchor, x, y, { flip: opts.flip });
+    };
+    walker({ body: 'skeleton', hat: 'witch', eyes: 'amber', face: 'smile', cloak: 'none' }, 62, 156, { dir: 'side' });
+    walker({ body: 'witch', hat: 'pumpkin', eyes: 'green', face: 'smile', cloak: 'none' }, 180, 158, { pose: 'toast' });
+    walker({ body: 'robe', hat: 'horns', eyes: 'red', face: 'smile', cloak: 'none' }, 280, 158, { dir: 'side', flip: true });
+
+    // Text: rendered at art scale and thresholded, so every glyph is crisp pixels with a hard outline
+    await document.fonts.load('16px "Press Start 2P"');
+    const text = (str, size, x, y, fill, outline = PALETTE.outline) => {
+        const c = document.createElement('canvas');
+        c.width = W;
+        c.height = size + 4;
+        const t = c.getContext('2d');
+        t.font = `${size}px "Press Start 2P"`;
+        t.textBaseline = 'top';
+        t.textAlign = 'center';
+        t.fillText(str, W / 2, 2);
+        const img = t.getImageData(0, 0, c.width, c.height);
+        const on = (i) => img.data[i * 4 + 3] > 127;
+        const out = ctx.createImageData(c.width, c.height);
+        for (let i = 0; i < c.width * c.height; i++) {
+            const px = i % c.width;
+            const near = on(i) || [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1]].some(([dx, dy]) => {
+                const nx = px + dx;
+                const j = i + dx + dy * c.width;
+                return nx >= 0 && nx < c.width && j >= 0 && j < c.width * c.height && on(j);
+            });
+            if (!near) continue;
+            const color = on(i) ? fill : outline;
+            out.data.set([(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff, 255], i * 4);
+        }
+        const o = document.createElement('canvas');
+        o.width = c.width;
+        o.height = c.height;
+        o.getContext('2d').putImageData(out, 0, 0);
+        ctx.drawImage(o, x - W / 2, y);
+    };
+    text('RoadRunner', 16, W / 2, 10, PALETTE.pumpkinLight);
+    text('is dead?', 16, W / 2, 30, PALETTE.pumpkinLight);
+    text('HALLOWEEN RITUAL', 8, W / 2, 54, PALETTE.white);
+    text('OCT 31 - 16:00 UTC', 8, W / 2, 66, PALETTE.white);
+
+    document.body.dataset.ready = '1';
+</script>
+</body>
+</html>

@@ -35,6 +35,7 @@ final readonly class HomeController
             'barLayout' => $this->config->getBarLayout()?->toArray(),
             // The chat field's maxlength: the server refuses a longer message anyway
             'chatMax' => $this->config->getChatMax(),
+            'origin' => self::origin($request),
         ]);
     }
 
@@ -46,7 +47,17 @@ final readonly class HomeController
             // A pumpkin's clicks per stage for a lone player at k = 1: the page explains the formula, not the room
             'clicksPerStage' => $this->config->getLimit(HellowinConfig::LIMIT_PUMPKIN)->of(1),
             'grafanaUrl' => ServiceUrl::resolve($this->config->getGrafanaUrl(), $request->getUri()),
+            'origin' => self::origin($request),
         ]);
+    }
+
+    /**
+     * The page's scheme and host: link previews take only an absolute `og:image`, and the domain lives in the
+     * server's env, not in the repository.
+     */
+    private static function origin(ServerRequestInterface $request): string
+    {
+        return (string) $request->getUri()->withUserInfo('')->withPath('')->withQuery('')->withFragment('');
     }
 
     /**

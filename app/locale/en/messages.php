@@ -10,6 +10,10 @@ declare(strict_types=1);
  * @see docs/spec/frontend.md, «Локализация»
  */
 return [
+    // Link preview
+    'RoadRunner мёртв?' => 'RoadRunner is dead?',
+    'Хэллоуинский ритуал в пиксель-арте: воскресим RoadRunner вместе, в реальном времени.' => 'A pixel-art Halloween ritual: resurrect RoadRunner together, in real time.',
+
     // Sound panel
     'Звук' => 'Sound',
     'Звук включён' => 'Sound on',

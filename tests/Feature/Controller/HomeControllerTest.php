@@ -91,6 +91,17 @@ final class HomeControllerTest extends TestCase
         Assert::array($limits)->hasKeys('players', 'limits');
     }
 
+    public function pagesPointTheLinkPreviewAtTheirOwnHost(): void
+    {
+        foreach (['/', '/how-it-works'] as $page) {
+            $this->fakeHttp()->get('https://halloween.test:8443' . $page)
+                ->assertOk()
+                ->assertBodyContains('property="og:image" content="https://halloween.test:8443/og.png"')
+                ->assertBodyContains('property="og:url" content="https://halloween.test:8443/"')
+                ->assertBodyContains('name="twitter:card" content="summary_large_image"');
+        }
+    }
+
     public function homePageCarriesWhoIsOnline(): void
     {
         $this->getContainer()->get(PresenceStore::class)->tell(['players' => 2, 'connections' => 3]);
