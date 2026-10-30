@@ -94,7 +94,7 @@
 | `../autopilot.json` | таблица речи совы и постановки шагов для автопилота сервера (см. «Автопилот»); собирается из `owl.js` (`LINES_BY_LANG`, `SHOW`, `HOLD_MS`) и `STEP_MS` функцией `speechTimes` в `public/dev/autopilot.js` |
 | `pixel/runner-horizon.js` | RoadRunner на горизонте без PixiJS: одно расписание пробежек на все сцены от серверного времени (`horizonAt`, слоты с джиттером), остановки с «Мип-мип!» на рассвете (`horizonStop`), ручная пробежка модератора поверх расписания (`horizonRunAt`), моменты для лаборатории (`nextHorizonRun`, `nextHorizonMeep`) |
 | `pixel/runner-dash.js` | перебежки RoadRunner по переднему плану финала (шаги 3–4) без PixiJS: расписание от серверного времени (`dashAt`, пыль `dustAt`), концы пути на экране (`dashSpan`), момент фазы для лаборатории (`dashMoment`) |
-| `pixel/ability.js` | арт способностей без PixiJS: столб света (`PILLAR` / `pillarAt`, `pillarSprite`, `pillarRing`), цвета искр, `FART_SCALE` облака игрока, цель молнии `nearestFlyer` и её `ZAP` / `ZAP_COLORS` / `ZAP_VEIL`, виды тыквы-игрока `PUMPKIN_KINDS` / `pumpkinKind`, `POOF_MS` |
+| `pixel/ability.js` | арт способностей без PixiJS: столб света (`PILLAR` / `pillarAt`, `pillarSprite`, `pillarRing`), цвета искр, `FART_SCALE` облака игрока, цель молнии `nearestFlyer` и её `ZAP` / `ZAP_COLORS`, виды тыквы-игрока `PUMPKIN_KINDS` / `pumpkinKind`, `POOF_MS` |
 | `pixel/elephant.js` | слон без PixiJS (раздел «Летуны», «Слон»): кадры `ELEPHANT` (4 взмаха ушами, `strain`), плакат `bannerFrame` (волна `waveAt`, `BANNER`, `BANNER_TEXT`), путь всего «поезда» `trainSpan` / `trainX` и крюк верёвки `hookOf`, полёт `flightAt`, таймлайн пука `FART` / `fartAt`, пуки одного слона `addFart` (пул облаков), облако Fart Time `fartCloud` и клубы `PUFFS`; лист — `public/dev/lab.html` (`?elephant`) |
 | `pixel/finale-stage.js` | постановка шагов финала в сцене: таймлайн `T` (реэкспорт из `finale-timeline.js`), FrankenPHP и силуэт на круге, столб, дым, молнии, RoadRunner, пузыри RoadRunner и FrankenPHP; правила `nightOf` / `lightsOut` / `ritualOf` / `rumbleAt` для `scene.js` |
 | `pixel/clink.js` | чоканье в проклятом мире: автоматические группы по путям фигурок и серверному времени (`clinksOf`, `createClinks`), чоканье по клику из события `clink` (`clinkOf`, `CLINK_STALE_MS`), общий таймлайн `CLINK` |
@@ -1732,7 +1732,7 @@ backend — **реализовано** (7d82325); на живом стеке —
   часах, правило пробела `spaceAction`, состояние кнопки `abilityButton`, передышка `ABILITY_GAP_MS` = 500 мс.
   `pixel/ability.js` без PixiJS: таймлайн столба `PILLAR` / `pillarAt`, спрайты `pillarSprite` (столб) и `pillarRing`
   (кольцо на земле), цвета искр `MOTE_COLORS` / `LAUNCH_COLORS`, `FART_SCALE`; молния — цель `nearestFlyer`, таймлайн `ZAP`,
-  цвета `ZAP_COLORS`, вспышка `ZAP_VEIL`; тыква — виды `PUMPKIN_KINDS` / `pumpkinKind`, дым `POOF_MS`.
+  цвета `ZAP_COLORS`; тыква — виды `PUMPKIN_KINDS` / `pumpkinKind`, дым `POOF_MS`.
 - **Модель.** Своя способность — `model.ability`: из `Player.ability` ответов `me` и `register` (`client.setMe(id, player)`)
   и из событий `ability` про меня. `Walker.ability` фигурок — из снимка и `walker`; событие `ability` правит его у
   фигурки (`null` — поле удаляется). Сброс раунда способность не трогает.
@@ -1779,7 +1779,7 @@ backend — **реализовано** (7d82325); на живом стеке —
   (`shotFacing`), как при выстреле, поднимает пустую руку (поза `shoot` без предмета, `ITEM_SHOT_MS`), и из руки в
   летуна на момент события бьёт пиксельная молния: форма `FX.chain` рапиры (ломаная с ветками) в цветах молний финала
   (`lightningCore` / `lightning` / `lightningEdge`), свежая — в два пикселя толщиной, три формы по 60 мс, затем тает
-  ступенями к 420 мс (`ZAP`); мягкая вспышка экрана (`ZAP_VEIL`, слабее удара финала) и искры в точке удара. `hit: false`
+  ступенями к 420 мс (`ZAP`); искры в точке удара; экран не вспыхивает — молния игрока своя, а не на всё небо, как удар финала (решение пользователя от 2026-10-30). `hit: false`
   (летуна сбил кто-то раньше) — та же молния бьёт рядом с ним, а без летуна — в воздух. Тыква-игрок бьёт из макушки, позы
   нет. Звук — `ability.zap` (щелчок разряда, треск и короткий раскат, группа `core` — звучит в любой сцене). Попадание и
   падение — обычный `shot`: фигурка не стреляет своим предметом (сцена пропускает `walkerShot` по летуну своей молнии),

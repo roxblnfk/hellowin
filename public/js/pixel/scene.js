@@ -25,7 +25,7 @@ import { BURN_END, HEAL_AT, ZBURN, ZOMBIE_SPARKS, burnBodyAt, burnDeadline, burn
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
-import { FART_SCALE, LAUNCH_COLORS, LAUNCH_SPARKS, MOTE_COLORS, MOTE_MS, POOF_MS, ZAP, ZAP_COLORS, ZAP_VEIL, nearestFlyer, pillarAt, pillarRing, pillarSprite, pumpkinKind } from './ability.js';
+import { FART_SCALE, LAUNCH_COLORS, LAUNCH_SPARKS, MOTE_COLORS, MOTE_MS, POOF_MS, ZAP, ZAP_COLORS, nearestFlyer, pillarAt, pillarRing, pillarSprite, pumpkinKind } from './ability.js';
 import { ELEPHANT, FART, PUFFS as FART_PUFFS, addFart, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
@@ -4714,8 +4714,8 @@ export async function createScene(rootEl, snapshot) {
     /*
      * A player's lightning (protocol.md, «Молния и тыква»): the walker turns to its flyer and raises its hand, and a
      * jagged white-blue bolt — the finale's lightning in small, FX.chain's shape in its colours — runs from the hand to
-     * the flyer where it is drawn; three shapes flicker, it thins out by ZAP.end, the screen flashes softly and sparks
-     * fly off where it strikes. A miss (`hit: false`, the flyer shot by someone else first) strikes beside it, or into
+     * the flyer where it is drawn; three shapes flicker, it thins out by ZAP.end and sparks fly off where it
+     * strikes; the screen does not flash, the bolt is the player's own, not the sky's. A miss (`hit: false`, the flyer shot by someone else first) strikes beside it, or into
      * the air when the flyer is gone. The fall comes as `shot`.
      */
     function zap(w, flyerId, hit) {
@@ -4760,8 +4760,6 @@ export async function createScene(rootEl, snapshot) {
         };
         particles.push({ sprite: g, x: 0, y: 0, vx: 0, vy: 0, gravity: 0, life: reduced ? 0.2 : ZAP.end / 1000, age: 0, tick });
         if (reduced) return;
-        veilStart = clock;
-        veilFrames = ZAP_VEIL;
         for (let i = 0; i < (hit ? 8 : 4); i++) {
             const a = (i / 8) * Math.PI * 2 + between(0, 0.7);
             ember(Math.round(target.x), Math.round(target.y), Math.cos(a) * between(20, 50), Math.sin(a) * between(20, 50) - 10, 50, between(0.25, 0.45), 0, ['white', ...ZAP_COLORS]);

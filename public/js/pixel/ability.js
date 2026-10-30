@@ -117,8 +117,6 @@ export function nearestFlyer(from, flyers, { w, h }) {
 export const ZAP = { frame: 60, end: 420 };
 /** The lightning's colours: core, glow beside it; the impact's sparks, hottest first. */
 export const ZAP_COLORS = ['lightningCore', 'lightning', 'lightningEdge'];
-/** The screen's flash at a lightning, much softer than a finale strike: [palette key, alpha] per 60 ms. */
-export const ZAP_VEIL = [['lightningCore', 0.18], ['lightning', 0.08]];
 
 /**
  * The looks of a player turned pumpkin, `n % length` (protocol.md, `power` with `pumpkin`): the patch's own pumpkins
