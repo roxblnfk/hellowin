@@ -21,17 +21,11 @@ final class SpeechTableTest
 {
     private const FILE = __DIR__ . '/../../../../public/autopilot.json';
 
-    /**
-     * Lines the server already says while the frontend has yet to put them into the table: the speech of such a line
-     * counts as the longest text. Remove a line from here once the table has it.
-     */
-    private const AWAITED = [OwlLine::ABILITY];
-
     public function everyLineTheServerSaysIsInTheTable(): void
     {
         $table = SpeechTable::fromFile(self::FILE);
         $ids = [
-            ...\array_diff(\array_values((new \ReflectionClass(OwlLine::class))->getConstants()), self::AWAITED),
+            ...\array_values((new \ReflectionClass(OwlLine::class))->getConstants()),
             ...\array_map(OwlLine::scene(...), \range(1, 4)),
             ...\array_map(OwlLine::finale(...), \range(1, Story::LAST_STEP)),
         ];
