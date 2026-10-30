@@ -46,7 +46,8 @@
 
         <nav class="tabs" aria-label="Разделы">
             <ul class="tabs__list" role="tablist">
-                <li role="presentation"><a role="tab" id="tab-modules" href="#modules" aria-controls="modules" aria-selected="true">Модули</a></li>
+                <li role="presentation"><a role="tab" id="tab-roadrunner" href="#roadrunner" aria-controls="roadrunner" aria-selected="true">RoadRunner</a></li>
+                <li role="presentation"><a role="tab" id="tab-modules" href="#modules" aria-controls="modules" aria-selected="false">Модули</a></li>
                 <li role="presentation"><a role="tab" id="tab-page-load" href="#page-load" aria-controls="page-load" aria-selected="false">Загрузка страницы</a></li>
                 <li role="presentation"><a role="tab" id="tab-click" href="#click" aria-controls="click" aria-selected="false">Клик</a></li>
                 <li role="presentation"><a role="tab" id="tab-stages" href="#stages" aria-controls="stages" aria-selected="false">Стадии и лок</a></li>
@@ -56,6 +57,89 @@
                 <li role="presentation"><a role="tab" id="tab-metrics" href="#metrics" aria-controls="metrics" aria-selected="false">Метрики</a></li>
             </ul>
         </nav>
+
+        <section class="how__section" id="roadrunner" role="tabpanel" aria-labelledby="tab-roadrunner">
+            <h2>RoadRunner: PHP, который не умирает</h2>
+            <p>
+                RoadRunner создавался, чтобы вывести PHP на уровень enterprise. Всё началось с вопроса: а что, если
+                PHP-приложение не будет умирать после каждого запроса?
+            </p>
+
+            <h3>Идея: срезать bootstrap</h3>
+            <p>
+                В классической модели PHP на каждый запрос заново поднимает приложение: грузит конфиги, собирает
+                контейнер, открывает соединения. После ответа всё это выбрасывается. Если же процесс живёт, bootstrap
+                делается один раз, а дальше воркер только обслуживает запросы. Эту модель и держит RoadRunner: пул
+                долгоживущих PHP-воркеров, которым он раздаёт запросы.
+            </p>
+
+            <h3>Spiral и Cycle: фреймворк и ORM, которые не текут</h3>
+            <p>
+                Новая модель потребовала и нового фреймворка. Тогдашние фреймворки не умели не умирать: в них утекала
+                память, а привычные практики рассчитывали на то, что процесс всё равно сейчас умрёт. Так появился
+                <a href="https://spiral.dev/">Spiral Framework</a>. Ему понадобилась ORM, которая не течёт: Doctrine и
+                Eloquent для этого не подходили, и появилась <a href="https://cycle-orm.dev/">Cycle ORM</a>. Это демо
+                написано на Spiral.
+            </p>
+
+            <h3>Плагины: единое API и IO на стороне Go</h3>
+            <p>
+                Первые версии доказали, что концепт работает, и на RoadRunner начали навешиваться новые возможности:
+                очереди задач jobs, веб-сокеты, KV, локи, метрики, а потом и
+                <a href="https://temporal.io/">Temporal</a>. RoadRunner даёт PHP единое API к разным хранилищам и
+                брокерам сообщений и забирает на себя IO-bound работу. В этом демо задействованы плагины
+                <code>http</code>, <code>centrifuge</code>, <code>kv</code>, <code>lock</code>, <code>jobs</code> и
+                <code>metrics</code> — как именно, рассказывают остальные вкладки, начиная с
+                <a href="#modules">«Модулей»</a>.
+            </p>
+
+            <h3>Go и Goridge</h3>
+            <p>
+                Единственным адекватным языком для такого сервера тогда был Go. Но Go плохо совместим с C, на котором
+                написан PHP, поэтому пришлось разработать собственный протокол общения между PHP и RoadRunner —
+                <a href="https://github.com/roadrunner-server/goridge">Goridge</a>. За него платится налог на
+                сериализацию и десериализацию. Зато практика и время показали, что этот протокол — самый стабильный и
+                безопасный вариант, в отличие от встраивания PHP через CGO или FastCGI
+                (<a href="https://rapira.rs/blog/php2shell">разбор</a>).
+            </p>
+
+            <h3>Laravel и Symfony</h3>
+            <p>
+                Со временем Laravel и Symfony тоже научились работать в неумирающей модели, и для них появились
+                бриджи на RoadRunner. Официальные бриджи покрывают не весь функционал RoadRunner, но эту дыру закрыло
+                сообщество: например, <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a>
+                для Symfony и <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a>
+                для Laravel.
+            </p>
+
+            <h3>RoadRunner 3 и честные минусы</h3>
+            <p>
+                В сентябре 2026 года вышел RoadRunner 3. Он гибко расширяется плагинами и работает во многих
+                enterprise-компаниях по всему миру. Но у него есть и проблемы:
+            </p>
+            <ul>
+                <li><strong>Сложность в обращении.</strong> Не каждое приложение может работать в long-running режиме, а
+                    чтобы писать под него, рядовому PHP-разработчику нужно дообучиться.</li>
+                <li><strong>Память.</strong> Каждый воркер — отдельный процесс без общего opcache, поэтому
+                    потребление памяти высокое.</li>
+                <li><strong>Маркетинг.</strong></li>
+            </ul>
+            <p>
+                И не всем это нужно: многие приложения на фреймворках общего назначения не работают под высокой
+                нагрузкой.
+            </p>
+
+            <h3>Что дальше: Рапира</h3>
+            <p>
+                PHP по-прежнему нужен нормальный веб-сервер, способный запустить любое приложение в любом режиме:
+                классическом, воркерном или даже асинхронном. Поэтому идею RoadRunner развили дальше — так появилась
+                <a href="https://rapira.rs/">Рапира</a>, его продолжение.
+            </p>
+            <p class="callout">
+                RoadRunner никто не бросает: на нём работают многие компании, и поддержка продолжается. Но в
+                перспективе, когда Рапира перекроет все возможности RoadRunner, хочется, чтобы все перешли на неё.
+            </p>
+        </section>
 
         <section class="how__section" id="modules" role="tabpanel" aria-labelledby="tab-modules">
             <h2>Кто с кем разговаривает</h2>
