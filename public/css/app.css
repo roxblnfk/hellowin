@@ -528,6 +528,11 @@ body:not([data-final]) .circle,
         padding: 6px 10px;
         font-size: 12px;
     }
+
+    /* A phone's panel has no room for it: the uptime stays on the reveal's card. */
+    .hud__runner {
+        display: none;
+    }
 }
 
 .error {
