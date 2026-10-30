@@ -114,7 +114,8 @@
                     PHP developer needs to learn a bit more to write for it.</li>
                 <li><strong>Memory.</strong> Every worker is a separate process with no shared opcache, so the memory
                     use is high.</li>
-                <li><strong>Marketing.</strong></li>
+                <li><strong>Marketing.</strong> However technically great a thing we build, telling the whole world
+                    about it is a problem of its own for us.</li>
             </ul>
             <p>
                 And not everyone needs it: many applications on general-purpose frameworks never see a high load.
