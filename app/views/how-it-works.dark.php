@@ -108,11 +108,12 @@
             <h3>Laravel и Symfony</h3>
             <p>
                 Со временем Laravel и Symfony тоже научились работать в неумирающей модели, и для них появились
-                интеграции с RoadRunner. Официальные берут от него в основном HTTP-сервер, остальное закрыло
-                сообщество. <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a>
-                даёт Laravel не только HTTP, но и gRPC, очереди, KV и Temporal.
-                <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> для Symfony
-                ограничивается HTTP, зато сделан аккуратнее официальной интеграции.
+                интеграции с RoadRunner. Официальные берут от него в основном HTTP-сервер, а у Symfony к тому же каждый
+                запрос проходит конвертацию в PSR-7 и обратно. Остальное закрыло сообщество.
+                <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a> даёт Laravel
+                не только HTTP, но и gRPC, очереди, KV и Temporal.
+                <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> собирает запрос
+                Symfony напрямую, без PSR-7, и добавляет gRPC и KV как кеш.
             </p>
 
             <h3>RoadRunner 3 и честные минусы</h3>
