@@ -106,15 +106,16 @@
 
             <h3>Laravel and Symfony</h3>
             <p>
-                In time Laravel and Symfony also learned to live in the long-running model, and RoadRunner bridges
-                appeared for them. The official ones take mostly the HTTP server from it, and on top of that convert
-                every request to PSR-7 and back. The community covered the rest.
-                <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a> gives
-                Laravel not only HTTP but gRPC, queues, KV and Temporal too; its HTTP still goes through PSR-7, though,
-                as it builds on Octane.
-                <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> builds the
-                Symfony request directly, without PSR-7, and adds gRPC and KV as a cache.
+                In time Laravel and Symfony also learned to live in the long-running model, and RoadRunner
+                integrations appeared for them. The official ones either work suboptimally or take little from
+                RoadRunner beyond HTTP. We recommend the community bridges:
             </p>
+            <ul>
+                <li><a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a> for
+                    Laravel — HTTP, gRPC, queues, KV and Temporal;</li>
+                <li><a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> for
+                    Symfony — HTTP, gRPC and KV as a cache.</li>
+            </ul>
 
             <h3>RoadRunner 3 and the honest downsides</h3>
             <p>
