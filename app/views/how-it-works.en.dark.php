@@ -100,7 +100,8 @@
                 which PHP is written in, so a protocol of its own was needed between PHP and RoadRunner —
                 <a href="https://github.com/roadrunner-server/goridge">Goridge</a>. It costs a tax on serialisation and
                 deserialisation. In return, practice and time showed it to be the most stable and safe option, unlike
-                embedding PHP through CGO or FastCGI (<a href="https://rapira.rs/blog/php2shell">a write-up</a>).
+                embedding PHP into Go through CGO or talking to it over FastCGI
+                (<a href="https://rapira.rs/blog/php2shell">a write-up</a>).
             </p>
 
             <h3>Laravel and Symfony</h3>
