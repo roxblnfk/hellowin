@@ -90,6 +90,7 @@ services:
       HELLOWIN_AUTO_DAWN_MAX_MS: ${HELLOWIN_AUTO_DAWN_MAX_MS:-600000}
       HELLOWIN_AUTO_DICE_MS: ${HELLOWIN_AUTO_DICE_MS:-90000}
       HELLOWIN_AUTO_STALL_MS: ${HELLOWIN_AUTO_STALL_MS:-0}
+      HELLOWIN_AUTO_EMPTY_RESET_MS: ${HELLOWIN_AUTO_EMPTY_RESET_MS:-30000}
       # Game state (RoadRunner kv, redis driver) and idempotency keys (predis) live in the same Valkey.
       VALKEY_ADDR: valkey:6379
       VALKEY_DSN: tcp://valkey:6379
