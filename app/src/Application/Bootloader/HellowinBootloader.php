@@ -469,7 +469,7 @@ final class HellowinBootloader extends Bootloader
             Autopilot::class => static function (HellowinConfig $config, SpeechTable $table): Autopilot {
                 $ms = $config->getAutopilot();
 
-                return new Autopilot($table, $ms['pause'], $ms['dawnMin'], $ms['dawnMax'], $ms['dice'], $ms['stall']);
+                return new Autopilot($table, $ms['pause'], $ms['dawnMin'], $ms['dawnMax'], $ms['dice'], $ms['stall'], emptyResetMs: $ms['emptyReset']);
             },
             Clock::class => SystemClock::class,
             FlyerFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): FlyerFactory => new FlyerFactory(

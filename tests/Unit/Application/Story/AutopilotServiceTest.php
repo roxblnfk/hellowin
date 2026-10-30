@@ -120,9 +120,138 @@ final class AutopilotServiceTest
         Assert::same(\array_column($ritual->broadcast->ofType('reset'), 'again'), [true]);
     }
 
+    public function emptyRoomStartsTheStoryOverAfterItsWait(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET - 1);
+        Assert::blank($ritual->broadcast->ofType('reset'));
+
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+
+        $resets = $ritual->broadcast->ofType('reset');
+        Assert::same(\array_column($resets, 'round'), [2]);
+        Assert::false(isset($resets[0]['again']));
+        Assert::same($ritual->store->snapshot()->round, 2);
+        Assert::same($ritual->store->snapshot()->scene, 0);
+        Assert::same((int) ($ritual->counters()[PlayMetrics::AUTOPILOT_MOVES . '{' . AutopilotService::RESET . '}'] ?? -1), 1);
+        Assert::true($ritual->autopilot->state()['on']);
+    }
+
+    public function connectionBeforeTheWaitIsOverStartsTheWaitAgain(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(1, $from + 29000);
+        $ritual->autopilot->room(0, $from + 29500);
+
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+        Assert::blank($ritual->broadcast->ofType('reset'));
+        $ritual->autopilot->room(0, $from + 29500 + RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::same($ritual->store->snapshot()->round, 2);
+    }
+
+    public function roomThatStaysEmptyIsResetOnce(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+
+        $ritual->autopilot->room(0, $from + 2 * RitualHarness::AUTO_EMPTY_RESET);
+        $ritual->autopilot->room(0, $from + 10 * RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::count($ritual->broadcast->ofType('reset'), 1);
+        Assert::same($ritual->store->snapshot()->round, 2);
+    }
+
+    public function roomEmptiedAgainAfterAVisitIsResetAgain(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+        $back = $from + 2 * RitualHarness::AUTO_EMPTY_RESET;
+        $ritual->autopilot->room(2, $back);
+        $ritual->autopilot->room(0, $back + 1000);
+
+        $ritual->autopilot->room(0, $back + 1000 + RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::same(\array_column($ritual->broadcast->ofType('reset'), 'round'), [2, 3]);
+    }
+
+    public function emptyRoomIsLeftAloneWithTheAutopilotOff(): void
+    {
+        $ritual = self::inTheDay();
+        $ritual->autopilot->switch(false);
+        $from = $ritual->clock->now;
+
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + 10 * RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::blank($ritual->broadcast->ofType('reset'));
+        Assert::same($ritual->store->snapshot()->scene, 1);
+    }
+
+    public function emptySpellBeforeTheAutopilotWasOffDoesNotCarryOver(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->switch(false);
+        $ritual->autopilot->switch(true);
+
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::blank($ritual->broadcast->ofType('reset'));
+    }
+
+    public function zeroWaitNeverResetsTheEmptyRoom(): void
+    {
+        $ritual = self::inTheDay(new RitualHarness(stageMax: [0, 1], autoEmptyReset: 0));
+        $from = $ritual->clock->now;
+
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + 10 * RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::blank($ritual->broadcast->ofType('reset'));
+    }
+
+    public function emptyRoomResetIsNoCallOfTheEvening(): void
+    {
+        $ritual = self::inTheDay();
+        $from = $ritual->clock->now;
+
+        $ritual->autopilot->room(0, $from);
+        $ritual->autopilot->room(0, $from + RitualHarness::AUTO_EMPTY_RESET);
+
+        Assert::same($ritual->tally->count(EveningTally::CALLS), 0);
+        Assert::same($ritual->tally->count(EveningTally::DROPPED), 0);
+        Assert::blank(\array_filter(
+            \array_keys($ritual->counters()),
+            static fn(string $key): bool => \str_starts_with($key, PlayMetrics::RPC_CALLS),
+        ));
+    }
+
     private static function ritual(): RitualHarness
     {
         return new RitualHarness(stageMax: [0, 1]);
+    }
+
+    /**
+     * The day of round 1 with the autopilot on: a story with something to start over.
+     */
+    private static function inTheDay(?RitualHarness $ritual = null): RitualHarness
+    {
+        $ritual ??= self::ritual();
+        $ritual->story->nextScene(0, true);
+        $ritual->runJobs();
+        $ritual->autopilot->switch(true);
+
+        return $ritual;
     }
 
     /**

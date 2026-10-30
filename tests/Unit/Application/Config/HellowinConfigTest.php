@@ -69,17 +69,17 @@ final class HellowinConfigTest
 
     public function autopilotTakesMillisecondsFromTheEnv(): void
     {
-        $config = new HellowinConfig(['autopilot' => ['pause_ms' => '1500', 'dawn_min_ms' => '8000', 'dawn_max_ms' => '12000', 'dice_ms' => '0', 'stall_ms' => '60000']]);
+        $config = new HellowinConfig(['autopilot' => ['pause_ms' => '1500', 'dawn_min_ms' => '8000', 'dawn_max_ms' => '12000', 'dice_ms' => '0', 'stall_ms' => '60000', 'empty_reset_ms' => '0']]);
 
-        Assert::same((new HellowinConfig())->getAutopilot(), ['pause' => 4000, 'dawnMin' => 300000, 'dawnMax' => 600000, 'dice' => 90000, 'stall' => 0]);
-        Assert::same($config->getAutopilot(), ['pause' => 1500, 'dawnMin' => 8000, 'dawnMax' => 12000, 'dice' => 0, 'stall' => 60000]);
+        Assert::same((new HellowinConfig())->getAutopilot(), ['pause' => 4000, 'dawnMin' => 300000, 'dawnMax' => 600000, 'dice' => 90000, 'stall' => 0, 'emptyReset' => 30000]);
+        Assert::same($config->getAutopilot(), ['pause' => 1500, 'dawnMin' => 8000, 'dawnMax' => 12000, 'dice' => 0, 'stall' => 60000, 'emptyReset' => 0]);
     }
 
     public function autopilotDawnBoundsAreInOrder(): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_AUTO_DAWN_MAX_MS');
 
-        (new HellowinConfig(['autopilot' => ['pause_ms' => 0, 'dawn_min_ms' => 9, 'dawn_max_ms' => 8, 'dice_ms' => 0, 'stall_ms' => 0]]))->getAutopilot();
+        (new HellowinConfig(['autopilot' => ['pause_ms' => 0, 'dawn_min_ms' => 9, 'dawn_max_ms' => 8, 'dice_ms' => 0, 'stall_ms' => 0, 'empty_reset_ms' => 0]]))->getAutopilot();
     }
 
     public function autopilotRejectsANegativeWait(): never

@@ -8,6 +8,7 @@ use App\Application\Bar\BarRefusedException;
 use App\Application\Bar\BarService;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
+use App\Application\Hellowin\ResetService;
 use App\Domain\Clock\Clock;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Ritual\RitualBusyException;
@@ -28,6 +29,9 @@ use Psr\Log\LoggerInterface;
  */
 final class AutopilotService
 {
+    /** The `action` label of the empty room's reset in `hellowin_autopilot_moves_total`. */
+    public const RESET = 'reset';
+
     /** The gauge as this process set it last; null — not yet. */
     private ?bool $told = null;
 
@@ -44,6 +48,7 @@ final class AutopilotService
         private readonly LoggerInterface $logger,
         private readonly ?BarService $bar = null,
         private readonly ?DiceService $dice = null,
+        private readonly ?ResetService $reset = null,
     ) {}
 
     /**
@@ -77,6 +82,8 @@ final class AutopilotService
             } else {
                 $this->store->write(false);
             }
+            // An empty spell counted before the autopilot was off does not carry into its next run
+            $this->store->writeEmptyRoom(null);
             $this->publisher->auto($scene->round, $on, $next);
         });
         $this->gauge($on);
@@ -111,6 +118,61 @@ final class AutopilotService
             $due and $this->move($scene, $next);
         });
         $this->gauge(true);
+    }
+
+    /**
+     * One count of the presence: a room left without a connection for long enough starts the story over through the
+     * moderator's reset ({@see Autopilot::empty()}). The ticker calls it only with a count it has read: an unknown
+     * presence never resets. A reset the ritual refuses as busy is tried again on the next count.
+     *
+     * @param int<0, max> $connections
+     * @param int $now Unix time in milliseconds.
+     * @throws LockBusyException
+     */
+    public function room(int $connections, int $now): void
+    {
+        // A room with people in it is the usual state: reads without the lock, a write only when the state changes
+        if (!$this->store->read()['on']) {
+            return;
+        }
+        $empty = $this->store->emptyRoom();
+        if ($this->autopilot->empty($empty, $connections, $now)[0] === $empty) {
+            return;
+        }
+
+        $this->store->locked(function () use ($connections, $now): void {
+            if (!$this->store->read()['on']) {
+                return;
+            }
+
+            [$empty, $reset] = $this->autopilot->empty($this->store->emptyRoom(), $connections, $now);
+            if ($reset && !$this->restart($empty['since'] ?? $now, $now)) {
+                return;
+            }
+            $this->store->writeEmptyRoom($empty);
+        });
+    }
+
+    /**
+     * @return bool Whether the story has started over, by this reset or another one of the same round.
+     */
+    private function restart(int $since, int $now): bool
+    {
+        if ($this->reset === null) {
+            return true;
+        }
+
+        $round = $this->ritual->snapshot()->round;
+        try {
+            $this->reset->reset($round);
+        } catch (RitualBusyException) {
+            $this->logger->info('Autopilot reset of the empty room refused: {error}', ['error' => 'busy']);
+            return false;
+        }
+        $this->metrics->autopilotMove(self::RESET);
+        $this->logger->info('Autopilot reset round {round}: nobody connected for {ms} ms', ['round' => $round, 'ms' => $now - $since]);
+
+        return true;
     }
 
     /**
