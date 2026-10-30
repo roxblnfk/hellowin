@@ -26,7 +26,7 @@ final class HowItWorksPageTest extends TestCase
         $body = $this->page();
 
         \preg_match_all('/<a role="tab" id="([^"]+)"[^>]*\baria-controls="([^"]+)"/', $body, $tabs, \PREG_SET_ORDER);
-        Assert::count($tabs, 8);
+        Assert::count($tabs, 9);
 
         foreach ($tabs as [, $tab, $panel]) {
             Assert::string($body)->contains(\sprintf('id="%s" role="tabpanel" aria-labelledby="%s"', $panel, $tab));
