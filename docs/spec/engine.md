@@ -607,10 +607,13 @@
 - **Применение** (`AbilityService::use`, RPC `ability`): без лока — фигурка в `hellowin:walkers` (`no character`), запись
   с `ability` (`no ability`); под локом `ability:{id}` — `hellowin:ability:{id}` `{flyers?, fart?, meep?, lightning?, pumpkin?}` (когда готова
   каждая, мс; KV `process`, TTL — самый длинный кулдаун + 2 с): не готова — `AbilityBusyException` → `busy` с `readyAt`;
-  у `flyers` пустой набор сцены, проклятого мира или рассвета (`FlyerService::burstable`) — `no flyers`, кулдаун не
-  тратится; иначе `readyAt = now + кулдаун способности`. После лока — `power`, у `flyers` —
-  `FlyerService::rise(HELLOWIN_ABILITY_FLYERS_COUNT, точка фигурки сейчас, id)`: `FlyerFactory::rising` на каждого,
-  обычный `release` (KV, событие `flyer` с `by`, `hellowin_flyers_launched_total`); затем
+  иначе `readyAt = now + кулдаун способности`. После лока — `power`, у `flyers` —
+  `FlyerService::rise(HELLOWIN_ABILITY_FLYERS_COUNT, точка фигурки сейчас, id)`: `FlyerFactory::rising` на каждого —
+  вид случайно из `HELLOWIN_ABILITY_FLYERS_KINDS` (аргумент `flock` фабрики) в любой сцене, набор сцены, проклятого
+  мира и рассвета не участвует, поэтому `no flyers` у способности нет (решение пользователя от 2026-10-30); ближняя
+  глубина, очки — её (светлячок и муха — свои); обычный `release` (KV, событие `flyer` с `by`,
+  `hellowin_flyers_launched_total{depth}`), так что подметание тикера, `escaped`, топ и метрики — как у любого
+  летуна, в баре и на рассвете тоже; затем
   `hellowin_abilities_used_total{ability}`. `ActionStop` не зовётся (кроме молнии), пауза и зомби не проверяются.
 - **Молния** (`lightning`, RPC `ability {flyer}`; [`protocol.md`](protocol.md), «Молния и тыква»): под локом
   `ability:{id}` после кулдауна — `FlyerStore::strike` под локом `flyer:{id}`, тем же, что у выстрела, так что из
@@ -1104,6 +1107,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_ABILITY_FART_FLYERS` | 100 | сбитый летун, на котором `flyers` игрока стало равно этому числу, даёт `fart`, если способности нет; целое > 0 (`hellowin.ability.fart_flyers`) |
 | `HELLOWIN_ABILITY_OWL_GAP_MS` | 10000 | мс от реплики совы `ability` до следующей; раньше — без реплики; 0 — без паузы |
 | `HELLOWIN_ABILITY_FLYERS_COUNT` | 3 | летунов в стае способности `flyers`, целое > 0 |
+| `HELLOWIN_ABILITY_FLYERS_KINDS` | `duck,chicken` | виды стаи способности `flyers` в любой сцене вместо её набора: через запятую (`[a-z]+`), повторы схлопываются; пусто — ошибка конфига (`hellowin.ability.flyers_kinds`) |
 | `HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS`, `HELLOWIN_ABILITY_FART_COOLDOWN_MS`, `HELLOWIN_ABILITY_MEEP_COOLDOWN_MS`, `HELLOWIN_ABILITY_LIGHTNING_COOLDOWN_MS`, `HELLOWIN_ABILITY_PUMPKIN_COOLDOWN_MS` | 3000, 1000, 1000, 5000, 1000 | кулдаун способности на игрока, мс (`busy` с `readyAt`); 0 — без паузы |
 | `HELLOWIN_AUTO_PAUSE_MS` | 4000 | пауза автопилота после того, как сова договорила, перед ходом; и между бросками совы (`hellowin.autopilot.pause_ms`) |
 | `HELLOWIN_AUTO_DAWN_MIN_MS`, `HELLOWIN_AUTO_DAWN_MAX_MS` | 300000, 600000 | сколько длится рассвет до «В бар»: случайно в этих границах, MAX ≥ MIN |

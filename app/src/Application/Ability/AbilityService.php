@@ -65,8 +65,7 @@ final readonly class AbilityService
      * @param mixed $flyer The lightning's target, as the client names it; the other abilities take none.
      * @return array{ability: Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN, readyAt: int, hit?: bool, n?: int<0, max>}
      * @throws NoCharacterException
-     * @throws StoryRefusedException `no ability`, `no flyers` — the current set has none, `no target` — the lightning
-     *         has no flyer in the sky to strike.
+     * @throws StoryRefusedException `no ability`, `no target` — the lightning has no flyer in the sky to strike.
      * @throws AbilityBusyException
      * @throws LockBusyException
      */
@@ -83,8 +82,6 @@ final readonly class AbilityService
                 $ready = $this->ready($id);
                 $at = $ready[$ability] ?? 0;
                 $now < $at and throw new AbilityBusyException($at);
-                // Checked after the cooldown, as the order of the errors goes, and before the cooldown is spent
-                $ability === Ability::FLYERS && !$this->flyersNow() and throw new StoryRefusedException('no flyers');
                 // The bolt and the pumpkin take effect before the cooldown is spent: one with no flyer to strike,
                 // or a lawn too busy for the pumpkin, costs the player nothing
                 $strike = $ability === Ability::LIGHTNING ? $this->bolt($flyer, $now) : null;
@@ -160,13 +157,6 @@ final readonly class AbilityService
         );
 
         return [$stopped, $n];
-    }
-
-    private function flyersNow(): bool
-    {
-        $ritual = $this->ritual->snapshot();
-
-        return $this->flyers->burstable($ritual->scene, $ritual->story);
     }
 
     /**

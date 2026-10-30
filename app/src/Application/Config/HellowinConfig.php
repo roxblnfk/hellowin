@@ -71,7 +71,7 @@ final class HellowinConfig extends InjectableConfig
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'meep' => ['cooldown_ms' => 1500],
-        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000, 'lightning_cooldown_ms' => 5000, 'pumpkin_cooldown_ms' => 1000],
+        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_kinds' => 'duck,chicken', 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000, 'lightning_cooldown_ms' => 5000, 'pumpkin_cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -523,6 +523,32 @@ final class HellowinConfig extends InjectableConfig
     public function getAbilityFlyersCount(): int
     {
         return self::positiveInt($this->ability()['flyers_count'] ?? null, 'ability.flyers_count', 'HELLOWIN_ABILITY_FLYERS_COUNT');
+    }
+
+    /**
+     * Kinds of the flock, picked at random for every flyer of it in any scene: `"duck,chicken"`.
+     *
+     * @return non-empty-list<non-empty-string> Each kind once.
+     */
+    public function getAbilityFlyersKinds(): array
+    {
+        /** @var mixed $value */
+        $value = $this->ability()['flyers_kinds'] ?? null;
+        $error = new \InvalidArgumentException(\sprintf(
+            'Config "hellowin.ability.flyers_kinds" (env HELLOWIN_ABILITY_FLYERS_KINDS) must be comma-separated lowercase '
+            . 'words, at least one, got %s.',
+            \is_string($value) ? \sprintf('"%s"', $value) : \get_debug_type($value),
+        ));
+        \is_string($value) or throw $error;
+
+        $kinds = [];
+        foreach (\explode(',', $value) as $item) {
+            $kind = \trim($item);
+            $kind !== '' && \preg_match('/^[a-z]+$/', $kind) === 1 or throw $error;
+            $kinds[$kind] = $kind;
+        }
+
+        return \array_values($kinds);
     }
 
     /**

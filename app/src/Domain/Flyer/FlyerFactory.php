@@ -35,7 +35,7 @@ use Random\Randomizer;
  *
  * Kinds come by scene; the cursed world and the dawn have sets of their own instead of their scene's. Sometimes a launch
  * is the rare flyer of the scene instead — a special one, as the moderator launches by hand: from the edge, for the rare
- * points.
+ * points. A player's flock takes kinds of its own in every scene.
  *
  * The elephant comes only by itself — on the ticker's timer or by the moderator's hand: across the far sky from behind
  * one side edge to behind the other, level within its band — high ({@see ELEPHANT_SKY}) or, by the low chance, over the
@@ -129,6 +129,7 @@ final readonly class FlyerFactory
      * @param list<non-empty-string> $dawn Kinds of the dawn in place of its scene's set.
      * @param positive-int $elephantDuration Milliseconds an elephant takes across the sky.
      * @param float $elephantLowChance Probability from 0 to 1 that an elephant flies in the low band.
+     * @param non-empty-list<non-empty-string> $flock Kinds of a player's flock, picked with equal chance in any scene.
      */
     public function __construct(
         array $depths,
@@ -152,6 +153,7 @@ final readonly class FlyerFactory
         private array $dawn = [],
         private int $elephantDuration = 26000,
         private float $elephantLowChance = 0.0,
+        private array $flock = [Flyer::KIND_DUCK, 'chicken'],
     ) {
         $all = \array_merge($cursed, $dawn, ...$kinds);
         $lawn !== null || !\in_array(Flyer::KIND_WORM, $all, true) or throw new \InvalidArgumentException(
@@ -236,22 +238,17 @@ final readonly class FlyerFactory
     }
 
     /**
-     * A flyer of the current set, the rare one aside, launched by a player's ability: up from the character at the
-     * nearest depth and out behind the top edge, or a side edge high up. Every kind takes this flight, a ground one or
-     * a fly of the bar too: it is the player's trick, not the kind's way.
+     * A flyer of the flock kinds, launched by a player's ability in any scene: up from the character at the nearest
+     * depth and out behind the top edge, or a side edge high up. Every kind takes this flight, a ground one or a fly
+     * too: it is the player's trick, not the kind's way.
      *
      * @param int $now Unix time in milliseconds.
      * @param Point $from Where the character stands now.
      * @param non-empty-string $by Public id of the player.
-     * @return Flyer|null Null when the set has no flyers.
      */
-    public function rising(int $now, Point $from, string $by, int $scene = 0, bool $cursed = false, bool $dawn = false): ?Flyer
+    public function rising(int $now, Point $from, string $by): Flyer
     {
-        $kinds = $this->kinds($scene, $cursed, $dawn);
-        if ($kinds === []) {
-            return null;
-        }
-        $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
+        $kind = $this->flock[$this->random->getInt(0, \count($this->flock) - 1)];
         $depth = \count($this->depths) - 1;
 
         $x = \round($from->x + $this->float(-35, 35), 1);

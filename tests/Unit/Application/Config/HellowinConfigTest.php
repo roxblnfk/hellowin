@@ -478,6 +478,24 @@ final class HellowinConfigTest
         Assert::same($config->getAbilityCooldowns(), ['flyers' => 0, 'fart' => 7, 'meep' => 8, 'lightning' => 9, 'pumpkin' => 0]);
     }
 
+    public function flockKindsComeFromTheConfig(): void
+    {
+        Assert::same((new HellowinConfig())->getAbilityFlyersKinds(), ['duck', 'chicken']);
+        Assert::same((new HellowinConfig(['ability' => ['flyers_kinds' => ' chicken , chicken,bat']]))->getAbilityFlyersKinds(), ['chicken', 'bat']);
+    }
+
+    #[DataSet([''], 'empty')]
+    #[DataSet([' '], 'blank')]
+    #[DataSet(['duck,'], 'empty item')]
+    #[DataSet(['Duck'], 'capital')]
+    #[DataSet([3], 'not a string')]
+    public function rejectsABadFlock(mixed $value): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ABILITY_FLYERS_KINDS');
+
+        (new HellowinConfig(['ability' => ['flyers_kinds' => $value]]))->getAbilityFlyersKinds();
+    }
+
     public function rejectsAZeroFlyersThreshold(): never
     {
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ABILITY_FART_FLYERS');

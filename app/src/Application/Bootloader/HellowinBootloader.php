@@ -546,6 +546,7 @@ final class HellowinBootloader extends Bootloader
                 dawn: $flyers->getDawnKinds(),
                 elephantDuration: $flyers->getElephantDuration(),
                 elephantLowChance: $flyers->getElephantLowChance(),
+                flock: $config->getAbilityFlyersKinds(),
             ),
             ZombieFactory::class => static fn(HellowinConfig $config, FlyerConfig $flyers): ZombieFactory => new ZombieFactory(
                 $config->getWalkZone(),

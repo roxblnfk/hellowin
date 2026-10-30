@@ -233,24 +233,22 @@ final readonly class FlyerService
     }
 
     /**
-     * A player's flock (docs/spec/protocol.md, «Способности»): flyers of the current set, the rare one aside, up from
+     * A player's flock (docs/spec/protocol.md, «Способности»): flyers of the flock kinds, whatever the scene, up from
      * the character. The pause holds the scene's progress, not the sky.
      *
      * @param positive-int $count
      * @param Point $from Where the character stands now.
      * @param non-empty-string $by Public id of the player.
      * @param int $now Unix time in milliseconds.
-     * @return list<Flyer> Empty when the set has no flyers.
+     * @return list<Flyer>
      * @throws LockBusyException
      */
     public function rise(int $count, Point $from, string $by, int $now): array
     {
-        $ritual = $this->ritual->snapshot();
-        $story = $ritual->story;
+        $round = $this->ritual->round();
         $launched = [];
         for ($i = 0; $i < $count; ++$i) {
-            $flyer = $this->factory->rising($now, $from, $by, $ritual->scene, $story->cursed(), $story->dawn());
-            $flyer === null or $launched[] = $this->release($ritual->round, $flyer);
+            $launched[] = $this->release($round, $this->factory->rising($now, $from, $by));
         }
 
         return $launched;

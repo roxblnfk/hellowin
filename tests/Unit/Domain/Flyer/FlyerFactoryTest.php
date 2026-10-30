@@ -217,6 +217,18 @@ final class FlyerFactoryTest
         Assert::same($kinds, ['chicken', 'duck']);
     }
 
+    public function risingTakesTheFlockKindsWhateverTheSets(): void
+    {
+        $factory = new FlyerFactory([new FlyerDepth(1000, 1), new FlyerDepth(500, 4)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [[]], cursed: [], dawn: [], flock: ['duck', 'chicken']);
+
+        $flock = \array_map(static fn(int $_): Flyer => $factory->rising(0, new Point(50, 80), 'aaaaaaaaaaaaaaaa'), \range(1, 50));
+
+        $kinds = \array_unique(\array_map(static fn(Flyer $flyer): string => $flyer->kind, $flock));
+        \sort($kinds);
+        Assert::same($kinds, ['chicken', 'duck']);
+        Assert::same(\array_unique(\array_map(static fn(Flyer $flyer): int => $flyer->depth * 10 + $flyer->points, $flock)), [14], 'the near depth and its points');
+    }
+
     public function cursedWorldWithoutKindsLaunchesOnlyTheRareFlyerOfTheScene(): void
     {
         $factory = new FlyerFactory([new FlyerDepth(1000, 1)], [], 0.0, 0.0, new Randomizer(new Mt19937(7)), [['duck']], [null, 'witch'], 1.0);

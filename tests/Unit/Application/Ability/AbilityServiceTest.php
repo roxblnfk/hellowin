@@ -72,7 +72,7 @@ final class AbilityServiceTest
         foreach ($flyers as $flyer) {
             Assert::same($flyer['by'], ['id' => self::JACK]);
             Assert::same($flyer['from'], ['x' => \round($at->x, 1), 'y' => \round($at->y, 1)]);
-            Assert::same($flyer['kind'], Flyer::KIND_DUCK);
+            Assert::contains([Flyer::KIND_DUCK, 'chicken'], $flyer['kind']);
             Assert::same($flyer['depth'], 2, 'the nearest depth');
             Assert::true($flyer['to']['y'] < 0 || $flyer['to']['x'] < 0 || $flyer['to']['x'] > 100, 'out behind an edge');
             Assert::true($flyer['to']['y'] < $flyer['from']['y'], 'up');
@@ -81,24 +81,15 @@ final class AbilityServiceTest
         Assert::same($ritual->flyers->shoot($flyers[0]['flyer'], 'bbbbbbbbbbbbbbbb'), 1);
     }
 
-    public function flyersNeedASetWithFlyers(): void
+    public function flockIsItsOwnInASceneWithoutFlyers(): void
     {
         $ritual = self::lawn(Ability::FLYERS, [[]]);
 
-        Assert::same(self::refusal($ritual), 'no flyers');
-        Assert::same(self::refusal($ritual), 'no flyers', 'the refusal spends no cooldown');
-        Assert::blank($ritual->broadcast->published);
-    }
+        $ritual->abilities->use(self::JACK);
 
-    public function cooldownComesBeforeTheEmptySet(): void
-    {
-        $ritual = self::lawn(Ability::FLYERS, [[Flyer::KIND_DUCK], []]);
-        $readyAt = $ritual->abilities->use(self::JACK)['readyAt'];
-        $ritual->transitions->scene(1, 1);
-
-        Assert::same(self::busy($ritual), $readyAt);
-        $ritual->clock->now = $readyAt;
-        Assert::same(self::refusal($ritual), 'no flyers');
+        $kinds = \array_column($ritual->broadcast->ofType('flyer'), 'kind');
+        Assert::count($kinds, RitualHarness::ABILITY_FLOCK);
+        Assert::array(\array_diff($kinds, [Flyer::KIND_DUCK, 'chicken']))->hasCount(0);
     }
 
     public function playerWithoutACharacterHasNothingToShow(): never
