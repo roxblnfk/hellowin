@@ -83,7 +83,7 @@
 | Бар: розлив и «взять» | каждый тик | `BarService::tick`: в баре — налитая партия с наступившим `until` ставится на стойку (`mugs`), если места есть — следующий розлив (`pour`); фигурки с наступившим `takeAt` берут кружку под локами `walkers` → `bar` (`take`, `bar-empty`); см. «Бар» |
 | Чоканья по клику | каждый тик | фигурки `hellowin:walkers` с наступившим `clink.dueAt` → под локом `walkers` проверка цели, запись сбрасывается → событие `clink`; см. «Фигурки на поле», «Чоканье по клику» |
 | Фигурки: вход и уход | раз в секунду | presence канала → новые игроки с `look` выходят на поле (`walker`), давно отключённые уходят (`leave`) → gauge `hellowin_walkers`; см. «Фигурки на поле» |
-| Кто онлайн | раз в секунду, тем же чтением presence | `WalkService::sync`: `players` — уникальные валидные id игроков, `connections` — все записи presence (вкладки, анонимы с пустым `user` включительно) → gauge `hellowin_online_players`, `hellowin_online_connections` на каждом проходе; числа разошлись с `hellowin:presence` → событие `presence {round, players, connections}` и запись ключа. Снимок несёт `presence` из того же ключа (до первого счёта — нули). Тот же `connections` получает `AutopilotService::room` — пустой зал, см. «Автопилот» |
+| Кто онлайн | раз в секунду, тем же чтением presence | `WalkService::sync`: `players` — уникальные валидные id игроков, `connections` — все записи presence (вкладки, анонимы с пустым `user` включительно) → gauge `hellowin_online_players`, `hellowin_online_connections` на каждом проходе; числа разошлись с `hellowin:presence` → событие `presence {round, players, connections}` и запись ключа. Снимок несёт `presence` из того же ключа (до первого счёта — нули) |
 | Пиво из тыкв | каждый тик | `WalkService::beers`: фигурки с наступившим `takeAt` у тыквы (`takeFrom`) под локом `walkers` получают пиво, если мир всё ещё на шаге 5 → событие `take` с `pumpkin`; см. «Рапира» |
 | Авто-расколдовывание | каждый тик, перед ходами зомби-игроков | `RapierService::recover(now)`: зомби-игроки с наступившим `zombieUntil` под локом `walkers` (тем же, что у `cure`) снова люди → `cure {player, auto: true}`; см. «Рапира» |
 | Зомби-игроки | каждый тик | `RapierService::shamble`: зомби с наступившим `zombieAt` под локом `walkers` делают ход по лужайке → `move`; только на шаге 6 |
@@ -533,18 +533,6 @@
   не раньше чем через 5 с (`Autopilot::RETRY_MS`). Каждый ход — `hellowin_autopilot_moves_total{action}`.
 - **Не RPC.** Ходы минуют `RPCService`: ни `hellowin_rpc_calls_total`, ни `calls` вечера (`EveningTally`). Ход всегда
   называет текущую сцену и следующий шаг, поэтому отброшенным повтором (`dropped`) не бывает.
-- **Пустой зал** (`AutopilotService::room`, решение пользователя от 2026-10-30). Тикер раз в секунду передаёт ему
-  `connections` из того же чтения presence, что у `WalkService::sync` (он возвращает прочитанный `Online`); сбой чтения или
-  синхронизации — вызова нет, неизвестный зал не сбрасывается. Состояние — `hellowin:auto:empty` `{since, done}`
-  (`AutoStore::emptyRoom`), отдельно от записи: запись начинается заново с каждой сценой, сброс тоже её меняет, а
-  опустение должно пережить свой сброс; переживает и рестарт тикера. Правило — `Autopilot::empty`: `connections > 0` или
-  `HELLOWIN_AUTO_EMPTY_RESET_MS` = 0 — ключ удаляется; пусто впервые — `since = now`; `now − since ≥` порога и не
-  `done` — сброс и `done = true`; при `done` ничего, пока кто-то не подключится. Выключен автопилот — одно чтение
-  `hellowin:auto` без лока; без изменений состояния — без лока и записи; иначе под локом `auto` перечитывается. Сброс —
-  `ResetService::reset(текущий раунд)`, тот же путь, что у RPC `reset`: события, идемпотентность `reset:{round}`,
-  обнуление `EveningTally` и `RevealBuilder`. `RitualBusyException` — лог (info), `done` не ставится, повтор на следующем
-  чтении presence; сброс, уже сделанный другим (`null`), считается сделанным. Сделанный сброс — лог (info) и
-  `hellowin_autopilot_moves_total{action="reset"}`. `switch` удаляет ключ: опустение не переносится через выключение.
 
 ## Чат
 
@@ -941,7 +929,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
 | Кто онлайн, как сказано клиентам последним: `hellowin:presence` `{players, connections}`; пишет только тикер, без лока | Valkey | тот же storage `hellowin` |
 | Числа прошлых циклов вечера `hellowin:evening` `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls, lastPumpkin}` | Valkey | тот же storage `hellowin`, лок `evening` |
-| Автопилот `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`, речь совы `hellowin:owl` `{until, hold}`; обе переживают сброс и рестарт; пустой зал `hellowin:auto:empty` `{since, done}` (нет ключа — в зале кто-то есть) | Valkey | тот же storage `hellowin`, локи `auto` и `owl` |
+| Автопилот `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`, речь совы `hellowin:owl` `{until, hold}`; обе переживают сброс и рестарт | Valkey | тот же storage `hellowin`, локи `auto` и `owl` |
 | Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
 | Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `auto`, `owl`, `started-at`, `rate:{group}:{caller}` (и `rate:emote:{player}`), лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
@@ -984,7 +972,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл. Тот же вызов, если это действие, — `+1` в `hellowin:tally:calls` (`reveal.calls`): метрика живёт до рестарта RR и раунда не знает |
 | `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |
 | `hellowin_autopilot_on` | gauge | автопилот включён: 1 / 0; выставляют RPC `auto` и тикер (при первом тике и при смене) |
-| `hellowin_autopilot_moves_total{action}` | counter | ходы автопилота, отказанные включительно; `action` = `bar.ready` / `scene.next` / `finale.step` / `dice.owl` / `again`; `reset` — сброс пустого зала, только сделанный |
+| `hellowin_autopilot_moves_total{action}` | counter | ходы автопилота, отказанные включительно; `action` = `bar.ready` / `scene.next` / `finale.step` / `dice.owl` / `again` |
 
 `pushed − transitions` — дубли, отсечённые идемпотентностью; это главная панель демонстрации в Grafana. Счётчики живут
 в процессе RoadRunner и обнуляются при его рестарте; gauge при старте воркеров выставляются из состояния в Valkey.
@@ -1049,7 +1037,6 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_AUTO_DAWN_MIN_MS`, `HELLOWIN_AUTO_DAWN_MAX_MS` | 300000, 600000 | сколько длится рассвет до «В бар»: случайно в этих границах, MAX ≥ MIN |
 | `HELLOWIN_AUTO_DICE_MS` | 90000 | сколько зал бросает кости сам, прежде чем бросает сова; 0 — сова не бросает |
 | `HELLOWIN_AUTO_STALL_MS` | 0 | через сколько без готовности автопилот ходит с `force` (в баре — отмашкой); 0 — никогда |
-| `HELLOWIN_AUTO_EMPTY_RESET_MS` | 30000 | через сколько без единого подключения автопилот начинает историю заново (`reset`); 0 — никогда (`hellowin.autopilot.empty_reset_ms`) |
 | `HELLOWIN_WALK_SPEED` | 12 | скорость фигурок, процентов экрана в секунду по длине пути |
 | `HELLOWIN_WALK_LEAVE_AFTER` | 5000 | мс без подключений, после которых фигурка уходит с поля |
 | `VALKEY_ADDR` | `valkey:6379` | Valkey для RR KV (`.rr.yaml`) |

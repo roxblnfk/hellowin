@@ -67,7 +67,7 @@ final class HellowinConfig extends InjectableConfig
         'rapier' => ['beer_handover_ms' => 900, 'word_hint_ms' => 180000, 'zombie_player_ms' => 60000],
         'top' => ['board' => 200, 'interval' => 500],
         'dice' => ['idempotency_ttl' => 900, 'cooldown_ms' => 1800],
-        'autopilot' => ['pause_ms' => 4000, 'dawn_min_ms' => 300000, 'dawn_max_ms' => 600000, 'dice_ms' => 90000, 'stall_ms' => 0, 'empty_reset_ms' => 30000],
+        'autopilot' => ['pause_ms' => 4000, 'dawn_min_ms' => 300000, 'dawn_max_ms' => 600000, 'dice_ms' => 90000, 'stall_ms' => 0],
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'meep' => ['cooldown_ms' => 1500],
@@ -413,7 +413,7 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return array{pause: int<0, max>, dawnMin: int<0, max>, dawnMax: int<0, max>, dice: int<0, max>, stall: int<0, max>, emptyReset: int<0, max>}
+     * @return array{pause: int<0, max>, dawnMin: int<0, max>, dawnMax: int<0, max>, dice: int<0, max>, stall: int<0, max>}
      *         Milliseconds of the autopilot; the dawn's bounds in order.
      */
     public function getAutopilot(): array
@@ -422,7 +422,7 @@ final class HellowinConfig extends InjectableConfig
         \is_array($autopilot) or throw new \InvalidArgumentException('Config "hellowin.autopilot" must be an array.');
 
         $ms = [];
-        foreach (['pause' => 'PAUSE', 'dawnMin' => 'DAWN_MIN', 'dawnMax' => 'DAWN_MAX', 'dice' => 'DICE', 'stall' => 'STALL', 'emptyReset' => 'EMPTY_RESET'] as $name => $env) {
+        foreach (['pause' => 'PAUSE', 'dawnMin' => 'DAWN_MIN', 'dawnMax' => 'DAWN_MAX', 'dice' => 'DICE', 'stall' => 'STALL'] as $name => $env) {
             $key = \strtolower($env) . '_ms';
             /** @var mixed $value */
             $value = $autopilot[$key] ?? null;

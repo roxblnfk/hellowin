@@ -44,31 +44,6 @@ final class TickerTest
         Assert::same(\array_column($ritual->queue->pushed, 'name'), [TransitionScene::class]);
     }
 
-    public function emptyPresenceStartsTheStoryOverWithTheAutopilotOn(): void
-    {
-        $ritual = self::dayOnAutopilot();
-        $ticker = new Ticker($ritual->top, 500, $ritual->flyers, [999_999, 999_999], $ritual->walks, new NullLogger(), autopilot: $ritual->autopilot);
-        $ticker->tick(1_000);
-
-        $ticker->tick(1_000 + RitualHarness::AUTO_EMPTY_RESET);
-
-        Assert::same(\array_column($ritual->broadcast->ofType('reset'), 'round'), [2]);
-    }
-
-    public function unreadPresenceNeverStartsTheStoryOver(): void
-    {
-        $ritual = self::dayOnAutopilot();
-        $ticker = new Ticker($ritual->top, 500, $ritual->flyers, [999_999, 999_999], $ritual->walks, new NullLogger(), autopilot: $ritual->autopilot);
-        $ritual->presence->error = new \RuntimeException('Centrifugo is down');
-
-        $ticker->tick(1_000);
-        $ticker->tick(1_000 + RitualHarness::AUTO_EMPTY_RESET);
-        $ticker->tick(1_000 + 10 * RitualHarness::AUTO_EMPTY_RESET);
-
-        Assert::blank($ritual->broadcast->ofType('reset'));
-        Assert::same($ritual->store->snapshot()->scene, 1);
-    }
-
     public function everyTickLooksForArrivedClinks(): void
     {
         $ritual = new RitualHarness(stageMax: [1], reachable: ['pumpkin-1']);
@@ -487,19 +462,6 @@ final class TickerTest
             $ritual->broadcast->ofType('flyer'),
             static fn(array $flyer): bool => $flyer['kind'] === Flyer::KIND_ELEPHANT,
         ));
-    }
-
-    /**
-     * Past the bar of round 1 with the autopilot on: a story with something to start over.
-     */
-    private static function dayOnAutopilot(): RitualHarness
-    {
-        $ritual = new RitualHarness(stageMax: [0, 1]);
-        $ritual->story->nextScene(0, true);
-        $ritual->runJobs();
-        $ritual->autopilot->switch(true);
-
-        return $ritual;
     }
 
     private static function ticker(RitualHarness $ritual): Ticker

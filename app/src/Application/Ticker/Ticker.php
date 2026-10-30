@@ -12,7 +12,6 @@ use App\Application\Story\AutopilotService;
 use App\Application\Story\CursedService;
 use App\Application\Story\RapierService;
 use App\Application\Story\TopService;
-use App\Application\Walk\Online;
 use App\Application\Walk\WalkService;
 use App\Domain\Story\TopBoard;
 use Psr\Log\LoggerInterface;
@@ -107,9 +106,7 @@ final class Ticker
 
         if ($this->nextPresence === null || $now >= $this->nextPresence) {
             $this->nextPresence = $now + self::PRESENCE_INTERVAL;
-            $online = $this->safely('walkers', fn(): Online => $this->walks->sync());
-            // A failed read of the presence leaves the empty room as it was: an unknown count must not reset the story
-            $online === null or $this->safely('empty room', fn() => $this->autopilot?->room($online->connections, $now));
+            $this->safely('walkers', fn() => $this->walks->sync());
             $this->safely('limits', fn() => $this->limits?->follow());
             $this->safely('cursed goals', fn() => $this->cursed?->follow());
             $this->safely('elephant', fn() => $this->elephant($now));
@@ -165,17 +162,14 @@ final class Ticker
     }
 
     /**
-     * @template T
-     * @param \Closure(): T $job
-     * @return T|null Null when the job failed.
+     * @param \Closure(): mixed $job
      */
-    private function safely(string $name, \Closure $job): mixed
+    private function safely(string $name, \Closure $job): void
     {
         try {
-            return $job();
+            $job();
         } catch (\Throwable $e) {
             $this->logger->error('Ticker job {job} failed: {message}', ['job' => $name, 'message' => $e->getMessage(), 'exception' => $e]);
-            return null;
         }
     }
 }

@@ -86,15 +86,13 @@ return [
     // The autopilot of the evening (docs/spec/scenario.md, «Автопилот»), milliseconds: `pause_ms` after the owl has
     // finished, before a move, and between the owl's throws; the dawn lasts a random `dawn_min_ms`…`dawn_max_ms` before
     // «В бар»; the owl throws the dice after `dice_ms` without a 6-6-6 (0 — never); after `stall_ms` without the room's
-    // task the autopilot moves with `force` (0 — never); a room without a single connection for `empty_reset_ms` starts
-    // the story over, as the moderator's reset does (0 — never)
+    // task the autopilot moves with `force` (0 — never)
     'autopilot' => [
         'pause_ms' => env('HELLOWIN_AUTO_PAUSE_MS', 4000),
         'dawn_min_ms' => env('HELLOWIN_AUTO_DAWN_MIN_MS', 300000),
         'dawn_max_ms' => env('HELLOWIN_AUTO_DAWN_MAX_MS', 600000),
         'dice_ms' => env('HELLOWIN_AUTO_DICE_MS', 90000),
         'stall_ms' => env('HELLOWIN_AUTO_STALL_MS', 0),
-        'empty_reset_ms' => env('HELLOWIN_AUTO_EMPTY_RESET_MS', 30000),
     ],
 
     // The players' chat (docs/spec/protocol.md, «Чат»): a message is `max` characters at most after the cleaning, and

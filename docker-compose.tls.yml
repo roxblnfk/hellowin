@@ -34,6 +34,9 @@ services:
       GF_SERVER_CERT_KEY: /tls/key.pem
     volumes:
       - ${TLS_DIR:-/opt/hellowin-tls}:/tls:ro
+    # wget over HTTPS leaves an ssl_client child that Grafana, as PID 1, never reaps: every probe added a zombie until
+    # the container's pid limit stopped all execs, the healthcheck included. An init process reaps them.
+    init: true
     healthcheck:
       test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1:3000/api/health"]
 

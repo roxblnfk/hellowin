@@ -11,18 +11,14 @@ use Psr\SimpleCache\CacheInterface;
 /**
  * The autopilot: `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`,
  * changed under the lock `auto`. `next` is the move the clients were told last. Not part of the story: the reset and a
- * new cycle of the evening leave it alone. The empty room ({@see Autopilot::empty()}) lives beside it in
- * `hellowin:auto:empty` `{since, done}`, under the same lock: the record starts over with every scene, the reset among
- * them, and the empty room has to outlive its own reset.
+ * new cycle of the evening leave it alone.
  *
  * @psalm-import-type Next from Autopilot
- * @psalm-import-type EmptyRoom from Autopilot
  * @psalm-type Auto = array{on: bool, record: AutoRecord|null, next: Next|null}
  */
 final readonly class AutoStore
 {
     private const KEY = 'hellowin:auto';
-    private const EMPTY_KEY = 'hellowin:auto:empty';
     private const LOCK = 'auto';
 
     public function __construct(
@@ -61,28 +57,6 @@ final readonly class AutoStore
     public function write(bool $on, ?AutoRecord $record = null, ?array $next = null): void
     {
         $this->storage->set(self::KEY, ['on' => $on, 'next' => $on ? $next : null] + ($on ? $record?->toArray() ?? [] : []));
-    }
-
-    /**
-     * @return EmptyRoom|null Null — the room was not empty at the last count.
-     */
-    public function emptyRoom(): ?array
-    {
-        /** @var mixed $value */
-        $value = $this->storage->get(self::EMPTY_KEY);
-        /** @var mixed $since */
-        $since = \is_array($value) ? $value['since'] ?? null : null;
-        $done = \is_array($value) && ($value['done'] ?? null) === true;
-
-        return \is_int($since) ? ['since' => $since, 'done' => $done] : null;
-    }
-
-    /**
-     * @param EmptyRoom|null $empty
-     */
-    public function writeEmptyRoom(?array $empty): void
-    {
-        $empty === null ? $this->storage->delete(self::EMPTY_KEY) : $this->storage->set(self::EMPTY_KEY, $empty);
     }
 
     /**

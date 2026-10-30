@@ -12,7 +12,6 @@ use Random\Randomizer;
  * frontend tests check is `autoTick` in public/dev/autopilot.js; this is the same algorithm.
  *
  * @psalm-type Next = array{action: self::ACTION_*, to?: int, at?: int, wait?: self::WAIT_*, force?: true}
- * @psalm-type EmptyRoom = array{since: int, done: bool}
  */
 final readonly class Autopilot
 {
@@ -36,8 +35,6 @@ final readonly class Autopilot
      * @param int<0, max> $dawnMaxMs Not less than `$dawnMinMs`.
      * @param int<0, max> $diceMs How long the room throws before the owl does; 0 — the owl never does.
      * @param int<0, max> $stallMs How long without the room's task before a move with `force`; 0 — never.
-     * @param int<0, max> $emptyResetMs How long the room stays without a connection before the story starts over;
-     *        0 — never.
      */
     public function __construct(
         private SpeechTable $table,
@@ -47,34 +44,7 @@ final readonly class Autopilot
         private int $diceMs,
         private int $stallMs,
         private Randomizer $random = new Randomizer(),
-        private int $emptyResetMs = 0,
     ) {}
-
-    /**
-     * The empty room (docs/spec/scenario.md, «Автопилот»): once nobody has been connected for `$emptyResetMs`, the
-     * story starts over, so whoever comes later starts it from the bar. One reset per empty spell: a room that stays
-     * empty keeps `done` until somebody connects. Only the server plays this rule; the lab's `autoTick` has no presence.
-     *
-     * @param EmptyRoom|null $empty As the previous count of the presence left it: Unix ms the room has been empty since
-     *        and whether its reset is made; null — somebody was connected.
-     * @param int<0, max> $connections Every connection to the channel, anonymous ones included.
-     * @param int $now Unix ms.
-     * @return array{EmptyRoom|null, bool} The state to keep and whether to reset now.
-     */
-    public function empty(?array $empty, int $connections, int $now): array
-    {
-        if ($this->emptyResetMs === 0 || $connections > 0) {
-            return [null, false];
-        }
-        if ($empty === null) {
-            return [['since' => $now, 'done' => false], false];
-        }
-        if ($empty['done'] || $now - $empty['since'] < $this->emptyResetMs) {
-            return [$empty, false];
-        }
-
-        return [['since' => $empty['since'], 'done' => true], true];
-    }
 
     /**
      * @param AutoRecord|null $record Null right after switching on: everything counts from now.

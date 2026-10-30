@@ -99,7 +99,6 @@ final class RitualHarness
     public const AUTO_PAUSE = 4000;
     public const AUTO_DAWN = [300000, 600000];
     public const AUTO_DICE = 90000;
-    public const AUTO_EMPTY_RESET = 30000;
     public const ZOMBIE_BURN_MS = 5000;
     public const ZOMBIE_HEAL = 3;
     public const WORD_HINT_MS = 180000;
@@ -179,7 +178,6 @@ final class RitualHarness
      * @param int<0, max> $autoStall Milliseconds without the room's task before the autopilot moves with `force`.
      * @param int<0, max> $wordHintMs Milliseconds after the word opens that the owl hints at it; 0 — never.
      * @param int<0, max> $zombiePlayerMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
-     * @param int<0, max> $autoEmptyReset Milliseconds without a connection before the autopilot starts the story over.
      * @param LockInterface|null $meepLock The lock of the meep's cooldown; by default one that expires by {@see $clock}.
      */
     public function __construct(
@@ -204,7 +202,6 @@ final class RitualHarness
         int $wordHintMs = self::WORD_HINT_MS,
         int $zombiePlayerMs = self::ZOMBIE_PLAYER_MS,
         ?LockInterface $meepLock = null,
-        int $autoEmptyReset = self::AUTO_EMPTY_RESET,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -331,7 +328,7 @@ final class RitualHarness
         $this->autoStore = new AutoStore($this->storage, new Locks($this->lock));
         $this->autopilot = new AutopilotService(
             $this->autoStore,
-            new Autopilot($this->speech, self::AUTO_PAUSE, self::AUTO_DAWN[0], self::AUTO_DAWN[1], self::AUTO_DICE, $autoStall, new Randomizer(new Mt19937(13)), $autoEmptyReset),
+            new Autopilot($this->speech, self::AUTO_PAUSE, self::AUTO_DAWN[0], self::AUTO_DAWN[1], self::AUTO_DICE, $autoStall, new Randomizer(new Mt19937(13))),
             $this->owl,
             $this->store,
             $policy,
@@ -342,7 +339,6 @@ final class RitualHarness
             new NullLogger(),
             $this->bar,
             $this->dice,
-            $this->reset,
         );
         $this->snapshot = new SnapshotFactory($elements, $this->store, $policy, $bushes, $this->clock, $this->walkerStore, new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->reveal, $this->startTime = new StartTime(new ArrayStorage(), new Locks($this->lock), $this->clock), $this->bar, $this->cursed, $this->rapier, $this->dice, $this->top, $this->flyers, $this->limits, $this->presenceStore, self::EMOTES, $this->autopilot);
     }
