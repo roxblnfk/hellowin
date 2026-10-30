@@ -24,6 +24,7 @@ final readonly class ActionStop
     public const STRIKE = 'strike';
     public const DRINK = 'drink';
     public const DICE = 'dice';
+    public const PUMPKIN = 'pumpkin';
 
     public function __construct(
         private WalkerStore $walkers,

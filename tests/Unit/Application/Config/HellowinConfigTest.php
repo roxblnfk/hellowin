@@ -471,11 +471,11 @@ final class HellowinConfigTest
     {
         $config = new HellowinConfig();
         Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [100, 10000, 3]);
-        Assert::same($config->getAbilityCooldowns(), ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000]);
+        Assert::same($config->getAbilityCooldowns(), ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000, 'lightning' => 5000, 'pumpkin' => 1000]);
 
-        $config = new HellowinConfig(['ability' => ['fart_flyers' => '5', 'owl_gap_ms' => '0', 'flyers_count' => '2', 'flyers_cooldown_ms' => '0', 'fart_cooldown_ms' => '7', 'meep_cooldown_ms' => '8']]);
+        $config = new HellowinConfig(['ability' => ['fart_flyers' => '5', 'owl_gap_ms' => '0', 'flyers_count' => '2', 'flyers_cooldown_ms' => '0', 'fart_cooldown_ms' => '7', 'meep_cooldown_ms' => '8', 'lightning_cooldown_ms' => '9', 'pumpkin_cooldown_ms' => '0']]);
         Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [5, 0, 2]);
-        Assert::same($config->getAbilityCooldowns(), ['flyers' => 0, 'fart' => 7, 'meep' => 8]);
+        Assert::same($config->getAbilityCooldowns(), ['flyers' => 0, 'fart' => 7, 'meep' => 8, 'lightning' => 9, 'pumpkin' => 0]);
     }
 
     public function rejectsAZeroFlyersThreshold(): never

@@ -20,7 +20,7 @@ final readonly class Player
      * @param int<0, max> $drinks Mugs drunk in the bar and in the cursed world.
      * @param int<0, max> $damage Strikes of the rapier at FrankenPHP.
      * @param int<0, max> $rolls New throws of the dice.
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability Not a counter: zeroing the statistics keeps it.
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability Not a counter: zeroing the statistics keeps it.
      */
     public function __construct(
         public string $id,
@@ -111,7 +111,7 @@ final readonly class Player
     }
 
     /**
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability Null takes the ability away.
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability Null takes the ability away.
      */
     public function withAbility(?string $ability): self
     {
@@ -119,7 +119,7 @@ final readonly class Player
     }
 
     /**
-     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>, rolls: int<0, max>, ability: Ability::FLYERS|Ability::FART|Ability::MEEP|null}
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>, rolls: int<0, max>, ability: Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null}
      */
     public function toArray(): array
     {

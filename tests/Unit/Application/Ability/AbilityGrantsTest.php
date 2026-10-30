@@ -181,6 +181,19 @@ final class AbilityGrantsTest
         Assert::equals($ritual->counters()['hellowin_abilities_granted_total{flyers,moderator}'] ?? null, 1);
     }
 
+    #[DataSet([Ability::LIGHTNING], 'lightning')]
+    #[DataSet([Ability::PUMPKIN], 'pumpkin')]
+    public function moderatorGivesTheSecondSetToo(string $ability): void
+    {
+        $ritual = self::lawn();
+
+        Assert::same($ritual->abilityGrants->grant(self::JACK, $ability), $ability);
+
+        Assert::same($ritual->playerStore->find(self::JACK)?->ability, $ability);
+        Assert::same($ritual->walkerStore->all()[self::JACK]->ability, $ability);
+        Assert::same(\array_column($ritual->broadcast->ofType('ability'), 'ability'), [$ability]);
+    }
+
     public function moderatorNamesNoPlayerWithoutARecord(): never
     {
         $ritual = new RitualHarness();

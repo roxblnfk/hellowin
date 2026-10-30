@@ -18,10 +18,16 @@ final class Ability
     /** «Мип-мип!» in RoadRunner's voice over the character. */
     public const MEEP = 'meep';
 
-    public const ALL = [self::FLYERS, self::FART, self::MEEP];
+    /** A bolt from the character at the flyer the client names: a shot of the player's. */
+    public const LIGHTNING = 'lightning';
+
+    /** The character turns into a pumpkin until it walks again. */
+    public const PUMPKIN = 'pumpkin';
+
+    public const ALL = [self::FLYERS, self::FART, self::MEEP, self::LIGHTNING, self::PUMPKIN];
 
     /**
-     * @psalm-assert-if-true self::FLYERS|self::FART|self::MEEP $value
+     * @psalm-assert-if-true self::FLYERS|self::FART|self::MEEP|self::LIGHTNING|self::PUMPKIN $value
      */
     public static function isValid(mixed $value): bool
     {
@@ -29,7 +35,7 @@ final class Ability
     }
 
     /**
-     * @return self::FLYERS|self::FART|self::MEEP|null
+     * @return self::FLYERS|self::FART|self::MEEP|self::LIGHTNING|self::PUMPKIN|null
      */
     public static function fromValue(mixed $value): ?string
     {

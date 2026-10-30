@@ -198,7 +198,7 @@ final readonly class RPCService implements ServiceInterface
             'emote' => $this->emote($request->getData(), $player),
             'chat.history' => ['ok' => true] + $this->chatService()->history(),
             'chat.mute' => ['ok' => true, 'muted' => $this->chatService()->mute($request->getData()['player'] ?? null, $request->getData()['on'] ?? null)],
-            'ability' => $player === null ? self::fail('anonymous') : ['ok' => true] + ($this->abilities ?? throw new StoryRefusedException('no ability'))->use($player),
+            'ability' => $player === null ? self::fail('anonymous') : ['ok' => true] + ($this->abilities ?? throw new StoryRefusedException('no ability'))->use($player, $request->getData()['flyer'] ?? null),
             'ability.grant' => $this->grant($request->getData()),
             'stats.reset' => ['ok' => true, 'players' => ($this->stats ?? throw new StoryRefusedException('not now'))->reset()],
             'me' => [

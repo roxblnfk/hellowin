@@ -190,7 +190,7 @@ final class AbilityServiceTest
     /**
      * Jack standing on the lawn of scene 0 with the ability; the events of getting there are cleared.
      *
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability
      * @param non-empty-list<list<non-empty-string>>|null $kinds Flyer kinds by scene.
      */
     private static function lawn(?string $ability, ?array $kinds = null): RitualHarness

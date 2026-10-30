@@ -59,7 +59,7 @@ final readonly class AbilityGrants
      *
      * @param non-empty-string $id
      * @param array{int, int, int} $dice
-     * @return Ability::FLYERS|Ability::FART|Ability::MEEP|null The ability granted; null — none.
+     * @return Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null The ability granted; null — none.
      */
     public function rolled(int $round, string $id, array $dice): ?string
     {
@@ -111,7 +111,7 @@ final readonly class AbilityGrants
     /**
      * The moderator gives an ability or takes it away; the ability the player has already changes nothing.
      *
-     * @return Ability::FLYERS|Ability::FART|Ability::MEEP|null
+     * @return Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null
      * @throws StoryRefusedException `invalid ability`, `no target` — the player has no record.
      * @throws LockBusyException
      */

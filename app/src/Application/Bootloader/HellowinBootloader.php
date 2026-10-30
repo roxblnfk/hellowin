@@ -299,6 +299,7 @@ final class HellowinBootloader extends Bootloader
                 Clock $clock,
                 CacheStorageProviderInterface $cache,
                 LockInterface $lock,
+                ActionStop $stops,
             ): AbilityService => new AbilityService(
                 $walkers,
                 $players,
@@ -311,6 +312,7 @@ final class HellowinBootloader extends Bootloader
                 new Locks($lock, ttl: 1.0, wait: 0.5),
                 $config->getAbilityCooldowns(),
                 $config->getAbilityFlyersCount(),
+                $stops,
             ),
             DiceStore::class => static fn(
                 HellowinConfig $config,

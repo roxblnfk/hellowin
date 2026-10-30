@@ -1304,6 +1304,33 @@ final class RPCServiceTest
         Assert::same($ritual->tally->count(EveningTally::CALLS), 7);
     }
 
+    public function lightningTakesItsFlyerFromTheCall(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'lightning'], moderator: true);
+        $flyer = $ritual->flyers->launch($ritual->clock->now) ?? Assert::fail('A flyer is up.');
+
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER), ['ok' => false, 'error' => 'no target']);
+        Assert::same(
+            $this->call($ritual, 'ability', ['flyer' => $flyer->id], self::PLAYER),
+            ['ok' => true, 'ability' => 'lightning', 'readyAt' => 1_760_900_006_500, 'hit' => true],
+        );
+    }
+
+    public function pumpkinAnswersItsNumber(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        $this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'pumpkin'], moderator: true);
+
+        $answer = $this->call($ritual, 'ability', [], self::PLAYER);
+
+        Assert::same(\array_keys($answer), ['ok', 'ability', 'readyAt', 'n']);
+        Assert::same($this->call($ritual, 'state', [])['state']['walkers'][0]['pumpkin'] ?? null, $answer['n']);
+    }
+
     public function abilityTakesATokenOfTheOtherBucket(): void
     {
         $ritual = new RitualHarness();

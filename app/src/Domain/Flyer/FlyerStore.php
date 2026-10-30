@@ -146,6 +146,47 @@ final readonly class FlyerStore
     }
 
     /**
+     * A bolt at the flyer: hits as {@see shoot()} does, and tells a flyer still in the sky by its flight — one shot
+     * already, or an elephant — from one that is not there to aim at. A shot flyer is known by the index alone, which
+     * keeps it till the sweep; a shot wanderer leaves the index at once and is not there.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return Strike|null Null when no such flyer is in the sky now.
+     * @throws LockBusyException
+     */
+    public function strike(string $id, int $now): ?Strike
+    {
+        if (!Flyer::isId($id)) {
+            return null;
+        }
+
+        $strike = $this->locks->run([self::LOCK_FLYER . $id], function () use ($id, $now): ?Strike {
+            $flyer = Flyer::fromArray($this->storage->get(self::KEY_FLYER . $id));
+            if ($flyer === null) {
+                $expiresAt = $this->index()[$id] ?? null;
+
+                return $expiresAt !== null && $now - self::LATENCY < $expiresAt ? new Strike(null) : null;
+            }
+            if (!$flyer->flyingAt($now - self::LATENCY)) {
+                return null;
+            }
+            if (!$flyer->downable()) {
+                return new Strike(null);
+            }
+
+            $this->storage->delete(self::KEY_FLYER . $id);
+
+            return new Strike($flyer);
+        });
+
+        $hit = $strike?->hit;
+        // The sweep never takes a wanderer off the index, so the bolt does
+        $hit !== null && $hit->wander and $this->unindex([$hit->id]);
+
+        return $strike;
+    }
+
+    /**
      * Takes every flyer that has left the screen off the index.
      *
      * @param int $now Unix time in milliseconds.

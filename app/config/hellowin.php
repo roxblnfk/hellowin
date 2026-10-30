@@ -127,6 +127,8 @@ return [
         'flyers_cooldown_ms' => env('HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS', 3000),
         'fart_cooldown_ms' => env('HELLOWIN_ABILITY_FART_COOLDOWN_MS', 1000),
         'meep_cooldown_ms' => env('HELLOWIN_ABILITY_MEEP_COOLDOWN_MS', 1000),
+        'lightning_cooldown_ms' => env('HELLOWIN_ABILITY_LIGHTNING_COOLDOWN_MS', 5000),
+        'pumpkin_cooldown_ms' => env('HELLOWIN_ABILITY_PUMPKIN_COOLDOWN_MS', 1000),
     ],
 
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token

@@ -147,7 +147,27 @@ final readonly class WalkService
             /** @param array<non-empty-string, Walker> $walkers */
             static function (array $walkers) use ($now): array {
                 foreach ($walkers as $id => $walker) {
-                    $walker->zombie() and $walkers[$id] = $walker->walking(Walk::standing(self::rounded($walker->walk->positionAt($now)), $now))->cured();
+                    $walker->zombie() and $walkers[$id] = $walker->placed(Walk::standing(self::rounded($walker->walk->positionAt($now)), $now))->cured();
+                }
+
+                return [$walkers, null];
+            },
+        );
+    }
+
+    /**
+     * The round starts over where the characters stand: none stays a pumpkin. A reset into the bar needs none of it,
+     * {@see relocate()} walks every character anew.
+     *
+     * @throws LockBusyException
+     */
+    public function unmask(): void
+    {
+        $this->store->update(
+            /** @param array<non-empty-string, Walker> $walkers */
+            static function (array $walkers): array {
+                foreach ($walkers as $id => $walker) {
+                    $walker->pumpkin === null or $walkers[$id] = $walker->unmasked();
                 }
 
                 return [$walkers, null];

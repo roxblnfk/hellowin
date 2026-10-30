@@ -6,6 +6,7 @@ namespace Tests\Unit\Domain\Walk;
 
 use App\Domain\Flyer\Point;
 use App\Domain\Player\Look;
+use App\Domain\Walk\Clink;
 use App\Domain\Walk\Walk;
 use App\Domain\Walk\Walker;
 use Testo\Assert;
@@ -55,6 +56,57 @@ final class WalkerTest
         Assert::same($mug->toRecord()['item'] ?? null, 'mug');
         Assert::same($read?->item, Walker::MUG);
         Assert::same($read->toArray($read->item)['item'], 'mug');
+    }
+
+    public function everyNewWalkTurnsThePumpkinBack(): void
+    {
+        $pumpkin = self::walker()->disguised(7);
+        $walk = Walk::standing(new Point(30, 80), 100);
+        $clink = new Clink(Clink::WALKER, 'bbbbbbbbbbbbbbbb', 900);
+        $going = self::walker()->walking(Walk::along([new Point(20, 90), new Point(60, 90)], 0, 10.0));
+
+        $walks = [
+            'move' => $pumpkin->walking($walk),
+            'clink' => $pumpkin->clinking($walk, $clink),
+            'counter' => $pumpkin->taking($walk, 900),
+            'beer' => $pumpkin->taking($walk, 900, 'pumpkin-1'),
+            'shamble' => $pumpkin->zombified(0, 50)->shambling($walk, 2000),
+            'stop' => $going->disguised(7)->stoppedAt(1000),
+        ];
+
+        foreach ($walks as $kind => $walker) {
+            Assert::null($walker?->pumpkin, $kind);
+        }
+        Assert::same($pumpkin->toArray()['pumpkin'] ?? null, 7);
+        Assert::false(\array_key_exists('pumpkin', $pumpkin->walking($walk)->toArray()));
+    }
+
+    public function pumpkinStaysWhereNoWalkBegins(): void
+    {
+        $pumpkin = self::walker()->disguised(7);
+        $look = $pumpkin->look;
+
+        $kept = [
+            'seen' => $pumpkin->seen(500),
+            'dressed' => $pumpkin->dressed('Jack', $look, null),
+            'zombified' => $pumpkin->zombified(0, 50),
+            'placed' => $pumpkin->placed(Walk::standing(new Point(30, 80), 100)),
+            'drank' => $pumpkin->tookMug(true)->drank(1200),
+            'standing' => $pumpkin->stoppedAt(1000) ?? $pumpkin,
+        ];
+
+        foreach ($kept as $kind => $walker) {
+            Assert::same($walker->pumpkin, 7, $kind);
+        }
+        Assert::null($pumpkin->unmasked()->pumpkin);
+    }
+
+    public function pumpkinSurvivesTheRecord(): void
+    {
+        $read = Walker::fromArray(self::ID, self::walker()->disguised(0)->toRecord());
+
+        Assert::same($read?->pumpkin, 0);
+        Assert::null(Walker::fromArray(self::ID, ['pumpkin' => -1] + self::walker()->toRecord())?->pumpkin);
     }
 
     private static function walker(): Walker

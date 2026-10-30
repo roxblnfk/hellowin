@@ -50,7 +50,9 @@ final readonly class Walker
      * @param int|null $busyUntil Unix time in milliseconds until which the hands are busy: a sip plays, or a pumpkin
      *        is still handing a mug over; no mug is taken or drunk before it.
      * @param int|null $zombieUntil Unix time in milliseconds a zombie turns human by itself; null — only a cure does.
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability The player's, copied like the name and the look.
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability The player's, copied like the name and the look.
+     * @param int<0, max>|null $pumpkin The pumpkin the player turned the character into, a number the client picks its
+     *        look by; any new walk turns it back.
      */
     public function __construct(
         public string $id,
@@ -69,6 +71,7 @@ final readonly class Walker
         public ?int $busyUntil = null,
         public ?int $zombieUntil = null,
         public ?string $ability = null,
+        public ?int $pumpkin = null,
     ) {}
 
     public static function fromArray(mixed $id, mixed $value): ?self
@@ -101,6 +104,8 @@ final readonly class Walker
         $busyUntil = $value['busyUntil'] ?? null;
         /** @var mixed $zombieUntil */
         $zombieUntil = $value['zombieUntil'] ?? null;
+        /** @var mixed $pumpkin */
+        $pumpkin = $value['pumpkin'] ?? null;
 
         return $look !== null && $walk !== null && \is_int($seenAt)
             ? new self(
@@ -120,6 +125,7 @@ final readonly class Walker
                 \is_int($busyUntil) ? $busyUntil : null,
                 \is_int($zombieAt) && \is_int($zombieUntil) ? $zombieUntil : null,
                 Ability::fromValue($value['ability'] ?? null),
+                \is_int($pumpkin) && $pumpkin >= 0 ? $pumpkin : null,
             )
             : null;
     }
@@ -262,7 +268,33 @@ final readonly class Walker
      */
     public function zombified(int $now, int $next, ?int $until = null): self
     {
-        return $this->with(walk: Walk::standing($this->walk->positionAt($now), $now), clink: null, takeAt: null, zombieAt: $next, zombieUntil: $until);
+        return $this->with(walk: Walk::standing($this->walk->positionAt($now), $now), clink: null, takeAt: null, zombieAt: $next, zombieUntil: $until, pumpkin: $this->pumpkin);
+    }
+
+    /**
+     * Stands where the server puts it with no `move` sent: no client sees a new walk, so a pumpkin stays one.
+     */
+    public function placed(Walk $walk): self
+    {
+        return $this->with(walk: $walk, clink: null, takeAt: null, pumpkin: $this->pumpkin);
+    }
+
+    /**
+     * The player turned the character into a pumpkin: it stays one until it walks again.
+     *
+     * @param int<0, max> $pumpkin The client picks the pumpkin's look by it.
+     */
+    public function disguised(int $pumpkin): self
+    {
+        return $this->with(pumpkin: $pumpkin);
+    }
+
+    /**
+     * Itself again, where it stands: the round starts over.
+     */
+    public function unmasked(): self
+    {
+        return $this->with(pumpkin: null);
     }
 
     /**
@@ -351,15 +383,15 @@ final readonly class Walker
 
     /**
      * @param non-empty-string|null $name
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability
      */
     public function dressed(?string $name, Look $look, ?string $ability): self
     {
-        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt, $this->clinkedUntil, $this->busyUntil, $this->zombieUntil, $ability);
+        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt, $this->clinkedUntil, $this->busyUntil, $this->zombieUntil, $ability, $this->pumpkin);
     }
 
     /**
-     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|Ability::LIGHTNING|Ability::PUMPKIN|null $ability
      */
     public function withAbility(?string $ability): self
     {
@@ -379,7 +411,7 @@ final readonly class Walker
      *
      * @param non-empty-string|null $item What the character holds: the item of the scene and finale step, or in the
      *        bar and the cursed world its own ({@see $item}).
-     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, item: non-empty-string|null, walk: array, clink?: array, zombie?: true, zombieUntil?: int, ability?: non-empty-string}
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, item: non-empty-string|null, walk: array, clink?: array, zombie?: true, zombieUntil?: int, ability?: non-empty-string, pumpkin?: int<0, max>}
      */
     public function toArray(?string $item = null): array
     {
@@ -394,12 +426,13 @@ final readonly class Walker
         $this->zombie() and $data['zombie'] = true;
         $this->zombie() && $this->zombieUntil !== null and $data['zombieUntil'] = $this->zombieUntil;
         $this->ability === null or $data['ability'] = $this->ability;
+        $this->pumpkin === null or $data['pumpkin'] = $this->pumpkin;
 
         return $data;
     }
 
     /**
-     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int, clinkedUntil?: int, busyUntil?: int, zombieUntil?: int, ability?: non-empty-string}
+     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int, clinkedUntil?: int, busyUntil?: int, zombieUntil?: int, ability?: non-empty-string, pumpkin?: int<0, max>}
      */
     public function toRecord(): array
     {
@@ -420,15 +453,18 @@ final readonly class Walker
         $this->busyUntil === null or $record['busyUntil'] = $this->busyUntil;
         $this->zombieUntil === null or $record['zombieUntil'] = $this->zombieUntil;
         $this->ability === null or $record['ability'] = $this->ability;
+        $this->pumpkin === null or $record['pumpkin'] = $this->pumpkin;
 
         return $record;
     }
 
     /**
-     * A copy with the given fields changed; a field left out keeps its value, `takeFrom` goes with `takeAt`.
+     * A copy with the given fields changed; a field left out keeps its value, `takeFrom` goes with `takeAt`, and a new
+     * `walk` turns a pumpkin back unless `pumpkin` is given.
      *
      * @param self::BEER|self::MUG|self::RAPIER|null|false $item False keeps the item.
      * @param non-empty-string|null $takeFrom
+     * @param int<0, max>|null|false $pumpkin
      */
     private function with(
         ?Walk $walk = null,
@@ -443,6 +479,7 @@ final readonly class Walker
         int|false|null $clinkedUntil = false,
         int|false|null $busyUntil = false,
         int|false|null $zombieUntil = false,
+        int|false|null $pumpkin = false,
     ): self {
         return new self(
             $this->id,
@@ -461,6 +498,8 @@ final readonly class Walker
             $busyUntil === false ? $this->busyUntil : $busyUntil,
             $zombieUntil === false ? $this->zombieUntil : $zombieUntil,
             $this->ability,
+            // Every new walk passes here: the client turns the pumpkin back on any `move` of the character
+            $pumpkin === false ? ($walk === null ? $this->pumpkin : null) : $pumpkin,
         );
     }
 }

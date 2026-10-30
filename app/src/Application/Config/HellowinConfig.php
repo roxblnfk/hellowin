@@ -71,7 +71,7 @@ final class HellowinConfig extends InjectableConfig
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'meep' => ['cooldown_ms' => 1500],
-        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000],
+        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000, 'lightning_cooldown_ms' => 5000, 'pumpkin_cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -526,8 +526,8 @@ final class HellowinConfig extends InjectableConfig
     }
 
     /**
-     * @return array{flyers: int<0, max>, fart: int<0, max>, meep: int<0, max>} Milliseconds between two uses of an
-     *         ability by one player, by ability.
+     * @return array{flyers: int<0, max>, fart: int<0, max>, meep: int<0, max>, lightning: int<0, max>, pumpkin: int<0, max>}
+     *         Milliseconds between two uses of an ability by one player, by ability.
      */
     public function getAbilityCooldowns(): array
     {
@@ -537,6 +537,8 @@ final class HellowinConfig extends InjectableConfig
             'flyers' => self::nonNegativeInt($ability['flyers_cooldown_ms'] ?? null, 'ability.flyers_cooldown_ms', 'HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS'),
             'fart' => self::nonNegativeInt($ability['fart_cooldown_ms'] ?? null, 'ability.fart_cooldown_ms', 'HELLOWIN_ABILITY_FART_COOLDOWN_MS'),
             'meep' => self::nonNegativeInt($ability['meep_cooldown_ms'] ?? null, 'ability.meep_cooldown_ms', 'HELLOWIN_ABILITY_MEEP_COOLDOWN_MS'),
+            'lightning' => self::nonNegativeInt($ability['lightning_cooldown_ms'] ?? null, 'ability.lightning_cooldown_ms', 'HELLOWIN_ABILITY_LIGHTNING_COOLDOWN_MS'),
+            'pumpkin' => self::nonNegativeInt($ability['pumpkin_cooldown_ms'] ?? null, 'ability.pumpkin_cooldown_ms', 'HELLOWIN_ABILITY_PUMPKIN_COOLDOWN_MS'),
         ];
     }
 

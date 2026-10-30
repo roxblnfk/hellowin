@@ -109,7 +109,7 @@ final class RitualHarness
     public const MEEP_COOLDOWN = 1500;
     public const ABILITY_OWL_GAP = 10000;
     public const ABILITY_FLOCK = 3;
-    public const ABILITY_COOLDOWNS = ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000];
+    public const ABILITY_COOLDOWNS = ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000, 'lightning' => 5000, 'pumpkin' => 1000];
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -309,7 +309,7 @@ final class RitualHarness
             $policy,
             $this->abilityGrants,
         );
-        $this->abilities = new AbilityService($this->walkerStore, $this->playerStore, $this->flyers, $this->store, $publisher, $this->playMetrics, $this->clock, new ArrayStorage(), new Locks($this->lock), self::ABILITY_COOLDOWNS, self::ABILITY_FLOCK);
+        $this->abilities = new AbilityService($this->walkerStore, $this->playerStore, $this->flyers, $this->store, $publisher, $this->playMetrics, $this->clock, new ArrayStorage(), new Locks($this->lock), self::ABILITY_COOLDOWNS, self::ABILITY_FLOCK, $this->stops, new Randomizer(new Mt19937(23)));
         $this->limitsStore = new LimitsStore($this->storage);
         $this->presenceStore = new PresenceStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);

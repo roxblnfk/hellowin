@@ -471,10 +471,12 @@ final readonly class ChannelPublisher
      * @param non-empty-string $player
      * @param non-empty-string $ability
      * @param int $at Unix time in milliseconds.
+     * @param array{flyer?: string, hit?: bool, n?: int<0, max>} $details The lightning's target and whether
+     *        it was hit, the pumpkin's number.
      */
-    public function power(int $round, string $player, string $ability, int $at): void
+    public function power(int $round, string $player, string $ability, int $at, array $details = []): void
     {
-        $this->publish(['type' => 'power', 'round' => $round, 'player' => ['id' => $player], 'ability' => $ability, 'at' => $at]);
+        $this->publish(['type' => 'power', 'round' => $round, 'player' => ['id' => $player], 'ability' => $ability, 'at' => $at] + $details);
     }
 
     /**

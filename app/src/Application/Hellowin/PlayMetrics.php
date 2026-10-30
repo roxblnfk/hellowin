@@ -132,7 +132,7 @@ final readonly class PlayMetrics
     }
 
     /**
-     * @param non-empty-string $ability One of the three: the labels stay a short list.
+     * @param non-empty-string $ability One of the abilities: the labels stay a short list.
      * @param non-empty-string $source
      */
     public function abilityGranted(string $ability, string $source): void

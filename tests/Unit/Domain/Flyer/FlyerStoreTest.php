@@ -8,6 +8,7 @@ use App\Domain\Flyer\Fart;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
+use App\Domain\Flyer\Strike;
 use App\Domain\Lock\LockBusyException;
 use App\Domain\Lock\Locks;
 use Spiral\Cache\Storage\ArrayStorage;
@@ -133,6 +134,54 @@ final class FlyerStoreTest
         Assert::contains($lock->waited, 'flyer:f-0000000a', 'the burn came while the shot was inside');
         Assert::count(\array_filter($taken), 1);
         Assert::blank($store->wanderers());
+    }
+
+    public function boltHitsAFlyerInTheSkyAndTellsAShotOneFromNone(): void
+    {
+        $store = self::store();
+        $store->add(self::flyer('f-00000001'));
+        $store->add(self::elephant('f-0000000e'));
+
+        $hit = $store->strike('f-00000001', 1_000);
+        $again = $store->strike('f-00000001', 1_001);
+        $elephant = $store->strike('f-0000000e', 1_000);
+
+        Assert::equals($hit?->hit, self::flyer('f-00000001'));
+        Assert::null($store->shoot('f-00000001', 1_002), 'down already');
+        Assert::notNull($again, 'shot first, the flyer is still a target');
+        Assert::null($again->hit);
+        Assert::notNull($elephant);
+        Assert::null($elephant->hit);
+        Assert::null($store->strike('f-00000001', 5_500), 'gone with its flight');
+        Assert::null($store->strike('f-0000ffff', 1_000));
+        Assert::null($store->strike('not-a-flyer', 1_000));
+    }
+
+    public function boltHitsAWandererAndTakesItOffTheLawn(): void
+    {
+        $store = self::store();
+        $store->add(Flyer::wanderer('f-0000000a', 1, new Point(50, 80), 2, 1_000));
+
+        Assert::notNull($store->strike('f-0000000a', 999_999)?->hit);
+        Assert::blank($store->wanderers());
+        Assert::null($store->strike('f-0000000a', 999_999));
+    }
+
+    #[RunInFiber]
+    public function boltAndShotAtOnceHitOnce(): void
+    {
+        $lock = new YieldingLock();
+        $store = new FlyerStore(new ArrayStorage(), new Locks($lock));
+        $store->add(self::flyer('f-00000001'));
+
+        [$strike, $shot] = Coroutine::concurrently(
+            static fn(): ?Strike => $store->strike('f-00000001', 1_000),
+            static fn(): ?Flyer => $store->shoot('f-00000001', 1_000),
+        );
+
+        Assert::contains($lock->waited, 'flyer:f-00000001', 'the shot came while the bolt was inside');
+        Assert::notNull($strike, 'the bolt found its flyer in the sky');
+        Assert::count(\array_filter([$strike->hit, $shot]), 1);
     }
 
     public function burnTakesAWandererOffTheLawnOnce(): void

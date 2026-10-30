@@ -96,13 +96,14 @@ final readonly class ResetService
     }
 
     /**
-     * Without the bar the characters stay where they are, but the curse is lifted from the zombies; a busy lawn keeps
-     * them as they were, and the next dawn or reset lifts it.
+     * Without the bar the characters stay where they are, but the curse is lifted from the zombies and the pumpkins
+     * turn back; a busy lawn keeps them as they were, and the next dawn or reset lifts it.
      */
     private function lift(): void
     {
         try {
             $this->walks?->cureAll();
+            $this->walks?->unmask();
         } catch (LockBusyException) {
         }
     }

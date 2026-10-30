@@ -19,6 +19,7 @@ use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
 use App\Domain\Flyer\Point;
+use App\Domain\Flyer\Strike;
 use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
@@ -270,6 +271,34 @@ final readonly class FlyerService
         $flyer = $this->store->shoot($flyerId, $now);
         $this->stops?->stop($player, ActionStop::SHOOT);
         $this->throwMug($player, $flyerId);
+
+        return $this->landed($flyerId, $flyer, $player, $now);
+    }
+
+    /**
+     * A bolt of the player's lightning at the flyer, under the same lock as a shot: of a bolt and a shot at once, one
+     * hits. Counted with {@see landed()}, once the bolt has been shown.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @return Strike|null Null when no such flyer is in the sky now.
+     * @throws LockBusyException
+     */
+    public function strike(string $flyerId, int $now): ?Strike
+    {
+        return $this->store->strike($flyerId, $now);
+    }
+
+    /**
+     * What a shot or a bolt brought: a hit counts for the player — points, the top, the reveal, the threshold
+     * ability — and a miss at an elephant makes it fart.
+     *
+     * @param Flyer|null $flyer The flyer brought down; null for a miss.
+     * @param non-empty-string|null $player
+     * @param int $now Unix time in milliseconds of the shot.
+     * @return int|null Points for a hit, null for a miss.
+     */
+    public function landed(string $flyerId, ?Flyer $flyer, ?string $player, int $now): ?int
+    {
         if ($flyer === null) {
             $this->fart($flyerId, $player, $now);
 
