@@ -271,6 +271,19 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         play('mug.shatter', { pan: panOf(x), volume: volumeOf(model, id), delay: Math.max(0, (impactAt - at) / 1000) });
     }
 
+    // Flyers a lightning struck lately (`power` with `flyer`), server time: their hit sounds without a shot.
+    const zapped = new Map();
+    const ZAPPED_MS = 1500;
+    function struckByLightning(id) {
+        const at = zapped.get(id);
+        if (at === undefined) return false;
+        if (serverNow() - at > ZAPPED_MS) {
+            zapped.delete(id);
+            return false;
+        }
+        return true;
+    }
+
     function shot(model, event) {
         const f = flyers.get(event.flyer);
         const at = serverNow();
@@ -285,8 +298,8 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
         if (f.kind === 'zombie') play(DEATH_SOUNDS[deathOf(event.flyer)] ?? 'flyer.fall', { pan, delay: delay + 0.05 });
         else play('flyer.fall', { pan, delay: delay + 0.05 });
         if (f.wander === true) flyers.delete(event.flyer);
-        // A thrown mug has no shot of its own: its burst is the sound.
-        if (mug && mug.player === id) return;
+        // A thrown mug has no shot of its own: its burst is the sound; nor has a lightning's.
+        if ((mug && mug.player === id) || struckByLightning(event.flyer)) return;
         const walker = id && model.walkers.find((w) => w.id === id);
         const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
         if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
@@ -456,6 +469,7 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             if (!(at - event.at < FART.staleMs)) return;
             const f = flyers.get(event.flyer);
             play('elephant.fart', { pan: panOf(f ? flyerX(f, at) : 50), delay: 0.08 });
+            if (struckByLightning(event.flyer)) return;
             const id = event.player?.id;
             const walker = id && model.walkers.find((w) => w.id === id);
             const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
@@ -469,9 +483,13 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             play('ability.grant', { pan: panOf(walkerX(model, grant.id)), volume: volumeOf(model, grant.id) });
         },
         // An ability used: the elephant's fart or RoadRunner's meep from the walker; the flyers sound as `flyer` events.
+        // The lightning: a crackling discharge with a short roll of thunder, from the walker; its flyer's `shot` (or the
+        // elephant's `fart`) then sounds without the striker's item, which did not fire.
         power(model, event) {
             const used = powerOf(event, serverNow());
-            const name = used && { fart: 'elephant.fart', meep: 'rr.meep' }[used.ability];
+            if (!used?.fresh) return;
+            if (used.flyer) zapped.set(used.flyer, serverNow());
+            const name = { fart: 'elephant.fart', meep: 'rr.meep', lightning: 'ability.zap' }[used.ability];
             if (name) play(name, { pan: panOf(walkerX(model, used.id)), volume: volumeOf(model, used.id) });
         },
         drink(model, event) {

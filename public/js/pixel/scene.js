@@ -25,7 +25,7 @@ import { BURN_END, HEAL_AT, ZBURN, ZOMBIE_SPARKS, burnBodyAt, burnDeadline, burn
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
-import { FART_SCALE, LAUNCH_COLORS, LAUNCH_SPARKS, MOTE_COLORS, MOTE_MS, pillarAt, pillarRing, pillarSprite } from './ability.js';
+import { FART_SCALE, LAUNCH_COLORS, LAUNCH_SPARKS, MOTE_COLORS, MOTE_MS, POOF_MS, ZAP, ZAP_COLORS, ZAP_VEIL, nearestFlyer, pillarAt, pillarRing, pillarSprite, pumpkinKind } from './ability.js';
 import { ELEPHANT, FART, PUFFS as FART_PUFFS, addFart, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
@@ -3172,6 +3172,8 @@ export async function createScene(rootEl, snapshot) {
         strike: ITEM_SHOT_MS,
         drink: DRINK_MS,
         dice: ROLL_SHOW_MS,
+        // A pumpkin stands where it was drawn until its next path: it does not slide over to the server's point.
+        pumpkin: Infinity,
     })[stop] ?? 0;
 
     function halt(w, walk, stop) {
@@ -3262,8 +3264,8 @@ export async function createScene(rootEl, snapshot) {
     function setWalker(data) {
         const old = walkers.get(data.id);
         // `clink` (heading to a clink by click) comes with the walker or not at all.
-        // `zombie` likewise: a cured walker comes without it.
-        const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, zombie: data.zombie === true, seed: seedOf(data.id) };
+        // `zombie` likewise: a cured walker comes without it; `pumpkin` too (protocol.md, «Молния и тыква»).
+        const w = { shoot: null, ...old, ...data, clink: data.clink ?? null, zombie: data.zombie === true, pumpkin: Number.isInteger(data.pumpkin) ? data.pumpkin : null, seed: seedOf(data.id) };
         if (!old || data.walk !== old.walk) {
             w.halt = null;
             retrack(w, w.walk);
@@ -3332,6 +3334,11 @@ export async function createScene(rootEl, snapshot) {
             const s = walkAt(w.track, clock);
             w.drawn = s.at;
             const at = walkerArt(s.at);
+            if (w.pumpkin !== null && w.pumpkin !== undefined) {
+                drawPumpkinWalker(w, at);
+                continue;
+            }
+            w.label.visible = true;
             const clink = clinking.of.get(w.id);
             w.clinking = Boolean(clink);
             let view;
@@ -4197,6 +4204,8 @@ export async function createScene(rootEl, snapshot) {
     function walkerShot(event) {
         const w = walkers.get(event.player?.id);
         if (!w || !w.sprite || w.zombie) return;
+        // The lightning's own hit (or the elephant's fart): the walker already struck it with the lightning.
+        if (w.shoot?.zap && w.shoot.flyer === event.flyer && clock < w.shoot.until) return;
         if (walkAt(w.track, clock).moving) return;
         const f = flyers.get(event.flyer);
         const me = walkerArt(walkAt(w.track, clock).at);
@@ -4628,6 +4637,130 @@ export async function createScene(rootEl, snapshot) {
             }
             return true;
         });
+    }
+
+    /*
+     * A player turned pumpkin (protocol.md, «Молния и тыква»): one of the patch's pumpkins (pumpkinKind) stands on the
+     * walker's foot, lit where it stands, with nothing of the walker — no item, light or rim. The name hides: the joke
+     * is the disguise; it shows over the pumpkin under the pointer (a tap shows it for a moment), and over mine always.
+     * Bubbles and emotes keep to the label's place as over any walker.
+     */
+    let hovered = null;
+    let hoverUntil = 0;
+    const HOVER_TAP_MS = 2000;
+    rootEl.addEventListener('pointermove', (event) => {
+        if (event.pointerType !== 'touch') hovered = walkerHit(event.clientX, event.clientY);
+    });
+    rootEl.addEventListener('pointerleave', () => (hovered = null));
+    rootEl.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'touch') return;
+        hovered = walkerHit(event.clientX, event.clientY);
+        hoverUntil = clock + HOVER_TAP_MS;
+    });
+    // Over the pumpkin's top, CSS px, like the name over a head.
+    const PUMPKIN_LABEL_GAP = 2;
+
+    function drawPumpkinWalker(w, at) {
+        const { stage, size, seed } = pumpkinKind(w.pumpkin);
+        const def = pumpkinSprite(stage, size, seed);
+        const x = Math.round(at.x);
+        const y = Math.round(at.y);
+        w.shoot = null;
+        w.sprite.texture = defTexture(def, lightAt(at.x, at.y));
+        w.sprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+        w.sprite.scale.x = 1;
+        w.sprite.position.set(x, y);
+        w.sprite.zIndex = depthKey(at.x, at.y);
+        for (const key of ['glow', 'lights', 'halo', 'flash', 'rim', 'ghost']) if (w[key]) w[key].visible = false;
+        if (hovered !== null && hoverUntil > 0 && clock > hoverUntil) {
+            hovered = null;
+            hoverUntil = 0;
+        }
+        w.label.visible = w.id === meId || w.id === hovered;
+        const half = w.label.width / 2 + 2;
+        w.label.position.set(Math.round(clamp(x * layout.cssPx, half, layout.width - half)), Math.round((y - def.h) * layout.cssPx - PUMPKIN_LABEL_GAP));
+    }
+
+    // The puff a walker turns into a pumpkin or back in: smoke blown out all round from its middle, a pop of light.
+    function poof(w) {
+        if (!w?.sprite) return;
+        const { x, y } = w.sprite.position;
+        const at = { x, y: y - 10 };
+        spawn([defTexture(SHOT_FX.pop)], at.x - 2, at.y - 2, 0, 0, 0, 0.15);
+        const n = reduced ? 1 : 8;
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + between(0, 0.4);
+            puff({ x: at.x + Math.cos(a) * 4, y: at.y + Math.sin(a) * 3 }, [Math.cos(a), Math.sin(a) * 0.6], true);
+            // A gun's smoke lingers; a magic puff is over in a blink.
+            const p = particles[particles.length - 1];
+            p.life = Math.min(p.life, POOF_MS / 1000 + between(0, 0.2));
+        }
+    }
+
+    /** The live flyer nearest to walker `id` as drawn now (the one a lightning strikes), or null with none on screen. */
+    function nearestTo(id) {
+        const w = walkers.get(id);
+        if (!w?.sprite) return null;
+        const from = { x: w.sprite.x, y: w.sprite.y - 20 };
+        const live = [...flyers].filter(([, f]) => f.shotAt === null && f.sinkAt === null && !f.burn && f.art).map(([fid, f]) => ({ id: fid, ...flyerMid(f) }));
+        return nearestFlyer(from, live, { w: layout.artW, h: layout.artH });
+    }
+
+    /*
+     * A player's lightning (protocol.md, «Молния и тыква»): the walker turns to its flyer and raises its hand, and a
+     * jagged white-blue bolt — the finale's lightning in small, FX.chain's shape in its colours — runs from the hand to
+     * the flyer where it is drawn; three shapes flicker, it thins out by ZAP.end, the screen flashes softly and sparks
+     * fly off where it strikes. A miss (`hit: false`, the flyer shot by someone else first) strikes beside it, or into
+     * the air when the flyer is gone. The fall comes as `shot`.
+     */
+    function zap(w, flyerId, hit) {
+        if (!w?.sprite) return;
+        const f = flyers.get(flyerId);
+        const s = walkAt(w.track, clock);
+        const me = walkerArt(s.at);
+        const mid = f?.art ? flyerMid(f) : null;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const target = mid ? (hit ? mid : { x: mid.x + side * between(8, 14), y: mid.y + between(-8, 8) }) : { x: me.x + side * 40, y: me.y - 70 };
+        let from = { x: me.x, y: me.y - 14 };
+        if (w.pumpkin === null || w.pumpkin === undefined) {
+            const [dir, flip] = shotFacing(target.x - me.x, target.y - me.y);
+            const view = { dir, flip, pose: 'shoot', frame: 0, item: null };
+            from = framePoint(characterFrame(w.look, view).muzzle, Math.round(me.x), Math.round(me.y), flip);
+            if (!s.moving) w.shoot = { dir, flip, item: null, zap: true, flyer: flyerId, target, at: clock, until: clock + ITEM_SHOT_MS, sparked: true, puffs: Infinity, fired: Infinity };
+        }
+        const seed = Math.floor(Math.random() * 1e9);
+        const shapes = [0, 1, 2].map((i) => FX.chain(from, target, seed + i));
+        const g = new Graphics();
+        particleLayer.addChild(g);
+        let shown = -1;
+        const tick = (q) => {
+            const ms = q.age * 1000;
+            const k = reduced ? 0 : Math.min(3, Math.floor(ms / ZAP.frame));
+            const fadeStep = k < 3 ? 0 : 1 + Math.floor((ms - 3 * ZAP.frame) / ZAP.frame);
+            const key = k * 10 + fadeStep;
+            if (key === shown) return;
+            shown = key;
+            g.clear();
+            const { core, edge } = shapes[Math.min(2, k)];
+            const keep = (i) => fadeStep === 0 || i % (fadeStep + 1) === 0;
+            // Fresh, it is two pixels thick (the core over its glow a pixel lower), so it reads in daylight too.
+            if (k < 3) {
+                for (const [x, y] of edge) g.rect(x, y, 1, 1);
+                g.fill(PALETTE[ZAP_COLORS[2]]);
+                for (const [x, y] of core) g.rect(x, y + 1, 1, 1);
+                g.fill(PALETTE[ZAP_COLORS[1]]);
+            }
+            core.forEach(([x, y], i) => keep(i) && g.rect(x, y, 1, 1));
+            g.fill(PALETTE[k < 3 ? ZAP_COLORS[0] : ZAP_COLORS[1]]);
+        };
+        particles.push({ sprite: g, x: 0, y: 0, vx: 0, vy: 0, gravity: 0, life: reduced ? 0.2 : ZAP.end / 1000, age: 0, tick });
+        if (reduced) return;
+        veilStart = clock;
+        veilFrames = ZAP_VEIL;
+        for (let i = 0; i < (hit ? 8 : 4); i++) {
+            const a = (i / 8) * Math.PI * 2 + between(0, 0.7);
+            ember(Math.round(target.x), Math.round(target.y), Math.cos(a) * between(20, 50), Math.sin(a) * between(20, 50) - 10, 50, between(0.25, 0.45), 0, ['white', ...ZAP_COLORS]);
+        }
     }
 
     // A launch of flyers: cool sparks thrown up from the walker's hands; the flyers themselves come as `flyer` events.
@@ -5085,12 +5218,31 @@ export async function createScene(rootEl, snapshot) {
          * Channel event `power` {id, ability, at}: `fart` — Fart Time out from behind the walker, `meep` — a «Мип-мип!»
          * bubble over it, `flyers` — sparks thrown up from it. No such walker — nothing.
          */
-        power({ id, ability, at }) {
+        power({ id, ability, at, flyer = null, hit = false }) {
             const w = walkers.get(id);
             if (!w) return;
             if (ability === 'fart') playerFarts.push({ id, at, sprites: {} });
             else if (ability === 'meep') says.set(id, { text: MEEP, until: at + POWER_MEEP_MS });
             else if (ability === 'flyers') launchSparks(w);
+            else if (ability === 'lightning') zap(w, flyer, hit);
+        },
+
+        /**
+         * Walker `id` turned pumpkin number `n` (`power` with `pumpkin`), or back (null: its `move`); `puff` — with
+         * the puff of smoke (a late event, a snapshot — without).
+         */
+        disguise(id, n, puff = false) {
+            const w = walkers.get(id);
+            if (!w) return;
+            const next = Number.isInteger(n) ? n : null;
+            if (next === w.pumpkin) return;
+            w.pumpkin = next;
+            if (puff) poof(w);
+        },
+
+        /** The live flyer nearest to walker `id` as drawn now — a lightning's target — or null with none on screen. */
+        nearestFlyer(id) {
+            return nearestTo(id);
         },
 
         /** Channel event `leave`: the player has no connections left. */

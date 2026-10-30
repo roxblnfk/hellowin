@@ -317,7 +317,8 @@ export function readSnapshot(root) {
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  * @param {((attempt: number) => Promise<object|undefined>)|null} [options.roll]  RPC `roll {attempt}`, resolving with the reply
  * @param {(event: object) => void} [options.onSay]  after a `say` event (the moderator's chat log)
- * @param {(() => Promise<object|undefined>)|null} [options.ability]  RPC `ability {}`, resolving with the reply
+ * @param {((params: object) => Promise<object|undefined>)|null} [options.ability]  RPC `ability` (`{}`, the lightning's
+ *   `{flyer}`), resolving with the reply
  * @param {(fn: Function, ms: number) => unknown} [options.later]  setTimeout (the lab's frozen clock passes its own)
  */
 export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {}, ability = null, later = (fn, ms) => setTimeout(fn, ms) }) {
@@ -379,7 +380,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     const mug = { clinkUntil: 0, drinkUntil: 0, handUntil: 0, pending: 0 };
     // My ability's cooldown as the last reply told it (`readyAt`, server clock, for that ability), my RPC in flight, my
     // last press (client clock: ABILITY_GAP_MS), and the timer that brings the button back at `readyAt`.
-    const power = { readyAt: 0, readyFor: null, pending: false, pressedAt: -Infinity, timer: null };
+    const power = { readyAt: 0, readyFor: null, pending: false, pressedAt: -Infinity, timer: null, poll: null };
     let mugTimer = null;
     const mugFree = () => Math.max(mug.clinkUntil, mug.drinkUntil, mug.handUntil);
     function mugBusy() {
@@ -698,6 +699,13 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         clearTimeout(power.timer);
         const left = power.readyFor === model.ability ? power.readyAt - (now() + offset) : 0;
         if (!state.hidden && left > 0) power.timer = setTimeout(paintAbility, left + 20);
+        // The lightning's button follows the flyers on screen, which come and go without an event of their own.
+        const watch = !state.hidden && model.ability === 'lightning';
+        if (watch && power.poll === null) power.poll = setInterval(paintAbility, TARGET_POLL_MS);
+        if (!watch && power.poll !== null) {
+            clearInterval(power.poll);
+            power.poll = null;
+        }
     }
 
     function paintAll() {
@@ -897,6 +905,12 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             else delete w.clink;
             // `stop`: an action stopped it; the action's own event follows.
             scene?.move(w.id, w.walk, w.clink ?? null, event.stop ?? null);
+            // A new path of a player turned pumpkin takes the pumpkin off (protocol.md, «Молния и тыква»); a stop is no
+            // path — `stop: pumpkin` comes right before the pumpkin itself.
+            if (Number.isInteger(w.pumpkin) && !event.stop) {
+                delete w.pumpkin;
+                scene?.disguise?.(w.id, null, true);
+            }
         },
 
         // The walk to it is over; the moment itself is not state, and the scene does not play one that came too late.
@@ -1221,10 +1235,16 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintAbility();
         },
 
-        // An ability used, mine too: drawn from the event like anyone's; the flyers of `flyers` come as `flyer` events.
+        // An ability used, mine too: drawn from the event like anyone's; the flyers of `flyers` come as `flyer` events,
+        // the lightning's hit as `shot`. A pumpkin is the walker's state (`Walker.pumpkin`): put on even when late.
         power(event) {
             const used = powerOf(event, now() + offset);
-            if (used) scene?.power?.(used);
+            if (!used) return;
+            if (used.ability === 'pumpkin') {
+                const w = model.walkers.find((x) => x.id === used.id);
+                if (w) w.pumpkin = used.n;
+                scene?.disguise?.(used.id, used.n, used.fresh);
+            } else if (used.fresh) scene?.power?.(used);
         },
 
         // The pause of the progress is the console's only (protocol.md, «Пауза прогресса»): a player's actions go on as
@@ -1306,7 +1326,10 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             const placed = Array.isArray(event.walkers);
             if (placed) model.walkers = event.walkers.map((w) => ({ ...w }));
             else {
-                model.walkers.forEach((w) => delete w.zombie);
+                model.walkers.forEach((w) => {
+                    delete w.zombie;
+                    delete w.pumpkin;
+                });
                 handOut(event);
             }
             paintAll();
@@ -1387,11 +1410,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     }
     /** The HUD button's state for my ability (ability.js, abilityButton); a zombie may use it too. */
     function abilityState() {
-        return abilityButton({ ability: model.ability, onField: myWalker() !== null, readyAt: power.readyAt, readyFor: power.readyFor, now: now() + offset, burst: model.limits?.burst !== false, pending: power.pending });
+        const target = model.ability !== 'lightning' || lightningTarget() !== null;
+        return abilityButton({ ability: model.ability, onField: myWalker() !== null, readyAt: power.readyAt, readyFor: power.readyFor, now: now() + offset, burst: model.limits?.burst !== false, pending: power.pending, target });
     }
-    /** Whether a plain Space is my ability's: nothing else takes it (spaceAction), and I have one on the field. */
+    /** The flyer my lightning would strike: the nearest to my walker as the scene draws them now; null — none on screen. */
+    function lightningTarget() {
+        return model.me === null ? null : scene?.nearestFlyer?.(model.me) ?? null;
+    }
+    /**
+     * Whether a plain Space is my ability's: nothing else takes it (spaceAction), and I have one on the field — a
+     * lightning only with a flyer to strike.
+     */
     function abilitySpace() {
-        return spaceAction({ dice: diceSpace(), drink: drinks(), ability: !abilityState().hidden }) === 'ability';
+        const state = abilityState();
+        const ready = !state.hidden && (model.ability !== 'lightning' || lightningTarget() !== null);
+        return spaceAction({ dice: diceSpace(), drink: drinks(), ability: ready }) === 'ability';
     }
     /** Whether a click on FrankenPHP is RPC `strike`: step 6, he is awake and standing, a rapier in my hand. */
     function strikes() {
@@ -1489,18 +1522,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         /**
          * Uses my ability once (RPC `ability {}`) unless its button is off or I pressed less than ABILITY_GAP_MS ago.
          * Nothing is drawn until the `power` event; the reply's `readyAt` (a `busy` one carries it too) keeps the button
-         * off until then. `busy` and `no flyers` stay quiet — the button already says so; other refusals are warned.
+         * off until then. A lightning names its flyer (lightningTarget). `busy`, `no flyers` and `no target` (the flyer fell
+         * meanwhile) stay quiet — the button already says so; other refusals are warned.
          */
         async useAbility() {
             const t = now();
             if (!ability || abilityState().disabled || t - power.pressedAt < ABILITY_GAP_MS) return null;
+            const flyer = model.ability === 'lightning' ? lightningTarget() : null;
+            if (model.ability === 'lightning' && flyer === null) return null;
             power.pressedAt = t;
             power.pending = true;
             paintAbility();
             const used = model.ability;
             let reply = null;
             try {
-                reply = await ability();
+                reply = await ability(flyer === null ? {} : { flyer });
             } catch (error) {
                 console.warn('ability rpc failed', error);
             }
@@ -1509,7 +1545,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
                 power.readyAt = reply.readyAt;
                 power.readyFor = abilityOf(reply.ability) ?? used;
             }
-            if (reply?.ok === false && reply.error !== 'busy' && reply.error !== 'no flyers') console.warn('ability rejected', reply.error);
+            if (reply?.ok === false && !QUIET_REFUSALS.includes(reply.error)) console.warn('ability rejected', reply.error);
             paintAbility();
             return reply;
         },
@@ -1719,6 +1755,11 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
     };
 }
+
+// The ability refusals the HUD's button already shows (protocol.md, «Способности»): they are not warned.
+const QUIET_REFUSALS = ['busy', 'no flyers', 'no target'];
+// How often the lightning's button looks for a flyer on screen, ms.
+const TARGET_POLL_MS = 250;
 
 // Controls laid over the scene: a press on them is never a shot or a step.
 const UI = '[data-debug-panel], [data-lab-panel], [data-reveal], .help-link, .hud, [data-join], [data-bar-counter], [data-roadrunner], [data-rr-meep], [data-word], [data-word-zombie], .dice, [data-dawn-toggle], [data-chat], [data-emote-panel]';

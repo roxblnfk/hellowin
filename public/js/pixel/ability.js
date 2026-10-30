@@ -98,3 +98,46 @@ export const LAUNCH_COLORS = ['white', 'skyLight', 'sky', 'lightningEdge'];
 export const LAUNCH_SPARKS = 22;
 /** The Fart Time cloud of a player is the elephant's, this much smaller: a walker is smaller than the elephant. */
 export const FART_SCALE = 0.8;
+
+/**
+ * The flyer a lightning strikes: the nearest to `from` (art px) of `flyers` [{id, x, y}] as drawn now, among those
+ * inside the screen `{w, h}`; null when none is.
+ */
+export function nearestFlyer(from, flyers, { w, h }) {
+    let best = null;
+    for (const f of flyers) {
+        if (!(f.x >= 0 && f.x < w && f.y >= 0 && f.y < h)) continue;
+        const d = Math.hypot(f.x - from.x, f.y - from.y);
+        if (!best || d < best.d) best = { id: f.id, d };
+    }
+    return best?.id ?? null;
+}
+
+/** The lightning's timeline, ms from its start: three shapes flicker by `frame`, it thins out and is gone by `end`. */
+export const ZAP = { frame: 60, end: 420 };
+/** The lightning's colours: core, glow beside it; the impact's sparks, hottest first. */
+export const ZAP_COLORS = ['lightningCore', 'lightning', 'lightningEdge'];
+/** The screen's flash at a lightning, much softer than a finale strike: [palette key, alpha] per 60 ms. */
+export const ZAP_VEIL = [['lightningCore', 0.18], ['lightning', 0.08]];
+
+/**
+ * The looks of a player turned pumpkin, `n % length` (protocol.md, `power` with `pumpkin`): the patch's own pumpkins
+ * (sprites.js, pumpkinSprite) about a crouching walker's size — whole, scooped, carved, capped — in all three skins by
+ * their seeds. New ones go at the end, so a number keeps its look.
+ */
+export const PUMPKIN_KINDS = [
+    { stage: 0, size: 's', seed: 11 },
+    { stage: 4, size: 's', seed: 41 },
+    { stage: 0, size: 'm', seed: 23 },
+    { stage: 8, size: 's', seed: 64 },
+    { stage: 4, size: 's', seed: 58 },
+    { stage: 1, size: 's', seed: 37 },
+    { stage: 8, size: 's', seed: 79 },
+    { stage: 4, size: 'm', seed: 92 },
+];
+
+/** The look of pumpkin number `n` (an event's `n`; a broken one is 0). */
+export const pumpkinKind = (n) => PUMPKIN_KINDS[(Number.isInteger(n) && n >= 0 ? n : 0) % PUMPKIN_KINDS.length];
+
+/** The puff a walker turns into a pumpkin and back in: how long it lasts, ms. */
+export const POOF_MS = 450;

@@ -154,7 +154,7 @@ async function main() {
         // The dice of finale step 1: the reply only carries the attempt; the dice are drawn from the `roll` event.
         roll: (attempt) => centrifuge.rpc('roll', { attempt }).then(({ data }) => data),
         // My ability (docs/spec/frontend.md, «Способности»): the reply carries `readyAt`; the effect comes as `power`.
-        ability: () => centrifuge.rpc('ability', {}).then(({ data }) => data),
+        ability: (params = {}) => centrifuge.rpc('ability', params).then(({ data }) => data),
     });
     client.start();
 

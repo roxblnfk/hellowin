@@ -925,6 +925,16 @@ export const SFX = {
             for (let k = 0; k < 6; k++) chip(r, out, 0.62 + k * 0.05, 0.05, root + 31 + (k % 2 ? 0 : 5), { duty: 0.125, amp: 0.05, decay: 8, pan: (r.rnd() - 0.5) * 0.8, send: 0.6 });
         },
     }),
+    // A player's lightning: the snap of a discharge, a buzzing crackle and a short low roll of thunder after it — the
+    // finale's strike in small, in the core group so it sounds in every scene.
+    'ability.zap': fx({
+        dur: 1.8, variants: 3, voices: 3, level: -9, duck: 0.8, jitter: 0.03,
+        render(r, out) {
+            noiseSweep(r, out, 0, 0.12, { from: 9000, to: 2500, q: 0.7, amp: 0.9, mode: 'hp', curve: 2, grain: 120 });
+            crackle(r, out, 0, 0.2, { rate: 420, amp: 0.7, tone: 3400, width: 0.6 });
+            noiseSweep(r, out, 0.06, 1.5, { from: 300, to: 55, q: 0.6, amp: 0.8, mode: 'lp', attack: 0.08, curve: 1.3, grain: 12, send: 0.45 });
+        },
+    }),
     // The rapier's golden chain lightning: three links jumping target to target, each a crackle and a chime.
     'shot.rapira': fx({
         group: 'finale', dur: 1, variants: 4, voices: 4, level: -4,

@@ -204,11 +204,16 @@
   Abilities (docs/spec/frontend.md, «Способности»): `ability` answers like the server's (`no character`, `no ability`,
   `busy` with `readyAt` within the cooldown — flyers 3 s, fart 3 s, meep 2 s here —, `no flyers` where the set has none) and
   sends `power` to all; `flyers` launches 3 flyers of the set from the walker, near and up off the edge, with `by`. A roll
-  of three equal dice gives a random other ability, `ability.grant` of the console (?mod=1, «Способности») gives or takes
-  one; a grant says the owl's `ability` line unless one was said within 20 s. ?ability=flyers|fart|meep — mine at the
+  of three equal dice gives a random other of the five, `ability.grant` of the console (?mod=1, «Способности») gives or takes
+  one; a grant says the owl's `ability` line unless one was said within 20 s. ?ability=flyers|fart|meep|lightning|pumpkin — mine at the
   start (with ?me=1): the HUD's button, Space. ?grant=ms — at that moment the first bot gets ?grantwhat= (default flyers),
   the owl's phrase number ?grantn= (default 0): ?scene=1&walkers=3&grant=300&freeze=1200 — the pillar of light;
   ?power=fart,meep,flyers — at ?powerat=ms (default 300) bot i uses ability i: ?scene=1&walkers=3&power=fart,meep,flyers&freeze=1700.
+  Lightning (`ability {flyer}` — the nearest flyer as drawn, `no target` without a live one) strikes like a shot: `power`
+  with `flyer` and `hit`, then `shot`; ?power=lightning&flyers=1&powerat=400&freeze=520 — the bolt, ?zapmiss=1 — someone
+  shot it first and it misses. Pumpkin: `power` with `n`, `pumpkin` on the walker until its next `move`;
+  ?scene=1&walkers=3&power=pumpkin,pumpkin,pumpkin&freeze=1200 — three pumpkins, ?pumpkins=N — the first N bots stand as
+  pumpkins in the snapshot, ?unpumpkin=ms — the first bot sets off and is itself again.
   HUD (docs/spec/frontend.md, «Разметка и DOM-хуки»): ?conn=ok|reconnect|down — the connection lamp green, yellow
   blinking, red; RoadRunner's uptime beside it from ?finale=3 on and in the bar with ?roadrunner=1. The console (?mod=1)
   shows only what works in the scene or finale step: ?mod=1&scene=1, ?mod=1&finale=5, ?mod=1&finale=6&boss=60,100.
@@ -288,7 +293,7 @@
         <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="Готово тыкв" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>Готово</span></span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
-        <button type="button" class="hud__item hud__button hud__button--ability" data-ability aria-disabled="true" title="Способность (пробел)" hidden><span data-ability-name="flyers" hidden><span aria-hidden="true">🦆</span> Летуны</span><span data-ability-name="fart" hidden><span aria-hidden="true">💨</span> Fart Time</span><span data-ability-name="meep" hidden><span aria-hidden="true">🐦</span> Мип-мип</span></button>
+        <button type="button" class="hud__item hud__button hud__button--ability" data-ability aria-disabled="true" title="Способность (пробел)" hidden><span data-ability-name="flyers" hidden><span aria-hidden="true">🦆</span> Летуны</span><span data-ability-name="fart" hidden><span aria-hidden="true">💨</span> Fart Time</span><span data-ability-name="meep" hidden><span aria-hidden="true">🐦</span> Мип-мип</span><span data-ability-name="lightning" hidden><span aria-hidden="true">⚡</span> Молния</span><span data-ability-name="pumpkin" hidden><span aria-hidden="true">🎃</span> Тыква</span></button>
         <button type="button" class="hud__item hud__button hud__button--top" data-top-open aria-pressed="true" aria-controls="dawn-top" title="Лучшие стрелки: показать или спрятать" hidden>Топ</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
         <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="Эмоции" title="Эмоции" hidden><span aria-hidden="true">😀</span></button>
@@ -682,12 +687,15 @@
                 : pumpkinBeerStart ? beerPoint(i) : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
-    const ABILITY_KINDS = ['flyers', 'fart', 'meep'];
+    const ABILITY_KINDS = ['flyers', 'fart', 'meep', 'lightning', 'pumpkin'];
     const walkStop = params.get('walkstop');
     if (params.get('me') === '1' || walkStop) {
         const walk = barStart && BAR.door ? doorWalk(serverTime()) : standing(zoneClamp({ x: 50, y: 93 }), serverTime());
         startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: barStart ? params.get('item') : null, walk, ...(ABILITY_KINDS.includes(params.get('ability')) ? { ability: params.get('ability') } : {}) });
     }
+    // ?pumpkins=N: the first N bots stand as pumpkins 0…N−1 in the snapshot, as a late viewer finds them.
+    const startPumpkins = Number.parseInt(params.get('pumpkins') ?? '0', 10) || 0;
+    startWalkers.filter((w) => w.id !== ME).slice(0, startPumpkins).forEach((w, i) => (w.pumpkin = i));
     root.dataset.walkers = JSON.stringify(startWalkers);
 
     // Fake engine: the server side of protocol.md, with queue latency before a stage transition.
@@ -860,6 +868,7 @@
             w.taking = null;
             delete w.clink;
             delete w.zombie;
+            delete w.pumpkin;
             w.walk = standing(clampToBar(walkPoint(w.walk, now)), now);
         });
         wanderGone();
@@ -1483,6 +1492,8 @@
         w.walk = { path, startedAt: now, arrivesAt: now + Math.round((lengthOf(path) / WALK_SPEED) * 1000) };
         if (clink) w.clink = clink;
         else delete w.clink;
+        // Any new path takes a pumpkin off (protocol.md, «Молния и тыква»).
+        delete w.pumpkin;
         // Any new path drops a `bar.take` not reached yet.
         w.taking = null;
         deliver({ type: 'move', player: { id }, walk: structuredClone(w.walk), ...(clink ? { clink: structuredClone(clink) } : {}) });
@@ -2269,7 +2280,7 @@
 
     // The abilities (protocol.md, «Способности»): kept on the walker like `Walker.ability`; the cooldowns, the owl's gap and
     // the flock stand in for HELLOWIN_ABILITY_*_COOLDOWN_MS, _OWL_GAP_MS and _FLYERS_COUNT.
-    const ABILITY_COOLDOWN_MS = { flyers: 3000, fart: 3000, meep: 2000 };
+    const ABILITY_COOLDOWN_MS = { flyers: 3000, fart: 3000, meep: 2000, lightning: 3000, pumpkin: 2000 };
     const ABILITY_OWL_GAP_MS = 20000;
     const ABILITY_FLYERS = 3;
     const abilityReady = new Map();
@@ -2301,8 +2312,10 @@
         grantAbility(w, ability, 'moderator');
         return { ok: true, ability };
     }
-    // RPC `ability {}`: `power` to all; the flyers' ability launches a flock from the walker, near, up off the edge.
-    function engineAbility(id) {
+    // RPC `ability {}` (the lightning's `{flyer}`): `power` to all; the flyers' ability launches a flock from the walker,
+    // near, up off the edge; the lightning counts as the player's shot (`shot` after `power`; the elephant farts); the
+    // pumpkin stays on the walker until its next path.
+    function engineAbility(id, { flyer } = {}) {
         if (!id) return { ok: false, error: 'anonymous' };
         const w = engine.walkers.find((x) => x.id === id);
         if (!w) return { ok: false, error: 'no character' };
@@ -2312,7 +2325,21 @@
         const key = `${id}:${ability}`;
         if (t < (abilityReady.get(key) ?? 0)) return { ok: false, error: 'busy', readyAt: abilityReady.get(key) };
         if (ability === 'flyers' && !kindsNow().length) return { ok: false, error: 'no flyers' };
+        const target = ability === 'lightning' ? live.get(flyer) : null;
+        if (ability === 'lightning' && (!target || t > target.until)) return { ok: false, error: 'no target' };
         abilityReady.set(key, t + ABILITY_COOLDOWN_MS[ability]);
+        if (ability === 'lightning') {
+            const hit = !target.shot && target.kind !== 'roadrunner';
+            deliver({ type: 'power', player: { id }, ability, at: t, flyer, hit });
+            if (hit) engineShoot(flyer, { ...w, item: null });
+            return { ok: true, ability, readyAt: abilityReady.get(key), hit };
+        }
+        if (ability === 'pumpkin') {
+            const n = Math.floor(Math.random() * 1000);
+            w.pumpkin = n;
+            deliver({ type: 'power', player: { id }, ability, at: t, n });
+            return { ok: true, ability, readyAt: abilityReady.get(key), n };
+        }
         deliver({ type: 'power', player: { id }, ability, at: t });
         if (ability === 'flyers') {
             const from = round1(walkPoint(w.walk, t));
@@ -2330,12 +2357,24 @@
         const what = ABILITY_KINDS.includes(params.get('grantwhat')) ? params.get('grantwhat') : 'flyers';
         if (w) grantAbility(w, what, 'moderator', Number.parseInt(params.get('grantn') ?? '0', 10) || 0);
     }
+    // ?unpumpkin=ms: the first bot sets off, which takes its pumpkin off.
+    function labUnpumpkin() {
+        const w = wanderers()[0];
+        if (w) engineMove(w.id, { x: walkPoint(w.walk, serverTime()).x + 12, y: walkPoint(w.walk, serverTime()).y });
+    }
     function labPowers() {
         (params.get('power') ?? '').split(',').filter((a) => ABILITY_KINDS.includes(a)).forEach((ability, i) => {
             const w = wanderers()[i];
             if (!w) return;
             w.ability = ability;
-            engineAbility(w.id);
+            if (ability !== 'lightning') {
+                engineAbility(w.id);
+                return;
+            }
+            // The flyer the bot's page would strike; ?zapmiss=1 — someone shoots it first, and the lightning misses.
+            const flyer = scene?.nearestFlyer(w.id);
+            if (flyer && params.get('zapmiss') === '1') engineShoot(flyer, null);
+            if (flyer) engineAbility(w.id, { flyer });
         });
     }
 
@@ -2590,7 +2629,7 @@
         onChange: (model) => moderatorConsole?.update(model),
         onSay: (event) => moderatorConsole?.say(event),
         roll: async (attempt) => engineRoll(ME, { attempt }),
-        ability: async () => engineAbility(client.model.me),
+        ability: async (data) => engineAbility(client.model.me, data),
         later,
     });
     client.start();
@@ -2694,6 +2733,7 @@
     // ?grant=ms and ?power= with ?powerat=ms: an ability given and used at that moment (labGrant, labPowers).
     const grantAt = params.has('grant') ? Math.round(Number.parseInt(params.get('grant'), 10) / 16) * 16 : -1;
     const powerAt = params.has('power') ? Math.round(Number.parseInt(params.get('powerat') ?? '300', 10) / 16) * 16 : -1;
+    const unpumpkinAt = params.has('unpumpkin') ? Math.round(Number.parseInt(params.get('unpumpkin'), 10) / 16) * 16 : -1;
     // ?gone=ms: the wandering zombies sent away at that moment, as at the dawn.
     const goneAt = params.has('gone') ? Math.round(Number.parseInt(params.get('gone'), 10) / 16) * 16 : -1;
     // ?wkill=ms (with ?freeze): the first walker shoots the first wandering zombie at that moment.
@@ -2731,6 +2771,7 @@
         }
         if (pumpkinBeerStart) pumpkinBeerRound();
         if (grantAt >= 0) later(labGrant, grantAt);
+        if (unpumpkinAt >= 0) later(labUnpumpkin, unpumpkinAt);
         if (powerAt >= 0) later(labPowers, powerAt);
         autopilotTick();
         if (params.get('aproom') === '1') roomTick();
@@ -2881,6 +2922,7 @@
             }
             if (owlRollsAt.includes(simTime) && diceOn()) engineDiceOwl();
             if (simTime === grantAt) labGrant();
+            if (simTime === unpumpkinAt) labUnpumpkin();
             if (simTime === powerAt) labPowers();
             if (simTime === meepAt) {
                 deliver({ type: 'meep', at: serverTime() });

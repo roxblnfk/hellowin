@@ -60,6 +60,7 @@ return [
     'Выпить' => 'Drink',
     'Способность (пробел)' => 'Ability (Space)',
     'Летуны' => 'Flyers',
+    'Молния' => 'Lightning',
     'Чат' => 'Chat',
     'Топ' => 'Top',
     'Лучшие стрелки: показать или спрятать' => 'Top shooters: show or hide',
