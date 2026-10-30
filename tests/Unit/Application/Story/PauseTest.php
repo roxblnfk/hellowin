@@ -145,24 +145,24 @@ final class PauseTest
 
         $first = $ritual->dice->roll(self::JACK, 1);
 
-        Assert::same($first, ['attempt' => 1, 'dice' => [6, 6, 6], 'counted' => false]);
+        Assert::same($first, ['attempt' => 1, 'dice' => [6, 6, 6], 'counted' => false, 'ability' => $ritual->playerStore->find(self::JACK)?->ability]);
         Assert::same($ritual->broadcast->ofType('roll')[0]['counted'] ?? null, false);
         Assert::blank($ritual->broadcast->ofType('dice'));
         Assert::null($ritual->diceStore->get(1)->winner);
         Assert::same($ritual->snapshot->create()['dice']['on'] ?? null, true);
         Assert::same([$ritual->diceStore->get(1)->rolls, $ritual->playerStore->find(self::JACK)?->rolls], [1, 1]);
 
-        // A repeat answers the same, from the kept answer and, once it is lost, from the record
+        // A repeat answers the same, from the kept answer and, once it is lost, from the record — which keeps no ability
         Assert::same($ritual->dice->roll(self::JACK, 1), $first);
         $ritual->diceReplies->kept = [];
-        Assert::same($ritual->dice->roll(self::JACK, 1), $first);
+        Assert::same($ritual->dice->roll(self::JACK, 1), \array_diff_key($first, ['ability' => true]));
         Assert::count($ritual->broadcast->ofType('roll'), 1);
 
         $ritual->story->pause(false);
         $ritual->clock->now += 10_000;
         $ritual->diceFaces->faces = [6, 6, 6];
 
-        Assert::same($ritual->dice->roll(self::JACK, 2), ['attempt' => 2, 'dice' => [6, 6, 6]]);
+        Assert::same($ritual->dice->roll(self::JACK, 2), ['attempt' => 2, 'dice' => [6, 6, 6], 'ability' => $ritual->playerStore->find(self::JACK)?->ability]);
         Assert::count($ritual->broadcast->ofType('dice'), 1);
     }
 

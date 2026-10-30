@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Flyer;
 
+use App\Application\Ability\AbilityGrants;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Hellowin\PlayMetrics;
 use App\Application\Player\PlayerService;
@@ -17,6 +18,7 @@ use App\Domain\Clock\Clock;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Flyer\FlyerFactory;
 use App\Domain\Flyer\FlyerStore;
+use App\Domain\Flyer\Point;
 use App\Domain\Flyer\ZombieCrowd;
 use App\Domain\Flyer\ZombieFactory;
 use App\Domain\Lock\LockBusyException;
@@ -57,6 +59,7 @@ final readonly class FlyerService
         private ?ActionStop $stops = null,
         private ?Burst $burst = null,
         private ?RitualPolicy $policy = null,
+        private ?AbilityGrants $abilities = null,
     ) {}
 
     /**
@@ -229,6 +232,30 @@ final readonly class FlyerService
     }
 
     /**
+     * A player's flock (docs/spec/protocol.md, «Способности»): flyers of the current set, the rare one aside, up from
+     * the character. The pause holds the scene's progress, not the sky.
+     *
+     * @param positive-int $count
+     * @param Point $from Where the character stands now.
+     * @param non-empty-string $by Public id of the player.
+     * @param int $now Unix time in milliseconds.
+     * @return list<Flyer> Empty when the set has no flyers.
+     * @throws LockBusyException
+     */
+    public function rise(int $count, Point $from, string $by, int $now): array
+    {
+        $ritual = $this->ritual->snapshot();
+        $story = $ritual->story;
+        $launched = [];
+        for ($i = 0; $i < $count; ++$i) {
+            $flyer = $this->factory->rising($now, $from, $by, $ritual->scene, $story->cursed(), $story->dawn());
+            $flyer === null or $launched[] = $this->release($ritual->round, $flyer);
+        }
+
+        return $launched;
+    }
+
+    /**
      * The first shot at a flyer in the sky hits it; any other shot misses. Either way the shooter's character stops,
      * and an empty mug in its hand flies at the flyer (docs/spec/protocol.md, «Пустая кружка»). An elephant is always
      * missed, and a shot at it makes it fart, a cooldown after its last fart (docs/spec/protocol.md, «Слон»).
@@ -253,6 +280,7 @@ final readonly class FlyerService
         $shooter = $this->players->shotFlyer($player, $flyer->points);
         $this->publisher->shot($round, $flyer, $shooter);
         $shooter === null or $this->topHit($shooter);
+        $shooter === null or $this->abilities?->shot($round, $shooter);
         $this->metrics->flyerShot($flyer);
         $this->count($round);
         $flyer->kind === Flyer::KIND_ZOMBIE and $this->slain($round);

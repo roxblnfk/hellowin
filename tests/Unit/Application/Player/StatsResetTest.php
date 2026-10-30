@@ -49,6 +49,7 @@ final class StatsResetTest
             'drinks' => 0,
             'damage' => 0,
             'rolls' => 0,
+            'ability' => null,
         ]);
         Assert::same($ritual->players->find(self::ANN)?->clicks, 0);
         Assert::count($ritual->walkerStore->all(), 1);

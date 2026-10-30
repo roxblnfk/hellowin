@@ -277,12 +277,13 @@ final class DiceTest
 
         $result = $ritual->dice->roll(self::JACK, $attempt);
 
-        Assert::same($result, ['attempt' => $attempt, 'dice' => [6, 6, 6]]);
+        Assert::same($result, ['attempt' => $attempt, 'dice' => [6, 6, 6], 'ability' => $ritual->playerStore->find(self::JACK)?->ability]);
         $winner = ['player' => ['id' => self::JACK, 'name' => 'Jack'], 'attempt' => $attempt];
-        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['roll', 'dice', 'ready', 'owl']);
+        // A triple brings an ability too, once the owl has named the winner
+        Assert::same(\array_column(\array_column($ritual->broadcast->published, 'message'), 'type'), ['roll', 'dice', 'ready', 'owl', 'ability', 'owl']);
         Assert::same($ritual->broadcast->ofType('dice'), [['type' => 'dice', 'round' => 1, 'on' => false, 'winner' => $winner]]);
         Assert::same($ritual->broadcast->ofType('ready')[0]['scene'], 1);
-        Assert::same($ritual->broadcast->ofType('owl'), [['type' => 'owl', 'round' => 1, 'line' => 'dice-win', 'params' => $winner]]);
+        Assert::same($ritual->broadcast->ofType('owl')[0], ['type' => 'owl', 'round' => 1, 'line' => 'dice-win', 'params' => $winner]);
         $snapshot = $ritual->snapshot->create();
         Assert::true($snapshot['ready']);
         Assert::same($snapshot['dice'], ['on' => false, 'winner' => $winner, 'owl' => 0, 'openAt' => $ritual->diceStore->get(1)->openAt]);
@@ -312,7 +313,7 @@ final class DiceTest
         Assert::same(self::refusal(static fn() => $ritual->dice->roll(self::JACK, $jack)), 'not now');
         Assert::same($ritual->snapshot->create()['dice']['winner']['player']['id'] ?? null, self::JILL);
         Assert::count($ritual->broadcast->ofType('ready'), 1);
-        Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['dice-win']);
+        Assert::same(\array_column($ritual->broadcast->ofType('owl'), 'line'), ['dice-win', 'ability']);
     }
 
     public function secondStepAfterTheWinNeedsNoForce(): void

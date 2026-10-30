@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Story;
 
+use App\Application\Ability\AbilityGrants;
 use App\Application\Hellowin\ChannelPublisher;
 use App\Application\Player\PlayerService;
 use App\Application\Walk\ActionStop;
@@ -65,6 +66,7 @@ final readonly class DiceService
         private int $replyTtl,
         private ?ActionStop $stops = null,
         private ?EveningTally $tally = null,
+        private ?AbilityGrants $abilities = null,
     ) {}
 
     /**
@@ -80,7 +82,7 @@ final readonly class DiceService
      * the progress the dice roll all the same, but a 6-6-6 wins nothing; a repeat answers with the same `counted`.
      *
      * @param non-empty-string $id
-     * @return array{attempt: positive-int, dice: Faces, counted?: false}
+     * @return array{attempt: positive-int, dice: Faces, counted?: false, ability?: non-empty-string}
      * @throws NoCharacterException
      * @throws ZombifiedException
      * @throws StoryRefusedException `not now` — not step 1 or the dice are off, `busy` — too soon after the last throw
@@ -258,8 +260,8 @@ final readonly class DiceService
      * @param non-empty-string $id
      * @param non-empty-string|null $name
      * @param bool $counted False on a pause of the progress: a new throw cannot win.
-     * @return array{array{attempt: positive-int, dice: Faces, counted?: false}, bool} The answer, and whether the throw is
-     *         new rather than a repeat.
+     * @return array{array{attempt: positive-int, dice: Faces, counted?: false, ability?: non-empty-string}, bool} The answer,
+     *         and whether the throw is new rather than a repeat: only a new one brings an ability.
      * @throws StoryRefusedException
      * @throws BadAttemptException
      * @throws LockBusyException
@@ -293,13 +295,19 @@ final readonly class DiceService
         [$attempt, $faces, $counted, $new, $won] = $thrown;
 
         // A repeat answers a throw that has stopped the character already
+        $ability = null;
         if ($new) {
             $this->stops?->stop($id, ActionStop::DICE);
             $player = $this->players->rolled($id) ?? new Player($id, $name);
             $this->publisher->roll($round, $player, $attempt, $faces, $now, $counted);
             $won and $this->win($round, ['player' => $player->ref(), 'attempt' => $attempt]);
+            // After the win: the owl names the winner of the dice before the ability
+            $ability = $this->abilities?->rolled($round, $id, $faces);
         }
 
-        return [$counted ? ['attempt' => $attempt, 'dice' => $faces] : ['attempt' => $attempt, 'dice' => $faces, 'counted' => false], $new];
+        $answer = $counted ? ['attempt' => $attempt, 'dice' => $faces] : ['attempt' => $attempt, 'dice' => $faces, 'counted' => false];
+        $ability === null or $answer['ability'] = $ability;
+
+        return [$answer, $new];
     }
 }

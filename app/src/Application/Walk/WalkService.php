@@ -254,8 +254,8 @@ final readonly class WalkService
             /** @param array<non-empty-string, Walker> $walkers */
             function (array $walkers) use ($player, $look, $now): array {
                 $walker = isset($walkers[$player->id])
-                    ? $walkers[$player->id]->dressed($player->name, $look)->seen($now)
-                    : $this->spawn($player->id, $player->name, $look, $now, $this->ritual->scene());
+                    ? $walkers[$player->id]->dressed($player->name, $look, $player->ability)->seen($now)
+                    : $this->spawn($player, $look, $now, $this->ritual->scene());
                 $walkers[$player->id] = $walker;
 
                 return [$walkers, $walker];
@@ -291,7 +291,7 @@ final readonly class WalkService
             function (array $walkers) use ($player, $look, $now, $x, $y): array {
                 $scene = $this->ritual->scene();
                 $zone = $this->zoneIn($scene);
-                $entered = isset($walkers[$player->id]) ? null : $this->spawn($player->id, $player->name, $look, $now, $scene);
+                $entered = isset($walkers[$player->id]) ? null : $this->spawn($player, $look, $now, $scene);
                 $walker = $entered ?? $walkers[$player->id];
                 $walker->zombie() and throw new ZombifiedException();
 
@@ -574,7 +574,7 @@ final readonly class WalkService
                 $zombies === [] or $this->store->bench($this->ritual->round(), $zombies);
                 foreach ($newcomers as [$player, $look]) {
                     if (!isset($walkers[$player->id])) {
-                        $walkers[$player->id] = $entered[] = $this->spawn($player->id, $player->name, $look, $now, $scene);
+                        $walkers[$player->id] = $entered[] = $this->spawn($player, $look, $now, $scene);
                     }
                 }
 
@@ -690,14 +690,14 @@ final readonly class WalkService
      * A new character walks in through the door of the bar, when it has one; elsewhere it stands at a random point of
      * the spawn band along the bottom of the lawn.
      *
-     * @param non-empty-string $id
-     * @param non-empty-string|null $name
+     * @param Look $look The player's, known to be there.
      */
-    private function spawn(string $id, ?string $name, Look $look, int $now, int $scene): Walker
+    private function spawn(Player $player, Look $look, int $now, int $scene): Walker
     {
+        $id = $player->id;
         $doorway = $this->barIn($scene) ? $this->bar?->doorway() : null;
         if ($doorway !== null) {
-            return new Walker($id, $name, $look, Walk::along([$doorway[0], self::rounded($doorway[1])], $now, $this->speed), $now);
+            return new Walker($id, $player->name, $look, Walk::along([$doorway[0], self::rounded($doorway[1])], $now, $this->speed), $now, ability: $player->ability);
         }
 
         [$zone, $spawnY] = $this->bar !== null && $this->barIn($scene)
@@ -707,7 +707,7 @@ final readonly class WalkService
             $this->random->getFloat($zone->x1, $zone->x2),
             $this->random->getFloat($spawnY[0], $spawnY[1]),
         ));
-        $walker = new Walker($id, $name, $look, Walk::standing(self::rounded($at), $now), $now);
+        $walker = new Walker($id, $player->name, $look, Walk::standing(self::rounded($at), $now), $now, ability: $player->ability);
 
         // A zombie whose player left comes back a zombie with the same deadline, or human once it has passed; the bench
         // is read only on the step with zombies

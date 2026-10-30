@@ -236,6 +236,57 @@ final readonly class FlyerFactory
     }
 
     /**
+     * A flyer of the current set, the rare one aside, launched by a player's ability: up from the character at the
+     * nearest depth and out behind the top edge, or a side edge high up. Every kind takes this flight, a ground one or
+     * a fly of the bar too: it is the player's trick, not the kind's way.
+     *
+     * @param int $now Unix time in milliseconds.
+     * @param Point $from Where the character stands now.
+     * @param non-empty-string $by Public id of the player.
+     * @return Flyer|null Null when the set has no flyers.
+     */
+    public function rising(int $now, Point $from, string $by, int $scene = 0, bool $cursed = false, bool $dawn = false): ?Flyer
+    {
+        $kinds = $this->kinds($scene, $cursed, $dawn);
+        if ($kinds === []) {
+            return null;
+        }
+        $kind = $kinds[$this->random->getInt(0, \count($kinds) - 1)];
+        $depth = \count($this->depths) - 1;
+
+        $x = \round($from->x + $this->float(-35, 35), 1);
+        $to = $x < 0 || $x > 100
+            ? new Point($x < 0 ? self::OUT[0] : self::OUT[1], $this->float(-5, 15))
+            : new Point($x, self::OUT[0]);
+        $via = $this->chance($this->arcChance)
+            ? new Point(\round(($from->x + $to->x) / 2.0 + $this->float(-15, 15), 1), \round(($from->y + $to->y) / 2.0, 1))
+            : null;
+
+        return new Flyer(
+            id: 'f-' . \bin2hex($this->random->getBytes(4)),
+            depth: $depth,
+            from: $from,
+            to: $to,
+            via: $via,
+            bush: null,
+            duration: $this->depths[$depth]->duration,
+            points: match ($kind) {
+                Flyer::KIND_FIREFLY => $this->fireflyPoints,
+                Flyer::KIND_FLY => $this->flyPoints,
+                default => $this->depths[$depth]->points,
+            },
+            launchedAt: $now,
+            kind: $kind,
+            wobble: match ($kind) {
+                Flyer::KIND_BAT => $this->wobble(),
+                Flyer::KIND_FIREFLY => new Wobble($this->float(...self::FIREFLY_AMP), $this->float(...self::FIREFLY_WAVES)),
+                default => null,
+            },
+            by: $by,
+        );
+    }
+
+    /**
      * Whether the set of the scene, the cursed world or the dawn has flyers at all, the rare one aside.
      */
     public function hasKinds(int $scene, bool $cursed = false, bool $dawn = false): bool

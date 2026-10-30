@@ -447,6 +447,37 @@ final readonly class ChannelPublisher
     }
 
     /**
+     * A player got an ability, or the moderator took it away.
+     *
+     * @param non-empty-string|null $ability Null — taken away.
+     * @param non-empty-string $source `dice`, `flyers` or `moderator`.
+     * @param int $at Unix time in milliseconds.
+     */
+    public function ability(int $round, Player $player, ?string $ability, string $source, int $at): void
+    {
+        $this->publish([
+            'type' => 'ability',
+            'round' => $round,
+            'player' => $player->ref(),
+            'ability' => $ability,
+            'source' => $source,
+            'at' => $at,
+        ]);
+    }
+
+    /**
+     * A player used the ability.
+     *
+     * @param non-empty-string $player
+     * @param non-empty-string $ability
+     * @param int $at Unix time in milliseconds.
+     */
+    public function power(int $round, string $player, string $ability, int $at): void
+    {
+        $this->publish(['type' => 'power', 'round' => $round, 'player' => ['id' => $player], 'ability' => $ability, 'at' => $at]);
+    }
+
+    /**
      * The whole ranking of the evening's shooters, once it has changed.
      *
      * @param list<array{player: array{id: non-empty-string, name: non-empty-string|null}, points: positive-int}> $board

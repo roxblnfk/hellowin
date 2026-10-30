@@ -48,6 +48,7 @@ final readonly class Flyer
      * @param list<Stop> $stops Where the flyer lands between `from` and `to`, in order; the sits are within its duration.
      * @param bool $wander A zombie that stays on the lawn until it is shot: each browser walks it from `from`, and it
      *        has no flight — `to` is `from` and `duration` is 1 for the shape's sake, neither leaves the server.
+     * @param non-empty-string|null $by Public id of the player whose ability launched the flyer.
      */
     public function __construct(
         public string $id,
@@ -63,6 +64,7 @@ final readonly class Flyer
         public ?Wobble $wobble = null,
         public array $stops = [],
         public bool $wander = false,
+        public ?string $by = null,
     ) {}
 
     /**
@@ -105,6 +107,8 @@ final readonly class Flyer
         $launchedAt = $value['launchedAt'] ?? null;
         /** @var mixed $bush */
         $bush = $value['bush'] ?? null;
+        /** @var mixed $by */
+        $by = \is_array($value['by'] ?? null) ? $value['by']['id'] ?? null : null;
 
         if (!self::isId($id) || $from === null || $to === null || !\is_string($kind) || $kind === ''
             || !\is_int($depth) || $depth < 0 || !\is_int($duration) || $duration < 1
@@ -126,6 +130,7 @@ final readonly class Flyer
             Wobble::fromArray($value['wobble'] ?? null),
             self::stops($value['stops'] ?? null),
             $wander,
+            \is_string($by) && $by !== '' ? $by : null,
         );
     }
 
@@ -178,6 +183,7 @@ final readonly class Flyer
         // A backgrounded tab receives queued publications late; these let it drop flyers already gone
         $event['launchedAt'] = $this->launchedAt;
         $event['expiresAt'] = $this->expiresAt();
+        $this->by === null or $event['by'] = ['id' => $this->by];
 
         return $event;
     }

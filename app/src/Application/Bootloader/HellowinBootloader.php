@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Application\Bootloader;
 
+use App\Application\Ability\AbilityGrants;
+use App\Application\Ability\AbilityService;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
@@ -263,6 +265,53 @@ final class HellowinBootloader extends Bootloader
                 ),
                 $metrics,
             ),
+            // The owl's gap between lines about abilities is a cooldown of its own, apart from the meep's
+            AbilityGrants::class => static fn(
+                HellowinConfig $config,
+                PlayerStore $players,
+                WalkerStore $walkers,
+                RitualStore $ritual,
+                ChannelPublisher $publisher,
+                PlayMetrics $metrics,
+                Clock $clock,
+                LockInterface $lock,
+                LoggerInterface $logger,
+            ): AbilityGrants => new AbilityGrants(
+                $players,
+                $walkers,
+                $ritual,
+                $publisher,
+                $metrics,
+                $clock,
+                new Cooldown($lock, 'owl-ability', $config->getAbilityOwlGap()),
+                $config->getAbilityFartFlyers(),
+                $logger,
+            ),
+            // The cooldowns live as long as the process, as the RPC limits do
+            AbilityService::class => static fn(
+                HellowinConfig $config,
+                WalkerStore $walkers,
+                PlayerStore $players,
+                FlyerService $flyers,
+                RitualStore $ritual,
+                ChannelPublisher $publisher,
+                PlayMetrics $metrics,
+                Clock $clock,
+                CacheStorageProviderInterface $cache,
+                LockInterface $lock,
+            ): AbilityService => new AbilityService(
+                $walkers,
+                $players,
+                $flyers,
+                $ritual,
+                $publisher,
+                $metrics,
+                $clock,
+                $cache->storage('process'),
+                new Locks($lock, ttl: 1.0, wait: 0.5),
+                $config->getAbilityCooldowns(),
+                $config->getAbilityFlyersCount(),
+            ),
             DiceStore::class => static fn(
                 HellowinConfig $config,
                 CacheStorageProviderInterface $cache,
@@ -282,6 +331,7 @@ final class HellowinBootloader extends Bootloader
                 ActionStop $stops,
                 IdempotencyRegistry $idempotency,
                 EveningTally $tally,
+                AbilityGrants $abilities,
             ): DiceService => new DiceService(
                 $store,
                 $roller,
@@ -296,6 +346,7 @@ final class HellowinBootloader extends Bootloader
                 $config->getDiceIdempotencyTtl(),
                 $stops,
                 $tally,
+                $abilities,
             ),
             BossStore::class => static fn(
                 HellowinConfig $config,

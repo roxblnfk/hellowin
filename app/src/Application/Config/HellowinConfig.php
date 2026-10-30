@@ -71,6 +71,7 @@ final class HellowinConfig extends InjectableConfig
         'chat' => ['max' => 120, 'history' => 50],
         'emotes' => ['set' => '🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉', 'cooldown_ms' => 1000],
         'meep' => ['cooldown_ms' => 1500],
+        'ability' => ['fart_flyers' => 100, 'owl_gap_ms' => 10000, 'flyers_count' => 3, 'flyers_cooldown_ms' => 3000, 'fart_cooldown_ms' => 1000, 'meep_cooldown_ms' => 1000],
         'rpc_rate' => ['click' => '20,40', 'shoot' => '20,40', 'move' => '10,20', 'say' => '1,3', 'other' => '10,30'],
         'elements' => [],
         'bushes' => [],
@@ -498,6 +499,45 @@ final class HellowinConfig extends InjectableConfig
         return \is_int($value) && $value >= 0
             ? $value
             : throw new \InvalidArgumentException('Config "hellowin.meep.cooldown_ms" (env HELLOWIN_MEEP_COOLDOWN_MS) must be a non-negative integer.');
+    }
+
+    /**
+     * @return positive-int The count of shot flyers that brings `fart` to a player without an ability.
+     */
+    public function getAbilityFartFlyers(): int
+    {
+        return self::positiveInt($this->ability()['fart_flyers'] ?? null, 'ability.fart_flyers', 'HELLOWIN_ABILITY_FART_FLYERS');
+    }
+
+    /**
+     * @return int<0, max> Milliseconds after the owl's line about an ability before she says the next one; 0 — no pause.
+     */
+    public function getAbilityOwlGap(): int
+    {
+        return self::nonNegativeInt($this->ability()['owl_gap_ms'] ?? null, 'ability.owl_gap_ms', 'HELLOWIN_ABILITY_OWL_GAP_MS');
+    }
+
+    /**
+     * @return positive-int Flyers of the flock one use of `flyers` launches.
+     */
+    public function getAbilityFlyersCount(): int
+    {
+        return self::positiveInt($this->ability()['flyers_count'] ?? null, 'ability.flyers_count', 'HELLOWIN_ABILITY_FLYERS_COUNT');
+    }
+
+    /**
+     * @return array{flyers: int<0, max>, fart: int<0, max>, meep: int<0, max>} Milliseconds between two uses of an
+     *         ability by one player, by ability.
+     */
+    public function getAbilityCooldowns(): array
+    {
+        $ability = $this->ability();
+
+        return [
+            'flyers' => self::nonNegativeInt($ability['flyers_cooldown_ms'] ?? null, 'ability.flyers_cooldown_ms', 'HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS'),
+            'fart' => self::nonNegativeInt($ability['fart_cooldown_ms'] ?? null, 'ability.fart_cooldown_ms', 'HELLOWIN_ABILITY_FART_COOLDOWN_MS'),
+            'meep' => self::nonNegativeInt($ability['meep_cooldown_ms'] ?? null, 'ability.meep_cooldown_ms', 'HELLOWIN_ABILITY_MEEP_COOLDOWN_MS'),
+        ];
     }
 
     /**
@@ -982,6 +1022,14 @@ final class HellowinConfig extends InjectableConfig
         \is_array($emotes) or throw new \InvalidArgumentException('Config "hellowin.emotes" must be an array.');
 
         return $emotes;
+    }
+
+    private function ability(): array
+    {
+        $ability = $this->config['ability'] ?? [];
+        \is_array($ability) or throw new \InvalidArgumentException('Config "hellowin.ability" must be an array.');
+
+        return $ability;
     }
 
     private function dice(): array

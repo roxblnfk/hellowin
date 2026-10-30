@@ -117,6 +117,18 @@ return [
         'cooldown_ms' => env('HELLOWIN_MEEP_COOLDOWN_MS', 1500),
     ],
 
+    // The players' abilities (docs/spec/scenario.md, «Способности»): the shot flyer on which a player's count becomes
+    // `fart_flyers` brings `fart` to one without an ability; the owl names a new ability at most once per `owl_gap_ms`
+    // milliseconds; `flyers` launches `flyers_count` flyers; each ability's cooldown per player is `*_cooldown_ms`
+    'ability' => [
+        'fart_flyers' => env('HELLOWIN_ABILITY_FART_FLYERS', 100),
+        'owl_gap_ms' => env('HELLOWIN_ABILITY_OWL_GAP_MS', 10000),
+        'flyers_count' => env('HELLOWIN_ABILITY_FLYERS_COUNT', 3),
+        'flyers_cooldown_ms' => env('HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS', 3000),
+        'fart_cooldown_ms' => env('HELLOWIN_ABILITY_FART_COOLDOWN_MS', 1000),
+        'meep_cooldown_ms' => env('HELLOWIN_ABILITY_MEEP_COOLDOWN_MS', 1000),
+    ],
+
     // RPC limits per player (or per connection without one) and group of methods: "<per second>,<burst>" of a token
     // bucket, 0 turns the group's limit off; the moderator is never limited. `other` is every method not listed
     'rpc_rate' => [

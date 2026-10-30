@@ -20,6 +20,7 @@ final readonly class Player
      * @param int<0, max> $drinks Mugs drunk in the bar and in the cursed world.
      * @param int<0, max> $damage Strikes of the rapier at FrankenPHP.
      * @param int<0, max> $rolls New throws of the dice.
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability Not a counter: zeroing the statistics keeps it.
      */
     public function __construct(
         public string $id,
@@ -32,6 +33,7 @@ final readonly class Player
         public int $drinks = 0,
         public int $damage = 0,
         public int $rolls = 0,
+        public ?string $ability = null,
     ) {}
 
     /**
@@ -54,6 +56,7 @@ final readonly class Player
             self::count($value['drinks'] ?? null),
             self::count($value['damage'] ?? null),
             self::count($value['rolls'] ?? null),
+            Ability::fromValue($value['ability'] ?? null),
         );
     }
 
@@ -63,7 +66,7 @@ final readonly class Player
      */
     public function named(string $name, ?Look $look = null): self
     {
-        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look, $this->drinks, $this->damage, $this->rolls);
+        return new self($this->id, $name, $this->clicks, $this->finished, $this->flyers, $this->points, $look ?? $this->look, $this->drinks, $this->damage, $this->rolls, $this->ability);
     }
 
     /**
@@ -71,17 +74,17 @@ final readonly class Player
      */
     public function zeroed(): self
     {
-        return new self($this->id, $this->name, look: $this->look);
+        return new self($this->id, $this->name, look: $this->look, ability: $this->ability);
     }
 
     public function clicked(): self
     {
-        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls);
+        return new self($this->id, $this->name, $this->clicks + 1, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls, $this->ability);
     }
 
     public function finishedPumpkin(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls);
+        return new self($this->id, $this->name, $this->clicks, $this->finished + 1, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls, $this->ability);
     }
 
     /**
@@ -89,26 +92,34 @@ final readonly class Player
      */
     public function shotFlyer(int $points): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points, $this->look, $this->drinks, $this->damage, $this->rolls);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers + 1, $this->points + $points, $this->look, $this->drinks, $this->damage, $this->rolls, $this->ability);
     }
 
     public function struck(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage + 1, $this->rolls);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage + 1, $this->rolls, $this->ability);
     }
 
     public function rolled(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls + 1);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls + 1, $this->ability);
     }
 
     public function drank(): self
     {
-        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks + 1, $this->damage, $this->rolls);
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks + 1, $this->damage, $this->rolls, $this->ability);
     }
 
     /**
-     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>, rolls: int<0, max>}
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability Null takes the ability away.
+     */
+    public function withAbility(?string $ability): self
+    {
+        return new self($this->id, $this->name, $this->clicks, $this->finished, $this->flyers, $this->points, $this->look, $this->drinks, $this->damage, $this->rolls, $ability);
+    }
+
+    /**
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>|null, clicks: int<0, max>, finished: int<0, max>, flyers: int<0, max>, points: int<0, max>, drinks: int<0, max>, damage: int<0, max>, rolls: int<0, max>, ability: Ability::FLYERS|Ability::FART|Ability::MEEP|null}
      */
     public function toArray(): array
     {
@@ -123,6 +134,7 @@ final readonly class Player
             'drinks' => $this->drinks,
             'damage' => $this->damage,
             'rolls' => $this->rolls,
+            'ability' => $this->ability,
         ];
     }
 

@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Walk;
 
+use App\Domain\Player\Ability;
 use App\Domain\Player\Look;
 use App\Domain\Player\PlayerId;
 
 /**
- * A player's character on the lawn. Name and look are copied from the player when the character enters or the
+ * A player's character on the lawn. Name, look and ability are copied from the player when the character enters or the
  * player registers again, so the snapshot reads one key instead of every player.
  *
  * In the bar and in the cursed world the character holds its own item — a beer, the empty mug, the rapier or
@@ -49,6 +50,7 @@ final readonly class Walker
      * @param int|null $busyUntil Unix time in milliseconds until which the hands are busy: a sip plays, or a pumpkin
      *        is still handing a mug over; no mug is taken or drunk before it.
      * @param int|null $zombieUntil Unix time in milliseconds a zombie turns human by itself; null — only a cure does.
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability The player's, copied like the name and the look.
      */
     public function __construct(
         public string $id,
@@ -66,6 +68,7 @@ final readonly class Walker
         public ?int $clinkedUntil = null,
         public ?int $busyUntil = null,
         public ?int $zombieUntil = null,
+        public ?string $ability = null,
     ) {}
 
     public static function fromArray(mixed $id, mixed $value): ?self
@@ -116,6 +119,7 @@ final readonly class Walker
                 $clinked && \is_int($clinkedUntil) ? $clinkedUntil : null,
                 \is_int($busyUntil) ? $busyUntil : null,
                 \is_int($zombieAt) && \is_int($zombieUntil) ? $zombieUntil : null,
+                Ability::fromValue($value['ability'] ?? null),
             )
             : null;
     }
@@ -347,10 +351,19 @@ final readonly class Walker
 
     /**
      * @param non-empty-string|null $name
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability
      */
-    public function dressed(?string $name, Look $look): self
+    public function dressed(?string $name, Look $look, ?string $ability): self
     {
-        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt, $this->clinkedUntil, $this->busyUntil, $this->zombieUntil);
+        return new self($this->id, $name, $look, $this->walk, $this->seenAt, $this->clink, $this->clinkedAt, $this->item, $this->clinked, $this->takeAt, $this->takeFrom, $this->zombieAt, $this->clinkedUntil, $this->busyUntil, $this->zombieUntil, $ability);
+    }
+
+    /**
+     * @param Ability::FLYERS|Ability::FART|Ability::MEEP|null $ability
+     */
+    public function withAbility(?string $ability): self
+    {
+        return $this->dressed($this->name, $this->look, $ability);
     }
 
     /**
@@ -366,7 +379,7 @@ final readonly class Walker
      *
      * @param non-empty-string|null $item What the character holds: the item of the scene and finale step, or in the
      *        bar and the cursed world its own ({@see $item}).
-     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, item: non-empty-string|null, walk: array, clink?: array, zombie?: true, zombieUntil?: int}
+     * @return array{id: non-empty-string, name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, item: non-empty-string|null, walk: array, clink?: array, zombie?: true, zombieUntil?: int, ability?: non-empty-string}
      */
     public function toArray(?string $item = null): array
     {
@@ -380,12 +393,13 @@ final readonly class Walker
         $this->clink === null or $data['clink'] = $this->clink->toTarget();
         $this->zombie() and $data['zombie'] = true;
         $this->zombie() && $this->zombieUntil !== null and $data['zombieUntil'] = $this->zombieUntil;
+        $this->ability === null or $data['ability'] = $this->ability;
 
         return $data;
     }
 
     /**
-     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int, clinkedUntil?: int, busyUntil?: int, zombieUntil?: int}
+     * @return array{name: non-empty-string|null, look: array<non-empty-string, non-empty-string>, walk: array, seenAt: int, clink?: array, clinkedAt?: int, item?: non-empty-string, clinked?: true, takeAt?: int, takeFrom?: non-empty-string, zombieAt?: int, clinkedUntil?: int, busyUntil?: int, zombieUntil?: int, ability?: non-empty-string}
      */
     public function toRecord(): array
     {
@@ -405,6 +419,7 @@ final readonly class Walker
         $this->clinkedUntil === null or $record['clinkedUntil'] = $this->clinkedUntil;
         $this->busyUntil === null or $record['busyUntil'] = $this->busyUntil;
         $this->zombieUntil === null or $record['zombieUntil'] = $this->zombieUntil;
+        $this->ability === null or $record['ability'] = $this->ability;
 
         return $record;
     }
@@ -445,6 +460,7 @@ final readonly class Walker
             $clinkedUntil === false ? $this->clinkedUntil : $clinkedUntil,
             $busyUntil === false ? $this->busyUntil : $busyUntil,
             $zombieUntil === false ? $this->zombieUntil : $zombieUntil,
+            $this->ability,
         );
     }
 }

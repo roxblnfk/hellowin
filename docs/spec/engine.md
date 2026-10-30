@@ -14,7 +14,8 @@
 рассвет («Рапира»), кости 6-6-6 на шаге финала 1 («Кости»), ввод костей и слова после инструкции совы, подсказка
 слова и авто-расколдовывание зомби-игроков (решение пользователя от 2026-10-29; «Кости», «Рапира»), чат игроков («Чат»),
 единая формула лимитов с пересчётом вживую и волна летунов модератора («Лимиты и баланс», бриф №22), автопилот вечера
-(«Автопилот», решение пользователя от 2026-10-28).
+(«Автопилот», решение пользователя от 2026-10-28), способности игроков («Способности», решение пользователя от
+2026-10-30).
 
 ## Классы
 
@@ -48,6 +49,7 @@
 | Кости 6-6-6: запись, грани | `Domain/Story/Dice`, `DiceStore`, `DiceRoller`, `Application/Story/DiceService` (RPC `roll`, `dice.owl`) |
 | Чат игроков: история, заглушённые | `Domain/Chat/ChatStore`, `Application/Chat/ChatService` (RPC `say`, `chat.history`, `chat.mute`) |
 | Эмоции: набор, пауза, событие | `Application/Chat/EmoteService` (RPC `emote`) |
+| Способности: выдача, применение | `Domain/Player/Ability`, `Application/Ability/AbilityGrants` (тройка из `DiceService`, порог из `FlyerService::shoot`, RPC `ability.grant`), `AbilityService` (RPC `ability`), `FlyerFactory::rising`, `FlyerService::rise` |
 | Автопилот: правила, запись, речь совы | `Domain/Story/Autopilot` (таблица переходов), `AutoScene`, `AutoRecord`, `AutoStore`, `OwlClock` (когда сова договорит), `SpeechTable` (`public/autopilot.json`), `Application/Story/AutopilotService` (RPC `auto`, тикер) |
 
 ## Периодический процесс (тикер)
@@ -502,6 +504,9 @@
   перебрасывается; бросок 3 — 6-6-6 и победа `{owl: true, attempt: 3}`, реплика `dice-owl-win`. Без ключа
   идемпотентности (это кнопка модератора: каждое нажатие — бросок). В `rolls` не идут.
 - **Снимок** — `dice`: с шага 1 `{on, winner?, owl, openAt?}`, раньше — `null`; `reveal.rolls` — `rolls` записи.
+- **Тройка** (решение пользователя от 2026-10-30, «Способности»): после лока новый бросок с тремя одинаковыми гранями —
+  `AbilityGrants::rolled` после победы; выпавшая способность идёт в ответ `ability` и сохраняется с ним в лизинге. Повтор
+  из записи `hellowin:dice` способности не знает и отвечает без неё. Броски совы не зовут выдачу.
 
 ## Автопилот
 
@@ -576,6 +581,37 @@
 - **Снимок** — `emotes`: набор `HELLOWIN_EMOTES` в порядке кнопок; страница получает его через снимок
   (`HomeController`), клиент — и через RPC `state`.
 - `emote` — действие игрока: идёт в `calls` (`hellowin:tally:calls`), как любой известный метод, кроме чтений.
+
+## Способности
+
+**Реализовано** (решение пользователя от 2026-10-30). Правила — [`scenario.md`](scenario.md), «Способности»;
+протокол — [`protocol.md`](protocol.md), «Способности».
+
+- **Запись** — поле `ability` записи игрока `hellowin:player:{id}` (`Player::withAbility`), под локом `player:{id}`.
+  `Player::zeroed` (`stats.reset`) его сохраняет, сброс раунда и рестарт записей игроков не трогают. Копия — в фигурке
+  (`Walker::ability`, `hellowin:walkers`): ставится при входе (`WalkService::enter`, `spawn`) и при каждой выдаче под
+  локом `walkers`; сбой копии пишется в лог, событие уже ушло.
+- **Тройка** (`AbilityGrants::rolled`): под локом `player:{id}` — случайная из `Ability::ALL` без текущей (`Randomizer`).
+  Зовёт `DiceService` после лока `dice` и победы, только для нового броска игрока. Сбой — лог, бросок стоит.
+- **Порог летунов** (`AbilityGrants::shot`): `FlyerService::shoot` после `shot` передаёт запись стрелка после `+1`;
+  `flyers === HELLOWIN_ABILITY_FART_FLYERS` и `ability === null` → под локом `player:{id}` ещё раз проверить `null` и
+  записать `fart`. Равенство, а не «не меньше»: инкременты идут под тем же локом, так что значение порога получает ровно
+  один выстрел игрока за всю жизнь записи. Сбой — лог, попадание стоит.
+- **Модератор** (`AbilityGrants::grant`, RPC `ability.grant`): не `null` и не из трёх (или нет поля) — `invalid ability`;
+  не id или записи нет — `no target` (`PlayerStore::amend` записей не создаёт). Та же способность — запись без
+  изменений, без события и метрики.
+- **Объявление.** Событие `ability {player, ability, source, at}`, копия в фигурке; при непустой способности —
+  `hellowin_abilities_granted_total{ability, source}` и реплика `ability {player, ability, n}`, если взят кулдаун
+  `owl-ability`: RR-лок с TTL `HELLOWIN_ABILITY_OWL_GAP_MS` без освобождения (`Domain/RateLimit/Cooldown`, как у мипа,
+  но свой). `n` — случайное 0…2³¹−1. Реплика идёт в счёт речи совы (`OwlClock`).
+- **Применение** (`AbilityService::use`, RPC `ability`): без лока — фигурка в `hellowin:walkers` (`no character`), запись
+  с `ability` (`no ability`); под локом `ability:{id}` — `hellowin:ability:{id}` `{flyers?, fart?, meep?}` (когда готова
+  каждая, мс; KV `process`, TTL — самый длинный кулдаун + 2 с): не готова — `AbilityBusyException` → `busy` с `readyAt`;
+  у `flyers` пустой набор сцены, проклятого мира или рассвета (`FlyerService::burstable`) — `no flyers`, кулдаун не
+  тратится; иначе `readyAt = now + кулдаун способности`. После лока — `power`, у `flyers` —
+  `FlyerService::rise(HELLOWIN_ABILITY_FLYERS_COUNT, точка фигурки сейчас, id)`: `FlyerFactory::rising` на каждого,
+  обычный `release` (KV, событие `flyer` с `by`, `hellowin_flyers_launched_total`); затем
+  `hellowin_abilities_used_total{ability}`. `ActionStop` не зовётся, пауза и зомби не проверяются.
 
 ## Модератор
 
@@ -930,6 +966,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Состояние игры: `hellowin:round`, `hellowin:scene`, `hellowin:pumpkin:{id}`, `hellowin:bonfire` и `hellowin:circle` (`{stage, clicks, accepted, spent}`), сюжет `hellowin:story`, сбитые за раунд `hellowin:shot`, незасчитанные паузой кружки, удары и зомби `hellowin:uncounted` `{round, drinks, damage, slain}` | Valkey | RR KV-плагин, драйвер `redis` (`VALKEY_ADDR`), storage `hellowin` (PSR-16 в приложении) |
 | Время запуска RoadRunner `hellowin:started-at` | память RoadRunner | RR KV-плагин, драйвер `memory`, storage `process` |
 | Вёдра лимита RPC `hellowin:rate:{group}:{player или client}` и паузы эмоций `hellowin:rate:emote:{player}` (TTL) | память RoadRunner | тот же storage `process` |
+| Кулдауны способностей `hellowin:ability:{player}` `{flyers?, fart?, meep?}` (TTL) | память RoadRunner | тот же storage `process`, лок `ability:{player}` |
 | Игроки: `hellowin:player:{id}`, индекс `hellowin:players` | Valkey | тот же storage `hellowin`; подробности — [`players.md`](players.md) |
 | Летуны и бродячие зомби: `hellowin:flyer:{id}` (TTL), индекс `hellowin:flyers`, последний слон `hellowin:elephant` (без TTL) | Valkey | тот же storage `hellowin` |
 | Фигурки: `hellowin:walkers`, ушедшие зомби раунда `hellowin:zombies` | Valkey | тот же storage `hellowin` |
@@ -944,7 +981,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Автопилот `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`, речь совы `hellowin:owl` `{until, hold}`; обе переживают сброс и рестарт; пустой зал `hellowin:auto:empty` `{since, done}` (нет ключа — в зале кто-то есть) | Valkey | тот же storage `hellowin`, локи `auto` и `owl` |
 | Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
-| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `auto`, `owl`, `started-at`, `rate:{group}:{caller}` (и `rate:emote:{player}`), лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
+| Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `auto`, `owl`, `started-at`, `rate:{group}:{caller}` (и `rate:emote:{player}`), `ability:{player}`, кулдауны с TTL `meep` и `owl-ability`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
 | Очередь переходов | память RoadRunner | RR jobs, драйвер memory, pipeline `transitions` |
 
 `spiral/idempotency` — релиз `^0.5`: в нём `RedisAtMostOnceConfig` и `RedisLeaseConfig`. Valkey с AOF и volume — состояние переживает
@@ -980,6 +1017,8 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `hellowin_online_players` | gauge | игроки, подключённые к каналу сейчас, каждый один раз (presence Centrifugo); выставляет тикер раз в секунду (`WalkService::sync`) |
 | `hellowin_online_connections` | gauge | все подключения к каналу сейчас: вкладки и анонимы; там же |
 | `hellowin_rpc_rate_limited_total{group}` | counter | RPC, отклонённые лимитом (`rate limited`); `group` = `click` / `shoot` / `move` / `other` |
+| `hellowin_abilities_granted_total{ability,source}` | counter | выданные способности; `source` = `dice` / `flyers` / `moderator`; снятие модератором не считается |
+| `hellowin_abilities_used_total{ability}` | counter | применённые способности (успешный RPC `ability`) |
 | `hellowin_emotes_total{emoji}` | counter | показанные эмоции (успешный RPC `emote`); `emoji` — из набора `HELLOWIN_EMOTES` |
 | `hellowin_rpc_calls_total{method,result}` | counter | каждый RPC, дошедший до PHP (`RPCService`), отказы лимита и пульта включительно; `method` — имя известного метода, остальные — `unknown`; `result` — `ok`, код ошибки ответа (`busy`, `locked`, `forbidden`, `rate limited`, `anonymous`, …) или `exception`, если ответ не ушёл. Тот же вызов, если это действие, — `+1` в `hellowin:tally:calls` (`reveal.calls`): метрика живёт до рестарта RR и раунда не знает |
 | `hellowin_rpc_duration_seconds{method}` | histogram | время обработки RPC в PHP, от входа в `RPCService` до отправленного ответа; бакеты 1 мс … 1 с |
@@ -1045,6 +1084,10 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | `HELLOWIN_EMOTES` | `🎃,👻,💀,😂,😱,😍,👍,👏,🔥,🍺,🤘,🙏,🎉` | набор эмоций через запятую, порядок — порядок кнопок панели; без пустых и повторов; `emotes` снимка, иначе `unknown emoji` |
 | `HELLOWIN_EMOTE_COOLDOWN_MS` | 1000 | пауза между эмоциями игрока, мс (`busy`); 0 — без паузы |
 | `HELLOWIN_MEEP_COOLDOWN_MS` | 1500 | общий на всех кулдаун `meep`, мс: один мип за окно, внутри — `busy`, модератору тоже; 0 — без паузы |
+| `HELLOWIN_ABILITY_FART_FLYERS` | 100 | сбитый летун, на котором `flyers` игрока стало равно этому числу, даёт `fart`, если способности нет; целое > 0 (`hellowin.ability.fart_flyers`) |
+| `HELLOWIN_ABILITY_OWL_GAP_MS` | 10000 | мс от реплики совы `ability` до следующей; раньше — без реплики; 0 — без паузы |
+| `HELLOWIN_ABILITY_FLYERS_COUNT` | 3 | летунов в стае способности `flyers`, целое > 0 |
+| `HELLOWIN_ABILITY_FLYERS_COOLDOWN_MS`, `HELLOWIN_ABILITY_FART_COOLDOWN_MS`, `HELLOWIN_ABILITY_MEEP_COOLDOWN_MS` | 3000, 1000, 1000 | кулдаун способности на игрока, мс (`busy` с `readyAt`); 0 — без паузы |
 | `HELLOWIN_AUTO_PAUSE_MS` | 4000 | пауза автопилота после того, как сова договорила, перед ходом; и между бросками совы (`hellowin.autopilot.pause_ms`) |
 | `HELLOWIN_AUTO_DAWN_MIN_MS`, `HELLOWIN_AUTO_DAWN_MAX_MS` | 300000, 600000 | сколько длится рассвет до «В бар»: случайно в этих границах, MAX ≥ MIN |
 | `HELLOWIN_AUTO_DICE_MS` | 90000 | сколько зал бросает кости сам, прежде чем бросает сова; 0 — сова не бросает |

@@ -467,6 +467,24 @@ final class HellowinConfigTest
         (new HellowinConfig(['meep' => ['cooldown_ms' => 'soon']]))->getMeepCooldown();
     }
 
+    public function abilityNumbersComeFromTheConfig(): void
+    {
+        $config = new HellowinConfig();
+        Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [100, 10000, 3]);
+        Assert::same($config->getAbilityCooldowns(), ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000]);
+
+        $config = new HellowinConfig(['ability' => ['fart_flyers' => '5', 'owl_gap_ms' => '0', 'flyers_count' => '2', 'flyers_cooldown_ms' => '0', 'fart_cooldown_ms' => '7', 'meep_cooldown_ms' => '8']]);
+        Assert::same([$config->getAbilityFartFlyers(), $config->getAbilityOwlGap(), $config->getAbilityFlyersCount()], [5, 0, 2]);
+        Assert::same($config->getAbilityCooldowns(), ['flyers' => 0, 'fart' => 7, 'meep' => 8]);
+    }
+
+    public function rejectsAZeroFlyersThreshold(): never
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessageContaining('HELLOWIN_ABILITY_FART_FLYERS');
+
+        (new HellowinConfig(['ability' => ['fart_flyers' => 0]]))->getAbilityFartFlyers();
+    }
+
     public function barNumbersComeFromTheConfig(): void
     {
         $config = new HellowinConfig();

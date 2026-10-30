@@ -57,6 +57,29 @@ final readonly class PlayerStore
     }
 
     /**
+     * Applies the change to a player who has a record; an id without one stays without one.
+     *
+     * @param non-empty-string $id
+     * @param \Closure(Player): Player $change
+     * @return Player|null The changed record; null when there is none.
+     * @throws LockBusyException
+     */
+    public function amend(string $id, \Closure $change): ?Player
+    {
+        return $this->locks->run([self::LOCK_PLAYER . $id], function () use ($id, $change): ?Player {
+            $stored = self::record($this->storage->get(self::KEY_PLAYER . $id));
+            if ($stored === null) {
+                return null;
+            }
+
+            $player = $change(Player::fromArray($id, $stored));
+            $this->storage->set(self::KEY_PLAYER . $id, $player->toArray());
+
+            return $player;
+        });
+    }
+
+    /**
      * Zeroes the player's counters; an id without a record stays without one.
      *
      * @param non-empty-string $id
@@ -65,17 +88,7 @@ final readonly class PlayerStore
      */
     public function zero(string $id): ?Player
     {
-        return $this->locks->run([self::LOCK_PLAYER . $id], function () use ($id): ?Player {
-            $stored = self::record($this->storage->get(self::KEY_PLAYER . $id));
-            if ($stored === null) {
-                return null;
-            }
-
-            $player = Player::fromArray($id, $stored)->zeroed();
-            $this->storage->set(self::KEY_PLAYER . $id, $player->toArray());
-
-            return $player;
-        });
+        return $this->amend($id, static fn(Player $player): Player => $player->zeroed());
     }
 
     /**

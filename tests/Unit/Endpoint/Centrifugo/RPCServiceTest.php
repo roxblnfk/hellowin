@@ -226,6 +226,7 @@ final class RPCServiceTest
             'drinks' => 0,
             'damage' => 0,
             'rolls' => 0,
+            'ability' => null,
         ]]);
     }
 
@@ -1285,6 +1286,53 @@ final class RPCServiceTest
         Assert::true(\in_array(['add', PlayMetrics::RPC_LIMITED, 1.0, ['other']], $ritual->metrics->calls, true));
     }
 
+    public function abilityAnswersItsErrorsInOrder(): void
+    {
+        $ritual = new RitualHarness();
+        $ritual->clock->now = 1_760_900_001_500;
+
+        Assert::same($this->call($ritual, 'ability', []), ['ok' => false, 'error' => 'anonymous']);
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER), ['ok' => false, 'error' => 'no character']);
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER), ['ok' => false, 'error' => 'no ability']);
+        $this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'meep'], moderator: true);
+
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER), ['ok' => true, 'ability' => 'meep', 'readyAt' => 1_760_900_002_500]);
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER), ['ok' => false, 'error' => 'busy', 'readyAt' => 1_760_900_002_500]);
+        Assert::count($ritual->broadcast->ofType('power'), 1);
+        Assert::same(\array_slice($this->rpcCalls($ritual), -2), [['ability', 'ok'], ['ability', 'busy']]);
+        Assert::same($ritual->tally->count(EveningTally::CALLS), 7);
+    }
+
+    public function abilityTakesATokenOfTheOtherBucket(): void
+    {
+        $ritual = new RitualHarness();
+        $limiter = $this->limiter($ritual, ['other' => new TokenBucket(1.0, 1)]);
+
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'no character']);
+        Assert::same($this->call($ritual, 'ability', [], self::PLAYER, limiter: $limiter), ['ok' => false, 'error' => 'rate limited']);
+    }
+
+    public function moderatorGrantsAndTakesAnAbility(): void
+    {
+        $ritual = new RitualHarness();
+        $this->call($ritual, 'register', ['name' => 'Jack', 'look' => self::LOOK], self::PLAYER);
+
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'fart'], self::PLAYER), ['ok' => false, 'error' => 'forbidden']);
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'fart'], moderator: true), ['ok' => true, 'ability' => 'fart']);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER)['player']['ability'] ?? null, 'fart');
+        Assert::same($this->call($ritual, 'state', [])['state']['walkers'][0]['ability'] ?? null, 'fart');
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => null], moderator: true), ['ok' => true, 'ability' => null]);
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => self::PLAYER], moderator: true), ['ok' => false, 'error' => 'invalid ability']);
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => self::PLAYER, 'ability' => 'magic'], moderator: true), ['ok' => false, 'error' => 'invalid ability']);
+        Assert::same($this->call($ritual, 'ability.grant', ['player' => 'bbbbbbbbbbbbbbbb', 'ability' => 'meep'], moderator: true), ['ok' => false, 'error' => 'no target']);
+        Assert::same($this->call($ritual, 'ability.grant', ['ability' => 'meep'], moderator: true), ['ok' => false, 'error' => 'no target']);
+
+        Assert::same(\array_column($ritual->broadcast->ofType('ability'), 'ability'), ['fart', null]);
+        Assert::same($this->call($ritual, 'me', [], self::PLAYER)['player'], $ritual->players->find(self::PLAYER)?->toArray());
+        Assert::null($ritual->players->find(self::PLAYER)?->ability);
+    }
+
     public function unavailableLimiterLetsTheCallThrough(): void
     {
         $ritual = new RitualHarness();
@@ -1597,6 +1645,8 @@ final class RPCServiceTest
             $ritual->emotes,
             $ritual->stats,
             $ritual->autopilot,
+            $ritual->abilities,
+            $ritual->abilityGrants,
         );
         $service->handle(new RPC(
             worker: $this->worker,

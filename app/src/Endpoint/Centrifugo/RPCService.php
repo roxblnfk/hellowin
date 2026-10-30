@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Endpoint\Centrifugo;
 
+use App\Application\Ability\AbilityBusyException;
+use App\Application\Ability\AbilityGrants;
+use App\Application\Ability\AbilityService;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarRefusedException;
 use App\Application\Bar\BarService;
@@ -64,10 +67,10 @@ final readonly class RPCService implements ServiceInterface
     /** Groups with a limit of their own by method; the rest share `other`. A strike is a click at FrankenPHP. */
     private const RATE_GROUPS = ['click' => 'click', 'strike' => 'click', 'shoot' => 'shoot', 'move' => 'move', 'say' => 'say'];
 
-    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'runner', 'chat.history', 'chat.mute', 'stats.reset', 'auto'];
+    private const CONSOLE = ['reset', 'scene.next', 'finale.step', 'owl.say', 'flyer.special', 'flyers.burst', 'pause', 'thresholds', 'bar.target', 'bar.ready', 'cursed.target', 'boss.hp', 'dice.owl', 'runner', 'chat.history', 'chat.mute', 'stats.reset', 'auto', 'ability.grant'];
 
     /** Methods open to everyone; with {@see CONSOLE} they are the metric's `method` labels, any other name is `unknown`. */
-    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal', 'meep'];
+    private const PUBLIC = ['click', 'state', 'time', 'register', 'move', 'clink', 'shoot', 'bar.take', 'drink', 'clink.auto', 'beer', 'word', 'cure', 'strike', 'roll', 'say', 'emote', 'me', 'reveal', 'meep', 'ability'];
 
     /** Reads the page and the console poll for themselves, not actions: the tally of the calls leaves them out. */
     private const READS = ['state', 'time', 'me', 'reveal', 'chat.history'];
@@ -94,6 +97,8 @@ final readonly class RPCService implements ServiceInterface
         private ?EmoteService $emotes = null,
         private ?StatsResetService $stats = null,
         private ?AutopilotService $autopilot = null,
+        private ?AbilityService $abilities = null,
+        private ?AbilityGrants $grants = null,
     ) {}
 
     #[\Override]
@@ -193,6 +198,8 @@ final readonly class RPCService implements ServiceInterface
             'emote' => $this->emote($request->getData(), $player),
             'chat.history' => ['ok' => true] + $this->chatService()->history(),
             'chat.mute' => ['ok' => true, 'muted' => $this->chatService()->mute($request->getData()['player'] ?? null, $request->getData()['on'] ?? null)],
+            'ability' => $player === null ? self::fail('anonymous') : ['ok' => true] + ($this->abilities ?? throw new StoryRefusedException('no ability'))->use($player),
+            'ability.grant' => $this->grant($request->getData()),
             'stats.reset' => ['ok' => true, 'players' => ($this->stats ?? throw new StoryRefusedException('not now'))->reset()],
             'me' => [
                 'ok' => true,
@@ -241,6 +248,8 @@ final readonly class RPCService implements ServiceInterface
             return self::fail($e->error);
         } catch (WaitException $e) {
             return self::fail('wait') + ['openAt' => $e->openAt];
+        } catch (AbilityBusyException $e) {
+            return self::fail('busy') + ['readyAt' => $e->readyAt];
         } catch (BadAttemptException $e) {
             return self::fail('bad attempt') + ['last' => $e->last];
         } catch (NoCharacterException) {
@@ -334,6 +343,16 @@ final readonly class RPCService implements ServiceInterface
             : $this->story->say($params['line'] ?? null, $params['params'] ?? null);
 
         return ['ok' => true];
+    }
+
+    /**
+     * A missing `ability` is no ability at all, unlike a null, which takes the player's away.
+     */
+    private function grant(array $params): array
+    {
+        $grants = $this->grants ?? throw new StoryRefusedException('not now');
+
+        return ['ok' => true, 'ability' => $grants->grant($params['player'] ?? null, \array_key_exists('ability', $params) ? $params['ability'] : false)];
     }
 
     private function meep(array $params): array

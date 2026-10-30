@@ -35,6 +35,8 @@ final readonly class PlayMetrics
     public const EMOTES = 'hellowin_emotes_total';
     public const AUTOPILOT_ON = 'hellowin_autopilot_on';
     public const AUTOPILOT_MOVES = 'hellowin_autopilot_moves_total';
+    public const ABILITIES_GRANTED = 'hellowin_abilities_granted_total';
+    public const ABILITIES_USED = 'hellowin_abilities_used_total';
     public const PLACE_BAR = 'bar';
     public const PLACE_CURSED = 'cursed';
 
@@ -72,6 +74,8 @@ final readonly class PlayMetrics
             self::EMOTES => Collector::counter()->withHelp('Emotes shown over the characters, by emoji.')->withLabels('emoji'),
             self::AUTOPILOT_ON => Collector::gauge()->withHelp('The autopilot runs the evening: 1, or 0.'),
             self::AUTOPILOT_MOVES => Collector::counter()->withHelp('Moves the autopilot made, by action.')->withLabels('action'),
+            self::ABILITIES_GRANTED => Collector::counter()->withHelp('Abilities players got, by ability and source: dice, flyers or moderator.')->withLabels('ability', 'source'),
+            self::ABILITIES_USED => Collector::counter()->withHelp('Abilities players used, by ability.')->withLabels('ability'),
         ];
 
         foreach ($collectors as $name => $collector) {
@@ -125,6 +129,23 @@ final readonly class PlayMetrics
     public function autopilotMove(string $action): void
     {
         $this->safely(fn() => $this->metrics->add(self::AUTOPILOT_MOVES, 1, [$action]));
+    }
+
+    /**
+     * @param non-empty-string $ability One of the three: the labels stay a short list.
+     * @param non-empty-string $source
+     */
+    public function abilityGranted(string $ability, string $source): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::ABILITIES_GRANTED, 1, [$ability, $source]));
+    }
+
+    /**
+     * @param non-empty-string $ability
+     */
+    public function abilityUsed(string $ability): void
+    {
+        $this->safely(fn() => $this->metrics->add(self::ABILITIES_USED, 1, [$ability]));
     }
 
     /**

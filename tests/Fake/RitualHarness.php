@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Fake;
 
+use App\Application\Ability\AbilityGrants;
+use App\Application\Ability\AbilityService;
 use App\Application\Balance\LimitsService;
 use App\Application\Bar\BarService;
 use App\Application\Chat\ChatService;
@@ -105,6 +107,9 @@ final class RitualHarness
     public const WORD_HINT_MS = 180000;
     public const ZOMBIE_PLAYER_MS = 60000;
     public const MEEP_COOLDOWN = 1500;
+    public const ABILITY_OWL_GAP = 10000;
+    public const ABILITY_FLOCK = 3;
+    public const ABILITY_COOLDOWNS = ['flyers' => 3000, 'fart' => 1000, 'meep' => 1000];
 
     public readonly SpyBroadcast $broadcast;
     public readonly SpyQueue $queue;
@@ -159,6 +164,8 @@ final class RitualHarness
     public readonly OwlClock $owl;
     public readonly AutoStore $autoStore;
     public readonly AutopilotService $autopilot;
+    public readonly AbilityGrants $abilityGrants;
+    public readonly AbilityService $abilities;
 
     /**
      * @param positive-int $threshold
@@ -181,6 +188,7 @@ final class RitualHarness
      * @param int<0, max> $zombiePlayerMs Milliseconds a zombie player stays one with no cure; 0 — until a cure.
      * @param int<0, max> $autoEmptyReset Milliseconds without a connection before the autopilot starts the story over.
      * @param LockInterface|null $meepLock The lock of the meep's cooldown; by default one that expires by {@see $clock}.
+     * @param positive-int $fartFlyers The count of shot flyers that brings `fart`.
      */
     public function __construct(
         int $threshold = 2,
@@ -205,6 +213,7 @@ final class RitualHarness
         int $zombiePlayerMs = self::ZOMBIE_PLAYER_MS,
         ?LockInterface $meepLock = null,
         int $autoEmptyReset = self::AUTO_EMPTY_RESET,
+        int $fartFlyers = 100,
     ) {
         $this->broadcast = new SpyBroadcast();
         $this->queue = new SpyQueue();
@@ -254,10 +263,11 @@ final class RitualHarness
         $this->flyerStore = new FlyerStore($this->storage, new Locks($this->lock));
         $this->rapier = new RapierService($this->walkerStore, $this->store, $this->bossStore, $this->players, $publisher, $queue, $this->clock, self::walkZone(), 10.0, new Limit(45, 5), new Randomizer(new Mt19937(5)), $this->stops, $this->uncounted, $this->flyerStore, $this->playMetrics, self::ZOMBIE_BURN_MS, self::ZOMBIE_HEAL, $this->wordStore, $this->owl, $zombiePlayerMs, $wordHintMs);
         $this->bar = new BarService($this->barStore, $this->walkerStore, $this->store, $policy, $publisher, $this->players, $this->clock, 3, 2500, $barDrinks ?? new Limit(4), 0.5, new Randomizer(new Mt19937(11)), $this->cursed, metrics: $this->playMetrics, uncounted: $this->uncounted, pourPer: $barPourPer);
+        $this->abilityGrants = new AbilityGrants($this->playerStore, $this->walkerStore, $this->store, $publisher, $this->playMetrics, $this->clock, new Cooldown(new FakeLock(clock: $this->clock), 'owl-ability', self::ABILITY_OWL_GAP), $fartFlyers, new NullLogger(), new Randomizer(new Mt19937(19)));
         $this->diceStore = new DiceStore($this->storage, new Locks($this->lock));
         $this->diceFaces = new ScriptedDice();
         $this->diceReplies = new FakeIdempotency();
-        $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops, $this->tally);
+        $this->dice = new DiceService($this->diceStore, new DiceRoller(new Randomizer($this->diceFaces)), $this->store, $policy, $this->walkerStore, $this->players, $publisher, $this->clock, 1800, $this->diceReplies, self::DICE_TTL, $this->stops, $this->tally, $this->abilityGrants);
         $this->topStore = new TopStore($this->storage, new Locks($this->lock));
         $this->top = new TopService($this->topStore, $this->store, $publisher, $this->clock, 3);
         $this->stats = new StatsResetService($this->playerStore, $this->top, new NullLogger());
@@ -297,7 +307,9 @@ final class RitualHarness
             $this->stops,
             new Burst(2, 0.5),
             $policy,
+            $this->abilityGrants,
         );
+        $this->abilities = new AbilityService($this->walkerStore, $this->playerStore, $this->flyers, $this->store, $publisher, $this->playMetrics, $this->clock, new ArrayStorage(), new Locks($this->lock), self::ABILITY_COOLDOWNS, self::ABILITY_FLOCK);
         $this->limitsStore = new LimitsStore($this->storage);
         $this->presenceStore = new PresenceStore($this->storage);
         $this->limits = new LimitsService($this->store, $policy, $this->limitsStore, $this->walkerStore, $publisher, $queue, $this->clock, $this->flyers, $this->bar, $this->cursed, $this->rapier);
