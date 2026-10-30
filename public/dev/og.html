@@ -15,10 +15,11 @@
 <canvas id="og" width="300" height="158"></canvas>
 <script type="module">
     import { pumpkinLayers, silhouette, DECOR, bake } from '../js/pixel/sprites.js';
-    import { paintSky, bakeLit, halo, NIGHT, LIT_PALETTE } from '../js/pixel/night.js';
+    import { FLYERS } from '../js/pixel/flyers.js';
+    import { paintSky, bakeLit, relightCanvas, halo, NIGHT, LIT_PALETTE } from '../js/pixel/night.js';
     import { OWL } from '../js/pixel/owl.js';
     import { RUNNER } from '../js/pixel/finale.js';
-    import { characterFrame } from '../js/pixel/characters.js';
+    import { characterFrame, randomLook } from '../js/pixel/characters.js';
     import { PALETTE } from '../js/pixel/palette.js';
 
     const W = 300;
@@ -60,16 +61,17 @@
         for (let x = (y * 7) % 11; x < W; x += 11 + (y % 5)) ctx.fillRect(x, y, 2, 1);
     }
 
-    // RoadRunner on the horizon: only a dark shape — is it dead?
-    const runner = silhouette(RUNNER.l.run[1], 'outline');
-    put(bake(runner), runner.anchor, 214, HORIZON + 2, { alpha: 0.9 });
+    // Ducks far off in the sky: shapes in the sky's own tone, seen only on a second look
+    const ducks = [[22, 16, 2, 0], [48, 28, 1, 2], [14, 44, 1, 1], [62, 60, 1, 3], [236, 64, 2, 1], [212, 14, 1, 2],
+        [286, 74, 1, 0], [34, 84, 1, 2], [128, 90, 1, 1], [176, 86, 1, 3], [98, 82, 1, 0], [258, 92, 1, 2]];
+    for (const [x, y, depth, f] of ducks) {
+        const duck = silhouette(FLYERS.duck[depth].fly[f], 'outline');
+        put(bake(duck), duck.anchor ?? { x: duck.w >> 1, y: duck.h >> 1 }, x, y, { flip: x > 150, alpha: 0.45 });
+    }
 
-    // The owl on the dead tree, the narrator
-    const tree = DECOR.tree;
-    sprite(tree, 34, H - 6, {}, 'blood');
-    const perch = tree.perch;
-    const owl = OWL.hoot;
-    sprite(owl, 34 - tree.anchor.x + perch[0], H - 6 - tree.anchor.y + perch[1]);
+    // RoadRunner on the horizon: only a dark shape — is it dead?
+    const runner = silhouette(RUNNER.xl.stop, 'outline');
+    put(bake(runner), runner.anchor, 262, HORIZON - 4, { alpha: 0.9, flip: true });
 
     // Lit pumpkins with fire on top and their warm halos
     const pumpkin = (stage, size, seed, x, y) => {
@@ -83,20 +85,45 @@
             put(lit ? bake(layer) : bakeLit(layer, 'firelight'), p.anchor, x, y, { add: name === 'glow' });
         }
     };
-    pumpkin(7, 'm', 7, 96, 146);
-    pumpkin(7, 'l', 3, 150, 150);
-    pumpkin(7, 's', 11, 118, 150);
-    pumpkin(7, 'm', 21, 208, 140);
-    pumpkin(7, 's', 5, 252, 152);
 
-    // Players with beer around the pumpkins
-    const walker = (look, x, y, opts = {}) => {
-        const f = characterFrame(look, { dir: opts.dir ?? 'front', pose: opts.pose ?? 'idle', item: 'beer' });
-        put(f.canvas, f.anchor, x, y, { flip: opts.flip });
+    // A crowd of players, row behind row: the far rows sink into the blood-moon light
+    let seed = 2026;
+    const random = () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-    walker({ body: 'skeleton', hat: 'witch', eyes: 'amber', face: 'smile', cloak: 'none' }, 62, 156, { dir: 'side' });
-    walker({ body: 'witch', hat: 'pumpkin', eyes: 'green', face: 'smile', cloak: 'none' }, 180, 158, { pose: 'toast' });
-    walker({ body: 'robe', hat: 'horns', eyes: 'red', face: 'smile', cloak: 'none' }, 280, 158, { dir: 'side', flip: true });
+    const pick = (list) => list[Math.floor(random() * list.length)];
+    const walker = (x, y, lighting) => {
+        const pose = pick(['idle', 'idle', 'toast', 'toast', 'clink', 'drink', 'fidget', 'ritual']);
+        const f = characterFrame(randomLook(random), {
+            dir: pick(['front', 'front', 'side']),
+            pose,
+            frame: Math.floor(random() * 4),
+            item: pose === 'ritual' ? null : 'beer',
+        });
+        put(lighting ? relightCanvas(f.canvas, lighting) : f.canvas, f.anchor, x, y, { flip: random() < 0.5 });
+    };
+    const scene = [];
+    const rows = [[116, 'blood', 13, 18], [128, 'blood', 12, 22], [141, 'firelight', 11, 26], [157, null, 10, 30]];
+    for (const [y, lighting, count, step] of rows) {
+        const start = (W - (count - 1) * step) / 2;
+        for (let i = 0; i < count; i++) {
+            const x = start + i * step + Math.round((random() - 0.5) * step * 0.5);
+            scene.push({ y: y + Math.round(random() * 3), draw: (yy) => walker(x, yy, lighting) });
+        }
+    }
+    for (const [size, s, x, y] of [['m', 7, 96, 134], ['l', 3, 156, 138], ['m', 21, 214, 132], ['s', 5, 262, 136], ['s', 11, 40, 140]]) {
+        scene.push({ y, draw: (yy) => pumpkin(7, size, s, x, yy) });
+    }
+    // The owl on the dead tree, the narrator, stands among the crowd
+    scene.push({ y: 150, draw: (y) => {
+        const tree = DECOR.tree;
+        sprite(tree, 26, y, {}, 'blood');
+        sprite(OWL.hoot, 26 - tree.anchor.x + tree.perch[0], y - tree.anchor.y + tree.perch[1]);
+    } });
+    scene.sort((a, b) => a.y - b.y).forEach((e) => e.draw(e.y));
 
     // Text: rendered at art scale and thresholded, so every glyph is crisp pixels with a hard outline
     await document.fonts.load('16px "Press Start 2P"');
