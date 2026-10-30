@@ -16,6 +16,7 @@
 <script type="module">
     import { pumpkinLayers, silhouette, DECOR, bake } from '../js/pixel/sprites.js';
     import { FLYERS } from '../js/pixel/flyers.js';
+    import { zombieBurnArt } from '../js/pixel/deaths.js';
     import { paintSky, bakeLit, relightCanvas, halo, NIGHT, LIT_PALETTE } from '../js/pixel/night.js';
     import { OWL } from '../js/pixel/owl.js';
     import { RUNNER } from '../js/pixel/finale.js';
@@ -69,6 +70,10 @@
         put(bake(duck), duck.anchor ?? { x: duck.w >> 1, y: duck.h >> 1 }, x, y, { flip: x > 150, alpha: 0.45 });
     }
 
+    // The witch, the rare flyer, crossing the blood moon
+    const witch = silhouette(FLYERS.witch[2].fly[1], 'bloodTop');
+    put(bake(witch), witch.anchor ?? { x: witch.w >> 1, y: witch.h >> 1 }, 250, 40, { flip: true });
+
     // RoadRunner on the horizon: only a dark shape — is it dead?
     const runner = silhouette(RUNNER.xl.stop, 'outline');
     put(bake(runner), runner.anchor, 262, HORIZON - 4, { alpha: 0.9, flip: true });
@@ -115,23 +120,33 @@
         }
     }
 
-    // A zombie worker lying on its back: the standing frame turned a quarter, head to the side
-    const fallen = (x, y, flip) => {
-        const f = characterFrame(randomLook(random), { pose: 'lurch', zombie: true });
-        ctx.save();
-        ctx.translate(Math.round(x), Math.round(y));
-        if (flip) ctx.scale(-1, 1);
-        ctx.rotate(Math.PI / 2);
-        ctx.drawImage(relightCanvas(f.canvas, 'firelight'), -f.anchor.x - 8, -f.anchor.y);
-        ctx.restore();
-    };
+    // Zombie workers of the cursed world, knocked flat at the pumpkins' feet
+    const zombie = FLYERS.zombie[1];
+    const fallen = (def, x, y, flip) => put(bakeLit(def, 'firelight'), def.anchor, x, y, { flip });
 
-    // The front: big pumpkins with fallen zombies at their feet, nobody standing before them
-    for (const [x, s, flip] of [[78, 3, false], [150, 21, true], [222, 7, false]]) {
+    // The front: big pumpkins over heaps of fallen zombies, nobody standing before them
+    for (const [x, s] of [[78, 3], [150, 21], [222, 7]]) {
         scene.push({ y: 148, draw: (y) => pumpkin(7, 'l', s, x, y) });
-        scene.push({ y: 158, draw: () => fallen(x + (flip ? -14 : 14), 158, flip) });
     }
-    for (const x of [16, 268, 292]) {
+    for (const [def, x, y, flip] of [
+        [zombie.fall[1], 62, 158, false], [zombie.headless.flat, 98, 157, true], [zombie.fall[1], 136, 158, true],
+        [zombie.fall[1], 170, 157, false], [zombie.headless.flat, 206, 158, false], [zombie.fall[1], 240, 157, true],
+        [zombie.pieces.hat, 116, 154, false], [zombie.pieces.head, 190, 155, true],
+    ]) {
+        scene.push({ y: 159, draw: () => fallen(def, x, y, flip) });
+    }
+
+    // One zombie by the tree still burns in FrankenPHP's lime fire
+    scene.push({ y: 157, draw: (y) => {
+        const art = zombieBurnArt();
+        const src = zombie.idle[0];
+        const x = 20;
+        light(halo(16, 9, 'franken'), x, y - 4, { add: true, alpha: 0.7 });
+        put(bakeLit(art.body[2], 'firelight'), art.body[2].anchor ?? src.anchor, x, y);
+        const fire = art.flames[2][1];
+        put(bake(fire), fire.anchor ?? { x: src.anchor.x + 3, y: src.anchor.y + 10 }, x, y);
+    } });
+    for (const x of [268, 292]) {
         scene.push({ y: 157 + Math.round(random() * 2), draw: (yy) => walker(x, yy, null) });
     }
     // The owl on the dead tree, the narrator, stands among the crowd
