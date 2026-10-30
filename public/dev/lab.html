@@ -202,8 +202,8 @@
   to all. The set is the client's default (no data-emotes). ?emotes=N — N bots emote every 4 s (under ?freeze — once at
   the start, with my walker's too under ?me=1: ?emotes=3&chat=2&me=1&freeze=1500 shows them beside the bubbles).
   Abilities (docs/spec/frontend.md, «Способности»): `ability` answers like the server's (`no character`, `no ability`,
-  `busy` with `readyAt` within the cooldown — flyers 3 s, fart 3 s, meep 2 s here —, `no flyers` where the set has none) and
-  sends `power` to all; `flyers` launches 3 flyers of the set from the walker, near and up off the edge, with `by`. A roll
+  `busy` with `readyAt` within the cooldown — flyers 3 s, fart 3 s, meep 2 s here —) and
+  sends `power` to all; `flyers` launches 3 ducks and chickens from the walker in any scene, near and up off the edge, with `by`. A roll
   of three equal dice gives a random other of the five, `ability.grant` of the console (?mod=1, «Способности») gives or takes
   one; a grant says the owl's `ability` line unless one was said within 20 s. ?ability=flyers|fart|meep|lightning|pumpkin — mine at the
   start (with ?me=1): the HUD's button, Space. ?grant=ms — at that moment the first bot gets ?grantwhat= (default flyers),
@@ -2315,6 +2315,8 @@
     // RPC `ability {}` (the lightning's `{flyer}`): `power` to all; the flyers' ability launches a flock from the walker,
     // near, up off the edge; the lightning counts as the player's shot (`shot` after `power`; the elephant farts); the
     // pumpkin stays on the walker until its next path.
+    // The flyers' ability always lets out ducks and chickens, in any scene (HELLOWIN_ABILITY_FLYERS_KINDS).
+    const ABILITY_FLYER_KINDS = ['duck', 'chicken'];
     function engineAbility(id, { flyer } = {}) {
         if (!id) return { ok: false, error: 'anonymous' };
         const w = engine.walkers.find((x) => x.id === id);
@@ -2324,7 +2326,6 @@
         const t = serverTime();
         const key = `${id}:${ability}`;
         if (t < (abilityReady.get(key) ?? 0)) return { ok: false, error: 'busy', readyAt: abilityReady.get(key) };
-        if (ability === 'flyers' && !kindsNow().length) return { ok: false, error: 'no flyers' };
         const target = ability === 'lightning' ? live.get(flyer) : null;
         if (ability === 'lightning' && (!target || t > target.until)) return { ok: false, error: 'no target' };
         abilityReady.set(key, t + ABILITY_COOLDOWN_MS[ability]);
@@ -2346,7 +2347,7 @@
             for (let i = 0; i < ABILITY_FLYERS; i++) {
                 const side = i % 2 ? 1 : -1;
                 const path = { from, via: { x: from.x + side * (6 + i * 4), y: Math.max(4, from.y - 30 - i * 6) }, to: { x: from.x < 50 ? 108 : -8, y: -8 + i * 6 }, by: { id } };
-                launchFlyer(nextId(), pick(kindsNow()), 2, DURATION[2], POINTS[2], path);
+                launchFlyer(nextId(), pick(ABILITY_FLYER_KINDS), 2, DURATION[2], POINTS[2], path);
             }
         }
         return { ok: true, ability, readyAt: abilityReady.get(key) };

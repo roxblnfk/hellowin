@@ -58,12 +58,11 @@ export function spaceAction({ dice = false, drink = false, ability = false }) {
 
 /**
  * The HUD's button: `hidden` without my walker on the field or without an ability; `disabled` while its cooldown runs
- * (`readyAt` of the last reply, server clock — for that ability only), while my RPC is unanswered, for `flyers` where
- * the set has none (`burst: false` of `limits` — the sunset), and for `lightning` with no flyer on screen to strike
- * (`target`).
+ * (`readyAt` of the last reply, server clock — for that ability only), while my RPC is unanswered, and for `lightning`
+ * with no flyer on screen to strike (`target`). The flyers' ability lets out ducks and chickens anywhere.
  */
-export function abilityButton({ ability, onField, readyAt = 0, readyFor = null, now, burst = true, pending = false, target = true }) {
+export function abilityButton({ ability, onField, readyAt = 0, readyFor = null, now, pending = false, target = true }) {
     if (!onField || !ability) return { hidden: true, disabled: true };
     const cooling = readyFor === ability && now < readyAt;
-    return { hidden: false, disabled: pending || cooling || (ability === 'flyers' && !burst) || (ability === 'lightning' && !target) };
+    return { hidden: false, disabled: pending || cooling || (ability === 'lightning' && !target) };
 }

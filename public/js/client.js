@@ -1272,8 +1272,6 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (bonfire !== undefined && bonfireOf()) bonfireOf().threshold = bonfire;
             if (circle !== undefined && circleOf()) circleOf().threshold = circle;
             paintElements();
-            // `burst` decides whether the flyers' ability may go.
-            paintAbility();
         },
 
         // Who is online (protocol.md, `presence`): only the console shows it.
@@ -1411,7 +1409,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     /** The HUD button's state for my ability (ability.js, abilityButton); a zombie may use it too. */
     function abilityState() {
         const target = model.ability !== 'lightning' || lightningTarget() !== null;
-        return abilityButton({ ability: model.ability, onField: myWalker() !== null, readyAt: power.readyAt, readyFor: power.readyFor, now: now() + offset, burst: model.limits?.burst !== false, pending: power.pending, target });
+        return abilityButton({ ability: model.ability, onField: myWalker() !== null, readyAt: power.readyAt, readyFor: power.readyFor, now: now() + offset, pending: power.pending, target });
     }
     /** The flyer my lightning would strike: the nearest to my walker as the scene draws them now; null — none on screen. */
     function lightningTarget() {
