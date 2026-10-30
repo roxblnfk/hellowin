@@ -535,9 +535,10 @@ final readonly class WalkService
      * gone for `$leaveAfter` leave. The same read counts who is online: the gauges and, once the counts change, the
      * `presence` event.
      *
+     * @return Online The presence as read, for the other jobs of the same beat.
      * @throws LockBusyException
      */
-    public function sync(): void
+    public function sync(): Online
     {
         $presence = $this->presence->online();
         $this->countOnline($presence);
@@ -592,6 +593,8 @@ final readonly class WalkService
             }
         }
         $this->metrics->walkers($count);
+
+        return $presence;
     }
 
     /**
