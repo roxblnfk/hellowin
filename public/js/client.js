@@ -1520,8 +1520,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         /**
          * Uses my ability once (RPC `ability {}`) unless its button is off or I pressed less than ABILITY_GAP_MS ago.
          * Nothing is drawn until the `power` event; the reply's `readyAt` (a `busy` one carries it too) keeps the button
-         * off until then. A lightning names its flyer (lightningTarget). `busy`, `no flyers` and `no target` (the flyer fell
-         * meanwhile) stay quiet — the button already says so; other refusals are warned.
+         * off until then. A lightning names its flyer (lightningTarget). `busy` and `no target` (the flyer fell meanwhile)
+         * stay quiet — the button already says so; other refusals are warned.
          */
         async useAbility() {
             const t = now();
@@ -1755,7 +1755,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
 }
 
 // The ability refusals the HUD's button already shows (protocol.md, «Способности»): they are not warned.
-const QUIET_REFUSALS = ['busy', 'no flyers', 'no target'];
+const QUIET_REFUSALS = ['busy', 'no target'];
 // How often the lightning's button looks for a flyer on screen, ms.
 const TARGET_POLL_MS = 250;
 
