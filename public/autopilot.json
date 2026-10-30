@@ -6,11 +6,348 @@
     "max": 27000
   },
   "holdMs": 5600,
-  "nameChars": 24,
+  "someone": 7,
   "lines": {
     "ability": {
-      "ms": 22512,
-      "hold": 5600
+      "ms": 10820,
+      "hold": 5600,
+      "chars": 40,
+      "fill": [
+        "player"
+      ],
+      "aside": true,
+      "abilities": {
+        "fart": [
+          {
+            "ms": 16824,
+            "hold": 5600,
+            "chars": 78,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 16666,
+            "hold": 5600,
+            "chars": 77,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15718,
+            "hold": 5600,
+            "chars": 71,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13506,
+            "hold": 5600,
+            "chars": 57,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 18720,
+            "hold": 5600,
+            "chars": 90,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13980,
+            "hold": 5600,
+            "chars": 60,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 16666,
+            "hold": 5600,
+            "chars": 77,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15402,
+            "hold": 5600,
+            "chars": 69,
+            "fill": [
+              "player"
+            ]
+          }
+        ],
+        "meep": [
+          {
+            "ms": 14296,
+            "hold": 5600,
+            "chars": 62,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13348,
+            "hold": 5600,
+            "chars": 56,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13190,
+            "hold": 5600,
+            "chars": 55,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 11926,
+            "hold": 5600,
+            "chars": 47,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13822,
+            "hold": 5600,
+            "chars": 59,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14454,
+            "hold": 5600,
+            "chars": 63,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15718,
+            "hold": 5600,
+            "chars": 71,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14770,
+            "hold": 5600,
+            "chars": 65,
+            "fill": [
+              "player"
+            ]
+          }
+        ],
+        "flyers": [
+          {
+            "ms": 14770,
+            "hold": 5600,
+            "chars": 65,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15244,
+            "hold": 5600,
+            "chars": 68,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13664,
+            "hold": 5600,
+            "chars": 58,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 10820,
+            "hold": 5600,
+            "chars": 40,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14770,
+            "hold": 5600,
+            "chars": 65,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 16982,
+            "hold": 5600,
+            "chars": 79,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14138,
+            "hold": 5600,
+            "chars": 61,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13348,
+            "hold": 5600,
+            "chars": 56,
+            "fill": [
+              "player"
+            ]
+          }
+        ],
+        "lightning": [
+          {
+            "ms": 15560,
+            "hold": 5600,
+            "chars": 70,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 12084,
+            "hold": 5600,
+            "chars": 48,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 16824,
+            "hold": 5600,
+            "chars": 78,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 12084,
+            "hold": 5600,
+            "chars": 48,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13348,
+            "hold": 5600,
+            "chars": 56,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15244,
+            "hold": 5600,
+            "chars": 68,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14138,
+            "hold": 5600,
+            "chars": 61,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13348,
+            "hold": 5600,
+            "chars": 56,
+            "fill": [
+              "player"
+            ]
+          }
+        ],
+        "pumpkin": [
+          {
+            "ms": 15718,
+            "hold": 5600,
+            "chars": 71,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 13980,
+            "hold": 5600,
+            "chars": 60,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15086,
+            "hold": 5600,
+            "chars": 67,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 17140,
+            "hold": 5600,
+            "chars": 80,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14138,
+            "hold": 5600,
+            "chars": 61,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 16034,
+            "hold": 5600,
+            "chars": 73,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 14454,
+            "hold": 5600,
+            "chars": 63,
+            "fill": [
+              "player"
+            ]
+          },
+          {
+            "ms": 15402,
+            "hold": 5600,
+            "chars": 69,
+            "fill": [
+              "player"
+            ]
+          }
+        ]
+      }
     },
     "bar-again": {
       "ms": 7900,
@@ -29,7 +366,7 @@
       "hold": 5600
     },
     "bar-intro": {
-      "ms": 27012,
+      "ms": 27170,
       "hold": 15156,
       "lead": 9556
     },
@@ -38,20 +375,32 @@
       "hold": 5600
     },
     "bonfire-done": {
-      "ms": 14770,
-      "hold": 5600
+      "ms": 10978,
+      "hold": 5600,
+      "chars": 41,
+      "fill": [
+        "player"
+      ]
     },
     "bonfire-open": {
       "ms": 14138,
       "hold": 5600
     },
     "boss-down": {
-      "ms": 11926,
-      "hold": 5600
+      "ms": 8134,
+      "hold": 5600,
+      "chars": 23,
+      "fill": [
+        "player"
+      ]
     },
     "circle-done": {
-      "ms": 14612,
-      "hold": 5600
+      "ms": 10820,
+      "hold": 5600,
+      "chars": 40,
+      "fill": [
+        "player"
+      ]
     },
     "clues": {
       "ms": 17930,
@@ -66,18 +415,24 @@
       "hold": 5600
     },
     "dice-win": {
-      "ms": 16824,
-      "hold": 5600
+      "ms": 12558,
+      "hold": 5600,
+      "chars": 51,
+      "fill": [
+        "player",
+        "attempt"
+      ]
     },
     "fart-time": {
       "ms": 7900,
-      "hold": 5600
+      "hold": 5600,
+      "aside": true
     },
     "finale-1": {
-      "ms": 28118,
+      "ms": 29066,
       "hold": 14840,
-      "delay": 3000,
-      "lead": 9240
+      "lead": 9240,
+      "delay": 3000
     },
     "finale-2": {
       "ms": 19744,
@@ -85,12 +440,12 @@
       "lead": 10030
     },
     "finale-3": {
-      "ms": 25432,
+      "ms": 27012,
       "hold": 15472,
       "lead": 9872
     },
     "finale-4": {
-      "ms": 41390,
+      "ms": 41548,
       "hold": 31430,
       "lead": 25830
     },
@@ -100,9 +455,9 @@
     },
     "finale-6": {
       "ms": 28118,
-      "hold": 13500,
-      "delay": 2650,
-      "lead": 17614
+      "hold": 23214,
+      "lead": 17614,
+      "delay": 2650
     },
     "finale-7": {
       "ms": 16508,
@@ -110,27 +465,95 @@
     },
     "flyers": {
       "ms": 14928,
-      "hold": 5600
+      "hold": 5600,
+      "scenes": {
+        "0": {
+          "ms": 10346,
+          "hold": 5600
+        },
+        "2": {
+          "ms": 13190,
+          "hold": 5600
+        },
+        "3": {
+          "ms": 12558,
+          "hold": 5600
+        },
+        "4": {
+          "ms": 12874,
+          "hold": 5600
+        }
+      }
     },
     "hurry": {
-      "ms": 16350,
-      "hold": 5600
+      "ms": 13190,
+      "hold": 5600,
+      "scenes": {
+        "0": {
+          "ms": 9082,
+          "hold": 5600
+        },
+        "2": {
+          "ms": 9398,
+          "hold": 5600
+        },
+        "3": {
+          "ms": 9082,
+          "hold": 5600
+        },
+        "4": {
+          "ms": 9082,
+          "hold": 5600
+        }
+      },
+      "steps": {
+        "0": {
+          "ms": 9082,
+          "hold": 5600
+        },
+        "1": {
+          "ms": 10820,
+          "hold": 5600
+        },
+        "5": {
+          "ms": 16350,
+          "hold": 5600
+        },
+        "6": {
+          "ms": 13032,
+          "hold": 5600
+        },
+        "7": {
+          "ms": 11294,
+          "hold": 5600
+        }
+      }
     },
     "intro": {
       "ms": 21722,
       "hold": 5600
     },
     "last-pumpkin": {
-      "ms": 17298,
-      "hold": 5600
+      "ms": 13506,
+      "hold": 5600,
+      "chars": 57,
+      "fill": [
+        "player"
+      ]
     },
     "outro": {
       "ms": 14770,
       "hold": 5600
     },
     "rules": {
-      "ms": 19352,
-      "hold": 5600
+      "ms": 18720,
+      "hold": 5600,
+      "scenes": {
+        "0": {
+          "ms": 19352,
+          "hold": 5600
+        }
+      }
     },
     "scene-1": {
       "ms": 27802,
@@ -143,7 +566,7 @@
       "lead": 13032
     },
     "scene-3": {
-      "ms": 21324,
+      "ms": 22272,
       "hold": 18790,
       "lead": 13190
     },
@@ -152,12 +575,31 @@
       "hold": 5600
     },
     "scene-ready": {
-      "ms": 13506,
-      "hold": 5600
+      "ms": 12242,
+      "hold": 5600,
+      "scenes": {
+        "2": {
+          "ms": 12242,
+          "hold": 5600
+        },
+        "3": {
+          "ms": 9398,
+          "hold": 5600
+        },
+        "4": {
+          "ms": 13506,
+          "hold": 5600
+        }
+      }
     },
     "witch-down": {
-      "ms": 16192,
-      "hold": 5600
+      "ms": 12400,
+      "hold": 5600,
+      "chars": 50,
+      "fill": [
+        "player"
+      ],
+      "aside": true
     },
     "word-hint": {
       "ms": 11610,

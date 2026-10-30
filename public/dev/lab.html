@@ -226,6 +226,9 @@
   ?aproom=1 — the room does its tasks itself. A quick evening:
   ?mod=1&autopilot=1&aproom=1&k=0.1&walkers=4&aptalk=0.1&appause=1000&apdawn=6000-9000&apdice=4000;
   ?mod=1&autopilot=1&scene=1&ready=1&freeze=900 — the console counting down to the sunset.
+  A room that keeps getting abilities: ?grants=ms — every ms a random bot gets a new one (pillar, owl line), ?abilitygap=ms —
+  the gap between the owl's ability lines (default 20000, 0 — every one); lab.owlShows — what the bubble showed and when
+  ({at, text, ms}): ?mod=1&autopilot=1&aproom=1&k=0.1&walkers=4&scene=1&grants=1500&abilitygap=0.
 -->
 <body data-scene="0">
 <main class="patch" id="app" data-centrifugo-url="" data-round="1" data-scene-stages="4" data-stage-max="0" data-threshold="5" data-chat-max="120"
@@ -738,8 +741,10 @@
     let deliveredBy = 0;
     // The autopilot (autopilotTick): its stored record and the owl's speech clock, fed by every `owl` sent.
     const autoState = { rec: null, speech: null };
+    // The scene and the finale step a line is said in: they pick its variant in the table, as in the client's bubble.
+    const speechCtx = () => ({ scene: engine.scene, step: engine.scene >= engine.sceneStages ? engine.finale?.step ?? null : null });
     const deliver = (event) => {
-        if (event.type === 'owl') autoState.speech?.said(event, serverTime());
+        if (event.type === 'owl') autoState.speech?.said(event, serverTime(), speechCtx());
         const now = simulated ? simTime : performance.now();
         deliveredBy = Math.max(deliveredBy + 1, now + 20 + Math.random() * 40);
         later(() => client.apply({ round: engine.round, ...event }), deliveredBy - now);
@@ -937,7 +942,7 @@
             if (step === LAST_STEP && !(engine.boss?.hp === 0) && force !== true) throw new Error('not ready');
             engine.finale = finaleOf(step);
             // The instruction opens its input as its last part shows, told before the line goes out.
-            const opensAt = Math.max(serverTime(), autoState.speech?.opensAt({ line: `finale-${step}` }, serverTime()) ?? 0);
+            const opensAt = Math.max(serverTime(), autoState.speech?.opensAt({ line: `finale-${step}` }, serverTime(), speechCtx()) ?? 0);
             if (step === BOSS_STEP) engine.finale.wordAt = opensAt;
             // Step 1 waits for the first 6-6-6; a forced step 2 turns the dice off without a winner.
             if (step === 1) engine.ready = false;
@@ -1117,11 +1122,19 @@
     const talkScale = Math.min(1, Math.max(0.01, Number.parseFloat(params.get('aptalk') ?? '1') || 1));
     const speechTable = (await fetch('/autopilot.json').then((r) => (r.ok ? r.json() : null)).catch(() => null)) ?? speechTimes();
     const scaled = (ms) => Math.round(ms * talkScale);
+    const mapEntries = (object, fn) => Object.fromEntries(Object.entries(object).map(([k, v]) => [k, fn(v)]));
+    // A variant's own times shorter; one counted from `chars` gets shorter by the scaled `showMs`.
+    const scaleVariant = (v) => ({ ...v, ms: scaled(v.ms), hold: scaled(v.hold), ...(v.lead ? { lead: scaled(v.lead) } : {}) });
     const talkTable = {
         ...speechTable,
         showMs: Object.fromEntries(Object.entries(speechTable.showMs).map(([key, ms]) => [key, ms * talkScale])),
         holdMs: scaled(speechTable.holdMs),
-        lines: Object.fromEntries(Object.entries(speechTable.lines).map(([id, l]) => [id, { ms: scaled(l.ms), hold: scaled(l.hold), ...(l.delay ? { delay: l.delay } : {}), ...(l.lead ? { lead: scaled(l.lead) } : {}) }])),
+        lines: Object.fromEntries(Object.entries(speechTable.lines).map(([id, l]) => [id, {
+            ...scaleVariant(l),
+            ...(l.scenes ? { scenes: mapEntries(l.scenes, scaleVariant) } : {}),
+            ...(l.steps ? { steps: mapEntries(l.steps, scaleVariant) } : {}),
+            ...(l.abilities ? { abilities: mapEntries(l.abilities, (list) => list.map(scaleVariant)) } : {}),
+        }])),
     };
     const AUTO_CFG = {
         ...AUTO,
@@ -2281,7 +2294,7 @@
     // The abilities (protocol.md, «Способности»): kept on the walker like `Walker.ability`; the cooldowns, the owl's gap and
     // the flock stand in for HELLOWIN_ABILITY_*_COOLDOWN_MS, _OWL_GAP_MS and _FLYERS_COUNT.
     const ABILITY_COOLDOWN_MS = { flyers: 3000, fart: 3000, meep: 2000, lightning: 3000, pumpkin: 2000 };
-    const ABILITY_OWL_GAP_MS = 20000;
+    const ABILITY_OWL_GAP_MS = params.has('abilitygap') ? Math.max(0, Number.parseInt(params.get('abilitygap'), 10) || 0) : 20000;
     const ABILITY_FLYERS = 3;
     const abilityReady = new Map();
     let abilityOwlAt = -Infinity;
@@ -2610,7 +2623,12 @@
         });
         window.audio = audio;
     }
-    const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => sound?.owl(line), onHide: () => sound?.owlHush() });
+    // What the bubble said and when (wall clock): lab.owlShows, for a run of the autopilot.
+    const owlShows = [];
+    const owl = createOwl(root, scene, { ...(simulated ? { now: () => simTime, later } : {}), onShow: (line) => {
+        owlShows.push({ at: serverTime(), text: line.text, ms: line.ms });
+        sound?.owl(line);
+    }, onHide: () => sound?.owlHush() });
     // RPC `reveal` of the panel: the engine's numbers now, on the lab's clock.
     // `calls` — every player action on the server; the lab counts only the ones it keeps numbers of.
     const reveal = createReveal(root, { request: async () => ({ ...structuredClone(stats), calls: stats.clicks + stats.shot + stats.drinks + stats.damage + stats.rolls }), later, onToggle: () => owl.place() });
@@ -2656,7 +2674,7 @@
     const still = params.get('still') === '1';
     if (!simulated && !clinkStart && !clickClinkStart && !pumpkinBeerStart && !barPairs && !barDemo && !rrClinkStart && !still) wanderers().forEach((w) => wander(w.id));
     // Handle for scripted checks from the console or a test page.
-    window.lab = { client, engine, scene, walkTrace };
+    window.lab = { client, engine, scene, walkTrace, owlShows, speech: () => autoState.speech };
     if (startStage > 4) engineJump(startStage);
 
     // Random clicks go where a click counts: an open bonfire, else the pumpkins (like a room would).
@@ -2773,6 +2791,13 @@
         if (pumpkinBeerStart) pumpkinBeerRound();
         if (grantAt >= 0) later(labGrant, grantAt);
         if (unpumpkinAt >= 0) later(labUnpumpkin, unpumpkinAt);
+        // ?grants=ms: every ms a bot gets the next ability — a room that keeps rolling triples.
+        const grantsMs = Number.parseInt(params.get('grants') ?? '0', 10) || 0;
+        if (grantsMs > 0) setInterval(() => {
+            const bots = wanderers();
+            const w = bots[Math.floor(Math.random() * bots.length)];
+            if (w) grantAbility(w, ABILITY_KINDS.filter((a) => a !== w.ability)[Math.floor(Math.random() * 4)], 'dice');
+        }, grantsMs);
         if (powerAt >= 0) later(labPowers, powerAt);
         autopilotTick();
         if (params.get('aproom') === '1') roomTick();

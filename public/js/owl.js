@@ -10,7 +10,8 @@ import { speechPlan } from './owl-speech.js';
  * label on the moderator's console (where it shows — MENU); auto?: the server says it by itself; then?: the next part
  * said right after this one, or a list of parts said one after another; rapier?: the part (0 — the first) on which the
  * owl draws its rapier; abilities?: {[ability]: text[]} — the line for `params.ability`, picked by `params.n` like a
- * rumour (`text` stands in for an ability not listed) }. A text without a scene key is the day's: a line said in the
+ * rumour (`text` stands in for an ability not listed); aside?: a line said aside — only into a free bubble, else dropped
+ * (createOwl, say) }. A text without a scene key is the day's: a line said in the
  * bar has its own key 0. `{player}` is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
@@ -47,12 +48,13 @@ const RU_LINES = {
     'bonfire-open': { auto: true, hoot: true, text: 'Тыквы готовы! А теперь все вместе — разжигайте костёр!' },
     'bonfire-done': { auto: true, text: 'Костёр разжёг {player}! Ух, как пылает.' },
     'circle-done': { auto: true, hoot: true, text: 'Круг замкнул {player}! Земля дрожит…' },
-    'witch-down': { auto: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
+    'witch-down': { auto: true, aside: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
     // The first shot at the elephant: the name of the PHP Fart Time channel, the same in both languages.
-    'fart-time': { auto: true, text: 'Fart Time!' },
+    'fart-time': { auto: true, aside: true, text: 'Fart Time!' },
     // New phrases go at the end of their list, so a number keeps its phrase; item N of `en` adapts item N of `ru`.
     ability: {
         auto: true,
+        aside: true,
         text: 'У {player} новая способность! Покажи её всем.',
         abilities: {
             fart: [
@@ -329,7 +331,32 @@ export const rumorAt = (n) => RUMORS[(Number.isInteger(n) && n >= 0 ? n : 0) % R
 const RUMOR_MIN_MS = 4500;
 const RUMOR_MAX_MS = 9000;
 
-const SOMEONE = pick({ ru: 'кто-то', en: 'someone' });
+/** Who a line names when the server sent no player; the autopilot's table counts the longer of the two. */
+export const SOMEONE_BY_LANG = { ru: 'кто-то', en: 'someone' };
+const SOMEONE = pick(SOMEONE_BY_LANG);
+
+/** The longer stand-in for a missing player, the length the speech counts in every language. */
+export const SOMEONE_CHARS = Math.max(...Object.values(SOMEONE_BY_LANG).map((s) => s.length));
+// The placeholders of a line, filled from its params.
+const FILLS = ['player', 'attempt'];
+/** A line's text without its placeholders: what the autopilot's table counts. */
+export const bareText = (text) => FILLS.reduce((t, f) => t.replaceAll(`{${f}}`, ''), text);
+/** Which placeholders a text has, in FILLS order. */
+export const fillsOf = (text) => FILLS.filter((f) => text.includes(`{${f}}`));
+
+const nameOf = (params) => {
+    const name = params?.player?.name;
+    return typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
+};
+const attemptOf = (params) => (Number.isInteger(params?.attempt) ? String(params.attempt) : '?');
+
+/**
+ * The first part a catalog line says (owl.js entry `line`): at finale `step` (null outside the final scene) its
+ * `steps` variant, else its `scene` one, else its ability's phrase by `params.n`, else its `text`.
+ */
+function variantOf(line, scene, step, params) {
+    return (step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? abilityText(line, params) ?? line.text;
+}
 
 /**
  * Text of an `owl` event: the moderator's text as is, a catalog line with its params (in its finale `step` variant, else
@@ -340,9 +367,25 @@ export function lineText(event, scene = 0, step = null) {
     if (typeof event?.text === 'string' && event.text.trim() !== '') return event.text.trim();
     const line = LINES[event?.line];
     if (!line) return null;
-    const name = event.params?.player?.name;
-    const attempt = Number.isInteger(event.params?.attempt) ? String(event.params.attempt) : '?';
-    return ((step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? abilityText(line, event.params) ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
+    return variantOf(line, scene, step, event.params).replaceAll('{player}', nameOf(event.params) ?? SOMEONE).replaceAll('{attempt}', attemptOf(event.params));
+}
+
+/**
+ * How long each part of an `owl` event stays up, ms — the same for every viewer, whatever the page's language: the
+ * longer of the ru and en part, a placeholder counted at its value (a missing player at SOMEONE_CHARS). The server's
+ * autopilot counts the speech by exactly these numbers (public/autopilot.json; protocol.md, «Счёт речи»). Null for an
+ * unknown id.
+ */
+export function partTimes(event, scene = 0, step = null) {
+    if (typeof event?.text === 'string' && event.text.trim() !== '') return [showMs(event.text.trim())];
+    const [ru, en] = [LINES_BY_LANG.ru[event?.line], LINES_BY_LANG.en[event?.line]];
+    if (!ru) return null;
+    const firsts = [ru, en].map((line) => variantOf(line, scene, step, event.params));
+    const fill = { player: (nameOf(event.params) ?? '').length || SOMEONE_CHARS, attempt: attemptOf(event.params).length };
+    const extra = fillsOf(firsts[0]).reduce((sum, f) => sum + fill[f], 0);
+    const first = showChars(Math.max(...firsts.map((t) => bareText(t).length)) + extra);
+    const parts = [ru, en].map((line) => (Array.isArray(line.then) ? line.then : line.then ? [line.then] : []));
+    return [first, ...parts[0].map((t, i) => Math.max(showMs(t), showMs(parts[1][i])))];
 }
 
 /** The phrase of an `ability` line: its ability's list at `n` modulo the length (any n < 0 or broken — 0); null without one. */
@@ -356,15 +399,19 @@ function abilityText(line, params) {
 // Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good. The
 // server's autopilot counts by the same numbers (public/autopilot.json, `showMs`): change both together.
 export const SHOW = { base: 4500, perChar: 158, min: 7900, max: 27000 };
-export const showMs = (text) => Math.min(SHOW.max, Math.max(SHOW.min, SHOW.base + text.length * SHOW.perChar));
+/** How long a text of `chars` characters stays up. */
+export const showChars = (chars) => Math.min(SHOW.max, Math.max(SHOW.min, SHOW.base + chars * SHOW.perChar));
+export const showMs = (text) => showChars(text.length);
 
 // A line holds the bubble at least this long (or its whole time, if shorter) before the next one takes over: the
-// server says `last-pumpkin` and `scene-ready` back to back, and the first must not flash by unread. A two-part line
-// holds it through its first part and the hold of its second, so a burst never cuts off the `then`.
+// server says `last-pumpkin` and `scene-ready` back to back, and the first must not flash by unread. A line in parts
+// holds it through every part but the last and the hold of the last, so a burst never cuts off a `then` (the
+// instruction of `finale-6` is its third part).
 export const HOLD_MS = 5600;
-const holdOf = (text) => Math.min(showMs(text), HOLD_MS);
 // A hold this far ahead means the clock went back (the lab replaying a frozen run): the bubble counts as free.
 const MAX_HOLD_MS = SHOW.max + HOLD_MS;
+// Likewise the story's end: no line in parts runs longer than this.
+const MAX_STORY_MS = 4 * SHOW.max;
 // The countdown before finale step 1 (docs/spec/frontend.md, «Призыв»): «Призыв через 3…», then «2…», «1…».
 const SUMMON = pick({ ru: 'Призыв через', en: 'Summoning in' });
 export const summonText = (left, first) => (first ? `${SUMMON} ${left}…` : `${left}…`);
@@ -425,12 +472,15 @@ export function bubbleSpot(perch, { w, h }, { width, height }, avoid = []) {
 /**
  * Speech bubble over the scene, anchored at the owl on the branch (`scene.perch()`); without a canvas it sits at
  * the top of the screen. A new line replaces the shown one once its hold is over (HOLD_MS); until then the newest
- * waits (one slot, so a burst of lines does not queue up a minute of speech).
+ * waits (one slot, so a burst of lines does not queue up a minute of speech). A line aside (`aside` in the catalog:
+ * `ability`, `fart-time`, `witch-down`) never takes that slot: it is said only into a free bubble — nothing waiting,
+ * the shown line past its hold and the story's last line over — and is dropped otherwise; a story line cuts it off at once
+ * (protocol.md, «Счёт речи»).
  *
  * @param {HTMLElement} root  #app
  * @param {object|null} scene API of pixel/scene.js
  * @param {object} [options]
- * @param {(line: {text: string, hoot: boolean, x: number|null}) => void} [options.onShow]  the bubble has just opened with
+ * @param {(line: {text: string, hoot: boolean, ms: number, x: number|null}) => void} [options.onShow]  the bubble has just opened with
  *   a line (the sound voices it); x — the speaker in percent of the width, null without a canvas
  * @param {() => void} [options.onHide]  the bubble has closed with nothing after it (the sound cuts the speech off)
  */
@@ -452,6 +502,9 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     let holdUntil = -1e9;
     // Until when the line on show is up (scene clock of `now`): a rumour waits for nothing and takes a free bubble only.
     let shown = { until: -1e9 };
+    // Until when the last story line (not one aside, a rumour or the countdown) speaks with all its parts: the server's
+    // `until` of «Счёт речи».
+    let storyUntil = -1e9;
     let pending = null;
     let waiting = false;
     let token = 0;
@@ -528,7 +581,8 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
     // `ms` and `hold` override the line's own times: a rumour is short and holds nothing up. `then` — the parts still to
     // come; `line` and `part` tell the scene which catalog line is on, `rapier` — the part the owl draws its rapier on;
     // `count` — a number of the countdown (the sound beats it instead of a voice).
-    function show({ text, hoot, then = [], line = null, part = 0, count = false, ms = showMs(text), hold = then.length ? ms + holdOf(then[0]) : holdOf(text) }) {
+    // `aside` — not a story line: it leaves the story's end alone. `ms` and `thenMs` — the parts' times (partTimes).
+    function show({ text, hoot, then = [], line = null, part = 0, count = false, aside = false, ms = showMs(text), thenMs = then.map(showMs), hold = thenMs.length ? ms + thenMs.slice(0, -1).reduce((sum, t) => sum + t, 0) + Math.min(thenMs.at(-1), HOLD_MS) : Math.min(ms, HOLD_MS) }) {
         const mine = ++token;
         textEl.textContent = text;
         holdUntil = now() + hold;
@@ -537,12 +591,13 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         // `speech` — the syllables the beak moves to, the same plan the sound speaks (owl-speech.js); none for a number.
         const speech = count ? null : speechPlan(text);
         const delay = Number(scene?.owl?.({ ms, hoot, line, part, rapier: line !== null && LINES[line]?.rapier === part, speech })) || 0;
+        if (!aside) storyUntil = now() + delay + ms + thenMs.reduce((sum, t) => sum + t, 0);
         const open = () => {
             speaking = true;
             place();
             const perch = scene?.perch?.();
             const width = root.clientWidth;
-            onShow({ text, hoot, count, x: perch && width ? (perch.x / width) * 100 : null });
+            onShow({ text, hoot, count, ms, x: perch && width ? (perch.x / width) * 100 : null });
         };
         speaking = false;
         place();
@@ -553,9 +608,19 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             speaking = false;
             place();
             // A line in parts goes on at once, unless another line has taken the bubble meanwhile.
-            if (then.length) show({ text: then[0], hoot: false, then: then.slice(1), line, part: part + 1 });
+            if (then.length) show({ text: then[0], hoot: false, then: then.slice(1), thenMs: thenMs.slice(1), ms: thenMs[0], line, part: part + 1, aside });
             else onHide();
         }, delay + ms);
+    }
+
+    // Whether a moment of the bubble is still to come: `until` within `max` ahead (further means the clock went back).
+    function ahead(until, max) {
+        const t = now();
+        return until > t && until - t <= max;
+    }
+    // Whether a line aside may be said now: nothing waits, the shown line is past its hold, the story's line is over.
+    function free() {
+        return !pending && !waiting && !ahead(holdUntil, MAX_HOLD_MS) && !ahead(storyUntil, MAX_STORY_MS);
     }
 
     function flush() {
@@ -576,10 +641,17 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             if (!text) return;
             const catalog = event.text ? null : LINES[event.line];
             const then = catalog?.then ?? [];
-            const line = { text, hoot: Boolean(catalog?.hoot), then: Array.isArray(then) ? then : [then], line: catalog ? event.line : null };
+            const aside = !event.text && catalog?.aside === true;
+            const [ms, ...thenMs] = partTimes(event, scene, step);
+            const line = { text, hoot: Boolean(catalog?.hoot), then: Array.isArray(then) ? then : [then], ms, thenMs, line: catalog ? event.line : null, aside };
+            if (aside) {
+                if (free()) show(line);
+                return;
+            }
             const left = holdUntil - now();
-            // The moderator's own text is the host speaking live: it never waits behind a hold.
-            if (event.text || left <= 0 || left > MAX_HOLD_MS) {
+            // The moderator's own text is the host speaking live: it never waits behind a hold. Nor does a story line
+            // once the story's last line is over: the hold left then is a line aside's, and the chatter gives way.
+            if (event.text || left <= 0 || left > MAX_HOLD_MS || !ahead(storyUntil, MAX_STORY_MS)) {
                 pending = null;
                 show(line);
                 return;
@@ -600,7 +672,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             const t = now();
             if (!text || pending || waiting || t < shown.until || t < holdUntil) return;
             const ms = Math.min(RUMOR_MAX_MS, Math.max(RUMOR_MIN_MS, left, 2500 + text.length * 60));
-            show({ text, hoot: false, ms, hold: 0 });
+            show({ text, hoot: false, aside: true, ms, hold: 0 });
         },
 
         /**
@@ -611,7 +683,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
         aside(text) {
             const t = now();
             if (!text || pending || waiting || t < holdUntil) return false;
-            show({ text, hoot: false, ms: ASIDE_MS, hold: 0 });
+            show({ text, hoot: false, aside: true, ms: ASIDE_MS, hold: 0 });
             return true;
         },
 
@@ -626,7 +698,7 @@ export function createOwl(root, scene, { now = () => performance.now(), later = 
             counting = mine;
             pending = null;
             for (let k = 0; k < n; k++) {
-                const tick = () => counting === mine && show({ text: summonText(n - k, k === 0), hoot: false, count: true, ms: beat, hold: ms - k * beat });
+                const tick = () => counting === mine && show({ text: summonText(n - k, k === 0), hoot: false, count: true, aside: true, ms: beat, hold: ms - k * beat });
                 if (k === 0) tick();
                 else later(tick, k * beat);
             }

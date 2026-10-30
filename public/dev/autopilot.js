@@ -1,79 +1,136 @@
 // The autopilot of the evening (docs/spec/scenario.md, «Автопилот») as the lab plays it, and the speech table the
 // server reads. The server runs its own copy of these rules; this one is the reference the lab and the tests check.
 
-import { HOLD_MS, LINES_BY_LANG, SHOW, showMs } from '../js/owl.js';
+import { HOLD_MS, LINES_BY_LANG, SHOW, SOMEONE_CHARS, bareText as bare, fillsOf, showMs } from '../js/owl.js';
 import { STEP_MS, SUMMON_MS } from '../js/pixel/finale-timeline.js';
 
-// `{player}` is counted at the longest name the server takes (PlayerName::MAX_LENGTH), `{attempt}` at three digits.
-const NAME_CHARS = 24;
-const fill = (text) => text.replaceAll('{player}', 'W'.repeat(NAME_CHARS)).replaceAll('{attempt}', '999');
 // A line the client holds back: the countdown before finale step 1 comes first (frontend.md, «Призыв»); at step 6 the
 // owl flies back to its branch before it speaks.
 const DELAY = { 'finale-1': SUMMON_MS, 'finale-6': STEP_MS[6] };
+const partsOf = (line) => (Array.isArray(line.then) ? line.then : line.then ? [line.then] : []);
+const sum = (list) => list.reduce((a, b) => a + b, 0);
 
-function timesOf(line) {
-    const firsts = [line.text, ...Object.values(line.scenes ?? {}), ...Object.values(line.steps ?? {}), ...Object.values(line.abilities ?? {}).flat()].map((t) => showMs(fill(t)));
-    const then = (Array.isArray(line.then) ? line.then : line.then ? [line.then] : []).map((t) => showMs(fill(t)));
-    const first = Math.max(...firsts);
+// A variant: its first part, then the line's own `then` parts, each said as the one before ends; every part at the
+// longer of its ru and en text, as the bubble times it (owl.js, partTimes). With placeholders (a line of one part) — also
+// `chars`, the longer text without them, and `fill`, which ones it has, for the server to count the real length.
+function variantOf(ru, en, thenRu, thenEn) {
+    const a = Math.max(showMs(bare(ru)), showMs(bare(en)));
+    const rest = thenRu.map((t, i) => Math.max(showMs(t), showMs(thenEn[i])));
+    const lead = rest.length ? a + sum(rest.slice(0, -1)) : 0;
+    const fill = fillsOf(ru);
     return {
-        ms: first + then.reduce((sum, ms) => sum + ms, 0),
-        hold: then.length ? first + Math.min(then[0], HOLD_MS) : Math.min(first, HOLD_MS),
-        // The parts follow one another as each ends: the last one starts after all the others.
-        lead: then.length ? first + then.slice(0, -1).reduce((sum, ms) => sum + ms, 0) : 0,
+        ms: a + sum(rest),
+        hold: rest.length ? lead + Math.min(rest.at(-1), HOLD_MS) : Math.min(a, HOLD_MS),
+        ...(lead > 0 ? { lead } : {}),
+        ...(fill.length ? { chars: Math.max(bare(ru).length, bare(en).length), fill } : {}),
     };
 }
 
+const mapValues = (object, fn) => Object.fromEntries(Object.entries(object).map(([k, v]) => [k, fn(v, k)]));
+
 /**
- * The content of public/autopilot.json: how long each catalog line keeps the owl talking (`ms`, all its parts, the
- * longest of its scene, step and ability variants and of both languages) and holds the bubble against the next line (`hold`),
- * `delay` before it starts, `lead` from its start to its last part (a line in parts; the later of both languages); the rule for the moderator's own text (`showMs`, `holdMs`); each finale step's staging
- * (`steps`, ms from its event).
+ * The content of public/autopilot.json (protocol.md, «Автопилот»): per catalog line its default variant (`text`) at the
+ * top — `ms` it keeps the owl talking with all its parts, `hold` it keeps the bubble, `lead` from its start to its last
+ * part —, its `scenes`, `steps` and `abilities` variants the same way, `delay` before it starts, `aside` for a line
+ * said aside; both languages at the later. The rule for the moderator's own text (`showMs`, `holdMs`), the name
+ * standing in for a missing player (`someone`); each finale step's staging (`steps`, ms from its event).
  */
 export function speechTimes() {
     const lines = {};
     for (const id of Object.keys(LINES_BY_LANG.ru).sort()) {
-        const [a, b] = Object.values(LINES_BY_LANG).map((catalog) => timesOf(catalog[id]));
-        const lead = Math.max(a.lead, b.lead);
-        lines[id] = { ms: Math.max(a.ms, b.ms), hold: Math.max(a.hold, b.hold), ...(DELAY[id] ? { delay: DELAY[id] } : {}), ...(lead > 0 ? { lead } : {}) };
+        const ru = LINES_BY_LANG.ru[id];
+        const en = LINES_BY_LANG.en[id];
+        const [thenRu, thenEn] = [partsOf(ru), partsOf(en)];
+        const of = (r, e) => variantOf(r, e, thenRu, thenEn);
+        lines[id] = {
+            ...of(ru.text, en.text),
+            ...(DELAY[id] ? { delay: DELAY[id] } : {}),
+            ...(ru.aside ? { aside: true } : {}),
+            ...(ru.scenes ? { scenes: mapValues(ru.scenes, (t, k) => of(t, en.scenes[k])) } : {}),
+            ...(ru.steps ? { steps: mapValues(ru.steps, (t, k) => of(t, en.steps[k])) } : {}),
+            ...(ru.abilities ? { abilities: mapValues(ru.abilities, (list, a) => list.map((t, i) => of(t, en.abilities[a][i]))) } : {}),
+        };
     }
-    return { showMs: { ...SHOW }, holdMs: HOLD_MS, nameChars: NAME_CHARS, lines, steps: { ...STEP_MS } };
+    return { showMs: { ...SHOW }, holdMs: HOLD_MS, someone: SOMEONE_CHARS, lines, steps: { ...STEP_MS } };
 }
 
-/** {ms, hold, delay} of an `owl` event by the table: the own text by its length, an unknown id at the longest. */
-export function speechOf(times, event) {
-    if (typeof event?.text === 'string') {
-        const s = times.showMs;
-        const ms = Math.min(s.max, Math.max(s.min, s.base + event.text.trim().length * s.perChar));
-        return { ms, hold: Math.min(ms, times.holdMs), delay: 0 };
+const showOf = (s, chars) => Math.min(s.max, Math.max(s.min, s.base + chars * s.perChar));
+
+/**
+ * The variant the client says (owl.js, lineText): at finale `step` (null outside the final scene) its `steps` one, else
+ * the scene's, else the ability's phrase `n % length`, else the default.
+ */
+function pickVariant(line, params, scene, step) {
+    const list = line.abilities?.[params?.ability];
+    const n = Number.isInteger(params?.n) && params.n >= 0 ? params.n : 0;
+    return (step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? (list?.length ? list[n % list.length] : undefined) ?? line;
+}
+
+// How long a placeholder's value is, as the client fills it: the trimmed name or the stand-in, the attempt's digits or «?».
+function fillLength(times, fill, params) {
+    if (fill === 'player') {
+        const name = params?.player?.name;
+        return typeof name === 'string' && name.trim() !== '' ? name.trim().length : times.someone;
     }
-    const line = times.lines[event?.line];
-    return line ? { delay: 0, ...line } : { ms: times.showMs.max, hold: times.holdMs, delay: 0 };
+    return Number.isInteger(params?.attempt) ? String(params.attempt).length : 1;
 }
 
 /**
- * When the owl stops talking, by the lines said so far: a line starts once the one before has held the bubble long
- * enough, and the speech lasts to the end of the latest one (never earlier than an earlier line's end).
+ * {ms, hold, delay, lead, aside} of an `owl` event said in `scene` at finale `step`: the own text by its length; a
+ * catalog line by its variant, one with placeholders by its length with them filled; an unknown id at the longest.
+ */
+export function speechOf(times, event, { scene = 0, step = null } = {}) {
+    const s = times.showMs;
+    if (typeof event?.text === 'string') {
+        const ms = showOf(s, event.text.trim().length);
+        return { ms, hold: Math.min(ms, times.holdMs), delay: 0, lead: 0, aside: false };
+    }
+    const line = times.lines[event?.line];
+    if (!line) return { ms: s.max, hold: times.holdMs, delay: 0, lead: 0, aside: false };
+    const v = pickVariant(line, event.params, scene, step);
+    const common = { delay: line.delay ?? 0, aside: line.aside === true };
+    if (v.chars === undefined) return { ms: v.ms, hold: v.hold, lead: v.lead ?? 0, ...common };
+    const ms = showOf(s, v.chars + sum(v.fill.map((f) => fillLength(times, f, event.params))));
+    return { ms, hold: Math.min(ms, times.holdMs), lead: 0, ...common };
+}
+
+/**
+ * The owl's clock as the client's bubble runs it (owl.js, createOwl; protocol.md, «Счёт речи»): `until` — when the story
+ * lines end, `hold` — until when the shown line keeps the bubble, `slot` — when the waiting line takes it. A story line
+ * waits for the hold and replaces a line still waiting; it cuts the shown one off, so its end is the end; once the
+ * story is over it goes at once, cutting a line aside off. A line aside
+ * is said only into a free bubble — nothing waiting, `now ≥ hold` and `now ≥ until` — and leaves `until` alone; else it
+ * is dropped. The moderator's own text goes at once. `ctx` — {scene, step} the event is said in. `said` returns when the
+ * line starts, null for a line aside dropped.
  */
 export function createSpeech(times) {
     let until = 0;
     let hold = 0;
-    const startOf = (line, now) => Math.max(now + line.delay, hold);
+    let slot = 0;
+    // A story line waits for the hold only while the story speaks (a hold past the story's end is an aside's); an aside
+    // comes only into a free bubble, where the slot is now anyway.
+    const slotOf = (event, now) => (typeof event?.text === 'string' ? now : slot > now ? slot : now < until ? Math.max(now, hold) : now);
     return {
-        said(event, now) {
-            const line = speechOf(times, event);
-            const start = startOf(line, now);
-            until = Math.max(until, start + line.ms);
+        said(event, now, ctx = {}) {
+            const line = speechOf(times, event, ctx);
+            if (line.aside && (slot > now || now < hold || now < until)) return null;
+            slot = slotOf(event, now);
+            const start = Math.max(now + line.delay, slot);
+            if (!line.aside) until = start + line.ms;
             hold = start + line.hold;
+            return start;
         },
         /**
          * When the last part of `event` would show if it were said now, without saying it: an instruction line opens
          * its input then (`dice.openAt`, `finale.wordAt`; protocol.md, «Сова объясняет»), told before the line goes out.
          */
-        opensAt(event, now) {
-            const line = speechOf(times, event);
-            return startOf(line, now) + (line.lead ?? 0);
+        opensAt(event, now, ctx = {}) {
+            const line = speechOf(times, event, ctx);
+            return Math.max(now + line.delay, slotOf(event, now)) + line.lead;
         },
         until: () => until,
+        /** The clock as the server stores it (KV `hellowin:owl`). */
+        state: () => ({ until, hold, slot }),
     };
 }
 
