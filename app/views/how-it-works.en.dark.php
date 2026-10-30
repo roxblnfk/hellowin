@@ -61,7 +61,8 @@
         <section class="how__section" id="roadrunner" role="tabpanel" aria-labelledby="tab-roadrunner">
             <h2>RoadRunner: PHP that does not die</h2>
             <p>
-                RoadRunner was built to take PHP to the enterprise level. It all started with a question: what if a PHP
+                RoadRunner appeared at the end of 2017, and version 1.0 came out in June 2018. It was built to take PHP
+                to the enterprise level. It all started with a question: what if a PHP
                 application did not die after every request? That is how enterprise frameworks work in other
                 languages, Java for one: the application boots once and serves requests until it is stopped.
             </p>
