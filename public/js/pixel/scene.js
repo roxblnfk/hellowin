@@ -4552,8 +4552,9 @@ export async function createScene(rootEl, snapshot) {
     /*
      * The players' abilities (docs/spec/frontend.md, «Способности»), on the server clock from the events' `at`: the
      * pillar of light under a walker who got one (additive gold behind it, a ring on the ground, motes rising), and the
-     * Fart Time of a player — the elephant's puffs and cloud, smaller, out from behind the walker. They follow the walker
-     * as it is drawn; a walker gone takes them along. Sprites are made on first need: a rebuild destroys the ground layer.
+     * Fart Time of a player — the elephant's puffs and cloud, smaller, out from behind the walker. The pillar follows the
+     * walker as it is drawn; the smoke stays where it came out, as smoke does (a walker gone before that takes it
+     * along). Sprites are made on first need: a rebuild destroys the ground layer.
      */
     const pillars = new Map();
     let playerFarts = [];
@@ -4611,14 +4612,18 @@ export async function createScene(rootEl, snapshot) {
         playerFarts = playerFarts.filter((f) => {
             const w = walkers.get(f.id);
             const e = fartAt(now - f.at, reduced, null);
-            if (!w || e.done) {
+            if ((!w && !f.origin) || e.done) {
                 dropSprites(f.sprites);
                 return false;
             }
-            const shown = Boolean(w.sprite) && now >= f.at;
-            const back = w.sprite?.scale.x < 0 ? 1 : -1;
-            const origin = shown ? { x: w.sprite.x + back * RUMP_BACK, y: w.sprite.y - RUMP_UP } : null;
-            const z = (w.sprite?.zIndex ?? 0) - 0.3;
+            // The rump's place is taken once, on the first frame the smoke shows; the walker may walk off from it.
+            if (!f.origin && w.sprite && now >= f.at) {
+                f.back = w.sprite.scale.x < 0 ? 1 : -1;
+                f.origin = { x: w.sprite.x + f.back * RUMP_BACK, y: w.sprite.y - RUMP_UP };
+                f.z = w.sprite.zIndex - 0.3;
+            }
+            const shown = Boolean(f.origin);
+            const { back, origin, z } = f;
             for (let i = 0; i < FART.puffCount; i++) {
                 const s = groundSprite(f.sprites, `puff${i}`);
                 const puff = shown ? e.puffs[i] : null;
