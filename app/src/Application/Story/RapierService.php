@@ -139,7 +139,12 @@ final readonly class RapierService
             return null;
         }
 
-        $wordAt = $this->owl->opens(OwlLine::finale(Story::RAPIER_STEP));
+        try {
+            [$scene, $step] = $this->ritual->place();
+        } catch (\Throwable) {
+            [$scene, $step] = [0, Story::RAPIER_STEP];
+        }
+        $wordAt = $this->owl->opens(OwlLine::finale(Story::RAPIER_STEP), $scene, $step);
         try {
             return $this->words->open($round, $wordAt);
         } catch (LockBusyException) {

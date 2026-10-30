@@ -10,9 +10,11 @@ use Psr\SimpleCache\CacheInterface;
 
 /**
  * When the owl stops talking (docs/spec/protocol.md, «Автопилот», «Счёт речи»): `hellowin:owl` `{until, hold, slot}`,
- * changed under the lock `owl` on every line the channel gets. It plays the client's bubble: a line takes the bubble
- * once the one on show has held it long enough and cuts that one off; of the lines waiting meanwhile only the newest
- * is said. The speech lasts to the end of the latest line; an aside takes the bubble but leaves that end where it was.
+ * changed under the lock `owl` on every line the channel gets. It plays the client's bubble (`createSpeech` in
+ * `public/dev/autopilot.js` is the reference): a story line takes the bubble once the one on show has held it long
+ * enough and cuts that one off; of the lines waiting meanwhile only the newest is said; once the story is over it goes
+ * at once. The speech lasts to the end of the latest story line. A line aside is said only into a free bubble and
+ * leaves that end where it was; otherwise the client drops it and the clock stays as it is.
  *
  * @psalm-import-type Speech from SpeechTable
  */
@@ -29,15 +31,18 @@ final readonly class OwlClock
     ) {}
 
     /**
-     * @param bool $aside Chatter beside the story (an ability, a fart, a witch): it must not hold the autopilot, or a
-     *        busy room that keeps earning abilities would never let the story move on.
-     * @return int Unix time in milliseconds the line's last part starts: the moment its instruction opens the input.
+     * @param array<array-key, mixed> $params The event's params: they pick the variant and fill its placeholders.
+     * @param int $scene The scene the line is said in.
+     * @param int|null $step The finale step it is said at; null outside the final scene.
+     * @return int|null Unix time in milliseconds the line's last part starts: the moment its instruction opens the
+     *         input; null — a line aside the client does not say, the bubble being busy.
      */
-    public function line(string $id, bool $aside = false): int
+    public function line(string $id, array $params = [], int $scene = 0, ?int $step = null): ?int
     {
-        $speech = $this->table->line($id);
+        $speech = $this->table->line($id, $params, $scene, $step);
+        $start = $this->said($speech, live: false);
 
-        return $this->said($speech, $aside, live: false) + $speech['lead'];
+        return $start === null ? null : $start + $speech['lead'];
     }
 
     /**
@@ -46,17 +51,17 @@ final readonly class OwlClock
      *
      * @return int Unix time in milliseconds.
      */
-    public function opens(string $id): int
+    public function opens(string $id, int $scene = 0, ?int $step = null): int
     {
-        $speech = $this->table->line($id);
+        $speech = $this->table->line($id, [], $scene, $step);
         $now = $this->clock->now();
         try {
-            [, $hold, $slot] = $this->read();
+            [$until, $hold, $slot] = $this->read();
         } catch (\Throwable) {
-            $hold = $slot = 0;
+            $until = $hold = $slot = 0;
         }
 
-        return \max($now + $speech['delay'], self::slot($now, $hold, $slot)) + $speech['lead'];
+        return \max($now + $speech['delay'], self::slot($now, $until, $hold, $slot)) + $speech['lead'];
     }
 
     /**
@@ -64,7 +69,7 @@ final readonly class OwlClock
      */
     public function text(string $text): void
     {
-        $this->said($this->table->text($text), aside: false, live: true);
+        $this->said($this->table->text($text), live: true);
     }
 
     /**
@@ -76,12 +81,13 @@ final readonly class OwlClock
     }
 
     /**
-     * When a new line takes the bubble: with a line still waiting for it, that line's moment, as the new one replaces
-     * it; otherwise once the line on show has held the bubble.
+     * When a story line takes the bubble: with a line still waiting for it, that line's moment, as the new one replaces
+     * it; while the story speaks, once the line on show has held the bubble; after it, at once — a hold left then is a
+     * line aside's, and the story cuts it off.
      */
-    private static function slot(int $now, int $hold, int $slot): int
+    private static function slot(int $now, int $until, int $hold, int $slot): int
     {
-        return $slot > $now ? $slot : \max($now, $hold);
+        return $slot > $now ? $slot : ($now < $until ? \max($now, $hold) : $now);
     }
 
     /**
@@ -89,28 +95,32 @@ final readonly class OwlClock
      * the start answered then counts only the delay.
      *
      * @param Speech $speech
-     * @return int Unix time in milliseconds the line starts.
+     * @param bool $live The moderator's own text, said at once.
+     * @return int|null Unix time in milliseconds the line starts; null — a line aside into a busy bubble.
      */
-    private function said(array $speech, bool $aside, bool $live): int
+    private function said(array $speech, bool $live): ?int
     {
         $now = $this->clock->now();
-        $start = $now + $speech['delay'];
         try {
-            $this->locks->run([self::LOCK], function () use ($speech, $aside, $live, $now, &$start): void {
+            return $this->locks->run([self::LOCK], function () use ($speech, $live, $now): ?int {
                 [$until, $hold, $slot] = $this->read();
-                $slot = $live ? $now : self::slot($now, $hold, $slot);
+                if ($speech['aside'] && ($slot > $now || $now < $hold || $now < $until)) {
+                    return null;
+                }
+                $slot = $live ? $now : self::slot($now, $until, $hold, $slot);
                 $start = \max($now + $speech['delay'], $slot);
                 $this->storage->set(self::KEY, [
                     // No max with the old end: the client cuts the line on show off and never says the one replaced
-                    'until' => $aside ? $until : $start + $speech['ms'],
+                    'until' => $speech['aside'] ? $until : $start + $speech['ms'],
                     'hold' => $start + $speech['hold'],
                     'slot' => $slot,
                 ]);
+
+                return $start;
             });
         } catch (\Throwable) {
+            return $now + $speech['delay'];
         }
-
-        return $start;
     }
 
     /**

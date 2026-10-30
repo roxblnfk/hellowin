@@ -245,7 +245,7 @@ final class RitualHarness
         $this->clock = new FrozenClock();
         $this->speech = self::speech();
         $this->owl = new OwlClock($this->storage, new Locks($this->lock), $this->speech, $this->clock);
-        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->owl);
+        $publisher = new ChannelPublisher($this->broadcast, 'hellowin', new Items([null, 'torch', 'pitchfork'], [5 => 'beer', 7 => 'rapier']), $this->owl, $this->store);
         $queue = new TransitionQueue($this->queue, $metrics);
 
         $bushes = [new Bush('bush-1', new Point(4, 86), 2)];
@@ -362,7 +362,7 @@ final class RitualHarness
     /**
      * A speech table of public/autopilot.json's shape with round numbers: `bar-intro`, `finale-1` (with the
      * countdown's delay) and `finale-6` (with the owl's flight) are known, any other line talks `max`; the two finale
-     * lines lead to their instructions.
+     * lines lead to their instructions. `ability`, `fart-time` and `witch-down` talk `max` too, as lines aside.
      */
     public static function speech(): SpeechTable
     {
@@ -373,6 +373,9 @@ final class RitualHarness
                 'bar-intro' => ['ms' => 6000, 'hold' => 3000],
                 'finale-1' => ['ms' => 5000, 'hold' => 2000, 'delay' => 3000, 'lead' => 1500],
                 'finale-6' => ['ms' => 9000, 'hold' => 3000, 'delay' => 2650, 'lead' => 4000],
+                'ability' => ['ms' => 9000, 'hold' => 3000, 'aside' => true],
+                'fart-time' => ['ms' => 9000, 'hold' => 3000, 'aside' => true],
+                'witch-down' => ['ms' => 9000, 'hold' => 3000, 'aside' => true],
             ],
             'steps' => ['1' => 5200, '2' => 2200, '3' => 6800, '4' => 0, '5' => 5600, '6' => 2650, '7' => 8000],
         ]);

@@ -256,6 +256,19 @@ final readonly class RitualStore
     }
 
     /**
+     * Where the room is, without taking locks: one read of the scene and of the finale step (null outside the final
+     * scene) — what picks the variant of the owl's line.
+     *
+     * @return array{int<0, max>, int|null}
+     */
+    public function place(): array
+    {
+        $values = [...$this->storage->getMultiple([self::KEY_SCENE, self::KEY_STORY])];
+
+        return [self::toCount($values[self::KEY_SCENE] ?? null), Story::fromArray($values[self::KEY_STORY] ?? null)->finale];
+    }
+
+    /**
      * Current story without taking locks, for the console switches outside the ritual.
      */
     public function story(): Story

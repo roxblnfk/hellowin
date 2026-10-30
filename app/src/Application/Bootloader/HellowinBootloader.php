@@ -497,7 +497,8 @@ final class HellowinBootloader extends Bootloader
                 HellowinConfig $config,
                 BroadcastInterface $broadcast,
                 OwlClock $owl,
-            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems(), $owl),
+                RitualStore $ritual,
+            ): ChannelPublisher => new ChannelPublisher($broadcast, $config->getChannel(), $config->getItems(), $owl, $ritual),
             // The frontend keeps the table with the owl's texts; without it the autopilot does not wait for her
             SpeechTable::class => static function (DirectoriesInterface $dirs, LoggerInterface $logger): SpeechTable {
                 try {

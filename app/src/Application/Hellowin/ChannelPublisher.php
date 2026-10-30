@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
-use App\Application\Story\OwlLine;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
+use App\Domain\Ritual\RitualStore;
 use App\Domain\Story\Autopilot;
 use App\Domain\Story\OwlClock;
 use App\Domain\Story\Story;
@@ -30,6 +30,7 @@ final readonly class ChannelPublisher
         private string $channel,
         private Items $items = new Items(),
         private ?OwlClock $owlClock = null,
+        private ?RitualStore $ritual = null,
     ) {}
 
     /**
@@ -501,12 +502,15 @@ final readonly class ChannelPublisher
     }
 
     /**
-     * A line of the owl's catalogue;the frontend holds the texts and fills the params in.
+     * A line of the owl's catalogue; the frontend holds the texts and fills the params in. Every viewer says it in the
+     * variant of the scene and finale step the room is at, and the clock counts the same one: the callers have stored
+     * the events published before it. A line aside into a busy bubble goes out all the same — the client drops it, as
+     * the clock does.
      *
      * @param non-empty-string $line
      * @param array<non-empty-string, mixed> $params
      * @return int|null Unix time in milliseconds the line's last part starts ({@see OwlClock::line()}); null — the
-     *         owl's speech is not counted.
+     *         owl's speech is not counted, or the line is an aside the client drops.
      */
     public function owl(int $round, string $line, array $params = []): ?int
     {
@@ -514,8 +518,16 @@ final readonly class ChannelPublisher
         $params === [] or $message['params'] = $params;
 
         $this->publish($message);
+        if ($this->owlClock === null) {
+            return null;
+        }
+        try {
+            [$scene, $step] = $this->ritual?->place() ?? [0, null];
+        } catch (\Throwable) {
+            [$scene, $step] = [0, null];
+        }
 
-        return $this->owlClock?->line($line, OwlLine::isAside($line));
+        return $this->owlClock->line($line, $params, $scene, $step);
     }
 
     /**

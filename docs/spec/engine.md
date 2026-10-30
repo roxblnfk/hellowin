@@ -388,7 +388,7 @@
 - **Слово после инструкции** (решение пользователя от 2026-10-29). Запись `hellowin:word` `{round, wordAt, hinted}` под
   RR-локом `word` (`Domain/Story/WordStore`); запись другого раунда читается как пустая. На входе в шаг 6
   `StoryService::entered` до `finale` зовёт `RapierService::openWord`: `OwlClock::opens('finale-6')` — `max(now + delay,
-  hold) + lead` без записи в счёт речи (реплика учтётся следом, при публикации `owl`), `WordStore::open` фиксирует
+  slot) + lead` (сцена и шаг — из `RitualStore::place`) без записи в счёт речи (реплика учтётся следом, при публикации `owl`), `WordStore::open` фиксирует
   `wordAt` один раз за раунд; затем `finale {step: 6, wordAt}` и `owl finale-6`. Занятый лок теряет `wordAt` для
   сервера, не для события. `word` раньше `wordAt` — `WaitException` → `{ok: false, error: 'wait', openAt}`; проверка
   под локом `walkers` после `has rapier`, до `invalid text`; ничего не меняется и не публикуется. Снимок — `finale.wordAt`
@@ -516,7 +516,11 @@
 
 - **Речь совы** (`Domain/Story/OwlClock`): `ChannelPublisher::owl` и `owlText` после публикации отмечают реплику —
   под RR-локом `owl` (TTL 1 с, ожидание 0,5 с) запись `hellowin:owl` `{until, hold, slot}` по формуле `protocol.md` («Счёт речи»: пузырь клиента с одним
-  местом ожидания; реплики в сторону — `OwlLine::isAside`, `ChannelPublisher::owl` передаёт флаг в `OwlClock::line`). Длительности
+  местом ожидания; эталон — `createSpeech` в `public/dev/autopilot.js`). Вариант реплики и её длительность — по
+  `params` события, сцене и шагу финала: `ChannelPublisher::owl` после публикации читает их без лока
+  (`RitualStore::place`, один `getMultiple`; вызывающие к этому моменту записали всё, что опубликовали до реплики;
+  сбой чтения — сцена 0, без шага) и передаёт в `OwlClock::line`. Реплика в сторону (`aside: true` в таблице) в занятый
+  пузырь публикуется, но не учитывается: `OwlClock::line` возвращает `null`, запись не меняется. Длительности
   — `Domain/Story/SpeechTable` из `public/autopilot.json` (`directory('public')`), читается один раз при создании
   синглтона в воркере и в тикере; нет файла или он не JSON — предупреждение в лог и пустая таблица (сова «говорит» 0 мс,
   автопилот её не ждёт). Занятый лок или сбой KV теряет отметку, а не реплику: автопилот лишь подождёт меньше.
@@ -1001,7 +1005,7 @@ alias `transitions` переключить обратно на `RedisLeaseConfig
 | Лимиты: сказанные клиентам `hellowin:limits` `{round, told}`, ждущее число фигурок `hellowin:limits:pending` `{players, since}` | Valkey | тот же storage `hellowin` |
 | Кто онлайн, как сказано клиентам последним: `hellowin:presence` `{players, connections}`; пишет только тикер, без лока | Valkey | тот же storage `hellowin` |
 | Числа прошлых циклов вечера `hellowin:evening` `{through, clicks, jobs, burned, shot, drinks, slain, damage, rolls, lastPumpkin}` | Valkey | тот же storage `hellowin`, лок `evening` |
-| Автопилот `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`, речь совы `hellowin:owl` `{until, hold}`; обе переживают сброс и рестарт; пустой зал `hellowin:auto:empty` `{since, done}` (нет ключа — в зале кто-то есть) | Valkey | тот же storage `hellowin`, локи `auto` и `owl` |
+| Автопилот `hellowin:auto` `{on, next, ctx, since, readyAt, dawnUntil, owlRollAt, acted, resumedAt, paused}`, речь совы `hellowin:owl` `{until, hold, slot}`; обе переживают сброс и рестарт; пустой зал `hellowin:auto:empty` `{since, done}` (нет ключа — в зале кто-то есть) | Valkey | тот же storage `hellowin`, локи `auto` и `owl` |
 | Счётчики вечера `hellowin:tally:calls`, `hellowin:tally:dropped` (целые, TTL 2 суток, удаляются сбросом модератора) | Valkey | predis (`VALKEY_DSN`) напрямую, `INCR` без лока, `Application/Story/EveningTally` |
 | Маркеры идемпотентности `hellowin:amo:*` | Valkey | `spiral/idempotency`, `RedisAtMostOnceConfig`, predis (`VALKEY_DSN`); alias `transitions` |
 | Локи `pumpkin:{id}`, `bonfire`, `circle`, `scene` (и сюжет), `player:{id}`, `players`, `flyer:{id}`, `flyers`, `wanderers`, `walkers`, `bar`, `cursed`, `boss`, `dice`, `top`, `chat`, `shot`, `evening`, `auto`, `owl`, `started-at`, `rate:{group}:{caller}` (и `rate:emote:{player}`), `ability:{player}`, кулдауны с TTL `meep` и `owl-ability`, лизинг `ticker` | память RoadRunner | RR lock-плагин; корректно для одного экземпляра `app` |
