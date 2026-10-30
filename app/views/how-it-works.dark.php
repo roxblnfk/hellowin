@@ -108,10 +108,11 @@
             <h3>Laravel и Symfony</h3>
             <p>
                 Со временем Laravel и Symfony тоже научились работать в неумирающей модели, и для них появились
-                бриджи на RoadRunner. Официальные бриджи покрывают не весь функционал RoadRunner, но эту дыру закрыло
-                сообщество: например, <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a>
-                для Symfony и <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a>
-                для Laravel.
+                интеграции с RoadRunner. Официальные берут от него в основном HTTP-сервер, остальное закрыло
+                сообщество. <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a>
+                даёт Laravel не только HTTP, но и gRPC, очереди, KV и Temporal.
+                <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> для Symfony
+                ограничивается HTTP, зато сделан аккуратнее официальной интеграции.
             </p>
 
             <h3>RoadRunner 3 и честные минусы</h3>

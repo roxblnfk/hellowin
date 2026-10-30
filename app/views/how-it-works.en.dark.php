@@ -107,10 +107,11 @@
             <h3>Laravel and Symfony</h3>
             <p>
                 In time Laravel and Symfony also learned to live in the long-running model, and RoadRunner bridges
-                appeared for them. The official bridges do not cover all of RoadRunner, but the community closed the
-                gap: for example, <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a>
-                for Symfony and <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a>
-                for Laravel.
+                appeared for them. The official ones take mostly the HTTP server from it, and the community covered the
+                rest. <a href="https://github.com/roadrunner-php/laravel-bridge">roadrunner-php/laravel-bridge</a> gives
+                Laravel not only HTTP but gRPC, queues, KV and Temporal too.
+                <a href="https://github.com/Baldinof/roadrunner-bundle">baldinof/roadrunner-bundle</a> for Symfony
+                sticks to HTTP, but is built more carefully than the official integration.
             </p>
 
             <h3>RoadRunner 3 and the honest downsides</h3>
