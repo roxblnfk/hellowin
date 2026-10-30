@@ -914,6 +914,17 @@ export const SFX = {
             choir(r, out, 0.15, 0.6, [64, 67, 72], { amp: 0.15, vowel: 'a', attack: 0.15, release: 0.6, send: 0.8 });
         },
     }),
+    // A player gets an ability (pillar of light): a shimmering run of bells climbing two octaves over a soft rising
+    // swell, a high glint on top.
+    'ability.grant': fx({
+        dur: 2.6, variants: 2, voices: 2, level: -11, jitter: 0, duck: 1.2,
+        render(r, out, v) {
+            const root = [72, 74][v];
+            [0, 4, 7, 12, 16, 19, 24].forEach((m, k) => bell(r, out, k * 0.085, root + m, { amp: 0.12 + k * 0.012, decay: 3.5, dur: 1.6, pan: (k % 2 ? 0.3 : -0.3) * (k / 6) }));
+            riser(r, out, 0, 0.7, { amp: 0.06, from: 600, to: 7000 });
+            for (let k = 0; k < 6; k++) chip(r, out, 0.62 + k * 0.05, 0.05, root + 31 + (k % 2 ? 0 : 5), { duty: 0.125, amp: 0.05, decay: 8, pan: (r.rnd() - 0.5) * 0.8, send: 0.6 });
+        },
+    }),
     // The rapier's golden chain lightning: three links jumping target to target, each a crackle and a chime.
     'shot.rapira': fx({
         group: 'finale', dur: 1, variants: 4, voices: 4, level: -4,

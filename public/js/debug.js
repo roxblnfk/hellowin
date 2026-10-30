@@ -56,13 +56,18 @@ const TEXT = pick({
             'not cursed': 'Не шаг 5',
             'not now': 'Не сейчас',
             'no flyers': 'Нет летунов',
+            'no target': 'Нет такого',
+            'invalid ability': 'Нет такой',
         },
         failed: 'Не вышло',
         decimal: ',',
         noLimits: 'в этой сцене лимитов нет',
         console: '🦉 Пульт',
         paused: 'пауза',
-        groups: { story: 'Сюжет', bar: 'Бар', cursed: 'Проклятый мир', boss: 'Босс', dice: 'Кости', owl: 'Сова', night: 'Нечисть', limits: 'Лимиты', chat: 'Чат', tools: 'Отладка' },
+        groups: { story: 'Сюжет', bar: 'Бар', cursed: 'Проклятый мир', boss: 'Босс', dice: 'Кости', owl: 'Сова', night: 'Нечисть', limits: 'Лимиты', abilities: 'Способности', chat: 'Чат', tools: 'Отладка' },
+        abilities: { '': 'нет', flyers: 'летуны', fart: 'Fart Time', meep: 'мип-мип' },
+        abilityOf: (name) => `Способность игрока ${name}`,
+        nobody: 'на поле никого',
         next: 'Следующая сцена',
         nextReady: 'Следующая сцена ›',
         toBar: 'В бар',
@@ -167,13 +172,18 @@ const TEXT = pick({
             'not cursed': 'Not step 5',
             'not now': 'Not now',
             'no flyers': 'No flyers',
+            'no target': 'No such player',
+            'invalid ability': 'No such ability',
         },
         failed: 'Failed',
         decimal: '.',
         noLimits: 'no limits in this scene',
         console: '🦉 Console',
         paused: 'paused',
-        groups: { story: 'Story', bar: 'Bar', cursed: 'Cursed world', boss: 'Boss', dice: 'Dice', owl: 'Owl', night: 'Creatures', limits: 'Limits', chat: 'Chat', tools: 'Debug' },
+        groups: { story: 'Story', bar: 'Bar', cursed: 'Cursed world', boss: 'Boss', dice: 'Dice', owl: 'Owl', night: 'Creatures', limits: 'Limits', abilities: 'Abilities', chat: 'Chat', tools: 'Debug' },
+        abilities: { '': 'none', flyers: 'flyers', fart: 'Fart Time', meep: 'meep-meep' },
+        abilityOf: (name) => `${name}'s ability`,
+        nobody: 'nobody on the field',
         next: 'Next scene',
         nextReady: 'Next scene ›',
         toBar: 'To the bar',
@@ -480,6 +490,60 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
     const limitsInfo = el('span', { class: 'console__info', 'data-console-limits': '' });
     limits.append(online, players, limitsInfo);
 
+    // The players' abilities (docs/spec/frontend.md, «Способности»): a row per walker on the field with its ability
+    // (`Walker.ability`); a choice is RPC `ability.grant`, the row follows the `ability` event that comes back.
+    const abilityGroup = group(TEXT.groups.abilities);
+    const abilityList = el('div', { class: 'console__abilities', 'data-console-abilities': '' });
+    const nobody = el('span', { class: 'console__info' }, TEXT.nobody);
+    abilityGroup.append(abilityList, nobody);
+    const abilityRows = new Map();
+    function abilityRow(id) {
+        const row = el('label', { class: 'console__ability', 'data-console-ability': '', 'data-player': id });
+        const name = el('span', { class: 'console__ability-name' });
+        const select = el('select', { class: 'console__input console__select', 'data-ability-select': '' });
+        for (const [value, text] of Object.entries(TEXT.abilities)) select.append(el('option', { value }, text));
+        const fail = el('span', { class: 'console__info console__ability-note', 'data-ability-note': '' });
+        row.append(name, select, fail);
+        select.addEventListener('change', async () => {
+            select.disabled = true;
+            try {
+                await call('ability.grant', { player: id, ability: select.value || null });
+                fail.textContent = '';
+            } catch (error) {
+                console.warn('ability.grant failed', error);
+                fail.textContent = ERRORS[error?.message] ?? TEXT.failed;
+                setTimeout(() => (fail.textContent = ''), NOTE_MS);
+                select.value = row.dataset.held ?? '';
+            } finally {
+                select.disabled = false;
+            }
+        });
+        return { row, name, select };
+    }
+    function paintAbilities(walkers) {
+        const shown = [...walkers].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+        for (const [id, r] of abilityRows) {
+            if (shown.some((w) => w.id === id)) continue;
+            r.row.remove();
+            abilityRows.delete(id);
+        }
+        shown.forEach((w, i) => {
+            if (!abilityRows.has(w.id)) abilityRows.set(w.id, abilityRow(w.id));
+            const r = abilityRows.get(w.id);
+            const ability = Object.hasOwn(TEXT.abilities, w.ability ?? '') ? w.ability ?? '' : '';
+            r.name.textContent = w.name || '???';
+            r.select.setAttribute('aria-label', TEXT.abilityOf(w.name || '???'));
+            r.row.dataset.held = ability;
+            // Not under the moderator's hand: a choice being made or on its way keeps its value.
+            if (document.activeElement !== r.select && !r.select.disabled) r.select.value = ability;
+            // Moved only when out of order: moving a row takes the focus off its select.
+            const at = abilityList.children[i];
+            if (at && at !== r.row) at.before(r.row);
+            else if (!at) abilityList.append(r.row);
+        });
+        nobody.hidden = shown.length > 0;
+    }
+
     // The players' chat (docs/spec/frontend.md, «Чат»): the log, re-read whenever the console opens, and the mutes.
     const chatGroup = group(TEXT.groups.chat);
     const chat = createChatConsole(call);
@@ -692,6 +756,7 @@ export function initDebugPanel(panel, { call, clickAll, open, serverNow = () => 
             online.textContent = model.presence ? TEXT.online(model.presence.players, model.presence.connections) : TEXT.offline;
             players.textContent = TEXT.field(model.limits?.players ?? '—');
             limitsInfo.textContent = limitsText(model.limits) ?? TEXT.noLimitsYet;
+            paintAbilities(Array.isArray(model.walkers) ? model.walkers : []);
 
             const finaleName = current >= LAST_STEP ? TEXT.dawn : current === BOSS_STEP ? TEXT.rapier : current === CURSED_STEP ? TEXT.cursed : `${TEXT.finale} · ${TEXT.stepWord} ${current}`;
             const parts = [final ? finaleName : isBar(model.scene) ? TEXT.barName : `${TEXT.scene} ${model.scene}`];

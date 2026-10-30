@@ -1,4 +1,4 @@
-import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
+import { bindAbility, bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from './client.js';
 import { initDebugPanel } from './debug.js';
 import { bindChat } from './chat.js';
 import { bindEmotes } from './emote.js';
@@ -153,6 +153,8 @@ async function main() {
         onSay: (event) => moderatorConsole?.say(event),
         // The dice of finale step 1: the reply only carries the attempt; the dice are drawn from the `roll` event.
         roll: (attempt) => centrifuge.rpc('roll', { attempt }).then(({ data }) => data),
+        // My ability (docs/spec/frontend.md, «Способности»): the reply carries `readyAt`; the effect comes as `power`.
+        ability: () => centrifuge.rpc('ability', {}).then(({ data }) => data),
     });
     client.start();
 
@@ -171,7 +173,7 @@ async function main() {
         // connection gets the console.
         centrifuge.rpc('me', {}).then(answer)
             .then((reply) => {
-                client.setMe(reply.player?.id ?? null);
+                client.setMe(reply.player?.id ?? null, reply.player ?? null);
                 client.setModerator(reply.moderator === true);
             })
             .catch((error) => console.warn('me rpc failed', error));
@@ -243,6 +245,7 @@ async function main() {
     bindMeep(root, meep);
     bindObjectKeys();
     bindDice(root, client);
+    bindAbility(root, client);
     // After the shots: a press on a flyer stays a shot even over a walker; a zombie player at step 6 is cured.
     bindClinking(root, scene, client, clink, (target) => rpc('cure', target));
     // The rapier (docs/spec/frontend.md, «Рапира»): the word form and the blow at FrankenPHP.
@@ -278,7 +281,7 @@ async function main() {
     const joinModule = await import('./join.js').catch((error) => console.warn('join screen failed to load', error));
     const join = joinModule?.initJoin(document.querySelector('[data-join]'), {
         register: (name, look) => centrifuge.rpc('register', { name, look }).then(answer)
-            .then((data) => client.setMe(data.player?.id ?? null)),
+            .then((data) => client.setMe(data.player?.id ?? null, data.player ?? null)),
     });
     root.querySelector('[data-join-open]')?.addEventListener('click', () => join?.open());
     if (join && !joinModule.storedLook()) join.open();

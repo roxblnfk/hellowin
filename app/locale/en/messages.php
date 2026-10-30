@@ -58,6 +58,8 @@ return [
     'Готово' => 'Done',
     'Числа вечера' => 'The evening in numbers',
     'Выпить' => 'Drink',
+    'Способность (пробел)' => 'Ability (Space)',
+    'Летуны' => 'Flyers',
     'Чат' => 'Chat',
     'Топ' => 'Top',
     'Лучшие стрелки: показать или спрятать' => 'Top shooters: show or hide',

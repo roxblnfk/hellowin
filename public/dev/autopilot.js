@@ -12,7 +12,7 @@ const fill = (text) => text.replaceAll('{player}', 'W'.repeat(NAME_CHARS)).repla
 const DELAY = { 'finale-1': SUMMON_MS, 'finale-6': STEP_MS[6] };
 
 function timesOf(line) {
-    const firsts = [line.text, ...Object.values(line.scenes ?? {}), ...Object.values(line.steps ?? {})].map((t) => showMs(fill(t)));
+    const firsts = [line.text, ...Object.values(line.scenes ?? {}), ...Object.values(line.steps ?? {}), ...Object.values(line.abilities ?? {}).flat()].map((t) => showMs(fill(t)));
     const then = (Array.isArray(line.then) ? line.then : line.then ? [line.then] : []).map((t) => showMs(fill(t)));
     const first = Math.max(...firsts);
     return {
@@ -25,7 +25,7 @@ function timesOf(line) {
 
 /**
  * The content of public/autopilot.json: how long each catalog line keeps the owl talking (`ms`, all its parts, the
- * longest of its scene and step variants and of both languages) and holds the bubble against the next line (`hold`),
+ * longest of its scene, step and ability variants and of both languages) and holds the bubble against the next line (`hold`),
  * `delay` before it starts, `lead` from its start to its last part (a line in parts; the later of both languages); the rule for the moderator's own text (`showMs`, `holdMs`); each finale step's staging
  * (`steps`, ms from its event).
  */

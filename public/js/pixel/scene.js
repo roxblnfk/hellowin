@@ -25,6 +25,7 @@ import { BURN_END, HEAL_AT, ZBURN, ZOMBIE_SPARKS, burnBodyAt, burnDeadline, burn
 import { RISE_MS, wanderAt, wanderOnScreen } from './wander.js';
 import { flyAt, flyPlan } from './fly-path.js';
 import { BUSH, FLYERS, bake as flyerBake, deathOf, digitsSprite, feathersOf } from './flyers.js';
+import { FART_SCALE, LAUNCH_COLORS, LAUNCH_SPARKS, MOTE_COLORS, MOTE_MS, pillarAt, pillarRing, pillarSprite } from './ability.js';
 import { ELEPHANT, FART, PUFFS as FART_PUFFS, addFart, bannerFrame, fartAt, fartCloud, flightAt, hookOf, trainX } from './elephant.js';
 import { NIGHT, bakeLit, halo, keepHueBake, keepHueCanvas, keepHueColor, litColor, paintSky, relightCanvas } from './night.js';
 import { OWL, OWL_BAR, OWL_FLIGHT, OWL_RAPIER, armed, glowing, pourFrame } from './owl.js';
@@ -3445,6 +3446,7 @@ export async function createScene(rootEl, snapshot) {
         animateRolls(now);
         toastBubbles(clinking.groups, now);
         animateEmotes();
+        animateAbilities();
     }
 
     /*
@@ -4538,6 +4540,107 @@ export async function createScene(rootEl, snapshot) {
         }
     }
 
+    /*
+     * The players' abilities (docs/spec/frontend.md, «Способности»), on the server clock from the events' `at`: the
+     * pillar of light under a walker who got one (additive gold behind it, a ring on the ground, motes rising), and the
+     * Fart Time of a player — the elephant's puffs and cloud, smaller, out from behind the walker. They follow the walker
+     * as it is drawn; a walker gone takes them along. Sprites are made on first need: a rebuild destroys the ground layer.
+     */
+    const pillars = new Map();
+    let playerFarts = [];
+    // A player's «Мип-мип!» bubble stays this long from its `at`, like a chat line (`says`).
+    const POWER_MEEP_MS = 2200;
+    // How far above the foot the puffs come out (the hips) and behind the walker's middle, art px.
+    const RUMP_UP = 12;
+    const RUMP_BACK = 4;
+    // The Fart Time cloud drifts back less than the elephant's: it should still read as the walker's.
+    const CLOUD_DRIFT = 0.6;
+
+    const groundSprite = (holder, key, add = false) => {
+        if (!holder[key] || holder[key].destroyed) {
+            holder[key] = new Sprite();
+            if (add) holder[key].blendMode = 'add';
+            groundLayer.addChild(holder[key]);
+        }
+        return holder[key];
+    };
+    const dropSprites = (holder) => Object.values(holder).forEach((s) => s?.destroyed === false && s.destroy());
+
+    function placeDef(sprite, def, x, y, z) {
+        sprite.visible = true;
+        sprite.texture = defTexture(def);
+        sprite.anchor.set(def.anchor.x / def.w, def.anchor.y / def.h);
+        sprite.position.set(Math.round(x), Math.round(y));
+        sprite.zIndex = z;
+    }
+
+    function dropPillar(id) {
+        const p = pillars.get(id);
+        if (p) dropSprites(p.sprites);
+        pillars.delete(id);
+    }
+
+    function animateAbilities() {
+        const now = serverNow();
+        for (const [id, p] of pillars) {
+            const w = walkers.get(id);
+            const k = pillarAt(now - p.at, reduced);
+            if (!w?.sprite || !k) {
+                if (!w || (now - p.at >= 0 && !k)) dropPillar(id);
+                else Object.values(p.sprites).forEach((s) => s && (s.visible = false));
+                continue;
+            }
+            const { x, y } = w.sprite.position;
+            const z = w.sprite.zIndex;
+            placeDef(groundSprite(p.sprites, 'ring', true), pillarRing(k.melt), x, y, z - 0.5);
+            placeDef(groundSprite(p.sprites, 'column', true), pillarSprite(k.height, k.melt, k.frame), x, y + 1, z - 0.4);
+            if (!reduced && k.melt === 0 && clock >= p.moteAt) {
+                p.moteAt = clock + MOTE_MS;
+                ember(x + between(-5, 5), y - between(2, 40 * k.height), between(-4, 4), between(-45, -25), 0, between(0.45, 0.8), 0, MOTE_COLORS);
+            }
+        }
+        playerFarts = playerFarts.filter((f) => {
+            const w = walkers.get(f.id);
+            const e = fartAt(now - f.at, reduced, null);
+            if (!w || e.done) {
+                dropSprites(f.sprites);
+                return false;
+            }
+            const shown = Boolean(w.sprite) && now >= f.at;
+            const back = w.sprite?.scale.x < 0 ? 1 : -1;
+            const origin = shown ? { x: w.sprite.x + back * RUMP_BACK, y: w.sprite.y - RUMP_UP } : null;
+            const z = (w.sprite?.zIndex ?? 0) - 0.3;
+            for (let i = 0; i < FART.puffCount; i++) {
+                const s = groundSprite(f.sprites, `puff${i}`);
+                const puff = shown ? e.puffs[i] : null;
+                s.visible = Boolean(puff);
+                if (puff) {
+                    placeArt(s, fartArt(FART_PUFFS[puff.size]), origin.x + back * puff.back, origin.y - puff.up);
+                    s.zIndex = z;
+                }
+            }
+            const cloud = groundSprite(f.sprites, 'cloud');
+            cloud.visible = shown && Boolean(e.cloud);
+            if (cloud.visible) {
+                const scale = Math.round(e.cloud.scale * FART_SCALE * 20) / 20;
+                placeArt(cloud, fartArt(fartCloud(scale, e.cloud.melt)), origin.x + back * e.cloud.back * CLOUD_DRIFT, origin.y - e.cloud.up);
+                cloud.zIndex = z;
+            }
+            return true;
+        });
+    }
+
+    // A launch of flyers: cool sparks thrown up from the walker's hands; the flyers themselves come as `flyer` events.
+    function launchSparks(w) {
+        if (reduced || !w?.sprite) return;
+        const { x, y } = w.sprite.position;
+        for (let i = 0; i < LAUNCH_SPARKS; i++) {
+            const a = -Math.PI / 2 + between(-0.9, 0.9);
+            const v = between(30, 70);
+            ember(x + between(-3, 3), y - 22, Math.cos(a) * v, Math.sin(a) * v, 60, between(0.35, 0.7), 0, LAUNCH_COLORS);
+        }
+    }
+
     function animateRolls(now) {
         const px = layout.cssPx;
         for (const [key, r] of rolls) {
@@ -4968,10 +5071,33 @@ export async function createScene(rootEl, snapshot) {
             addEmote(id, String(emoji), at);
         },
 
+        /**
+         * Channel event `ability` with an ability: the pillar of light under walker `id` from `at` (server clock) for
+         * PILLAR.end; a new one replaces it. No such walker — nothing.
+         */
+        pillar(id, at) {
+            if (!walkers.has(id) || !Number.isFinite(at)) return;
+            dropPillar(id);
+            pillars.set(id, { at, sprites: {}, moteAt: -1e9 });
+        },
+
+        /**
+         * Channel event `power` {id, ability, at}: `fart` — Fart Time out from behind the walker, `meep` — a «Мип-мип!»
+         * bubble over it, `flyers` — sparks thrown up from it. No such walker — nothing.
+         */
+        power({ id, ability, at }) {
+            const w = walkers.get(id);
+            if (!w) return;
+            if (ability === 'fart') playerFarts.push({ id, at, sprites: {} });
+            else if (ability === 'meep') says.set(id, { text: MEEP, until: at + POWER_MEEP_MS });
+            else if (ability === 'flyers') launchSparks(w);
+        },
+
         /** Channel event `leave`: the player has no connections left. */
         leave(id) {
             const w = walkers.get(id);
             dropEmote(id);
+            dropPillar(id);
             if (!w) return;
             dropWalkerSprites(w);
             walkers.delete(id);

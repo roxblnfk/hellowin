@@ -16,6 +16,7 @@ import { ROLL_LAND_MS, ROLL_TUMBLE_MS, winsRoll } from './dice.js';
 import * as FLYER_ART from './pixel/flyers.js';
 import { pick } from './i18n.js';
 import { HOOT_LEAD_MS } from './owl-speech.js';
+import { grantOf, powerOf } from './ability.js';
 
 const TEXT = pick({
     ru: { soundOn: 'Звук: вкл', soundOff: 'Звук: выкл', soundOnLabel: 'Звук включён', soundOffLabel: 'Звук выключен', musicOn: 'Музыка включена', musicOff: 'Музыка выключена' },
@@ -459,6 +460,19 @@ export function createSound(audio, { serverNow, now = () => performance.now(), o
             const walker = id && model.walkers.find((w) => w.id === id);
             const fire = walker && SHOT_SOUNDS[shownItem(walker.item, model.scene)];
             if (fire) play(fire, { pan: panOf(lastPoint(walker.walk)?.x), volume: volumeOf(model, id) });
+        },
+        // A player got an ability (frontend.md, «Способности»): the pillar's chime from the walker; none for one taken
+        // away or heard late.
+        ability(model, event) {
+            const grant = grantOf(event, serverNow());
+            if (!grant?.ability || !grant.fresh) return;
+            play('ability.grant', { pan: panOf(walkerX(model, grant.id)), volume: volumeOf(model, grant.id) });
+        },
+        // An ability used: the elephant's fart or RoadRunner's meep from the walker; the flyers sound as `flyer` events.
+        power(model, event) {
+            const used = powerOf(event, serverNow());
+            const name = used && { fart: 'elephant.fart', meep: 'rr.meep' }[used.ability];
+            if (name) play(name, { pan: panOf(walkerX(model, used.id)), volume: volumeOf(model, used.id) });
         },
         drink(model, event) {
             const id = event.player?.id;

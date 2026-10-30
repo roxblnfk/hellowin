@@ -129,6 +129,9 @@
             <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="[[Готово тыкв]]" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>[[Готово]]</span></span>
             <button type="button" class="hud__item hud__button" data-reveal-open hidden>[[Числа вечера]]</button>
             <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>[[Выпить]]</button>
+            <!-- My ability (docs/spec/frontend.md, «Способности»): a name per ability, the client shows mine; Space does
+                 the same when the dice and the drink do not take it. -->
+            <button type="button" class="hud__item hud__button hud__button--ability" data-ability aria-disabled="true" title="[[Способность (пробел)]]" hidden><span data-ability-name="flyers" hidden><span aria-hidden="true">🦆</span> [[Летуны]]</span><span data-ability-name="fart" hidden><span aria-hidden="true">💨</span> Fart Time</span><span data-ability-name="meep" hidden><span aria-hidden="true">🐦</span> [[Мип-мип]]</span></button>
             <button type="button" class="hud__item hud__button hud__button--top" data-top-open aria-pressed="true" aria-controls="dawn-top" title="[[Лучшие стрелки: показать или спрятать]]" hidden>[[Топ]]</button>
             <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>[[Чат]]</button>
             <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="[[Эмоции]]" title="[[Эмоции]]" hidden><span aria-hidden="true">😀</span></button>

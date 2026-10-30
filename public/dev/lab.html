@@ -201,6 +201,14 @@
   server's (`anonymous`, `no character`, `unknown emoji`, `busy` within HELLOWIN_EMOTE_COOLDOWN_MS 1000) and comes back
   to all. The set is the client's default (no data-emotes). ?emotes=N — N bots emote every 4 s (under ?freeze — once at
   the start, with my walker's too under ?me=1: ?emotes=3&chat=2&me=1&freeze=1500 shows them beside the bubbles).
+  Abilities (docs/spec/frontend.md, «Способности»): `ability` answers like the server's (`no character`, `no ability`,
+  `busy` with `readyAt` within the cooldown — flyers 3 s, fart 3 s, meep 2 s here —, `no flyers` where the set has none) and
+  sends `power` to all; `flyers` launches 3 flyers of the set from the walker, near and up off the edge, with `by`. A roll
+  of three equal dice gives a random other ability, `ability.grant` of the console (?mod=1, «Способности») gives or takes
+  one; a grant says the owl's `ability` line unless one was said within 20 s. ?ability=flyers|fart|meep — mine at the
+  start (with ?me=1): the HUD's button, Space. ?grant=ms — at that moment the first bot gets ?grantwhat= (default flyers),
+  the owl's phrase number ?grantn= (default 0): ?scene=1&walkers=3&grant=300&freeze=1200 — the pillar of light;
+  ?power=fart,meep,flyers — at ?powerat=ms (default 300) bot i uses ability i: ?scene=1&walkers=3&power=fart,meep,flyers&freeze=1700.
   HUD (docs/spec/frontend.md, «Разметка и DOM-хуки»): ?conn=ok|reconnect|down — the connection lamp green, yellow
   blinking, red; RoadRunner's uptime beside it from ?finale=3 on and in the bar with ?roadrunner=1. The console (?mod=1)
   shows only what works in the scene or finale step: ?mod=1&scene=1, ?mod=1&finale=5, ?mod=1&finale=6&boss=60,100.
@@ -280,6 +288,7 @@
         <span class="hud__item hud__drinks hud__goal--pumpkins" data-hud-progress role="progressbar" aria-label="Готово тыкв" aria-valuemin="0"><span class="hud__meter" aria-hidden="true"><span class="hud__meter-fill"></span></span><span data-hud-progress-text>Готово</span></span>
         <button type="button" class="hud__item hud__button" data-reveal-open hidden>Числа вечера</button>
         <button type="button" class="hud__item hud__button hud__button--drink" data-drink hidden>Выпить</button>
+        <button type="button" class="hud__item hud__button hud__button--ability" data-ability aria-disabled="true" title="Способность (пробел)" hidden><span data-ability-name="flyers" hidden><span aria-hidden="true">🦆</span> Летуны</span><span data-ability-name="fart" hidden><span aria-hidden="true">💨</span> Fart Time</span><span data-ability-name="meep" hidden><span aria-hidden="true">🐦</span> Мип-мип</span></button>
         <button type="button" class="hud__item hud__button hud__button--top" data-top-open aria-pressed="true" aria-controls="dawn-top" title="Лучшие стрелки: показать или спрятать" hidden>Топ</button>
         <button type="button" class="hud__item hud__button" data-chat-open aria-expanded="false" hidden>Чат</button>
         <button type="button" class="hud__item hud__button hud__button--emote" data-emote-open aria-expanded="false" aria-controls="emotes" aria-label="Эмоции" title="Эмоции" hidden><span aria-hidden="true">😀</span></button>
@@ -314,7 +323,7 @@
     </form>
 </dialog>
 <script type="module">
-    import { bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
+    import { bindAbility, bindBar, bindClinking, bindDice, bindMeep, bindObjectKeys, bindShooting, bindStriking, bindWalking, bindWord, createClient, readSnapshot } from '/js/client.js';
     import { deathOf } from '/js/sound.js';
     import { BAR_LAYOUT, barCounterOf, pumpkinStand } from '/js/layout.js';
     import { seedOf } from '/js/pixel/sprites.js';
@@ -673,10 +682,11 @@
                 : pumpkinBeerStart ? beerPoint(i) : clinkStart || clickClinkStart ? clinkPoint(i) : rrCrowd ? crowdPoint(random) : finaleStart ? gatherPoint(i, botCount) : spawnPoint(random), serverTime()),
         });
     }
+    const ABILITY_KINDS = ['flyers', 'fart', 'meep'];
     const walkStop = params.get('walkstop');
     if (params.get('me') === '1' || walkStop) {
         const walk = barStart && BAR.door ? doorWalk(serverTime()) : standing(zoneClamp({ x: 50, y: 93 }), serverTime());
-        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: barStart ? params.get('item') : null, walk });
+        startWalkers.push({ id: ME, name: 'Я', look: storedLook() ?? randomLook(seeded(7)), item: barStart ? params.get('item') : null, walk, ...(ABILITY_KINDS.includes(params.get('ability')) ? { ability: params.get('ability') } : {}) });
     }
     root.dataset.walkers = JSON.stringify(startWalkers);
 
@@ -1184,6 +1194,7 @@
             case 'auto': return engineAuto(data);
             case 'chat.history': return { ok: true, messages: structuredClone(chatLog), muted: [...chatMuted.values()] };
             case 'chat.mute': return engineChatMute(data);
+            case 'ability.grant': return engineGrant(data);
             case 'stats.reset': {
                 // players.md, «Статистика»: every shooter's points go, the board empties; the lab keeps no other counters.
                 const players = Math.max(dawnScores.size, engine.walkers.length);
@@ -2010,8 +2021,9 @@
         diceState.uncounted.set(`${id}:${attempt}`, uncounted);
         stats.rolls++;
         deliver({ type: 'roll', player: playerOf(w), attempt, dice: faces, at: serverTime(), ...uncounted });
+        const ability = diceAbility(w, faces);
         if (isSix(faces) && !engine.paused) diceWin({ player: playerOf(w), attempt });
-        return { ok: true, attempt, dice: faces, ...uncounted };
+        return { ok: true, attempt, dice: faces, ...uncounted, ...(ability ? { ability } : {}) };
     }
 
     // «Сова бросает»: anything but 6-6-6 twice, then 6-6-6.
@@ -2255,12 +2267,85 @@
         emoteBots().forEach((w, i) => later(() => engineEmote(w.id, { emoji: EMOTES[Math.floor(random() * EMOTES.length)] }), 200 + i * 170 + random() * 400));
     }
 
+    // The abilities (protocol.md, «Способности»): kept on the walker like `Walker.ability`; the cooldowns, the owl's gap and
+    // the flock stand in for HELLOWIN_ABILITY_*_COOLDOWN_MS, _OWL_GAP_MS and _FLYERS_COUNT.
+    const ABILITY_COOLDOWN_MS = { flyers: 3000, fart: 3000, meep: 2000 };
+    const ABILITY_OWL_GAP_MS = 20000;
+    const ABILITY_FLYERS = 3;
+    const abilityReady = new Map();
+    let abilityOwlAt = -Infinity;
+    let abilitySeq = 0;
+    function grantAbility(w, ability, source, n = abilitySeq++) {
+        if ((w.ability ?? null) === ability) return;
+        if (ability) w.ability = ability;
+        else delete w.ability;
+        deliver({ type: 'ability', player: playerOf(w), ability, source, at: serverTime() });
+        if (ability && serverTime() - abilityOwlAt >= ABILITY_OWL_GAP_MS) {
+            abilityOwlAt = serverTime();
+            deliver({ type: 'owl', line: 'ability', params: { player: playerOf(w), ability, n } });
+        }
+    }
+    // A triple of a new roll: a random ability other than the one held.
+    function diceAbility(w, faces) {
+        if (!faces.every((f) => f === faces[0])) return null;
+        const other = ABILITY_KINDS.filter((a) => a !== w.ability);
+        const ability = other[Math.floor(Math.random() * other.length)];
+        grantAbility(w, ability, 'dice');
+        return ability;
+    }
+    // RPC `ability.grant {player, ability}` of the console.
+    function engineGrant({ player, ability }) {
+        const w = engine.walkers.find((x) => x.id === player);
+        if (!w) throw new Error('no target');
+        if (ability !== null && !ABILITY_KINDS.includes(ability)) throw new Error('invalid ability');
+        grantAbility(w, ability, 'moderator');
+        return { ok: true, ability };
+    }
+    // RPC `ability {}`: `power` to all; the flyers' ability launches a flock from the walker, near, up off the edge.
+    function engineAbility(id) {
+        if (!id) return { ok: false, error: 'anonymous' };
+        const w = engine.walkers.find((x) => x.id === id);
+        if (!w) return { ok: false, error: 'no character' };
+        const ability = w.ability ?? null;
+        if (!ability) return { ok: false, error: 'no ability' };
+        const t = serverTime();
+        const key = `${id}:${ability}`;
+        if (t < (abilityReady.get(key) ?? 0)) return { ok: false, error: 'busy', readyAt: abilityReady.get(key) };
+        if (ability === 'flyers' && !kindsNow().length) return { ok: false, error: 'no flyers' };
+        abilityReady.set(key, t + ABILITY_COOLDOWN_MS[ability]);
+        deliver({ type: 'power', player: { id }, ability, at: t });
+        if (ability === 'flyers') {
+            const from = round1(walkPoint(w.walk, t));
+            for (let i = 0; i < ABILITY_FLYERS; i++) {
+                const side = i % 2 ? 1 : -1;
+                const path = { from, via: { x: from.x + side * (6 + i * 4), y: Math.max(4, from.y - 30 - i * 6) }, to: { x: from.x < 50 ? 108 : -8, y: -8 + i * 6 }, by: { id } };
+                launchFlyer(nextId(), pick(kindsNow()), 2, DURATION[2], POINTS[2], path);
+            }
+        }
+        return { ok: true, ability, readyAt: abilityReady.get(key) };
+    }
+    // ?grant=ms: the first bot gets ?grantwhat= with the owl's phrase ?grantn=; ?power=a,b,c: bot i uses ability i.
+    function labGrant() {
+        const w = wanderers()[0];
+        const what = ABILITY_KINDS.includes(params.get('grantwhat')) ? params.get('grantwhat') : 'flyers';
+        if (w) grantAbility(w, what, 'moderator', Number.parseInt(params.get('grantn') ?? '0', 10) || 0);
+    }
+    function labPowers() {
+        (params.get('power') ?? '').split(',').filter((a) => ABILITY_KINDS.includes(a)).forEach((ability, i) => {
+            const w = wanderers()[i];
+            if (!w) return;
+            w.ability = ability;
+            engineAbility(w.id);
+        });
+    }
+
     async function engineRegister(rawName, look) {
         const name = rawName.trim();
         if (!/^(?=.*[\p{L}\p{N}])(?!.*  )[\p{L}\p{N} _.-]{1,24}$/u.test(name)) throw new Error('invalid name');
-        engineWalker({ id: ME, name, look, item: null, walk: inBarZone && BAR.door ? doorWalk(serverTime()) : standing(spawnPoint(), serverTime()) });
-        client.setMe(ME);
-        return { id: ME, name, look };
+        const ability = engine.walkers.find((w) => w.id === ME)?.ability ?? null;
+        engineWalker({ id: ME, name, look, item: null, walk: inBarZone && BAR.door ? doorWalk(serverTime()) : standing(spawnPoint(), serverTime()), ...(ability ? { ability } : {}) });
+        client.setMe(ME, { ability });
+        return { id: ME, name, look, ability };
     }
 
     const wanderers = () => engine.walkers.filter((w) => w.id !== ME);
@@ -2505,6 +2590,7 @@
         onChange: (model) => moderatorConsole?.update(model),
         onSay: (event) => moderatorConsole?.say(event),
         roll: async (attempt) => engineRoll(ME, { attempt }),
+        ability: async () => engineAbility(client.model.me),
         later,
     });
     client.start();
@@ -2515,7 +2601,7 @@
     client.load(engineSnapshot());
     client.setModerator(moderator && params.get('ui') !== '0');
     if (params.get('ui') === '0') root.querySelector('[data-lab-panel]').hidden = true;
-    if (params.get('me') === '1') client.setMe(ME);
+    if (params.get('me') === '1') client.setMe(ME, { ability: engine.walkers.find((w) => w.id === ME)?.ability ?? null });
     // ?dawnopen=0 at the dawn: the table folded back, as the player's own click would.
     const topTable = root.querySelector('[data-dawn-top]');
     if (params.get('dawnopen') === '0' && topTable && !topTable.hidden && !topTable.hasAttribute('data-folded')) root.querySelector('[data-dawn-toggle]')?.click();
@@ -2567,6 +2653,7 @@
     bindMeep(root, () => meep());
     bindObjectKeys();
     bindDice(root, client);
+    bindAbility(root, client);
     bindClinking(root, scene, client, labClink, (target) => warned(engineCure(ME, target), 'cure'));
     bindWord(root, client, async (text) => engineWord(ME, { text }));
     bindStriking(root, client, () => warned(engineStrike(ME), 'strike'));
@@ -2604,6 +2691,9 @@
         engineFlyer();
         launchLater();
     }, (engine.finale?.step ?? -1) >= LAST_STEP ? 800 + Math.random() * 1600 : 3000 + Math.random() * 5000);
+    // ?grant=ms and ?power= with ?powerat=ms: an ability given and used at that moment (labGrant, labPowers).
+    const grantAt = params.has('grant') ? Math.round(Number.parseInt(params.get('grant'), 10) / 16) * 16 : -1;
+    const powerAt = params.has('power') ? Math.round(Number.parseInt(params.get('powerat') ?? '300', 10) / 16) * 16 : -1;
     // ?gone=ms: the wandering zombies sent away at that moment, as at the dawn.
     const goneAt = params.has('gone') ? Math.round(Number.parseInt(params.get('gone'), 10) / 16) * 16 : -1;
     // ?wkill=ms (with ?freeze): the first walker shoots the first wandering zombie at that moment.
@@ -2640,6 +2730,8 @@
             setInterval(startClinks, 9000);
         }
         if (pumpkinBeerStart) pumpkinBeerRound();
+        if (grantAt >= 0) later(labGrant, grantAt);
+        if (powerAt >= 0) later(labPowers, powerAt);
         autopilotTick();
         if (params.get('aproom') === '1') roomTick();
     }
@@ -2690,6 +2782,8 @@
         wordSeq = 0;
         sayBuckets.clear();
         emotedAt.clear();
+        abilityReady.clear();
+        abilityOwlAt = -Infinity;
         chatMuted.clear();
         chatLog.splice(0, chatLog.length, ...structuredClone(chatSeed));
         Object.assign(limitBonus, initialBonus);
@@ -2786,6 +2880,8 @@
                 wanderers().filter((w, i) => !(i === 0 && params.get('shooter') === '1')).forEach((w) => engineMove(w.id, randomTarget(random)));
             }
             if (owlRollsAt.includes(simTime) && diceOn()) engineDiceOwl();
+            if (simTime === grantAt) labGrant();
+            if (simTime === powerAt) labPowers();
             if (simTime === meepAt) {
                 deliver({ type: 'meep', at: serverTime() });
             }

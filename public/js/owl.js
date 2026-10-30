@@ -9,8 +9,9 @@ import { speechPlan } from './owl-speech.js';
  * finale step instead (in the final scene, before `scenes`), hoot?: a dramatic line, the owl puffs up first; button?:
  * label on the moderator's console (where it shows — MENU); auto?: the server says it by itself; then?: the next part
  * said right after this one, or a list of parts said one after another; rapier?: the part (0 — the first) on which the
- * owl draws its rapier }. A text without a scene key is the day's: a line said in the bar has its own key 0. `{player}`
- * is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
+ * owl draws its rapier; abilities?: {[ability]: text[]} — the line for `params.ability`, picked by `params.n` like a
+ * rumour (`text` stands in for an ability not listed) }. A text without a scene key is the day's: a line said in the
+ * bar has its own key 0. `{player}` is the player's name from `params.player.name`, `{attempt}` — `params.attempt`.
  * Lines with `{player}` are never on the console: there is no one to name by hand.
  */
 const RU_LINES = {
@@ -49,6 +50,43 @@ const RU_LINES = {
     'witch-down': { auto: true, text: '{player} сбивает ведьму! Метлу можно оставить себе.' },
     // The first shot at the elephant: the name of the PHP Fart Time channel, the same in both languages.
     'fart-time': { auto: true, text: 'Fart Time!' },
+    // New phrases go at the end of their list, so a number keeps its phrase; item N of `en` adapts item N of `ru`.
+    ability: {
+        auto: true,
+        text: 'У {player} новая способность! Покажи её всем.',
+        abilities: {
+            fart: [
+                'У {player} проснулся внутренний слон! Ну же, выпусти Fart Time — пусть все увидят.',
+                '{player} получает дар слонов — Fart Time! Не стесняйся, покажи залу.',
+                'Ух-ху! {player} теперь пукает как PHP-слон. Давай, все ждут!',
+                '{player}, ты избран… для зелёного дыма. Продемонстрируй!',
+                'Внимание, зал: у {player} теперь Fart Time. Держитесь подальше — или поближе, если смелые.',
+                '{player} заработал облако Fart Time. Ну-ка, выпусти его над поляной!',
+                'Слоны признали {player} своим! Покажи, чему научился.',
+                'Говорят, {player} теперь пахнет успехом. Проверим — выпускай Fart Time!',
+            ],
+            meep: [
+                '{player} теперь говорит как RoadRunner! Ну-ка, мип-мип для всех!',
+                'У {player} голос RoadRunner! Скажи залу своё «мип-мип».',
+                '{player} получает «Мип-мип»! Покажи, как бегун здоровается.',
+                'Ух-ху! В {player} вселился RoadRunner. Мипни нам!',
+                '{player}, ты теперь немного RoadRunner. Докажи — мип-мип!',
+                'Мип-мип от {player}? Теперь это возможно. Давай, удиви всех!',
+                '{player} выучил язык бегунов. Скажи что-нибудь — все слушают!',
+                'Кто это мипает? Скоро узнаем: {player} получил голос RoadRunner!',
+            ],
+            flyers: [
+                '{player} теперь повелевает летунами! Выпусти стаю — пусть все постреляют.',
+                'У {player} дар призыва! Ну-ка, запусти летунов для всего зала.',
+                'Ух-ху! {player} может звать летунов. Покажи — небу скучно!',
+                '{player}, небо слушается тебя. Выпускай летунов!',
+                'Летуны теперь прилетают по зову {player}. Позови — стрелки ждут!',
+                '{player} получает силу стаи! Запускай — и сам не забудь пострелять.',
+                'Внимание, стрелки: {player} теперь сам выпускает дичь. Попросите его!',
+                '{player} открыл гнездо летунов. Покажи всем, на что способен!',
+            ],
+        },
+    },
     'finale-1': { auto: true, hoot: true, text: 'Вот он! Он возвращается!', then: 'Чтобы он восстал, нужна версия, которой никогда не было… Бросайте кости! Нужно шесть-шесть-шесть!' },
     'dice-win': { auto: true, hoot: true, text: '{player} выбросил 6-6-6 с {attempt}-й попытки! PHP 6 всё-таки вышел!' },
     'dice-owl-win': { auto: true, hoot: true, text: 'Шесть-шесть-шесть! С третьей попытки — как и положено.' },
@@ -102,6 +140,41 @@ const EN_LINES = {
     'circle-done': { text: '{player} closed the circle! The ground trembles…' },
     'witch-down': { text: "{player} shoots down the witch! The broom's yours to keep." },
     'fart-time': { text: 'Fart Time!' },
+    ability: {
+        text: '{player} has a new ability! Show it to everyone.',
+        abilities: {
+            fart: [
+                "{player}'s inner elephant just woke up! Go on, let out a Fart Time — let everyone see.",
+                "{player} receives the gift of the elephants — Fart Time! Don't be shy, show the room.",
+                "Hoo-hoo! {player} now farts like the PHP elephant. Come on, everyone's waiting!",
+                '{player}, you have been chosen… for the green smoke. Demonstrate!',
+                'Attention, everyone: {player} has Fart Time now. Keep your distance — or come closer, if you dare.',
+                '{player} earned a Fart Time cloud. Go on, let it out over the field!',
+                "The elephants have claimed {player} as one of their own! Show us what you've learned.",
+                "They say {player} smells like success now. Let's check — let out a Fart Time!",
+            ],
+            meep: [
+                '{player} talks like RoadRunner now! Come on, a meep-meep for everyone!',
+                "{player} has RoadRunner's voice! Give the room your “meep-meep.”",
+                '{player} gets “Meep-meep”! Show us how a roadrunner says hello.',
+                'Hoo-hoo! RoadRunner has possessed {player}. Meep at us!',
+                "{player}, you're a little bit RoadRunner now. Prove it — meep-meep!",
+                "A meep-meep from {player}? Now it's possible. Go on, surprise everyone!",
+                "{player} learned the roadrunners' tongue. Say something — everyone's listening!",
+                "Who's that meeping? We'll soon find out: {player} got RoadRunner's voice!",
+            ],
+            flyers: [
+                '{player} commands the flyers now! Release the flock — let everyone shoot.',
+                '{player} has the gift of summoning! Go on, launch flyers for the whole room.',
+                'Hoo-hoo! {player} can call the flyers. Show us — the sky is bored!',
+                '{player}, the sky obeys you. Release the flyers!',
+                "Flyers now come at {player}'s call. Call them — the shooters are waiting!",
+                "{player} gets the power of the flock! Launch them — and don't forget to shoot yourself.",
+                'Attention, shooters: {player} releases the game now. Ask nicely!',
+                "{player} opened the flyers' nest. Show everyone what you can do!",
+            ],
+        },
+    },
     'finale-1': { text: "There he is! He's coming back!", then: 'To rise, he needs a version that never existed… Roll the dice! We need six-six-six!' },
     'dice-win': { text: '{player} rolled 6-6-6 on try #{attempt}! PHP 6 finally shipped!' },
     'dice-owl-win': { text: "Six-six-six! Third time's the charm — as it should be." },
@@ -229,7 +302,15 @@ export function lineText(event, scene = 0, step = null) {
     if (!line) return null;
     const name = event.params?.player?.name;
     const attempt = Number.isInteger(event.params?.attempt) ? String(event.params.attempt) : '?';
-    return ((step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
+    return ((step === null ? undefined : line.steps?.[step]) ?? line.scenes?.[scene] ?? abilityText(line, event.params) ?? line.text).replaceAll('{player}', typeof name === 'string' && name.trim() !== '' ? name.trim() : SOMEONE).replaceAll('{attempt}', attempt);
+}
+
+/** The phrase of an `ability` line: its ability's list at `n` modulo the length (any n < 0 or broken — 0); null without one. */
+function abilityText(line, params) {
+    const list = line.abilities?.[params?.ability];
+    if (!Array.isArray(list) || !list.length) return null;
+    const n = Number.isInteger(params.n) && params.n >= 0 ? params.n : 0;
+    return list[n % list.length];
 }
 
 // Long: the room watches the scene, not the bubble, and reads the line between clicks; never stuck for good. The

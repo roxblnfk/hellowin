@@ -6,6 +6,7 @@ import { OWL_EXPLAINS, REPEAT_WAIT_MS, ROLL_STALE_MS, createDicePanel, createRol
 import { createDawnTable, dawnOf } from './dawn.js';
 import { chatShowMs, sayText } from './chat.js';
 import { emoteOf } from './emote.js';
+import { ABILITY_GAP_MS, abilityButton, abilityOf, grantOf, powerOf, spaceAction } from './ability.js';
 import { CLINK } from './pixel/clink.js';
 import { SUMMON_MS } from './pixel/finale-timeline.js';
 import { pick } from './i18n.js';
@@ -316,13 +317,15 @@ export function readSnapshot(root) {
  * @param {{load: Function, event: Function, me: Function}|null} [options.sound]  sound.js: plays what the events say
  * @param {((attempt: number) => Promise<object|undefined>)|null} [options.roll]  RPC `roll {attempt}`, resolving with the reply
  * @param {(event: object) => void} [options.onSay]  after a `say` event (the moderator's chat log)
+ * @param {(() => Promise<object|undefined>)|null} [options.ability]  RPC `ability {}`, resolving with the reply
  * @param {(fn: Function, ms: number) => unknown} [options.later]  setTimeout (the lab's frozen clock passes its own)
  */
-export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {}, later = (fn, ms) => setTimeout(fn, ms) }) {
+export function createClient(root, scene, { requestState, requestTime = () => requestState().then((s) => s.now), now = () => Date.now(), owl = null, reveal = null, onChange = () => {}, sound = null, roll = null, onSay = () => {}, ability = null, later = (fn, ms) => setTimeout(fn, ms) }) {
     // `clinked`: whether I have clinked with the beer in my hand since taking it — only a hint for the «Выпить» button;
     // the server decides (protocol.md, RPC `drink`). `owlRolls` — the owl's rolls of the dice this round, from the
     // snapshot and the `roll` events.
-    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false };
+    // `ability` — mine (protocol.md, «Способности»: `Player.ability` of `me` / `register`, then the `ability` events).
+    const model = { ...readSnapshot(root), me: null, moderator: false, clinked: false, ability: null };
     // stageMax per scene as far as the client has seen it: a `reset` event returns to scene 0 without one.
     const stageMaxByScene = new Map([[model.scene, model.stageMax]]);
     const bonfireOf = () => model.elements.find((e) => e.type === 'bonfire') ?? null;
@@ -374,6 +377,9 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     // Until when, on the server clock, my clink plays, my gulp runs and a pumpkin hands me a mug; `pending` — my mug
     // RPCs not answered yet. Meanwhile no `drink`, `beer`, `bar.take` or `clink` goes out (the server says `busy`).
     const mug = { clinkUntil: 0, drinkUntil: 0, handUntil: 0, pending: 0 };
+    // My ability's cooldown as the last reply told it (`readyAt`, server clock, for that ability), my RPC in flight, my
+    // last press (client clock: ABILITY_GAP_MS), and the timer that brings the button back at `readyAt`.
+    const power = { readyAt: 0, readyFor: null, pending: false, pressedAt: -Infinity, timer: null };
     let mugTimer = null;
     const mugFree = () => Math.max(mug.clinkUntil, mug.drinkUntil, mug.handUntil);
     function mugBusy() {
@@ -679,6 +685,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         }
     }
 
+    // The HUD's ability button: an icon and a name per ability in the markup, one shown; aria-disabled, not disabled, so
+    // the keyboard's focus stays on it through the cooldown.
+    function paintAbility() {
+        const b = root.querySelector('[data-ability]');
+        if (!b) return;
+        const state = abilityState();
+        b.hidden = state.hidden;
+        b.setAttribute('aria-disabled', String(state.disabled));
+        b.dataset.ability = model.ability ?? '';
+        b.querySelectorAll?.('[data-ability-name]').forEach((name) => (name.hidden = name.dataset.abilityName !== model.ability));
+        clearTimeout(power.timer);
+        const left = power.readyFor === model.ability ? power.readyAt - (now() + offset) : 0;
+        if (!state.hidden && left > 0) power.timer = setTimeout(paintAbility, left + 20);
+    }
+
     function paintAll() {
         document.body.dataset.scene = model.scene;
         document.body.toggleAttribute('data-final', model.scene >= model.sceneStages);
@@ -698,6 +719,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         paintMeep();
         paintDawn();
         paintChat();
+        paintAbility();
     }
 
     function load(snapshot) {
@@ -863,6 +885,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
             paintRapier();
             paintChat();
+            paintAbility();
         },
 
         move(event) {
@@ -895,6 +918,7 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             paintBar();
             paintRapier();
             paintChat();
+            paintAbility();
         },
 
         // Every viewer plays the same foam from `since` to `until` on the server clock; `batch` — the mugs it sets down.
@@ -1182,6 +1206,27 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (emote) scene?.emote?.(emote.id, emote.emoji, emote.at);
         },
 
+        // An ability given or taken away (protocol.md, «Способности»): the walker keeps it for the console, mine goes to
+        // the HUD's button; a fresh one raises the pillar of light under the walker, a taken one nothing.
+        ability(event) {
+            const grant = grantOf(event, now() + offset);
+            if (!grant) return;
+            const w = model.walkers.find((x) => x.id === grant.id);
+            if (w) {
+                if (grant.ability) w.ability = grant.ability;
+                else delete w.ability;
+            }
+            if (grant.id === model.me) model.ability = grant.ability;
+            if (grant.ability && grant.fresh) scene?.pillar?.(grant.id, grant.at);
+            paintAbility();
+        },
+
+        // An ability used, mine too: drawn from the event like anyone's; the flyers of `flyers` come as `flyer` events.
+        power(event) {
+            const used = powerOf(event, now() + offset);
+            if (used) scene?.power?.(used);
+        },
+
         // The pause of the progress is the console's only (protocol.md, «Пауза прогресса»): a player's actions go on as
         // usual, and `counted: false` changes nothing on the page but a 6-6-6 that does not win (winsRoll).
         pause(event) {
@@ -1207,6 +1252,8 @@ export function createClient(root, scene, { requestState, requestTime = () => re
             if (bonfire !== undefined && bonfireOf()) bonfireOf().threshold = bonfire;
             if (circle !== undefined && circleOf()) circleOf().threshold = circle;
             paintElements();
+            // `burst` decides whether the flyers' ability may go.
+            paintAbility();
         },
 
         // Who is online (protocol.md, `presence`): only the console shows it.
@@ -1331,6 +1378,21 @@ export function createClient(root, scene, { requestState, requestTime = () => re
     function drinks() {
         return (inBar() || cursed()) && canWalk() && holdsBeer();
     }
+    /**
+     * Whether Space belongs to the dice: step 1 with the dice on and my walker able to roll — even while my roll
+     * tumbles or the owl explains, when rolls() says no for a moment.
+     */
+    function diceSpace() {
+        return step() === DICE_STEP && model.dice?.on === true && canWalk();
+    }
+    /** The HUD button's state for my ability (ability.js, abilityButton); a zombie may use it too. */
+    function abilityState() {
+        return abilityButton({ ability: model.ability, onField: myWalker() !== null, readyAt: power.readyAt, readyFor: power.readyFor, now: now() + offset, burst: model.limits?.burst !== false, pending: power.pending });
+    }
+    /** Whether a plain Space is my ability's: nothing else takes it (spaceAction), and I have one on the field. */
+    function abilitySpace() {
+        return spaceAction({ dice: diceSpace(), drink: drinks(), ability: !abilityState().hidden }) === 'ability';
+    }
     /** Whether a click on FrankenPHP is RPC `strike`: step 6, he is awake and standing, a rapier in my hand. */
     function strikes() {
         return step() === RAPIER_STEP && (model.boss?.hp ?? 0) > 0 && canWalk() && myWalker().item === 'rapier';
@@ -1354,9 +1416,14 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         },
         resync,
 
-        /** This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. */
-        setMe(id) {
+        /**
+         * This browser's player id from RPC `me` / `register` (`player.id`); null for an anonymous one. `player` — the
+         * reply's Player, when it came: its `ability` is mine.
+         */
+        setMe(id, player = undefined) {
             model.me = id ?? null;
+            if (player !== undefined) model.ability = abilityOf(player?.ability);
+            paintAbility();
             paintBar();
             // My walker decides the dice button, the word form and the zombie line.
             paintRapier();
@@ -1416,6 +1483,36 @@ export function createClient(root, scene, { requestState, requestTime = () => re
         meepsRoadrunner,
 
         rolls,
+
+        abilitySpace,
+
+        /**
+         * Uses my ability once (RPC `ability {}`) unless its button is off or I pressed less than ABILITY_GAP_MS ago.
+         * Nothing is drawn until the `power` event; the reply's `readyAt` (a `busy` one carries it too) keeps the button
+         * off until then. `busy` and `no flyers` stay quiet — the button already says so; other refusals are warned.
+         */
+        async useAbility() {
+            const t = now();
+            if (!ability || abilityState().disabled || t - power.pressedAt < ABILITY_GAP_MS) return null;
+            power.pressedAt = t;
+            power.pending = true;
+            paintAbility();
+            const used = model.ability;
+            let reply = null;
+            try {
+                reply = await ability();
+            } catch (error) {
+                console.warn('ability rpc failed', error);
+            }
+            power.pending = false;
+            if (Number.isFinite(reply?.readyAt)) {
+                power.readyAt = reply.readyAt;
+                power.readyFor = abilityOf(reply.ability) ?? used;
+            }
+            if (reply?.ok === false && reply.error !== 'busy' && reply.error !== 'no flyers') console.warn('ability rejected', reply.error);
+            paintAbility();
+            return reply;
+        },
 
         /**
          * Rolls my dice once (RPC `roll` with the next attempt; `bad attempt` resyncs and rolls again). Nothing is drawn
@@ -1792,6 +1889,25 @@ export function bindDice(root, client, doc = globalThis.document) {
         event.preventDefault();
         client.roll();
     });
+}
+
+/**
+ * My ability (docs/spec/frontend.md, «Способности»): the HUD's button, or a plain Space nothing else takes — the dice
+ * and the drink come first (client.abilitySpace). Listens in the capture phase: bindDice's roll changes rolls() as it
+ * goes, and this must judge the press before it, not after.
+ *
+ * @param {{abilitySpace: () => boolean, useAbility: () => Promise<unknown>}} client
+ */
+export function bindAbility(root, client, doc = globalThis.document) {
+    root.querySelector('[data-ability]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        client.useAbility();
+    });
+    doc.addEventListener('keydown', (event) => {
+        if (!isDrinkKey(event, doc) || !client.abilitySpace()) return;
+        event.preventDefault();
+        client.useAbility();
+    }, { capture: true });
 }
 
 /**

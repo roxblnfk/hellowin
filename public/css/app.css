@@ -801,6 +801,39 @@ body:not([data-final]) .circle,
     content: '· ';
 }
 
+/* The players' abilities: a row per walker — name, its ability to choose, a refusal beside it (debug.js). */
+.console__abilities {
+    display: flex;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 9.5em;
+    overflow-y: auto;
+}
+
+.console__ability {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.console__ability-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.console__select {
+    flex: 0 0 auto;
+    padding: 4px 6px;
+}
+
+.console__ability-note {
+    color: var(--bad);
+}
+
 /* The autopilot's next move: a line of its own under the story's buttons. */
 .console__info.console__auto {
     flex-basis: 100%;
@@ -1149,6 +1182,21 @@ body:not([data-final]) .circle,
 /* «Выпить»: the drink a phone has no Space for, so it stands out from the other HUD buttons. */
 .hud__button--drink {
     background: var(--cream);
+}
+
+/* My ability: the gold of the pillar it came with; dimmed through its cooldown (aria-disabled keeps the focus). */
+.hud__button--ability {
+    background: var(--gold);
+    box-shadow: 0 0 0 2px var(--soil-dark), 0 0 0 4px var(--cream);
+}
+
+.hud__button--ability[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.hud__button--ability[aria-disabled="true"]:hover {
+    background: var(--gold);
 }
 
 /* The language switch is a link to `?lang=`, drawn as a HUD button. */

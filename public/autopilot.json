@@ -8,6 +8,10 @@
   "holdMs": 5600,
   "nameChars": 24,
   "lines": {
+    "ability": {
+      "ms": 22512,
+      "hold": 5600
+    },
     "bar-again": {
       "ms": 7900,
       "hold": 5600
