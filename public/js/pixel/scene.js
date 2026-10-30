@@ -1822,7 +1822,11 @@ export async function createScene(rootEl, snapshot) {
     }
 
     function rebuild() {
-        layout = measure(rootEl);
+        // A root squeezed to a sliver (a window dragged nearly shut) leaves no sky over the horizon to bake: keep the
+        // old picture until it opens up, rather than break off halfway with the sprites already destroyed.
+        const next = measure(rootEl);
+        if (next.horizon < 1 || next.artW < 1) return;
+        layout = next;
         app.renderer.resize(layout.width, layout.height);
         target?.destroy(true);
         target = RenderTexture.create({ width: layout.artW, height: layout.artH, resolution: 1, scaleMode: 'nearest' });
@@ -2096,14 +2100,16 @@ export async function createScene(rootEl, snapshot) {
     }
 
     // A zombie burning out at step 6 and its smouldering before it (zombie-burn.js, frontend.md «Зомби сгорают»): the
-    // sprites live in f.parts, made on first need, so dropFlyer clears them with the zombie.
+    // sprites live in f.parts, made on first need, so dropFlyer clears them with the zombie. A rebuild destroys the
+    // layers' sprites under a zombie still burning (a step of the finale rebuilds the scene): they are made anew.
     function partOf(f, key, layer, add = false) {
         f.burnParts ??= {};
-        if (!f.burnParts[key]) {
+        if (!f.burnParts[key] || f.burnParts[key].destroyed) {
             const s = new Sprite();
             if (add) s.blendMode = 'add';
             layer.addChild(s);
-            (f.parts ??= []).push(s);
+            f.parts = (f.parts ?? []).filter((p) => !p.destroyed);
+            f.parts.push(s);
             f.burnParts[key] = s;
         }
         return f.burnParts[key];
@@ -2395,7 +2401,7 @@ export async function createScene(rootEl, snapshot) {
         f.sprite.destroy();
         f.glow?.destroy();
         f.halo?.destroy();
-        f.parts?.forEach((s) => s.destroy());
+        f.parts?.forEach((s) => s.destroyed || s.destroy());
     }
 
     /**
