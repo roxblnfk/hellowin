@@ -51,6 +51,9 @@
 Зомби сгорают и лечат босса (событие `burn`, `burnMs` и `awakeAt` в `boss`; решение пользователя от 2026-10-29) —
 **реализовано** на backend, фронтенде и в лаборатории (см. «Рапира», «Сгорание зомби»).
 
+Способности игроков (RPC `ability`, `ability.grant`, события `ability`, `power`, реплика `ability`, `ability` в `Player`
+и `Walker`, `by` в `flyer`; решение пользователя от 2026-10-30) — **запланировано** (см. «Способности»).
+
 Все сообщения — JSON. Клиент — centrifuge-js (CDN, версия зафиксирована в `app/views/home.dark.php`).
 
 ## Подключение
@@ -828,6 +831,44 @@ RoadRunner на горизонте — **не летун** (решение по�
 - Клиент сам не шлёт `meep` чаще раза в секунду на вкладку.
 - **Где:** хит-зона `[data-rr-meep]` над RoadRunner на горизонте и в финале — у всех; в баре после рассвета клик по
   `[data-roadrunner]` с пивом в руке — `clink {roadrunner: true}` (как было), иначе — `meep {}`.
+
+## Способности
+
+**Запланировано** (решение пользователя от 2026-10-30). Правила — [`scenario.md`](scenario.md), «Способности»; запись —
+[`players.md`](players.md); вид — [`frontend.md`](frontend.md), «Способности». Способность — `flyers`, `fart` или
+`meep`; нет — `null`.
+
+- **Где видно.** `Player.ability` — своя (`me`, `register`); `Walker.ability?` — у фигурок в снимке и в `walker`
+  (без поля — нет способности; пульт показывает по нему, у кого что).
+- **Получение** — событие `ability {player: {id, name}, ability, source, at}` всем: `source` — `dice` (тройка в новом
+  `roll`, событие `ability` — следом за `roll`; ответ `roll` несёт ещё `ability`, если она выпала), `flyers` (сбитый
+  летун довёл `flyers` до `HELLOWIN_ABILITY_FART_FLYERS` — следом за `hit`), `moderator`. `ability: null` — модератор
+  снял способность: столба света и реплики нет. По событию клиент ставит столб света под фигуркой (если событие
+  свежее, не старше 1,5 с по серверным часам) и обновляет свою способность, если это он. Модератор дал ту же
+  способность, что уже есть, — без события.
+- **Реплика** — следом за `ability` с непустой способностью, если с прошлой такой реплики прошло не меньше
+  `HELLOWIN_ABILITY_OWL_GAP_MS`: `owl {line: ability, params: {player: {id, name}, ability, n}}`, `n` — случайное
+  целое ≥ 0; фразу клиент берёт из каталога этой способности по `n % длина` (как слух бара), у всех одну. В счёт речи
+  совы — как прочие (`public/autopilot.json` — самая длинная фраза).
+- **Применение** — RPC `ability {}`: `{ok:true, ability, readyAt}` — `readyAt` — серверное время, мс, когда можно снова;
+  событие `power {player: {id}, ability, at}` всем, в том числе самому игроку (он рисует по событию, как все). Для
+  `flyers` — ещё `HELLOWIN_ABILITY_FLYERS_COUNT` событий `flyer` текущего набора (сцены, проклятого мира или рассвета;
+  без редкого): `from` — точка фигурки в момент запуска, полёт с подъёмом вверх и уходом за край, глубина — ближняя,
+  `by: {id}` — кто выпустил; сбиваются и дают очки как все. Ошибки: `anonymous`, `no character`, `no ability`,
+  `busy` — кулдаун этой способности у игрока не прошёл (ответ несёт `readyAt`, без события), `no flyers` — у `flyers`
+  набор пуст (бар, закат; `burst: false` в `limits`). Зомби-игроку можно. Ход не останавливает, паузе не подчиняется.
+  Ведро `other`; идёт в `calls` «Чисел вечера».
+- **Пульт** — RPC модератора `ability.grant {player, ability}`: `ability` — `flyers`, `fart`, `meep` или `null`
+  (снять). `{ok:true, ability}`, событие `ability` с `source: moderator` (при той же способности — без события).
+  Ошибки: `no target` — записи игрока нет; `invalid ability`. Игроку — `forbidden`.
+- **Метрики** — `hellowin_abilities_granted_total{ability, source}`, `hellowin_abilities_used_total{ability}`.
+
+```json
+{"type":"roll","round":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"},"attempt":4,"dice":[2,2,2],"at":1760900004100}
+{"type":"ability","round":3,"player":{"id":"3f9c0a7d12b4e856","name":"Jack"},"ability":"meep","source":"dice","at":1760900004100}
+{"type":"owl","round":3,"line":"ability","params":{"player":{"id":"3f9c0a7d12b4e856","name":"Jack"},"ability":"meep","n":17}}
+{"type":"power","round":3,"player":{"id":"3f9c0a7d12b4e856"},"ability":"meep","at":1760900009300}
+```
 
 ## Лимиты и баланс
 
