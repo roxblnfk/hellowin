@@ -106,7 +106,7 @@
         put(lighting ? relightCanvas(f.canvas, lighting) : f.canvas, f.anchor, x, y, { flip: random() < 0.5 });
     };
     const scene = [];
-    const rows = [[116, 'blood', 13, 18], [128, 'blood', 12, 22], [141, 'firelight', 11, 26], [157, null, 10, 30]];
+    const rows = [[116, 'blood', 13, 18], [128, 'blood', 12, 22], [139, 'firelight', 11, 26]];
     for (const [y, lighting, count, step] of rows) {
         const start = (W - (count - 1) * step) / 2;
         for (let i = 0; i < count; i++) {
@@ -114,8 +114,25 @@
             scene.push({ y: y + Math.round(random() * 3), draw: (yy) => walker(x, yy, lighting) });
         }
     }
-    for (const [size, s, x, y] of [['m', 7, 96, 134], ['l', 3, 156, 138], ['m', 21, 214, 132], ['s', 5, 262, 136], ['s', 11, 40, 140]]) {
-        scene.push({ y, draw: (yy) => pumpkin(7, size, s, x, yy) });
+
+    // A zombie worker lying on its back: the standing frame turned a quarter, head to the side
+    const fallen = (x, y, flip) => {
+        const f = characterFrame(randomLook(random), { pose: 'lurch', zombie: true });
+        ctx.save();
+        ctx.translate(Math.round(x), Math.round(y));
+        if (flip) ctx.scale(-1, 1);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(relightCanvas(f.canvas, 'firelight'), -f.anchor.x - 8, -f.anchor.y);
+        ctx.restore();
+    };
+
+    // The front: big pumpkins with fallen zombies at their feet, nobody standing before them
+    for (const [x, s, flip] of [[78, 3, false], [150, 21, true], [222, 7, false]]) {
+        scene.push({ y: 148, draw: (y) => pumpkin(7, 'l', s, x, y) });
+        scene.push({ y: 158, draw: () => fallen(x + (flip ? -14 : 14), 158, flip) });
+    }
+    for (const x of [16, 268, 292]) {
+        scene.push({ y: 157 + Math.round(random() * 2), draw: (yy) => walker(x, yy, null) });
     }
     // The owl on the dead tree, the narrator, stands among the crowd
     scene.push({ y: 150, draw: (y) => {
