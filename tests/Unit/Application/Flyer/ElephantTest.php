@@ -69,7 +69,7 @@ final class ElephantTest
         Assert::same($ritual->counters()[PlayMetrics::FARTS . '{}'] ?? null, 3.0);
     }
 
-    public function owlLineCountsInTheAutopilotSpeech(): void
+    public function owlLineIsAnAsideTheAutopilotDoesNotWaitFor(): void
     {
         $ritual = new RitualHarness();
         $elephant = self::launch($ritual);
@@ -77,7 +77,7 @@ final class ElephantTest
 
         $ritual->flyers->shoot($elephant->id, self::A);
 
-        Assert::int($ritual->owl->until())->greaterThan(\max($before, $ritual->clock->now));
+        Assert::same($ritual->owl->until(), $before);
     }
 
     public function anonymousShotFartsWithoutAPlayer(): void

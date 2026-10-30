@@ -70,7 +70,7 @@ final class OwlClockTest
         Assert::same($owl->until(), self::NOW + 20000 + 6000);
     }
 
-    public function shortLineNeverEndsTheSpeechEarlier(): void
+    public function ownTextCutsTheLineOnShowOff(): void
     {
         [$owl, $clock] = self::clock();
         $owl->line('scene-ready');
@@ -78,7 +78,56 @@ final class OwlClockTest
 
         $owl->text('Hi');
 
-        Assert::same($owl->until(), self::NOW + 9000);
+        Assert::same($owl->until(), self::NOW + 3000 + 2000);
+    }
+
+    public function newestWaitingLineReplacesTheOneBefore(): void
+    {
+        [$owl, $clock] = self::clock();
+        $owl->line('bar-intro');
+        $clock->now += 500;
+        $owl->line('scene-ready');
+        $clock->now += 500;
+
+        $owl->line('bar-intro');
+        $clock->now += 3000;
+        $owl->line('bar-intro');
+
+        Assert::same($owl->until(), self::NOW + 3000 + 3000 + 6000);
+    }
+
+    public function asideTakesTheBubbleButLeavesTheSpeech(): void
+    {
+        [$owl, $clock] = self::clock();
+        $owl->line('bar-intro');
+        $clock->now += 1000;
+
+        $owl->line('ability', aside: true);
+
+        Assert::same($owl->until(), self::NOW + 6000);
+        Assert::same($owl->opens('bar-intro'), self::NOW + 3000);
+    }
+
+    public function asideOfTheSilentOwlSaysNothingToWaitFor(): void
+    {
+        [$owl] = self::clock();
+
+        $owl->line('ability', aside: true);
+
+        Assert::same($owl->until(), 0);
+    }
+
+    public function opensAtTheSlotOfTheWaitingLine(): void
+    {
+        [$owl, $clock] = self::clock();
+        $owl->line('bar-intro');
+        $clock->now += 500;
+        $owl->line('scene-ready');
+        $clock->now += 500;
+
+        $opens = $owl->opens('finale-1');
+
+        Assert::same($opens, self::NOW + 1000 + 3000 + 1500);
     }
 
     public function unknownLineTalksTheLongest(): void

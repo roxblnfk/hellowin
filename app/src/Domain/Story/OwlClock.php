@@ -9,9 +9,10 @@ use App\Domain\Lock\Locks;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * When the owl stops talking (docs/spec/protocol.md, «Автопилот», «Счёт речи»): `hellowin:owl` `{until, hold}`, changed
- * under the lock `owl` on every line the channel gets. A line starts once the one before has held the bubble long
- * enough, and the speech lasts to the end of the latest one, never earlier than an earlier line's end.
+ * When the owl stops talking (docs/spec/protocol.md, «Автопилот», «Счёт речи»): `hellowin:owl` `{until, hold, slot}`,
+ * changed under the lock `owl` on every line the channel gets. It plays the client's bubble: a line takes the bubble
+ * once the one on show has held it long enough and cuts that one off; of the lines waiting meanwhile only the newest
+ * is said. The speech lasts to the end of the latest line; an aside takes the bubble but leaves that end where it was.
  *
  * @psalm-import-type Speech from SpeechTable
  */
@@ -28,13 +29,15 @@ final readonly class OwlClock
     ) {}
 
     /**
+     * @param bool $aside Chatter beside the story (an ability, a fart, a witch): it must not hold the autopilot, or a
+     *        busy room that keeps earning abilities would never let the story move on.
      * @return int Unix time in milliseconds the line's last part starts: the moment its instruction opens the input.
      */
-    public function line(string $id): int
+    public function line(string $id, bool $aside = false): int
     {
         $speech = $this->table->line($id);
 
-        return $this->said($speech) + $speech['lead'];
+        return $this->said($speech, $aside, live: false) + $speech['lead'];
     }
 
     /**
@@ -46,18 +49,22 @@ final readonly class OwlClock
     public function opens(string $id): int
     {
         $speech = $this->table->line($id);
+        $now = $this->clock->now();
         try {
-            $hold = $this->read()[1];
+            [, $hold, $slot] = $this->read();
         } catch (\Throwable) {
-            $hold = 0;
+            $hold = $slot = 0;
         }
 
-        return \max($this->clock->now() + $speech['delay'], $hold) + $speech['lead'];
+        return \max($now + $speech['delay'], self::slot($now, $hold, $slot)) + $speech['lead'];
     }
 
+    /**
+     * The moderator's own text: the client says it at once, over the line on show and instead of the one waiting.
+     */
     public function text(string $text): void
     {
-        $this->said($this->table->text($text));
+        $this->said($this->table->text($text), aside: false, live: true);
     }
 
     /**
@@ -69,23 +76,35 @@ final readonly class OwlClock
     }
 
     /**
+     * When a new line takes the bubble: with a line still waiting for it, that line's moment, as the new one replaces
+     * it; otherwise once the line on show has held the bubble.
+     */
+    private static function slot(int $now, int $hold, int $slot): int
+    {
+        return $slot > $now ? $slot : \max($now, $hold);
+    }
+
+    /**
      * The line has gone out already: a busy lock or a failing store loses the mark, and the autopilot only waits less;
      * the start answered then counts only the delay.
      *
      * @param Speech $speech
      * @return int Unix time in milliseconds the line starts.
      */
-    private function said(array $speech): int
+    private function said(array $speech, bool $aside, bool $live): int
     {
         $now = $this->clock->now();
         $start = $now + $speech['delay'];
         try {
-            $this->locks->run([self::LOCK], function () use ($speech, $now, &$start): void {
-                [$until, $hold] = $this->read();
-                $start = \max($now + $speech['delay'], $hold);
+            $this->locks->run([self::LOCK], function () use ($speech, $aside, $live, $now, &$start): void {
+                [$until, $hold, $slot] = $this->read();
+                $slot = $live ? $now : self::slot($now, $hold, $slot);
+                $start = \max($now + $speech['delay'], $slot);
                 $this->storage->set(self::KEY, [
-                    'until' => \max($until, $start + $speech['ms']),
+                    // No max with the old end: the client cuts the line on show off and never says the one replaced
+                    'until' => $aside ? $until : $start + $speech['ms'],
                     'hold' => $start + $speech['hold'],
+                    'slot' => $slot,
                 ]);
             });
         } catch (\Throwable) {
@@ -95,7 +114,7 @@ final readonly class OwlClock
     }
 
     /**
-     * @return array{int, int} Until and hold.
+     * @return array{int, int, int} Until, hold and when the latest line took or takes the bubble.
      */
     private function read(): array
     {
@@ -105,7 +124,9 @@ final readonly class OwlClock
         $until = \is_array($value) ? $value['until'] ?? null : null;
         /** @var mixed $hold */
         $hold = \is_array($value) ? $value['hold'] ?? null : null;
+        /** @var mixed $slot */
+        $slot = \is_array($value) ? $value['slot'] ?? null : null;
 
-        return [\is_int($until) ? $until : 0, \is_int($hold) ? $hold : 0];
+        return [\is_int($until) ? $until : 0, \is_int($hold) ? $hold : 0, \is_int($slot) ? $slot : 0];
     }
 }

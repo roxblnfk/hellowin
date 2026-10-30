@@ -71,13 +71,13 @@ final class DiceTest
     {
         $ritual = self::finale();
         $ritual->clock->now += 60_000;
-        // Each line holds the bubble 3000 ms, the second one from the end of the first one's hold
+        // The second line waits for the first one's hold, 3000 ms; the step's line takes its place, no later than its delay
         $ritual->story->say('scene-ready', null);
         $ritual->story->say('scene-ready', null);
 
         $ritual->story->finaleStep(1, force: true);
 
-        Assert::same($ritual->broadcast->ofType('dice')[0]['openAt'] ?? null, $ritual->clock->now + 6000 + 1500);
+        Assert::same($ritual->broadcast->ofType('dice')[0]['openAt'] ?? null, $ritual->clock->now + 3000 + 1500);
     }
 
     public function throwBeforeTheInstructionWaitsAndSpendsNothing(): void

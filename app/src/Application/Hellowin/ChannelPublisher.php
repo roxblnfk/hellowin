@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Hellowin;
 
+use App\Application\Story\OwlLine;
 use App\Domain\Flyer\Flyer;
 use App\Domain\Player\Player;
 use App\Domain\Ritual\Pumpkin;
@@ -514,7 +515,7 @@ final readonly class ChannelPublisher
 
         $this->publish($message);
 
-        return $this->owlClock?->line($line);
+        return $this->owlClock?->line($line, OwlLine::isAside($line));
     }
 
     /**

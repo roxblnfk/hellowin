@@ -465,7 +465,7 @@
   `StoryService::entered` на шаге 1 после `finale-1` шлёт `dice {on: true, openAt}`, при уходе с шага 1 без победителя
   (только `force`) — `dice {on: false}` перед `finale {step: 2}`.
 - **Сначала сова объясняет** (решение пользователя от 2026-10-29). `ChannelPublisher::owl('finale-1')` отмечает реплику
-  в счёте речи и возвращает `OwlClock::line` — `start + lead` (`start = max(now + delay, hold)`, `lead` из
+  в счёте речи и возвращает `OwlClock::line` — `start + lead` (`start = max(now + delay, slot)`, `lead` из
   `public/autopilot.json`); `DiceService::begin(round, openAt)` под локом `dice` пишет `openAt` в `hellowin:dice` один раз
   за раунд и шлёт `dice {on: true, openAt}`. `roll` раньше `openAt` — `WaitException` → `{ok: false, error: 'wait',
   openAt}`: проверка после `not now`, до хранилища идемпотентности, так что ни попытки, ни `busy`, ни `bad attempt`, ни
@@ -515,7 +515,8 @@
 `autoTick` в `public/dev/autopilot.js` (его играет лаборатория); `Domain/Story/Autopilot::tick` — тот же алгоритм.
 
 - **Речь совы** (`Domain/Story/OwlClock`): `ChannelPublisher::owl` и `owlText` после публикации отмечают реплику —
-  под RR-локом `owl` (TTL 1 с, ожидание 0,5 с) запись `hellowin:owl` `{until, hold}` по формуле `protocol.md`. Длительности
+  под RR-локом `owl` (TTL 1 с, ожидание 0,5 с) запись `hellowin:owl` `{until, hold, slot}` по формуле `protocol.md` («Счёт речи»: пузырь клиента с одним
+  местом ожидания; реплики в сторону — `OwlLine::isAside`, `ChannelPublisher::owl` передаёт флаг в `OwlClock::line`). Длительности
   — `Domain/Story/SpeechTable` из `public/autopilot.json` (`directory('public')`), читается один раз при создании
   синглтона в воркере и в тикере; нет файла или он не JSON — предупреждение в лог и пустая таблица (сова «говорит» 0 мс,
   автопилот её не ждёт). Занятый лок или сбой KV теряет отметку, а не реплику: автопилот лишь подождёт меньше.

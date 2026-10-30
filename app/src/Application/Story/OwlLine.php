@@ -45,6 +45,14 @@ final class OwlLine
     }
 
     /**
+     * Chatter beside the story: the owl says it, the autopilot does not wait for it ({@see \App\Domain\Story\OwlClock}).
+     */
+    public static function isAside(string $line): bool
+    {
+        return \in_array($line, [self::ABILITY, self::FART_TIME, self::WITCH_DOWN], true);
+    }
+
+    /**
      * @return non-empty-string
      */
     public static function scene(int $scene): string
