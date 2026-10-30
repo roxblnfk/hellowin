@@ -62,39 +62,13 @@
             <h2>RoadRunner: PHP that does not die</h2>
             <p>
                 RoadRunner appeared at the end of 2017, and version 1.0 came out in June 2018. It was built to take PHP
-                to the enterprise level. It all started with a question: what if a PHP
-                application did not die after every request? That is how enterprise frameworks work in other
-                languages, Java for one: the application boots once and serves requests until it is stopped.
-            </p>
-
-            <h3>The idea: cut the bootstrap</h3>
-            <p>
-                In the classic model PHP boots the application anew for every request: it loads the configs, builds the
-                container, opens the connections. After the response all of it is thrown away. If the process lives on,
-                the bootstrap happens once, and from then on the worker only serves requests. That is the model
+                to the enterprise level and win some of that ground from Java. It all started with a question: what if a
+                PHP application did not die after every request? That is how enterprise frameworks work in Java: the
+                application boots once and serves requests until it is stopped. PHP in the classic model, by contrast,
+                loads the configs, builds the container and opens the connections for every request — and throws it all
+                away after the response. If the process lives on, that bootstrap happens once. That is the model
                 RoadRunner keeps: a pool of long-lived PHP workers it hands the requests to.
             </p>
-
-            <h3>Spiral and Cycle: a framework and an ORM that do not leak</h3>
-            <p>
-                The new model called for a new framework. The frameworks of the day could not stay alive: they leaked
-                memory, and their habits counted on the process dying anyway. That is how
-                <a href="https://spiral.dev/">Spiral Framework</a> came about. It needed an ORM that does not leak:
-                Doctrine and Eloquent did not fit, and <a href="https://cycle-orm.dev/">Cycle ORM</a> appeared. This
-                demo is written on Spiral.
-            </p>
-
-            <h3>Plugins: one API, and the IO on the Go side</h3>
-            <p>
-                The first versions proved the concept works, and new features started to hang on RoadRunner: the jobs
-                queue, websockets, KV, locks, metrics, and later <a href="https://temporal.io/">Temporal</a>. RoadRunner
-                gives PHP one API to different storages and message brokers and takes the IO-bound work on itself. This
-                demo uses the <code>http</code>, <code>centrifuge</code>, <code>kv</code>, <code>lock</code>,
-                <code>jobs</code> and <code>metrics</code> plugins — how exactly, the other tabs tell, starting with
-                <a href="#modules">“Modules”</a>.
-            </p>
-
-            <h3>Go and Goridge</h3>
             <p>
                 The only sensible language for such a server back then was Go. But Go does not get along well with C,
                 which PHP is written in, so a protocol of its own was needed between PHP and RoadRunner —
@@ -103,8 +77,21 @@
                 embedding PHP into Go through CGO or talking to it over FastCGI
                 (<a href="https://rapira.rs/blog/php2shell">a write-up</a>).
             </p>
-
-            <h3>Laravel and Symfony</h3>
+            <p>
+                The new model called for a new framework. The frameworks of the day could not stay alive: they leaked
+                memory, and their habits counted on the process dying anyway. That is how
+                <a href="https://spiral.dev/">Spiral Framework</a> came about — this demo is written on it too. It needed
+                an ORM that does not leak: Doctrine and Eloquent did not fit, and
+                <a href="https://cycle-orm.dev/">Cycle ORM</a> appeared.
+            </p>
+            <p>
+                The first versions proved the concept works, and new features started to hang on RoadRunner: the jobs
+                queue, websockets, KV, locks, metrics, and later <a href="https://temporal.io/">Temporal</a>. RoadRunner
+                gives PHP one API to different storages and message brokers and takes the IO-bound work on itself. This
+                demo uses the <code>http</code>, <code>centrifuge</code>, <code>kv</code>, <code>lock</code>,
+                <code>jobs</code> and <code>metrics</code> plugins — how exactly, the other tabs tell, starting with
+                <a href="#modules">“Modules”</a>.
+            </p>
             <p>
                 In time Laravel and Symfony also learned to live in the long-running model, and RoadRunner
                 integrations appeared for them. The official ones either work suboptimally or take little from
