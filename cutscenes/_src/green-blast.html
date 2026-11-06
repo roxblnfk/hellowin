@@ -9,20 +9,18 @@
 <canvas id="out" width="1920" height="1080"></canvas>
 <script type="module">
 // The green blast: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
-// Scene 3 → 4: the enchanted bonfire roars green but will not blow; the owl reads the last ingredient out of the
-// necromancer's book — Fart Time. The crowd and a herd of elephants fart, the green clouds spiral into the fire, a
-// farting duck is shot over it and falls in: the blast. The vines char to ash, the moon turns red, the summoning
-// circle lights on the pit and the dark silhouette rises in it — from there on the frame is franken-rise's opening.
+// Scene 3 → 4: the enchanted bonfire roars green, the owl warns «Достаточно… сейчас рванёт!» and the fire blows. The
+// vines char to ash down to the pumpkins, the pumpkins fill with the necromancer's violet, the moon turns red, the bats
+// leave and worms crawl out onto the pit. The owl's feathers stand on end; it shakes it off and sends everyone to draw
+// the circle; the crowd walks out across the ash. The next scene, circle, opens on that frame.
 import { PALETTE } from '/js/pixel/palette.js';
 import { DECOR, PUMPKIN_SHADOW, bake, pumpkinLayers, seedOf } from '/js/pixel/sprites.js';
 import { ASH, BONFIRE, EXPLOSION } from '/js/pixel/bonfire.js';
 import { EMISSIVE, LIT_PALETTE, NIGHT, halo, litColor, paintSky, relightCanvas } from '/js/pixel/night.js';
 import { characterFrame, randomLook } from '/js/pixel/characters.js';
 import { OWL, glowing } from '/js/pixel/owl.js';
-import { FX, FINALE_EMISSIVE, SILHOUETTE } from '/js/pixel/finale.js';
-import { ELEPHANT, bannerFrame, fartAt, fartCloud, flightAt, hookOf, PUFFS } from '/js/pixel/elephant.js';
-import { FART_SCALE } from '/js/pixel/ability.js';
-import { BUSH, FLYERS, feathersOf } from '/js/pixel/flyers.js';
+import { FX, FINALE_EMISSIVE } from '/js/pixel/finale.js';
+import { FLYERS } from '/js/pixel/flyers.js';
 import { speechPlan, beakAt, wingAt } from '/js/owl-speech.js';
 
 const W = 1920, H = 1080;
@@ -53,46 +51,33 @@ function rng(seed) {
 const line = (lines) => { const text = lines.join(' '); return { lines, text, plan: speechPlan(text) }; };
 const L = [
     line(['Достаточно…', 'сейчас рванёт!']),                       // owl.js, scene-ready of scene 3
-    line(['Так… тут сказано…', 'последний ингредиент?..']),
-    line(['Не смотрите на меня так.', 'Это написано в книге!']),
-    line(['Все вместе.', 'На счёт три!']),
+    line(['Ух… что-то мне', 'не по себе.']),
+    line(['Всё идёт по плану, ух-ху!', 'Рисуйте круг на пепелище!']),
 ];
 const say = (l, from) => { l.from = from; l.said = from + l.plan.ms / 1000; l.to = l.said + 2 + Math.max(0.4, l.text.length * 0.02); return l; };
-const STAGE_UP = 3.0;                       // the bonfire climbs to its last stage
-const OWL1 = 4.6;                           // close-up: «Достаточно… сейчас рванёт!»
-say(L[0], OWL1 + 1.2);
-const COVER = L[0].said + 0.6;              // the owl hides behind its wing
-const FIZZLE = L[0].to + 0.2;               // wide: nothing — the fire trembles, sinks, nearly goes out
-const OWL2 = FIZZLE + 2.8;                  // close-up: the book
-const BOOK_UP = [OWL2 + 0.25, OWL2 + 0.75];
-const FLIPS = [OWL2 + 0.95, OWL2 + 1.35, OWL2 + 1.75];
-say(L[1], OWL2 + 2.3);
-const STARE = L[1].to;                      // the owl looks up from the book at the crowd
-const CROWD = STARE + 1.0;                  // the crowd stares back
-const OWL3 = CROWD + 1.8;
-say(L[2], OWL3 + 0.35);
-say(L[3], L[2].to + 0.25);
-const STRAIN = L[3].to + 0.2;               // wide: everyone strains
-const ELE = [0, 1, 2].map((i) => ({ from: STRAIN + 0.9 + i * 0.55, y: [36, 26, 46][i], x0: [70, 150, 10][i], speed: 44 + i * 4 }));
-const DUCK_OUT = STRAIN + 5.6;
-const SHOT = DUCK_OUT + 2.3;
-const DROP = SHOT + 0.62;                   // the duck lands in the fire
-const BLAST = DROP + 0.1;
+const STAGE_UP = 2.4;                       // the bonfire flares up once more, after the calm opening
+const OWL1 = 3.6;                           // close-up: «Достаточно… сейчас рванёт!»
+say(L[0], OWL1 + 0.95);
+const COVER = L[0].said + 0.4;              // the owl hides behind its wing
+const SWELL = L[0].to + 0.1;                // wide: the fire swells and shivers
+const BLAST = SWELL + 0.95;
 const BURN = BLAST + 0.25, BURN_STEP = 0.42, BURN_FRAMES = 6;   // as scene.js, slowed down
 const BURNT = BURN + BURN_STEP * BURN_FRAMES;
-const MOON_RED = BLAST + 3.8;               // the moon fills with red
-const BLOOD = [BLAST + 4.4, BLAST + 7.2];   // the light turns red
-const RITUAL_AT = BLAST + 5.8;              // the crowd raises its hands, as franken-rise opens
-const SETTLE = BLAST + 8.6;                 // the camera has landed on franken-rise's frame
-const CIRCLE = [SETTLE - 0.4, SETTLE + 1.4];// the summoning circle draws itself on the pit
-const SUMMON = CIRCLE[1] + 0.5;             // franken-rise's t = 0 from here on
-const DURATION = SUMMON + 3.9;              // up to just before franken-rise's first bubble (its t = 1.8 + 2 calm s)
+const MOON_RED = BLAST + 2.9;               // the moon fills with red
+const BLOOD = [BLAST + 3.3, BLAST + 6.0];   // the light turns red, the pumpkins violet
+const OWL4 = BLAST + 7.6;                   // close-up: the owl's feathers stand on end
+const SHUDDER = [OWL4 + 0.45, OWL4 + 1.35];
+const LOOK = SHUDDER[1];                    // it looks round at the worms
+say(L[1], OWL4 + 2.2);
+const SHAKE_OFF = [L[1].to + 0.7, L[1].to + 1.35];
+say(L[2], SHAKE_OFF[1] + 0.25);
+const WALK = L[2].to + 0.1;                 // wide: the crowd walks out across the ash
+const WALK_LEN = 2.6;
+const DURATION = WALK + WALK_LEN + 2.0;
 const BLAST_FRAMES = [0.08, 0.08, 0.09, 0.14, 0.17, 0.2, 0.24, 0.32];
-// franken-rise's own timeline (its constants), counted from SUMMON
-const F = { STRIKE: 6.6 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// The stage of the finale (as franken-rise stages it): 320 × 180 art px.
+// The stage (as franken-rise stages it): 320 × 180 art px.
 const UNLIT = new Set([...EMISSIVE, ...FINALE_EMISSIVE]);
 const baked = new WeakMap();
 function bakeF(sprite, lighting = 'day') {
@@ -130,7 +115,6 @@ const TREE_AT = { x: 34, y: 118 };
 const PERCH = { x: TREE_AT.x - DECOR.tree.anchor.x + DECOR.tree.perch[0], y: TREE_AT.y - DECOR.tree.anchor.y + DECOR.tree.perch[1] };
 const looks = Array.from({ length: 6 }, (_, i) => randomLook(((s) => () => ((s = (s * 16807) % 2147483647) / 2147483647))(41 + i * 13)));
 const AROUND = [[-58, 8], [58, 8], [-34, 30], [34, 30], [0, 38], [-74, -10]];
-const DUCK_BUSH = { x: 300, y: 100 };
 
 const LAWN = (() => {
     const [c, ctx] = canvas(MW, MH);
@@ -235,61 +219,49 @@ const SKY = Object.fromEntries(['blood', 'night'].map((l) => {
 }));
 
 // ---------------------------------------------------------------------------------------------------------------
-// The fire: how big it burns, 0–1+. Full and roaring; it will not blow — it sinks nearly out; the farts feed it back.
-const CLOUDS = [];   // filled below: every Fart Time cloud that gets drawn into the fire
-function fireLevel(t) {
-    let k = 1 - 0.86 * smooth(FIZZLE + 0.2, FIZZLE + 2.4, t);
-    for (const c of CLOUDS) k += c.feed * smooth(c.funnel + 1.3, c.funnel + 1.8, t);
-    return Math.min(1.12, k);
-}
-const sinking = (t) => t > FIZZLE && t < STRAIN + 4;
+// The fire: full and roaring; after the warning it swells and shivers for a breath, and blows.
+const fireLevel = (t) => 1 + 0.2 * smooth(SWELL, BLAST - 0.05, t);
+const swelling = (t) => t > L[0].said && t < BLAST;
 function bonfire(ctx, t, lighting) {
     const ms = t * 1000;
     const level = fireLevel(t);
-    const stage = t < STAGE_UP ? 6 : level > 0.7 ? 7 : 6;
-    const fr = BONFIRE.stages[stage][frameAt(ms, 4, 110)];
+    const stage = t < STAGE_UP ? 6 : 7;
+    const fr = BONFIRE.stages[stage][frameAt(ms, 4, swelling(t) ? 70 : 110)];
     stamp(ctx, bakeF(fr.base, lighting), fr.base, CENTRE.x, CENTRE.y);
     if (!fr.fire) return;
     const c = light(fr.fire);
-    if (Math.abs(level - 1) < 0.01) { stamp(ctx, c, fr.fire, CENTRE.x, CENTRE.y); return; }
-    // the flames sink toward the foot and shiver sideways in whole pixels
-    const low = clamp(1 - level), shiver = sinking(t) ? 0.5 + low : 0;
-    const sy = level, sx = 1 - 0.4 * low + 0.1 * Math.max(0, level - 1);
+    if (!swelling(t)) { stamp(ctx, c, fr.fire, CENTRE.x, CENTRE.y); return; }
+    // the flames swell up and shiver sideways in whole pixels
+    const shiver = 1 + 2.5 * smooth(SWELL, BLAST, t);
+    const sy = level, sx = 1 + 0.6 * (level - 1);
     const jx = Math.round((hash(Math.floor(t * 25)) - 0.5) * 3 * shiver);
-    const jy = Math.round((hash(Math.floor(t * 25) + 9) - 0.5) * 2 * shiver * level);
-    ctx.drawImage(c, Math.round(CENTRE.x - fr.fire.anchor.x * sx) + jx, Math.round(CENTRE.y - fr.fire.anchor.y * sy) + jy, Math.round(fr.fire.w * sx), Math.max(2, Math.round(fr.fire.h * sy)));
+    const jy = Math.round((hash(Math.floor(t * 25) + 9) - 0.5) * 2 * shiver);
+    ctx.drawImage(c, Math.round(CENTRE.x - fr.fire.anchor.x * sx) + jx, Math.round(CENTRE.y - fr.fire.anchor.y * sy) + jy, Math.round(fr.fire.w * sx), Math.round(fr.fire.h * sy));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The pumpkins: enchanted (green, stage 11) and hovering; the blast throws them out and up, they swing back; at the
-// summoning they are pulled into an orbit round the circle (franken-rise).
+// The pumpkins: enchanted and hovering; the blast throws them out and up, they swing back and fill with violet.
 const KICK = (t) => (t < BLAST ? 0 : Math.sin(clamp((t - BLAST) / 0.25) * Math.PI / 2) * Math.exp(-Math.max(0, t - BLAST - 0.25) * 1.3));
 function pumpkinAt(i, t) {
     const [dx, dy] = RING[i];
-    const fms = (t - SUMMON) * 1000;
     const len = Math.hypot(dx, dy) || 1;
     const k = KICK(t) * (1 - i % 3 * 0.15);
-    let x = CENTRE.x + dx + (dx / len) * 12 * k, y = CENTRE.y + dy + (dy / len) * 5 * k;
+    const x = CENTRE.x + dx + (dx / len) * 12 * k, y = CENTRE.y + dy + (dy / len) * 5 * k;
     const calm = 6 + 2 * Math.sin(t * 1000 / 560 + i * 1.7);
-    const finale = 10 + 3 * Math.sin(fms / 200 + i);
-    let float = lerp(calm, finale, smooth(BLAST + 1.5, BLOOD[1], t)) + 9 * k;
-    if (t >= SUMMON) {
-        const tau = t - SUMMON;
-        const a = (i / RING.length) * Math.PI * 2 + fms / 900;
-        const pull = Math.min(1, tau / 1.5);
-        x += (CENTRE.x + Math.cos(a) * 84 - x) * pull; y += (CENTRE.y + 6 + Math.sin(a) * 30 - y) * pull;
-        float = 10 + 3 * Math.sin(fms / 200 + i);
-    }
+    const finale = 10 + 3 * Math.sin(t * 1000 / 200 + i);
+    const float = lerp(calm, finale, smooth(BLAST + 1.5, BLOOD[1], t)) + 9 * k;
     return { x, y, float: Math.round(float) };
 }
 function pumpkin(ctx, i, t, lighting, tone) {
     const [, , size, id] = RING[i];
     const { x, y, float } = pumpkinAt(i, t);
-    const ms = t >= SUMMON ? (t - SUMMON) * 1000 : t * 1000;
+    const ms = t * 1000;
     const Ls = pumpkinLayers(11, size, seedOf(id), tone);
     if (float > 0) { const sh = PUMPKIN_SHADOW[size][Math.min(2, Math.floor(float / 3))]; ctx.globalAlpha = 0.5; stamp(ctx, bake(sh), sh, x, y - 1); ctx.globalAlpha = 1; }
     const h = halo(size === 'l' ? 16 : 13, 5, tone === 'violet' ? 'violet' : 'green');
-    additive(ctx, light(h), h, x, y, 0.4);
+    // the necromancer's violet pours in with a surge
+    const surge = tone === 'violet' ? 0.4 + 0.5 * Math.sin(clamp((t - BLOOD[0]) / 2.4) * Math.PI) : 0.4;
+    additive(ctx, light(h), h, x, y, surge);
     const at = (list, per) => list[frameAt(ms + i * 97, list.length, per)];
     const yy = y - float;
     if (Ls.auraFrames) stamp(ctx, light(at(Ls.auraFrames, 160)), Ls, x, yy);
@@ -302,28 +274,41 @@ function pumpkin(ctx, i, t, lighting, tone) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The crowd round the bonfire, books up: casting at the fire, staring at the owl, straining, thrown back by the blast,
-// hands raised by the red light, as franken-rise opens.
-const CASTS = AROUND.map((_, i) => Array.from({ length: 6 }, (_, k) => 0.9 + i * 0.41 + k * 1.6 + hash(i * 19 + k) * 0.5).filter((c) => c < OWL1 + 0.2));
+// The crowd round the bonfire, books up: casting at the fire, thrown back by the blast and staying there, stunned;
+// while the owl talks they huddle on the pit, and at the end they walk out of the huddle across the ash to their places
+// round it (the next scene's).
+const HUDDLE = [[-12, 4], [12, 5], [-6, 12], [7, 13], [0, 20], [-18, 13]];
+const CASTS = AROUND.map((_, i) => Array.from({ length: 8 }, (_, k) => 0.5 + i * 0.37 + k * 1.45 + hash(i * 19 + k) * 0.5).filter((c) => c < SWELL - 0.3));
 const castOf = (i, t) => CASTS[i].find((c) => t >= c && t < c + 0.62);
-const FARTS = AROUND.map((_, i) => STRAIN + 0.75 + [0, 0.35, 0.15, 0.5, 0.25, 0.6][i]);   // each walker's fart, after the strain
-const straining = (i, t) => t > STRAIN && t < FARTS[i] + 0.15;
+const walkIn = (i, t) => clamp((t - WALK - i * 0.18) / (WALK_LEN - 0.9));
+function knockOf(i, t) {
+    if (t < BLAST) return 0;
+    const out = Math.sin(clamp((t - BLAST) / 0.3) * Math.PI / 2);
+    const back = walkIn(i, t);
+    return out * (1 - back * back * (3 - 2 * back));
+}
 function walkerAt(i, t) {
     const [dx0, dy0] = AROUND[i];
     const len = Math.hypot(dx0, dy0) || 1;
-    const k = KICK(t);
-    const x = clamp(CENTRE.x + dx0 + (dx0 / len) * 10 * k, 8, MW - 8), y = CENTRE.y + dy0 + (dy0 / len) * 5 * k + 3 * k;
+    let x, y;
+    if (t < OWL4) {
+        const k = knockOf(i, t);
+        x = clamp(CENTRE.x + dx0 + (dx0 / len) * 30 * k, 8, MW - 8); y = CENTRE.y + dy0 + (dy0 / len) * 12 * k + 6 * k;
+    } else {
+        const w = walkIn(i, t), e = w * w * (3 - 2 * w);
+        x = CENTRE.x + lerp(HUDDLE[i][0], dx0, e); y = CENTRE.y + lerp(HUDDLE[i][1], dy0, e);
+    }
     const hop = t > BLAST && t < BLAST + 0.4 ? Math.sin(((t - BLAST) / 0.4) * Math.PI) * 4 : 0;
     const ms = t * 1000;
     let pose = 'idle', item = 'book', frame = frameAt(ms + i * 170, 2, 600), face = CENTRE.x - (CENTRE.x + dx0);
     const cast = castOf(i, t);
     if (cast !== undefined && t - cast < 0.36) { pose = 'shoot'; frame = t - cast < 0.18 ? 0 : 1; }
-    // the stare: everyone turns to the owl on its branch (to the left), palms up
-    if (t >= STARE && t < STRAIN) { face = -100; if (t >= CROWD + 0.25 && t < OWL3 + 2) { pose = 'shrug'; frame = frameAt(ms + i * 130, 2, 400); } }
-    if (t >= BLAST && t < BLAST + 1.9) { pose = 'shrug'; frame = frameAt(ms + i * 120, 2, 400); face = CENTRE.x - (CENTRE.x + dx0); }
-    if (t >= RITUAL_AT + i * 0.12) { pose = 'ritual'; item = null; frame = frameAt(t >= SUMMON ? (t - SUMMON) * 1000 + i * 170 : ms + i * 170, 4, 380); }
-    const squash = straining(i, t) ? 0.12 * smooth(STRAIN, STRAIN + 0.3, t) : t > FARTS[i] + 0.15 && t < FARTS[i] + 0.4 ? -0.06 : 0;
-    return { x, y: y - hop, pose, item, frame, face, squash, shake: straining(i, t) };
+    if (t >= BLAST && t < BLAST + 2.2) { pose = 'shrug'; frame = frameAt(ms + i * 120, 2, 400); }
+    const w = walkIn(i, t);
+    if (t >= OWL4) face = dx0 - HUDDLE[i][0] || 1;
+    if (w > 0 && w < 1) { pose = 'walk'; frame = frameAt(ms + i * 90, 4, 150); }
+    if (w >= 1) face = CENTRE.x - (CENTRE.x + dx0);
+    return { x, y: y - hop, pose, item, frame, face };
 }
 const relit = new Map();
 function walker(ctx, i, t, lighting) {
@@ -335,12 +320,9 @@ function walker(ctx, i, t, lighting) {
     const per = relit.get(key);
     if (!per.has(lighting)) per.set(lighting, relightCanvas(f.canvas, lighting));
     const flip = dir === 'side' && w.face < 0;
-    const jx = w.shake ? Math.round((hash(Math.floor(t * 30) + i * 7) - 0.5) * 2) : 0;
-    const cw = f.canvas.width, ch = f.canvas.height;
-    const sh = Math.round(ch * (1 - w.squash)), sw = Math.round(cw * (1 + w.squash * 0.6));
     const put = (c) => {
-        ctx.save(); ctx.translate(Math.round(w.x) + jx, Math.round(w.y)); if (flip) ctx.scale(-1, 1);
-        ctx.drawImage(c, -Math.round(f.anchor.x * sw / cw), -Math.round(f.anchor.y * sh / ch), sw, sh);
+        ctx.save(); ctx.translate(Math.round(w.x), Math.round(w.y)); if (flip) ctx.scale(-1, 1);
+        ctx.drawImage(c, -f.anchor.x, -f.anchor.y);
         ctx.restore();
     };
     put(per.get(lighting));
@@ -372,127 +354,58 @@ function bolts(ctx, t) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Fart Time. The walkers' clouds (the elephant's, FART_SCALE smaller) over their heads, the elephants' behind them;
-// each cloud, once formed, is drawn into the fire down a spiral and feeds it.
-const herdAt = (e, t) => {
-    const s = t - e.from;
-    const x = e.x0 + s * e.speed;
-    const rise = smooth(0, 1.6, s);                 // out from behind the hills
-    const fly = flightAt(Math.max(0, s) * 1000);
-    return { x, y: lerp(HORIZON + 26, e.y, rise) - 12 * Math.max(0, s - 2.6) + fly.dy, fly, alpha: 1 - smooth(4.0, 4.9, s) };
-};
-AROUND.forEach((_, i) => {
-    const w = () => walkerAt(i, FARTS[i]);
-    CLOUDS.push({ at: FARTS[i], scale: FART_SCALE, side: AROUND[i][0] < 0 ? -1 : 1, origin: () => { const p = w(); return { x: p.x, y: p.y - 22 }; }, funnel: FARTS[i] + 1.2 + i * 0.12, feed: 0.06 });
-});
-ELE.forEach((e, k) => {
-    const at = e.from + 1.9 + k * 0.25;
-    CLOUDS.push({ at, scale: 1, side: 1, elephant: e, origin: () => { const p = herdAt(e, at); return hookOf(Math.round(p.x), Math.round(p.y), true); }, funnel: at + 1.3, feed: 0.12 });
-});
-// A cloud's centre and scale at t (null when it is not there), in stage px.
-function cloudAt(c, t) {
-    const ms = (t - c.at) * 1000;
-    const f = fartAt(Math.min(ms, 1500));
-    if (ms < 0 || !f.cloud || t > c.funnel + 1.8) return null;
-    const o0 = c.origin();
-    let x = o0.x - c.side * f.cloud.back * c.scale, y = o0.y - f.cloud.up * c.scale;
-    let scale = f.cloud.scale * c.scale;
-    const k = smooth(c.funnel, c.funnel + 1.8, t);
-    if (k > 0) {
-        // down the funnel: round the fire in a tightening spiral, shrinking into the flames
-        const v0 = { x: x - FIRE_TOP.x, y: y - FIRE_TOP.y };
-        const a = 2.6 * Math.PI * k * k, r = (1 - k) ** 1.2;
-        x = FIRE_TOP.x + (v0.x * Math.cos(a) - v0.y * Math.sin(a) * 2) * r;
-        y = FIRE_TOP.y + (v0.x * Math.sin(a) * 0.35 + v0.y * Math.cos(a)) * r;
-        scale *= 1 - 0.75 * k;
-    }
-    return { x, y, scale: Math.max(0.2, Math.round(scale * 20) / 20) };
+// Bats over the hills, zigzagging and looping; the blast scatters them up into the dark.
+const BAT = FLYERS.bat[1];
+const BATS = Array.from({ length: 5 }, (_, i) => ({ x0: hash(i + 70) * MW, y0: 16 + hash(i + 71) * 22, v: (hash(i + 72) < 0.5 ? -1 : 1) * (16 + hash(i + 73) * 12), ph: hash(i + 74) * 9 }));
+function batAt(b, t) {
+    let x = mod(b.x0 + b.v * t + 30, MW + 60) - 30;
+    let y = b.y0 + 7 * Math.sin(t * 1.6 + b.ph) + 4 * Math.sin(t * 4.7 + b.ph * 2);
+    let dir = b.v;
+    // a loop now and then
+    const lp = mod(t + b.ph, 6.5);
+    if (lp < 1.1) { const a = (lp / 1.1) * Math.PI * 2; x += Math.sign(b.v) * Math.sin(a) * 8; y -= (1 - Math.cos(a)) * 6; if (Math.cos(a) < 0) dir = -b.v; }
+    const s = t - BLAST;
+    let alpha = 1;
+    if (s > 0) { x += Math.sign(b.v) * 30 * s * s; y -= 14 * s * s; alpha = 1 - smooth(0.4, 2.6, s); }
+    return { x, y, dir, alpha };
 }
-function farts(ctx, t) {
-    for (const c of CLOUDS) {
-        // the puffs bursting out as it farts
-        const f = fartAt((t - c.at) * 1000);
-        if (t >= c.at && f.puffs.length) {
-            const o0 = c.origin();
-            for (const p of f.puffs) { const d = PUFFS[p.size]; stamp(ctx, light(d), d, o0.x - c.side * p.back * c.scale, o0.y - p.up * c.scale + (c.elephant ? 0 : 6)); }
-        }
-        const at = cloudAt(c, t);
-        if (!at) continue;
-        const def = fartCloud(at.scale);
-        stamp(ctx, light(def), def, at.x, at.y);
-    }
-}
-function elephants(ctx, t, lighting) {
-    for (const e of ELE) {
-        const s = t - e.from;
-        if (s < 0 || s > 4.9) continue;
-        const p = herdAt(e, t);
-        const x = Math.round(p.x), y = Math.round(p.y);
-        const fart = CLOUDS.find((c) => c.elephant === e);
-        const strain = t > fart.at - 0.6 && t < fart.at + 0.1;
-        const def = strain ? ELEPHANT.strain : ELEPHANT.fly[p.fly.frame];
-        const hook = hookOf(x, y, true);
-        const ban = bannerFrame(p.fly.wave, 'right');
+function bats(ctx, t, lighting) {
+    BATS.forEach((b, i) => {
+        const p = batAt(b, t);
+        if (p.alpha <= 0) return;
+        const def = BAT.fly[frameAt(t * 1000 + i * 60, 4, t > BLAST ? 50 : 80)];
         ctx.globalAlpha = p.alpha;
-        stamp(ctx, bakeF(ban, lighting), ban, hook.x, hook.y);
-        stamp(ctx, bakeF(def, lighting), def, x, y);
+        big(ctx, light(def), def, p.x, p.y, p.dir < 0, 1.5);
         ctx.globalAlpha = 1;
-    }
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The duck: out of the bush beyond the patch, a climb over the fire puffing little green clouds as it goes; shot
-// above the fire, a Fart Time cloud swells where it was, it drops straight into the flames.
-const DUCK = FLYERS.duck[1];
-const duckPath = (t) => {
-    const k = clamp((t - DUCK_OUT) / (SHOT - DUCK_OUT));
-    const e = 1 - (1 - k) ** 1.6;
-    return { x: lerp(DUCK_BUSH.x - 4, CENTRE.x + 3, e), y: DUCK_BUSH.y - 8 - 46 * Math.sin(Math.min(1, k * 1.25) * Math.PI / 2) + Math.sin(t * 9) * 0.8 };
+// Worms crawl out of the burnt patch (flyers.js `worm`: out of a mound, then the crawl).
+const WORM = FLYERS.worm[1];
+const WORMS = [
+    { x: 112, y: 146, dir: 1, at: BLAST + 3.9 }, { x: 226, y: 154, dir: -1, at: BLAST + 4.4 },
+    { x: 214, y: 106, dir: -1, at: BLAST + 4.8 }, { x: 70, y: 132, dir: 1, at: BLAST + 5.2 },
+    { x: 262, y: 128, dir: -1, at: BLAST + 5.6 }, { x: 150, y: 170, dir: 1, at: BLAST + 6.0 },
+];
+// The worm's violet charge glows on its own, whatever the light (the game keeps it EMISSIVE for the same reason). At
+// the game's size it is a speck on video: drawn twice as big.
+const WORM_HALO = halo(18, 6, 'violet');
+const big = (ctx, c, def, x, y, flip, k = 2) => {
+    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); if (flip) ctx.scale(-1, 1);
+    ctx.drawImage(c, -def.anchor.x * k, -def.anchor.y * k, def.w * k, def.h * k);
+    ctx.restore();
 };
-const HIT = duckPath(SHOT);
-function duckAt(t) {
-    if (t < DUCK_OUT || t > DROP) return null;
-    if (t < SHOT) return { ...duckPath(t), def: DUCK.fly[frameAt((t - DUCK_OUT) * 1000, 4, 70)] };
-    const s = t - SHOT, k = s / (DROP - SHOT);
-    return { x: HIT.x, y: lerp(HIT.y, CENTRE.y - 10, k * k), def: s < 0.14 ? DUCK.hit : DUCK.fall[Math.floor(s / 0.1) % 2] };
+function wormDraw(ctx, p) {
+    additive(ctx, light(WORM_HALO), WORM_HALO, p.x, p.y, 0.6);
+    big(ctx, light(p.def), p.def, p.x, p.y, p.dir < 0);
 }
-// its own puffs (drawn here, in the Fart Time greens): a tight burst every 0.14 s, drifting back and blinking out
-const DUCK_PUFFS = Array.from({ length: 16 }, (_, i) => DUCK_OUT + 0.35 + i * 0.14).filter((a) => a < SHOT - 0.05);
-const PUFF_ART = [['.g.', 'lgd', '.d.'], ['.lg.', 'lggd', 'gggd', '.dd.'], ['..g..', '.lgg.', 'lgggd', '.ggd.', '..d..']];
-const PUFF_KEYS = { l: 'fartLight', g: 'fart', d: 'fartDark' };
-function duckPuffs(ctx, t) {
-    DUCK_PUFFS.forEach((a, i) => {
-        const s = t - a;
-        if (s < 0 || s > 0.9) return;
-        const p = duckPath(a);
-        const art = PUFF_ART[s < 0.12 ? 0 : s < 0.5 ? 1 : 2];
-        if (s > 0.7 && (Math.floor(s * 20) % 2)) return;
-        art.forEach((row, y) => [...row].forEach((ch, x) => {
-            if (ch === '.') return;
-            ctx.fillStyle = hex(PALETTE[PUFF_KEYS[ch]]);
-            ctx.fillRect(Math.round(p.x + 6 + s * 8 - art.length / 2 + x), Math.round(p.y + 1 + s * 3 - art.length / 2 + y + (i % 2)), 1, 1);
-        }));
-    });
-}
-const FEATHERS = feathersOf('duck');
-function feathers(ctx, t) {
-    const since = t - SHOT;
-    if (since <= 0 || since > 2.5) return;
-    for (let k = 0; k < 10; k++) {
-        const a = (k / 10) * Math.PI * 2 + (hash(k) - 0.5) * 1.6;
-        const sp = 8 + hash(k + 20) * 18;
-        const burst = 1 - Math.exp(-since * 4);
-        const x = HIT.x + Math.cos(a) * sp * burst * 0.55 + Math.sin(since * 2.4 + k) * 2;
-        const y = HIT.y + Math.sin(a) * sp * burst * 0.4 + Math.max(0, since - 0.3) * (7 + hash(k + 5) * 5);
-        const d = FEATHERS[k % FEATHERS.length];
-        (Math.sin(since * 5 + k) > 0 ? stampFlip : stamp)(ctx, bakeF(d, 'night'), d, x, y);
-    }
-}
-function shotCloud(ctx, t) {
-    const f = fartAt((t - SHOT) * 1000);
-    if (t < SHOT || f.done || !f.cloud) return;
-    const def = fartCloud(f.cloud.scale, f.cloud.melt);
-    stamp(ctx, light(def), def, HIT.x + f.cloud.back * 0.3, HIT.y - 4 - f.cloud.up * 0.5);
+function wormAt(w, t) {
+    const s = t - w.at;
+    if (s < 0) return null;
+    if (s < 0.6) return { def: WORM.emerge[Math.min(2, Math.floor(s / 0.2))], x: w.x, y: w.y, dir: w.dir };
+    const c = s - 0.6;
+    return { def: WORM.fly[frameAt(c * 1000, 4, 170)], x: w.x + w.dir * Math.floor(c * 4), y: w.y, dir: w.dir };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -522,10 +435,10 @@ function smoke(ctx, t, lighting) {
     });
 }
 function vineEmbers(ctx, t) {
-    if (t < BURN || t > BURNT + 0.8) return;
-    for (let i = 0; i < 70; i++) {
+    if (t < BURN || t > BURNT + 1.2) return;
+    for (let i = 0; i < 90; i++) {
         const life = 0.7 + hash(i + 3) * 0.6;
-        const born = BURN + hash(i) * (BURNT - BURN - 0.2);
+        const born = BURN + hash(i) * (BURNT - BURN);
         const age = t - born;
         if (age < 0 || age > life) continue;
         const p = VINE_POINTS[Math.floor(hash(i + 9) * VINE_POINTS.length)];
@@ -536,29 +449,27 @@ function vineEmbers(ctx, t) {
         ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
     }
 }
-
-// ---------------------------------------------------------------------------------------------------------------
-// The summoning, franken-rise's opening (its figureAt and drawStage, counted from SUMMON).
-function figureAt(tau) {
-    const ms = tau * 1000;
-    if (tau < 0.4) return null;
-    if (tau < 2.0) return SILHOUETTE.rise[Math.min(3, Math.floor((tau - 0.4) / 0.4))];
-    if (tau > 4.4) return SILHOUETTE.eyes[frameAt(ms, 2, 500)];
-    return SILHOUETTE.idle[frameAt(ms, 2, 500)];
-}
-function circleAt(t) {
-    if (t < CIRCLE[0]) return null;
-    return ASH.circle[Math.min(7, Math.floor(clamp((t - CIRCLE[0]) / (CIRCLE[1] - CIRCLE[0])) * 8))];
+// ash flakes drifting down where the vines were
+function ashFall(ctx, t) {
+    if (t < BURN + 0.8 || t > BURNT + 3.5) return;
+    const fade = 1 - smooth(BURNT + 1.5, BURNT + 3.5, t);
+    for (let i = 0; i < 40; i++) {
+        const p = VINE_POINTS[Math.floor(hash(i + 900) * VINE_POINTS.length)];
+        const s = mod(t - BURN + hash(i + 901) * 3, 3);
+        const x = p.x + Math.sin(s * 3 + i) * 3, y = p.y - 14 + s * 5;
+        ctx.globalAlpha = fade * (s < 2.4 ? 1 : 1 - (s - 2.4) / 0.6);
+        ctx.fillStyle = hex(PALETTE[i % 3 ? 'ash' : 'ashLight']);
+        ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+    ctx.globalAlpha = 1;
 }
 
 // The owl on its branch in the wide shots.
 function owlFrameWide(t) {
-    if (t >= SUMMON) { const tau = t - SUMMON; return (tau % 3.1) < 0.13 ? OWL.blink : OWL.idle[Math.floor(tau / 0.7) % 2]; }
-    if (t < OWL1) return (t % 2.7) < 0.13 ? OWL.blink : t > 3.8 ? OWL.turnRight[1] : OWL.idle[Math.floor(t / 0.7) % 2];
-    if (t < OWL2) return t < FIZZLE + 1.2 ? OWL.beakWing[2] : OWL.turnRight[1];
-    if (t < BLAST) return t > SHOT - 0.4 ? OWL.beakWing[2] : (t % 2.3) < 0.13 ? OWL.blink : OWL.turnRight[1];
+    if (t < OWL1) return (t % 2.7) < 0.13 ? OWL.blink : t > 3.0 ? OWL.turnRight[1] : OWL.idle[Math.floor(t / 0.7) % 2];
+    if (t < BLAST) return OWL.beakWing[2];
     if (t < BLAST + 2.2) return OWL.hoot;
-    if (t < MOON_RED + 1.5) return OWL.turnRight[1];
+    if (t < OWL4) return t > BLOOD[1] ? OWL.turnRight[1] : (t % 2.3) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
     return (t % 3.1) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
 }
 
@@ -572,17 +483,17 @@ function drawStage(t, which, { owl = true } = {}) {
     const ms = t * 1000;
     const lit = t < BLAST;
     sx.clearRect(0, 0, MW, MH);
-    // the herd rises from behind the hills: drawn before the ground
-    if (lit) elephants(sx, t, lighting);
     const ground = which === 'b' ? GROUND.blood : lit ? GROUND.fire : GROUND.dim;
     sx.drawImage(ground, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h);
+    bats(sx, t, lighting);
     if (t < BURN) sx.drawImage(VINES_LIT, 0, 0);
     else if (t < BURNT) sx.drawImage(VINES_CHAR[Math.floor((t - BURN) / BURN_STEP)], 0, 0);
     if (lit) {
         const st = t < STAGE_UP ? 6 : 7;
         const l = BONFIRE.light[st];
         const flare = t > STAGE_UP && t < STAGE_UP + 0.5 ? 0.35 * (1 - (t - STAGE_UP) / 0.5) : 0;
-        additive(sx, light(l), l, CENTRE.x, CENTRE.y, (0.52 + 0.05 * Math.sin(ms / 140) + flare) * clamp(0.25 + 0.75 * fireLevel(t)));
+        const pulse = swelling(t) ? 0.25 * smooth(SWELL, BLAST, t) * (0.5 + 0.5 * Math.sin(ms / 45)) : 0;
+        additive(sx, light(l), l, CENTRE.x, CENTRE.y, 0.52 + 0.05 * Math.sin(ms / 140) + flare + pulse);
     } else {
         stamp(sx, bakeF(ASH.pit, lighting), ASH.pit, CENTRE.x, CENTRE.y);
         const live = 1 - smooth(BLAST + 1, BLAST + 9, t);
@@ -593,24 +504,16 @@ function drawStage(t, which, { owl = true } = {}) {
             const g = halo(18, 6, 'warm');
             additive(sx, light(g), g, CENTRE.x, CENTRE.y, 0.35 * live);
         }
-        const circle = circleAt(t);
-        if (circle) {
-            stamp(sx, light(circle), circle, CENTRE.x, CENTRE.y);
-            const g = halo(34, 10, 'red');
-            additive(sx, light(g), g, CENTRE.x, CENTRE.y, 0.4 * smooth(CIRCLE[0], CIRCLE[1], t) * (t < SUMMON ? 1 : 0));
-        }
-        if (t >= SUMMON && t - SUMMON < 0.27) { const fl = FX.flash[Math.floor((t - SUMMON) / 0.09)]; stamp(sx, light(fl), fl, CENTRE.x, CENTRE.y); }
     }
     const items = [];
-    items.push({ y: DUCK_BUSH.y, draw: () => {
-        const rustle = t > DUCK_OUT - 0.5 && t < DUCK_OUT + 0.5;
-        const def = rustle ? BUSH.rustle[frameAt(ms, 3, 90)] : BUSH.idle[0];
-        stamp(sx, bakeF(def, lighting), def, DUCK_BUSH.x, DUCK_BUSH.y);
-    } });
     if (lit) items.push({ y: CENTRE.y, draw: () => bonfire(sx, t, lighting) });
     const near = lit && which === 'a' ? 'firelight' : lighting;
     RING.forEach((_, i) => items.push({ y: pumpkinAt(i, t).y, draw: () => pumpkin(sx, i, t, near, tone) }));
     AROUND.forEach((_, i) => items.push({ y: walkerAt(i, t).y, draw: () => walker(sx, i, t, near) }));
+    for (const w of WORMS) {
+        const p = wormAt(w, t);
+        if (p) items.push({ y: p.y - 0.5, draw: () => wormDraw(sx, p) });
+    }
     if (owl) items.push({ y: 1000, draw: () => { const s = owlFrameWide(t); stamp(sx, bakeF(glow(s), lighting), s, PERCH.x, PERCH.y); } });
     const bf = blastFrame(t);
     if (bf >= 0 && bf < 8) items.push({ y: 900, draw: () => { const e = EXPLOSION[bf]; stamp(sx, light(e), e, CENTRE.x, CENTRE.y); } });
@@ -621,41 +524,10 @@ function drawStage(t, which, { owl = true } = {}) {
         sx.globalAlpha = 1;
     } });
     items.push({ y: 950, draw: () => smoke(sx, t, lighting) });
-    if (t >= SUMMON) {
-        // franken-rise: the column, the silhouette rising out of the smoke cloud
-        const tau = t - SUMMON, fms = tau * 1000;
-        items.push({ y: 900, draw: () => {
-            if (tau > 0.18) { const col = FX.column[frameAt(fms, 4, 90)]; additive(sx, light(col), col, CENTRE.x, CENTRE.y + 2, 0.55 * (1 - smooth(F.STRIKE - 0.3, F.STRIKE + 0.1, tau))); }
-            const cl = FX.smoke.cloud[frameAt(fms, 4, 220)]; stamp(sx, bakeF(cl, 'blood'), cl, CENTRE.x, CENTRE.y + 4);
-            const fig = figureAt(tau);
-            if (fig) stamp(sx, bakeF(fig, 'blood'), fig, CENTRE.x, CENTRE.y);
-            const fr = FX.smoke.cloud[(frameAt(fms, 4, 220) + 2) % 4]; sx.globalAlpha = 0.8; stamp(sx, bakeF(fr, 'blood'), fr, CENTRE.x, CENTRE.y + 10); sx.globalAlpha = 1;
-        } });
-    }
     items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
-    if (t > CROWD + 0.35 && t < OWL3) {
-        // a «?» pops over each head in turn
-        const Q = ['.##.', '#..#', '..#.', '.#..', '....', '.#..'];
-        AROUND.forEach((_, i) => {
-            if (t < CROWD + 0.35 + i * 0.12) return;
-            const w = walkerAt(i, t), hop = t < CROWD + 0.5 + i * 0.12 ? 1 : 0;
-            Q.forEach((row, y) => [...row].forEach((ch, x) => {
-                if (ch !== '#') return;
-                sx.fillStyle = hex(PALETTE.outline); sx.fillRect(Math.round(w.x) - 2 + x + 1, Math.round(w.y) - 33 + y - hop + 1, 1, 1);
-                sx.fillStyle = hex(PALETTE.cream); sx.fillRect(Math.round(w.x) - 2 + x, Math.round(w.y) - 33 + y - hop, 1, 1);
-            }));
-        });
-    }
-    if (lit) {
-        bolts(sx, t);
-        farts(sx, t);
-        duckPuffs(sx, t);
-        const d = duckAt(t);
-        if (d) stampFlip(sx, bakeF(d.def, 'firelight'), d.def, d.x, d.y);
-        feathers(sx, t);
-        shotCloud(sx, t);
-    }
+    if (lit) bolts(sx, t);
     vineEmbers(sx, t);
+    ashFall(sx, t);
     return stage;
 }
 const bloodAt = (t) => smooth(BLOOD[0], BLOOD[1], t);
@@ -672,58 +544,42 @@ function stageCanvas(t, opts) {
 // ---------------------------------------------------------------------------------------------------------------
 // Camera over the stage: world point at the screen centre, magnification, depth layers.
 const S = W / MW; // 6: the whole stage
-const END_CAM = { cx: 142, cy: 92, z: 1.32 };   // franken-rise at t = 0
+const END_CAM = { cx: 142, cy: 92, z: 1.32 };   // circle at t = 0 (franken-rise's frame)
 function camera(t) {
     let cx, cy, z;
-    if (t >= SUMMON) {
-        // franken-rise's cameraA
-        const tau = t - SUMMON;
-        z = 1.32 + 0.1 * smooth(0, F.STRIKE, tau);
-        cx = 142 + 0.6 * Math.sin(tau * 0.37); cy = 92 + 0.4 * Math.sin(tau * 0.5);
-    } else if (t < OWL1) {
+    if (t < OWL1) {
         // the slow push in on the roaring fire
-        const k = smooth(0.6, OWL1 + 0.3, t);
-        cx = lerp(150, CENTRE.x, k); cy = lerp(94, 99, k); z = lerp(1.18, 1.7, k);
+        const k = smooth(1.4, OWL1 + 0.4, t);
+        cx = lerp(150, CENTRE.x, k); cy = lerp(92, 99, k); z = lerp(1.18, 1.6, k);
         cx += 0.6 * Math.sin(t * 0.37); cy += 0.4 * Math.sin(t * 0.5);
-    } else if (t < OWL2) {
-        // the fizzle, close on the sinking fire
-        const k = smooth(FIZZLE, OWL2, t);
-        cx = CENTRE.x; cy = lerp(98, 101, k); z = lerp(2.2, 2.45, k);
-    } else if (t < OWL3) {
-        // the crowd staring up at the owl
-        const k = smooth(CROWD, OWL3, t);
-        cx = lerp(146, 142, k); cy = lerp(112, 110, k); z = lerp(1.62, 1.72, k);
     } else if (t < BLAST) {
-        // wide for the farts and the herd over the hills, then after the duck and in on the fire
-        cx = 164; cy = 84; z = 1.12;
-        const follow = smooth(DUCK_OUT - 0.6, SHOT, t);
-        const d = duckPath(Math.min(t, SHOT));
-        cx = lerp(cx, (d.x + CENTRE.x) / 2, follow * 0.8); cy = lerp(cy, d.y + 26, follow * 0.7); z = lerp(z, 1.55, follow);
-        const dive = smooth(SHOT + 0.05, DROP, t);
-        cx = lerp(cx, CENTRE.x, dive); cy = lerp(cy, 98, dive); z = lerp(z, 2.2, dive);
-        cx += 0.5 * Math.sin(t * 0.37); cy += 0.35 * Math.sin(t * 0.5);
-    } else {
-        // punched out by the blast, up to the sky as the smoke clears, then onto franken-rise's frame
+        // the fire swelling, close
+        const k = smooth(SWELL, BLAST, t);
+        cx = CENTRE.x; cy = lerp(99, 100, k); z = lerp(1.95, 2.2, k);
+    } else if (t < OWL4) {
+        // punched out by the blast, up to the sky as the moon reddens, then down onto the pit and its worms
         const out = 1 - Math.exp(-(t - BLAST) * 5);
-        cx = CENTRE.x; cy = lerp(98, 94, out); z = lerp(2.2, 1.8, out);
-        const up = smooth(BLAST + 1.6, MOON_RED + 0.6, t);
+        cx = CENTRE.x; cy = lerp(100, 94, out); z = lerp(2.2, 1.8, out);
+        const up = smooth(BLAST + 1.3, MOON_RED + 0.5, t);
         cx = lerp(cx, 186, up); cy = lerp(cy, 72, up); z = lerp(z, 1.45, up);
-        const back = smooth(BLOOD[0] + 0.9, SETTLE, t);
-        cx = lerp(cx, END_CAM.cx, back); cy = lerp(cy, END_CAM.cy, back); z = lerp(z, END_CAM.z, back);
+        const down = smooth(BLOOD[0] + 0.6, OWL4 - 0.2, t);
+        cx = lerp(cx, 160, down); cy = lerp(cy, 112, down); z = lerp(z, 1.62, down);
+    } else {
+        // the crowd walking out across the ash: the frame the next scene opens on
+        const k = smooth(WALK, WALK + WALK_LEN + 1.5, t);
+        cx = lerp(150, END_CAM.cx, k); cy = lerp(98, END_CAM.cy, k); z = lerp(1.42, END_CAM.z, k);
+        cx += 0.6 * Math.sin(t * 0.37); cy += 0.4 * Math.sin(t * 0.5);
     }
     const sh = shakeAt(t);
     return { cx: cx + sh.x, cy: cy + sh.y, z };
 }
 function shakeAt(t) {
     let a = 0;
-    if (t >= SUMMON) { const tau = t - SUMMON; if (tau < 2.4) a += 1.6 * (1 - tau / 2.4) + 0.4; }
-    else if (t >= BLAST) a += 3.2 * Math.exp(-(t - BLAST) * 3.2);
+    if (t >= BLAST) a += 3.2 * Math.exp(-(t - BLAST) * 3.2);
     else {
         a += 0.12;
         a += 0.6 * smooth(STAGE_UP - 0.1, STAGE_UP, t) * (1 - smooth(STAGE_UP + 0.1, STAGE_UP + 0.8, t));
-        if (sinking(t) && t < OWL2) a += 0.25;
-        for (const c of CLOUDS) { const s = t - c.at; if (s > 0 && s < 0.4) a += (c.elephant ? 0.9 : 0.35) * (1 - s / 0.4); }
-        if (t > SHOT && t < SHOT + 0.25) a += 1.2 * (1 - (t - SHOT) / 0.25);
+        a += 1.4 * smooth(SWELL, BLAST, t);
     }
     const q = Math.floor(t * 30);
     const r = (v) => (t >= BLAST && t < BLAST + 0.7 ? Math.round(v) : v);
@@ -758,15 +614,15 @@ function sky(cam, t) {
         if (m < 1) put(NIGHT.moonHalo, NIGHT.moon);
         if (m > 0) {
             o.globalAlpha = m; put(NIGHT.bloodMoonHalo, NIGHT.bloodMoon); o.globalAlpha = 1;
-            const pulse = Math.sin(clamp((t - MOON_RED) / 1.8) * Math.PI);
-            if (pulse > 0) { const h = halo(40, 34, 'red'); additive(o, light(h), h, 250, 22, 0.45 * pulse); }
+            const pulse = Math.sin(clamp((t - MOON_RED) / 2.2) * Math.PI);
+            if (pulse > 0) { const h = halo(40, 34, 'red'); additive(o, light(h), h, 250, 22, 0.5 * pulse); }
         }
     });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Foreground: two of the crowd from the back, huge and dark, rim-lit by the fire (green) — the blast knocks them
-// down, and they rise into franken-rise's two ritual silhouettes, rim-lit red.
+// Foreground: two of the crowd from the back, huge and dark, rim-lit by the fire (green) — the blast knocks them out
+// of the frame; they walk back in rim-lit red.
 function rimSilhouette(f, rim) {
     const w = f.canvas.width, h = f.canvas.height;
     const src = f.canvas.getContext('2d').getImageData(0, 0, w, h).data;
@@ -786,19 +642,17 @@ function rimSilhouette(f, rim) {
 const fgCache = new Map();
 const RIM = { green: [0x8c, 0xf0, 0x5a], red: [0xff, 0x52, 0x40], dark: [0x3a, 0x30, 0x3a] };
 function foreground(t, cam) {
-    const fms = t >= SUMMON ? (t - SUMMON) * 1000 : t * 1000;
+    const fms = t * 1000;
     const away = smooth(1.65, 2.2, cam.z);
-    const k = KICK(t);
     [[0, 260, 16, 0], [3, 1650, 17, 1]].forEach(([li, x, s, side], n) => {
-        const ritual = t >= RITUAL_AT + n * 0.2;
-        const pose = ritual ? 'ritual' : 'idle';
-        const fr = frameAt(fms + n * 200, ritual ? 4 : 2, ritual ? 380 : 600);
-        const f = characterFrame(looks[li], { dir: 'back', pose, frame: fr, item: ritual ? null : 'book' });
-        const fl = clamp(0.3 + 0.7 * fireLevel(t));
-        const rims = t < BLAST ? [['green', fl], ['dark', 1 - fl]] : [['red', bloodAt(t)], ['dark', 1 - bloodAt(t)]];
-        const strain = t > STRAIN && t < STRAIN + 1.3 ? 0.08 * Math.sin(clamp((t - STRAIN) / 1.3) * Math.PI) : 0;
-        const dx = (side ? 1 : -1) * (away * 520 + k * 160) - (t >= SUMMON ? 0 : (cam.cx - END_CAM.cx) * S * 1.5) + (strain ? Math.round((hash(Math.floor(t * 30) + n) - 0.5) * 8) : 0);
-        const dy = k * 220 + strain * f.canvas.height * s;
+        const k = t < BLAST ? 0 : Math.sin(clamp((t - BLAST) / 0.3) * Math.PI / 2) * (1 - smooth(WALK + n * 0.3, WALK + n * 0.3 + 1.6, t));
+        const walking = t > WALK && t < WALK + n * 0.3 + 1.6;
+        const pose = walking ? 'walk' : 'idle';
+        const fr = frameAt(fms + n * 200, walking ? 4 : 2, walking ? 150 : 600);
+        const f = characterFrame(looks[li], { dir: 'back', pose, frame: fr, item: 'book' });
+        const rims = t < BLAST ? [['green', 1]] : [['red', bloodAt(t)], ['dark', 1 - bloodAt(t)]];
+        const dx = (side ? 1 : -1) * (away * 520 + k * 160) - (cam.cx - END_CAM.cx) * S * 1.5;
+        const dy = k * 420;
         for (const [name, a] of rims) {
             if (a <= 0.01) continue;
             const key = `${li}|${pose}|${fr}|${name}`;
@@ -811,18 +665,17 @@ function foreground(t, cam) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Particles in screen space, with depth: green motes over the fire; after the blast embers cooling to franken-rise's
-// red (its drawEmbers, on its clock); the blast's debris, some of it right into the lens.
+// Particles in screen space, with depth: green motes over the fire; after the blast embers cooling to red; the
+// blast's debris, some of it right into the lens.
 const motes = Array.from({ length: 80 }, (_, i) => ({ x: hash(i) * W, ph: hash(i + 3), v: 40 + hash(i + 5) * 120, s: hash(i + 9) < 0.3 ? 12 : 6, d: 0.6 + hash(i + 13) }));
 function drawMotes(t, cam) {
-    const green = t < BLAST, vis = green ? clamp(0.2 + 0.8 * fireLevel(t)) : smooth(BLAST + 0.6, BLAST + 2, t);
+    const green = t < BLAST, vis = green ? 1 : smooth(BLAST + 0.6, BLAST + 2, t);
     if (vis <= 0) return;
     const warm = smooth(BLAST + 1, BLOOD[1], t);
-    const tc = green ? t : t - SUMMON;
     for (const e of motes) {
-        const y = H - mod(tc * e.v * e.d + e.ph * H * 1.3, H * 1.3);
-        const x = e.x + Math.sin(tc * 1.3 + e.ph * 9) * 30 - (cam.cx - 150) * e.d * 4;
-        const a = (0.35 + 0.45 * Math.sin(tc * 5 + e.ph * 20) ** 2) * vis;
+        const y = H - mod(t * e.v * e.d + e.ph * H * 1.3, H * 1.3);
+        const x = e.x + Math.sin(t * 1.3 + e.ph * 9) * 30 - (cam.cx - 150) * e.d * 4;
+        const a = (0.35 + 0.45 * Math.sin(t * 5 + e.ph * 20) ** 2) * vis;
         o.fillStyle = green ? `rgba(${170 + 60 * e.ph | 0},255,${90 + 40 * e.ph | 0},${a})`
             : `rgba(255,${Math.round(lerp(150 + 60 * e.ph, 80 + 60 * e.ph, warm))},${Math.round(lerp(60, 50, warm))},${a})`;
         const s = e.s * e.d;
@@ -893,6 +746,30 @@ function shockwave(t, origin, z) {
         o.fillRect(Math.round(x / px) * px, Math.round(y / px) * px, px - 4, px - 4);
     }
     o.globalAlpha = 1;
+}
+// the mushroom: a pillar of smoke and a cap rolling up over the pit, lit green from inside, then cooling
+function mushroom(t, toScreen, z) {
+    const s = t - BLAST - 0.15;
+    if (s < 0 || s > 4.5) return;
+    const a = smooth(0, 0.3, s) * (1 - smooth(2.2, 4.5, s));
+    const rise = 1 - Math.exp(-s * 1.4);
+    const base = toScreen({ x: CENTRE.x, y: CENTRE.y - 6 });
+    const top = { x: base.x, y: base.y - (40 + 230 * rise) * z / 6 };
+    const hot = 1 - smooth(0.2, 1.6, s);
+    soft(null, 6, () => {
+        const blob = (x, y, r, inner) => {
+            const g = o.createRadialGradient(x, y, 0, x, y, r);
+            const c = inner ? `${Math.round(lerp(70, 150, hot))},${Math.round(lerp(60, 230, hot))},${Math.round(lerp(60, 90, hot))}` : '40,40,46';
+            g.addColorStop(0, `rgba(${c},${0.85 * a})`); g.addColorStop(0.6, `rgba(${c},${0.5 * a})`); g.addColorStop(1, `rgba(${c},0)`);
+            o.fillStyle = g; o.fillRect(x - r, y - r, 2 * r, 2 * r);
+        };
+        for (let k = 0; k < 6; k++) blob(lerp(base.x, top.x, k / 6) + Math.sin(k * 2 + s) * 10, lerp(base.y, top.y, k / 6), (60 + 10 * k) * z / 6, k < 2);
+        for (let k = 0; k < 7; k++) {
+            const ang = (k / 7) * Math.PI * 2 + s * 0.8;
+            blob(top.x + Math.cos(ang) * (120 + 90 * rise) * z / 6, top.y + Math.sin(ang) * 40 * z / 6, (110 + 60 * rise) * z / 6, k % 2 === 0);
+        }
+        blob(top.x, top.y, (150 + 70 * rise) * z / 6, true);
+    });
 }
 function haze(t, toScreen, z) {
     const s = t - BLAST;
@@ -968,79 +845,147 @@ function bubble(l, t, head, bx, by) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Shot B: the owl up close on its branch, the bonfire out of focus behind it to the right; the necromancer's book
-// (characters.js, the `book` item, front view) in its wings.
-const OWL_S = 34;
-const BOOK = { w: 9, h: 7, rows: ['.ccc.ccc.', 'VmmmvmmeV', 'VcccvcccV', 'VmmcvmmmV', 'VcccvcccV', 'VmmmvmccV', 'VVVVvVVVV'], legend: { '.': null, c: 'cream', V: 'violet', v: 'violetDark', m: 'eerieMid', e: 'eyeGreen' }, anchor: { x: 4, y: 6 } };
-const speaking = (l, t) => { const ms = (t - l.from) * 1000; return ms >= 0 && ms <= l.plan.ms + 120 ? ms : null; };
-function owlFrameClose(t) {
-    const L0 = L[0];
-    if (t < OWL2) {
-        if (t < OWL1 + 0.35) return OWL.turnRight[0];
-        if (t >= L0.from - 0.95 && t < L0.from - 0.1) return OWL.hoot;
-        const ms = speaking(L0, t);
-        if (ms !== null) { const k = beakAt(L0.plan, ms); return wingAt(L0.plan, ms) ? OWL.beakWing[k] : OWL.beak[k]; }
-        if (t >= COVER) return OWL.beakWing[2];
-        if (t >= L0.said) return OWL.beak[2];
-        return ((t - OWL1) % 1.9) < 0.12 ? OWL.blink : OWL.turnRight[1];
+// The owl up close. Its light from the scene is laid only over its own pixels (a buffer masked by the sprite), never
+// over the sprite's rectangle. `ruffle` raises its feathers: spikes of outline along its edge, lighter tips inside.
+const OWL_S = 34, PAD = 2;
+const owlArts = new WeakMap();
+function owlArt(f, lighting, ruffle) {
+    const q = Math.round(clamp(ruffle) * 4);
+    if (!owlArts.has(f)) owlArts.set(f, new Map());
+    const per = owlArts.get(f), key = `${lighting}|${q}`;
+    if (per.has(key)) return per.get(key);
+    const w = f.w + 2 * PAD, h = f.h + 2 * PAD;
+    const [c, x] = canvas(w, h);
+    x.drawImage(bakeF(glow(f), lighting), PAD, PAD);
+    if (q) {
+        const src = x.getImageData(0, 0, w, h), d = src.data, img = x.getImageData(0, 0, w, h);
+        const on = (xx, yy) => xx >= 0 && yy >= 0 && xx < w && yy < h && d[(yy * w + xx) * 4 + 3] > 0;
+        const dark = rgbOf(LIT_PALETTE[lighting].outline), tip = rgbOf(LIT_PALETTE[lighting].owlLight ?? LIT_PALETTE[lighting].cream);
+        const put = (xx, yy, col) => { if (xx >= 0 && yy >= 0 && xx < w && yy < h) img.data.set([...col, 255], (yy * w + xx) * 4); };
+        const lvl = q / 4;
+        for (let yy = 0; yy < h - PAD - 3; yy++) for (let xx = 0; xx < w; xx++) {
+            const n = hash(xx * 31 + yy * 17 + 5);
+            if (!on(xx, yy)) {
+                // outward from the edge: up over the head, sideways off the flanks
+                const dir = on(xx, yy + 1) ? [0, -1] : on(xx + 1, yy) ? [-1, 0] : on(xx - 1, yy) ? [1, 0] : null;
+                if (!dir || n > lvl * 0.5) continue;
+                put(xx, yy, dark);
+                if (hash(xx * 7 + yy * 13 + 1) < lvl * 0.45) put(xx + dir[0], yy + dir[1], dark);
+            } else if (n < lvl * 0.1 && on(xx - 1, yy) && on(xx + 1, yy) && on(xx, yy - 1)) put(xx, yy, tip);
+        }
+        x.putImageData(img, 0, 0);
     }
-    // with the book: reading (eyes on the pages), the stare up at the crowd, then the orders
-    for (const l of [L[1], L[2]]) { const ms = speaking(l, t); if (ms !== null) return OWL.beak[beakAt(l.plan, ms)]; }
-    const ms = speaking(L[3], t);
-    if (ms !== null) return OWL.beakWing[beakAt(L[3].plan, ms)];
-    if (t >= L[3].said) return OWL.beakWing[0];
-    if (t >= STARE) return t < STARE + 0.25 ? OWL.blink : OWL.talk[0];
-    if (t < BOOK_UP[1]) return OWL.idle[0];
-    return (t * 1000) % 1300 < 160 ? OWL.idle[1] : OWL.blink;   // eyes down on the pages
+    per.set(key, c);
+    return c;
 }
-function bookInWings(t, perch) {
-    if (t < OWL2) return;
-    const up = smooth(BOOK_UP[0], BOOK_UP[1], t), low = smooth(STARE, STARE + 0.3, t) * 0.5 + smooth(L[3].from - 0.2, L[3].from + 0.2, t) * 1.5;
-    const dy = Math.round((1 - up) * 7 + low) - 2;
-    const P = OWL_S;
-    const bx = perch.x - BOOK.anchor.x * OWL_S - OWL_S / 2, by = perch.y - (1 + BOOK.anchor.y) * OWL_S + dy * OWL_S;
-    // it comes up from behind the branch
-    o.save(); o.beginPath(); o.rect(-1e4, -1e4, 3e4, 1e4 + perch.y - P); o.clip();
-    o.fillStyle = hex(PALETTE.outline); o.fillRect(bx - P, by - P, (BOOK.w + 2) * P, (BOOK.h + 1) * P + P);
-    o.drawImage(bakeF(BOOK, 'firelight'), bx, by, BOOK.w * OWL_S, BOOK.h * OWL_S);
-    // a page turning over: lifts off the right page, over the spine, onto the left
-    for (const at of FLIPS) {
-        const k = (t - at) / 0.32;
-        if (k < 0 || k > 1) continue;
-        const px = lerp(7, 1, k), lift = Math.sin(k * Math.PI) * 2.2, w = 1 + Math.round(Math.sin(k * Math.PI) * 1.4);
-        o.fillStyle = hex(LIT_PALETTE.night.cream);
-        o.fillRect(bx + Math.round(px) * OWL_S, by - Math.round(lift) * OWL_S, w * OWL_S, 6 * OWL_S);
-        o.fillStyle = hex(LIT_PALETTE.night.outline);
-        o.fillRect(bx + Math.round(px) * OWL_S, by - Math.round(lift) * OWL_S + 6 * OWL_S, w * OWL_S, OWL_S / 2);
+const [maskC, maskX] = canvas(1000, 1000);
+// Paints `light(ctx, w, h)` over the owl's own pixels only, added onto the frame.
+function lightOnOwl(art, left, top, w, h, paint) {
+    maskX.globalCompositeOperation = 'source-over';
+    maskX.clearRect(0, 0, w + 2, h + 2);
+    maskX.drawImage(art, 0, 0, w, h);
+    maskX.globalCompositeOperation = 'source-in';
+    paint(maskX, w, h);
+    maskX.globalCompositeOperation = 'source-over';
+    o.save(); o.globalCompositeOperation = 'lighter'; o.drawImage(maskC, 0, 0, w, h, left, top, w, h); o.restore();
+}
+function drawOwl(f, ax, ay, { lighting, ruffle = 0, sx = 1, sy = 1, rim, rimA = 0 }) {
+    const art = owlArt(f, lighting, ruffle);
+    const w = Math.round(art.width * OWL_S * sx), h = Math.round(art.height * OWL_S * sy);
+    const bottom = ay + (f.h - f.anchor.y + PAD) * OWL_S;
+    const left = Math.round(ax - (f.anchor.x + PAD) * OWL_S * sx), top = Math.round(bottom - h);
+    o.drawImage(art, left, top, w, h);
+    if (rimA > 0) lightOnOwl(art, left, top, w, h, (x, ww, hh) => {
+        const g = x.createLinearGradient(ww * 0.3, 0, ww, 0);
+        g.addColorStop(0, `rgba(${rim},0)`); g.addColorStop(1, `rgba(${rim},${rimA})`);
+        x.fillStyle = g; x.fillRect(0, 0, ww, hh);
+    });
+}
+
+// Shot B: the owl up close on its branch, the stage out of focus behind it to the right.
+const speaking = (l, t) => { const ms = (t - l.from) * 1000; return ms >= 0 && ms <= l.plan.ms + 120 ? ms : null; };
+function owlClose(t) {
+    if (t < OWL4) {
+        const L0 = L[0];
+        let f;
+        if (t < OWL1 + 0.35) f = OWL.turnRight[0];
+        else if (t >= L0.from - 0.85 && t < L0.from - 0.1) f = OWL.hoot;
+        else {
+            const ms = speaking(L0, t);
+            if (ms !== null) { const k = beakAt(L0.plan, ms); f = wingAt(L0.plan, ms) ? OWL.beakWing[k] : OWL.beak[k]; }
+            else if (t >= COVER) f = OWL.beakWing[2];
+            else if (t >= L0.said) f = OWL.beak[2];
+            else f = ((t - OWL1) % 1.9) < 0.12 ? OWL.blink : OWL.turnRight[1];
+        }
+        return { f, ruffle: 0, dx: t >= COVER ? Math.round((hash(Math.floor(t * 14)) - 0.5) * 2) : 0, sx: 1, sy: 1 };
     }
-    o.restore();
-    // the book's green lines light the owl's face from below
-    const g = o.createRadialGradient(bx + 4.5 * OWL_S, by, 20, bx + 4.5 * OWL_S, by, 420);
-    g.addColorStop(0, `rgba(120,240,100,${0.25 * up})`); g.addColorStop(1, 'rgba(120,240,100,0)');
-    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(bx - 400, by - 500, 1200, 900); o.globalCompositeOperation = 'source-over';
+    // the creeps: the feathers rise, a shudder, a look round at the worms; then it shakes it off and puts on a brave face
+    const up = smooth(SHUDDER[0], SHUDDER[0] + 0.5, t), down = smooth(SHAKE_OFF[0] + 0.15, SHAKE_OFF[1], t);
+    const ruffle = up * (1 - 0.3 * smooth(L[1].said, SHAKE_OFF[0], t)) * (1 - down);
+    let f, dx = 0, sx = 1, sy = 1;
+    const shudder = t >= SHUDDER[0] && t < SHUDDER[1];
+    const shake = t >= SHAKE_OFF[0] && t < SHAKE_OFF[1];
+    const ms1 = speaking(L[1], t), ms2 = speaking(L[2], t);
+    if (shudder) {
+        f = OWL.hoot;
+        const k = (t - SHUDDER[0]) / (SHUDDER[1] - SHUDDER[0]);
+        dx = Math.round(Math.sin(t * 70) * 1.3 * (1 - k));
+        sy = 1 + 0.06 * Math.sin(k * Math.PI); sx = 1 - 0.03 * Math.sin(k * Math.PI);
+    } else if (shake) {
+        const k = (t - SHAKE_OFF[0]) / (SHAKE_OFF[1] - SHAKE_OFF[0]);
+        f = Math.floor(t * 18) % 2 ? OWL.blink : OWL.idle[1];
+        dx = Math.round(Math.sin(t * 55) * 2.4 * Math.sin(k * Math.PI));
+        sx = 1 + 0.05 * Math.sin(k * Math.PI * 6);
+    } else if (ms1 !== null) f = OWL.beak[beakAt(L[1].plan, ms1)];
+    else if (ms2 !== null) { const k = beakAt(L[2].plan, ms2); f = wingAt(L[2].plan, ms2) ? OWL.beakWing[k] : OWL.beak[k]; dx = Math.round((hash(Math.floor(t * 9)) - 0.5) * 1.2); }
+    else if (t >= L[2].said) f = (t * 1000) % 1500 < 130 ? OWL.blink : OWL.beakWing[0];
+    else if (t >= L[1].said) f = (t - L[1].said) % 1.8 < 0.9 ? OWL.turnRight[1] : OWL.turnRight[0];
+    else if (t >= LOOK) f = t < LOOK + 0.12 ? OWL.turnRight[0] : OWL.turnRight[1];
+    else f = ((t - OWL4) % 1.9) < 0.12 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
+    return { f, ruffle, dx, sx, sy };
+}
+// The worms the owl looks round at: crawling over the ash below the branch, a little out of focus.
+function closeWorms(t) {
+    soft(0.7, 2, () => {
+        [[1180, 1060, 1, 0], [1540, 1020, -1, 0.9], [1760, 1075, -1, 2.1]].forEach(([x0, y, dir, ph], i) => {
+            const c = t - OWL4 + ph;
+            const def = WORM.fly[frameAt(c * 1000 + i * 60, 4, 170)];
+            const s = 20 - i * 3;
+            const gx = x0 + dir * c * 26, gl = o.createRadialGradient(gx, y - 30, 10, gx, y - 30, 12 * s);
+            gl.addColorStop(0, 'rgba(170,100,255,0.35)'); gl.addColorStop(1, 'rgba(170,100,255,0)');
+            o.save(); o.globalCompositeOperation = 'lighter'; o.fillStyle = gl; o.fillRect(gx - 12 * s, y - 30 - 12 * s, 24 * s, 24 * s); o.restore();
+            const x = x0 + dir * c * 26;
+            const img = light(def);
+            o.save(); o.translate(Math.round(x), 0); if (dir < 0) o.scale(-1, 1);
+            o.drawImage(img, -def.anchor.x * s, y - def.anchor.y * s, def.w * s, def.h * s);
+            o.restore();
+        });
+    });
 }
 function shotB(t) {
-    const k = t - (t < OWL2 ? OWL1 : OWL2);
-    const level = fireLevel(t);
+    const blood = t >= OWL4;
+    const k = t - (blood ? OWL4 : OWL1);
+    const level = blood ? 0.6 : fireLevel(t);
     const roar = (0.5 + 0.5 * Math.sin(t * 9) * Math.sin(t * 3.7)) * level;
-    const zoom = 1 + 0.05 * smooth(0, 8, k) + 0.05 * smooth(COVER, COVER + 0.4, t) * (t < OWL2 ? 1 : 0) + 0.06 * smooth(STARE, STARE + 0.4, t) * (t < CROWD ? 1 : 0);
+    const zoom = 1 + 0.05 * smooth(0, 8, k) + (blood ? 0.06 * smooth(SHUDDER[0], SHUDDER[0] + 0.3, t) - 0.04 * smooth(SHAKE_OFF[0], SHAKE_OFF[1], t) : 0.05 * smooth(COVER, COVER + 0.4, t));
     const q = Math.floor(t * 30);
-    const amp = t < OWL2 ? 1.5 + 1.5 * smooth(L[0].said, FIZZLE, t) : 0.6;
+    const amp = blood ? 0.4 : 1.5 + 1.5 * smooth(L[0].said, SWELL, t);
     const sh = { x: (hash(q) - 0.5) * 2 * amp, y: (hash(q + 3) - 0.5) * 2 * amp };
+    const tint = blood ? '255,70,50' : '150,255,90';
     o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
     const stageNow = stageCanvas(t, { owl: false });
     const bgZ = S * 2.1;
-    const fc = { x: CENTRE.x - 10, y: CENTRE.y - 34 };
+    const fc = blood ? { x: CENTRE.x - 10, y: CENTRE.y - 26 } : { x: CENTRE.x - 10, y: CENTRE.y - 34 };
     soft(null, 13, () => {
         o.save();
         o.translate(W * 0.62 + sh.x * 0.4 - k * 10, H * 0.5 + sh.y * 0.4); o.scale(bgZ, bgZ); o.translate(-fc.x, -fc.y);
-        o.drawImage(SKY.night, -60, -20, MW + 120, HORIZON + 21);
+        o.drawImage(blood ? SKY.blood : SKY.night, -60, -20, MW + 120, HORIZON + 21);
         o.drawImage(stageNow, 0, 0);
         o.restore();
     });
     const fire = { x: W * 0.62 + (CENTRE.x - fc.x) * bgZ - k * 10, y: H * 0.5 + (CENTRE.y - 20 - fc.y) * bgZ };
     const g = o.createRadialGradient(fire.x, fire.y, 40, fire.x, fire.y, 1300);
-    g.addColorStop(0, `rgba(150,255,90,${(0.08 + 0.22 * level) + 0.1 * roar})`); g.addColorStop(1, 'rgba(150,255,90,0)');
+    g.addColorStop(0, `rgba(${tint},${blood ? 0.16 : (0.08 + 0.22 * level) + 0.1 * roar})`); g.addColorStop(1, `rgba(${tint},0)`);
     o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
     soft(null, 4, () => {
         for (let i = 0; i < 26; i++) {
@@ -1049,15 +994,17 @@ function shotB(t) {
             const x = W * (0.3 + hash(i + 602) * 0.8) - age * 120 * (0.5 + hash(i + 603));
             const y = H + 40 - age * (260 + hash(i + 604) * 200);
             const s = 10 + hash(i + 605) * 22;
-            o.fillStyle = `rgba(190,255,120,${0.7 * Math.sin((age / life) * Math.PI) * clamp(level)})`;
+            o.fillStyle = blood ? `rgba(255,120,80,${0.5 * Math.sin((age / life) * Math.PI)})` : `rgba(190,255,120,${0.7 * Math.sin((age / life) * Math.PI)})`;
             o.fillRect(x, y, s, s);
         }
     });
+    if (blood) closeWorms(t);
     o.save();
     o.translate(W / 2 + sh.x, H / 2 + sh.y); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
     const perch = { x: 600 + k * 5, y: 905 };
     const P = OWL_S / 2;
-    const bark = ['outline', 'barkDark', 'bark', 'barkLight'].map((key) => hex(LIT_PALETTE.night[key]));
+    const lighting = blood ? 'blood' : 'night';
+    const bark = ['outline', 'barkDark', 'bark', 'barkLight'].map((key) => hex(LIT_PALETTE[lighting][key]));
     for (let x = -340; x < perch.x + 560; x += P) {
         const thin = clamp((x + 340) / (perch.x + 900));
         const th = Math.max(3, Math.round(7 - thin * 4));
@@ -1067,13 +1014,8 @@ function shotB(t) {
         o.fillStyle = bark[2]; o.fillRect(x, yy, P, Math.ceil(th / 2) * P);
         if (Math.round(x / P) % 5 < 2) { o.fillStyle = bark[3]; o.fillRect(x, yy, P, P); }
     }
-    const f = owlFrameClose(t);
-    const shiver = t >= COVER && t < OWL2 ? Math.round((hash(Math.floor(t * 14)) - 0.5) * 2) * P : 0;
-    o.drawImage(bakeF(glow(f), 'night'), perch.x - f.anchor.x * OWL_S + shiver, perch.y - f.anchor.y * OWL_S, f.w * OWL_S, f.h * OWL_S);
-    bookInWings(t, perch);
-    const rg = o.createLinearGradient(perch.x - 80, 0, perch.x + 360, 0);
-    rg.addColorStop(0, 'rgba(120,255,90,0)'); rg.addColorStop(1, `rgba(120,255,90,${0.05 + 0.15 * level + 0.08 * roar})`);
-    o.globalCompositeOperation = 'lighter'; o.fillStyle = rg; o.fillRect(perch.x - 330, perch.y - 640, 700, 720); o.globalCompositeOperation = 'source-over';
+    const st = owlClose(t);
+    drawOwl(st.f, perch.x + st.dx * P, perch.y, { lighting, ruffle: st.ruffle, sx: st.sx, sy: st.sy, rim: tint, rimA: blood ? 0.16 : 0.06 + 0.16 * level + 0.08 * roar });
     o.restore();
     const v = o.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 1.05);
     v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.72)');
@@ -1090,25 +1032,18 @@ function wide(t) {
     soft(blur, 6, () => sky(cam, t));
     const toScreen = layer(cam, 1, () => o.drawImage(stageCanvas(t), 0, 0));
     const fire = toScreen({ x: CENTRE.x, y: CENTRE.y - 26 });
-    const level = fireLevel(t);
     const roar = 0.5 + 0.5 * Math.sin(t * 9) * Math.sin(t * 3.7);
     if (t < BLAST) {
         const flare = t > STAGE_UP && t < STAGE_UP + 0.6 ? 0.25 * (1 - (t - STAGE_UP) / 0.6) : 0;
+        const swell = 0.25 * smooth(SWELL, BLAST, t) * (0.6 + 0.4 * Math.sin(t * 40));
         const g = o.createRadialGradient(fire.x, fire.y, 30, fire.x, fire.y, 1100);
-        g.addColorStop(0, `rgba(150,255,90,${(0.22 + 0.07 * roar + flare) * clamp(0.2 + 0.8 * level)})`); g.addColorStop(1, 'rgba(150,255,90,0)');
+        g.addColorStop(0, `rgba(150,255,90,${0.22 + 0.07 * roar + flare + swell})`); g.addColorStop(1, 'rgba(150,255,90,0)');
         o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
-        // the dark closes in while the fire is low
-        const dim = clamp(1 - level) * 0.8;
-        if (dim > 0) {
-            const d = o.createRadialGradient(fire.x, fire.y + 60, 120, fire.x, fire.y + 60, 1300);
-            d.addColorStop(0, 'rgba(0,0,0,0)'); d.addColorStop(1, `rgba(0,0,6,${0.55 * dim})`);
-            o.fillStyle = d; o.fillRect(0, 0, W, H);
-        }
     } else {
         const k = bloodAt(t);
         const c = toScreen({ x: CENTRE.x, y: CENTRE.y - 40 });
         const g = o.createRadialGradient(c.x, c.y, 30, c.x, c.y, 900);
-        g.addColorStop(0, `rgba(255,60,40,${(0.22 + 0.06 * Math.sin((t - SUMMON) * 13)) * k})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+        g.addColorStop(0, `rgba(255,60,40,${(0.16 + 0.04 * Math.sin(t * 3)) * k})`); g.addColorStop(1, 'rgba(0,0,0,0)');
         o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
     }
     const origin = toScreen({ x: CENTRE.x, y: CENTRE.y - 26 });
@@ -1120,33 +1055,11 @@ function wide(t) {
         g.addColorStop(1, 'rgba(0,0,0,0)');
         o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
     }
+    mushroom(t, toScreen, S * cam.z);
     shockwave(t, toScreen({ x: CENTRE.x, y: CENTRE.y }), S * cam.z);
     drawDebris(t, origin, false);
     haze(t, toScreen, S * cam.z / 6);
     drawMotes(t, cam);
-    // the shot at the duck: a tracer from a gun off the bottom right, the muzzle flash at the frame's edge
-    if (t > SHOT - 0.04 && t < SHOT + 0.08) {
-        const d = toScreen({ x: HIT.x, y: HIT.y - 2 }), g0 = { x: W - 60, y: H + 40 };
-        for (let k = 0; k < 30; k++) {
-            const q = k / 30;
-            o.fillStyle = k > 25 ? '#fff6c8' : 'rgba(255,214,96,0.9)';
-            o.fillRect(Math.round((g0.x + (d.x - g0.x) * q) / 8) * 8 - 6, Math.round((g0.y + (d.y - g0.y) * q) / 8) * 8 - 6, 20, 20);
-        }
-        o.fillStyle = '#fff6c8'; o.fillRect(W - 220, H - 120, 220, 40); o.fillRect(W - 130, H - 210, 40, 220);
-    }
-    if (t >= SHOT && t < SHOT + 0.35) {
-        // a starburst on the hit, in the Fart Time greens
-        const d = toScreen({ x: HIT.x, y: HIT.y - 2 }), k = (t - SHOT) / 0.35, R = 90 + 70 * Math.sin(k * Math.PI);
-        for (let i = 0; i < 12; i++) {
-            const a = (i / 12) * Math.PI * 2 + 0.26;
-            for (let s = 0; s < 4; s++) {
-                const dd = R * (0.55 + s * 0.17) + (i % 2) * 20;
-                o.fillStyle = s === 0 ? '#ffffff' : s < 3 ? hex(PALETTE.fartLight) : hex(PALETTE.fartDark);
-                const q = (4 - s) * 6;
-                o.fillRect(Math.round((d.x + Math.cos(a) * dd) / 6) * 6 - q / 2, Math.round((d.y + Math.sin(a) * dd) / 6) * 6 - q / 2, q, q);
-            }
-        }
-    }
     foreground(t, cam);
     soft(null, 3, () => { drawDebris(t, origin, true); drawLens(t, origin); });
     const v = o.createRadialGradient(W / 2, H * 0.45, H * 0.32, W / 2, H * 0.5, H * 1.1);
@@ -1156,53 +1069,43 @@ function wide(t) {
     if (t >= STAGE_UP && t < STAGE_UP + 0.12) { o.fillStyle = `rgba(200,255,170,${0.35 * (1 - (t - STAGE_UP) / 0.12)})`; o.fillRect(0, 0, W, H); }
 }
 
-const closeUp = (t) => (t >= OWL1 && t < FIZZLE) || (t >= OWL2 && t < CROWD) || (t >= OWL3 && t < STRAIN);
+const closeUp = (t) => (t >= OWL1 && t < SWELL) || (t >= OWL4 && t < WALK);
 function draw(t) {
     if (closeUp(t)) shotB(t);
     else wide(t);
-    for (const c of [OWL1, FIZZLE, OWL2, CROWD, OWL3, STRAIN]) if (t >= c && t < c + 0.1) { o.fillStyle = `rgba(220,255,210,${0.35 * (1 - (t - c) / 0.1)})`; o.fillRect(0, 0, W, H); }
-    const black = 1 - smooth(0, 1.0, t);
+    for (const c of [OWL1, SWELL, OWL4, WALK]) if (t >= c && t < c + 0.1) { o.fillStyle = `rgba(${c >= OWL4 ? '255,220,210' : '220,255,210'},${0.3 * (1 - (t - c) / 0.1)})`; o.fillRect(0, 0, W, H); }
+    const black = 1 - smooth(0, 1.0, t) + smooth(DURATION - 1.0, DURATION, t);
     if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
 }
 
-// Sound cues (sound.mjs). Scene 3's `night` plays full (the scene is ready), dies away as the fire sinks, comes back
-// with the farts and is cut by the blast; scene 4's `blood` after it; from SUMMON franken-rise's own cues.
+// Sound cues (sound.mjs). Scene 3's `night` plays full and is cut by the blast; scene 4's `blood` rises after it.
 const panX = (x) => clamp((x - 160) / 160, -1, 1) * 0.7;
 window.SOUND = [
-    { music: 'night', from: 0, to: FIZZLE + 2.2, intensity: [[0, 1], [FIZZLE, 1], [FIZZLE + 2, 0.1]], fadeIn: 1.2, fadeOut: 2.0 },
-    { music: 'night', from: STRAIN + 0.6, to: BLAST, intensity: [[STRAIN, 0.3], [DUCK_OUT, 1]], fadeIn: 1.5, fadeOut: 0.05 },
-    { music: 'blood', from: BLAST + 2.2, to: SUMMON, intensity: [[BLAST + 2.2, 0.15], [BLOOD[1], 0.3]], fadeIn: 3, fadeOut: 0.5 },
-    { music: 'rise', from: SUMMON, to: DURATION, intensity: 1, fadeIn: 0.6, fadeOut: 0.3 },
+    { music: 'night', from: 0, to: BLAST, intensity: 1, fadeIn: 1.2, fadeOut: 0.05 },
+    { music: 'blood', from: BLAST + 2.2, to: DURATION, intensity: [[BLAST + 2.2, 0.15], [BLOOD[1], 0.35], [WALK, 0.5]], fadeIn: 3, fadeOut: 1.2 },
     ...AROUND.flatMap((_, i) => CASTS[i].map((c) => ({ sfx: 'bonfire.click', at: c + 0.36, pan: panX(CENTRE.x + AROUND[i][0] * 0.3), vol: 0.45 }))),
+    ...[0.9, 2.6].map((at, k) => ({ sfx: 'bat.squeak', at, pan: k ? 0.5 : -0.4, vol: 0.5, variant: k })),
     { sfx: 'bonfire.stage', at: STAGE_UP - 0.05 },
-    { sfx: 'owl.hoot', at: L[0].from - 0.95, pan: -0.3 },
-    ...L.map((l) => ({ speak: 'owl', text: l.text, at: l.from, pan: -0.3 })),
-    ...FLIPS.map((at, k) => ({ sfx: 'bush.rustle', at, pitch: 9, vol: 0.35, variant: k })),
-    { sfx: 'owl.hoot', at: L[2].from - 0.95, pan: -0.3, vol: 0.7 },
-    // the chorus: the crowd's farts (the elephant's, pitched up), the herd's
-    ...AROUND.map((_, i) => ({ sfx: 'elephant.fart', at: FARTS[i], pitch: 4 + (i * 1.7) % 6, vol: 0.55, pan: panX(CENTRE.x + AROUND[i][0]) })),
-    ...CLOUDS.filter((c) => c.elephant).map((c, k) => ({ sfx: 'elephant.fart', at: c.at, pitch: -1 - k, vol: 0.9, pan: -0.4 + k * 0.4 })),
-    ...CLOUDS.map((c, k) => ({ sfx: 'pumpkin.enchant', at: c.funnel + 1.6, vol: 0.5, pan: 0, variant: k })),
-    { sfx: 'bonfire.stage', at: CLOUDS.reduce((m, c) => Math.max(m, c.funnel), 0) + 1.7 },
-    { sfx: 'bush.rustle', at: DUCK_OUT - 0.5, pan: 0.7 },
-    { sfx: 'bush.rustle', at: DUCK_OUT - 0.05, pan: 0.7, variant: 1 },
-    { sfx: 'duck.quack', at: DUCK_OUT + 0.1, pan: 0.6 },
-    ...DUCK_PUFFS.filter((_, i) => i % 3 === 0).map((at) => ({ sfx: 'elephant.fart', at, pitch: 14, vol: 0.25, pan: panX(duckPath(at).x) })),
-    { sfx: 'duck.quack', at: DUCK_OUT + 1.3, pan: 0.2, variant: 2 },
-    { sfx: 'shot.pistol', at: SHOT - 0.02, pan: 0.6 },
-    { sfx: 'flyer.hit', at: SHOT },
-    { sfx: 'elephant.fart', at: SHOT + 0.05, pitch: 8, vol: 0.6 },
-    { sfx: 'flyer.fall', at: SHOT + 0.1 },
+    { sfx: 'owl.hoot', at: L[0].from - 0.85, pan: -0.3 },
+    { speak: 'owl', text: L[0].text, at: L[0].from, pan: -0.3 },
+    { sfx: 'bonfire.stage', at: SWELL - 0.1, variant: 1 },
+    { sfx: 'bonfire.stage', at: SWELL + 0.45, variant: 2, pitch: 3 },
     { sfx: 'bonfire.explode', at: BLAST },
     ...[0.35, 0.8, 1.3, 1.9, 2.4].map((d, k) => ({ sfx: 'bonfire.click', at: BURN + d, pan: (k % 2 ? 0.4 : -0.4), vol: 0.35, pitch: -2 })),
-    ...[0, 1, 2].map((k) => ({ sfx: 'circle.stage', at: CIRCLE[0] + k * 0.55, variant: k, vol: 0.7 })),
-    // franken-rise's opening cues
-    { sfx: 'finale.wake', at: SUMMON },
-    { sfx: 'owl.hoot', at: SUMMON + 0.85, pan: -0.6 },
+    ...[0.5, 0.8].map((d, k) => ({ sfx: 'bat.squeak', at: BLAST + d, pan: k ? 0.6 : -0.6, vol: 0.45, pitch: 3, variant: k + 2 })),
+    ...WORMS.map((w, k) => ({ sfx: 'worm.squelch', at: w.at + 0.05, pan: panX(w.x), vol: 0.6, variant: k })),
+    // the creeps: a ruffle of feathers, the quiet line, the shake-off and the brave one
+    { sfx: 'bush.rustle', at: SHUDDER[0] + 0.05, pitch: 7, vol: 0.5, pan: -0.3 },
+    { sfx: 'worm.squelch', at: LOOK + 0.1, pan: 0.6, vol: 0.5, pitch: -2, variant: 1 },
+    { speak: 'owl', text: L[1].text, at: L[1].from, pan: -0.3, vol: 0.6, pitch: -2 },
+    { sfx: 'bush.rustle', at: SHAKE_OFF[0], pitch: 10, vol: 0.55, pan: -0.3, variant: 1 },
+    { sfx: 'owl.hoot', at: SHAKE_OFF[1] - 0.2, pan: -0.3, vol: 0.8 },
+    { speak: 'owl', text: L[2].text, at: L[2].from, pan: -0.3, pitch: 1 },
+    ...Array.from({ length: 10 }, (_, k) => ({ sfx: 'walk.step', at: WALK + 0.2 + k * 0.24, vol: 0.35, pan: (k % 2 ? 0.3 : -0.3), variant: k })),
 ];
 window.DURATION = DURATION;
 window.draw = (t) => { draw(t); return true; };
-window.T = { OWL1, FIZZLE, OWL2, STARE, CROWD, OWL3, STRAIN, DUCK_OUT, SHOT, DROP, BLAST, MOON_RED, SETTLE, CIRCLE, SUMMON, DURATION, L: L.map((l) => [l.from, l.said, l.to]) };
+window.T = { STAGE_UP, OWL1, SWELL, BLAST, MOON_RED, BLOOD, OWL4, SHUDDER, SHAKE_OFF, WALK, DURATION, L: L.map((l) => [l.from, l.said, l.to]) };
 draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
 document.title = 'ready';
 </script>
