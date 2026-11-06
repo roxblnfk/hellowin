@@ -57,9 +57,10 @@ const HOOT = 14.3;
 const BUBBLES = [
     { who: 'owl', from: 15.25, to: 20.9, lines: ['Валера, настало твоё время.', 'У нас проблема.'] },
     { who: 'owl', from: 21.2, to: 25.2, lines: ['Там это… Франкен.'] },
-    { who: 'valera', from: 25.5, to: 29.4, lines: ['Ни слова больше!'] },
+    { who: 'valera', from: 25.5, to: 29.0, lines: ['Ни слова больше!'] },
     { who: 'valera', from: 36.0, to: 42.0, lines: ['Она ещё не готова,', 'но с чудовищем справится.'] },
     { who: 'valera', from: 42.3, to: 46.5, lines: ['Ты знаешь, что делать.'] },
+    { who: 'valera', from: 29.3, to: 33.4, lines: ['Компилирую…'] },          // while the rapier charges
 ];
 const textOf = (b) => b.lines.join(' ');
 const PLANS = BUBBLES.map((b) => speechPlan(textOf(b)));
@@ -187,7 +188,7 @@ const GROUND = (() => {
 const TOMB = { w: 8, h: 11, rows: ['..OOOO..', '.OlllsO.', 'OllsssdO', 'OlsOOsdO', 'OlOOOOdO', 'OlsOOsdO', 'OlsOOsdO', 'OlssssdO', 'OlssssdO', 'OOOOOOOO', 'OmmmmmmO'], legend: { '.': null, O: 'outline', l: 'stoneLight', s: 'stone', d: 'stoneDark', m: 'soilDark' }, anchor: { x: 4, y: 10 } };
 const PROPS = [];
 for (let i = 0; i < 70; i++) {
-    const y = HZ + 8 + Math.floor(hash(i + 50) * (MH - HZ - 6));
+    const y = HZ + 22 + Math.floor(hash(i + 50) * (MH - HZ - 20));
     const x = hash(i + 90) * (GW - 200);
     const r = hash(i + 7);
     PROPS.push({ x, y, kind: r < 0.22 ? 'pumpkin' : r < 0.42 ? 'tomb' : r < 0.6 ? 'stone' : 'weed', seed: i, size: hash(i + 11) < 0.5 ? 's' : 'm' });
@@ -288,14 +289,11 @@ function motes(t, pan, alpha, cold = false) {
 
 function shotA(t) {
     const ms = t * 1000, x = X(t);
-    const k = smooth(PUSH, CUT_B - 0.15, t);
-    const dive = k ** 2.4;
-    const z = Math.exp(Math.log(45) * dive);
+    // the camera does not dive: the owl flies off into the far window alone
+    const dive = 0;
     const bob = 6 * Math.sin(t * 0.8);
-    // where the window is on screen without the dive, and where the dive centres it
     const wp = { x: (WINDOW.x - x * HOUSE_F) * S, y: (WINDOW.y) * S + bob * 0.3 };
-    const c = { x: lerp(wp.x, W / 2, smooth(PUSH, CUT_B - 0.6, t)), y: lerp(wp.y, H * 0.48, smooth(PUSH, CUT_B - 0.6, t)) };
-    const far = (fn) => { o.save(); o.translate(c.x, c.y); o.scale(z, z); o.translate(-wp.x, -wp.y); fn(); o.restore(); };
+    const far = (fn) => fn();
     o.fillStyle = hex(PALETTE.bloodTop); o.fillRect(0, 0, W, H);
     far(() => {
         o.drawImage(SKY, -x * 0.05 * S - 40 * S, bob * 0.2, (MW + 80) * S, (HZ + 1) * S);
@@ -353,11 +351,15 @@ function shotA(t) {
     o.save(); o.globalAlpha = fade;
     FLY.forEach((f, i) => { if (!f.near) drawFlyer(f, i, t); });
     o.restore();
-    // the owl, diving into the window
+    // the owl flies away into the window, shrinking with the distance until it is gone in it
     const p = owlA(t);
-    const ox = lerp(p.x, c.x, smooth(PUSH + 0.3, CUT_B - 0.5, t)), oy = lerp(p.y, c.y, smooth(PUSH + 0.3, CUT_B - 0.5, t));
-    const os = OWL_A * (1 - 0.95 * smooth(PUSH + 0.2, CUT_B - 0.4, t));
-    if (t < CUT_B - 0.45) {
+    const k = clamp((t - (PUSH - 1.2)) / (CUT_B - 0.8 - (PUSH - 1.2)));
+    const e = 1 - (1 - k) ** 1.6;
+    const ox = lerp(p.x, wp.x, e), oy = lerp(p.y, wp.y, e);
+    const os = OWL_A / (1 + 20 * k * k);
+    const gone = CUT_B - 0.8;
+    if (t >= gone) wash(wp.x, wp.y, 120 + 400 * (t - gone), `rgba(150,215,255,${0.6 * clamp((t - gone) / 0.3)})`);
+    if (t < gone) {
         const def = OWL_FLIGHT.fly[frameAt(ms, 4, 95)];
         put(litOf(glowing(def), 'night'), def, ox, oy + def.anchor.y * os * 0.5, os);
     }
@@ -367,7 +369,7 @@ function shotA(t) {
     motes(t, x * S * 0.6, 0.7 * fade);
     vignette(0.65);
     // the window's light takes the whole screen
-    const flash = smooth(CUT_B - 1.0, CUT_B, t);
+    const flash = smooth(CUT_B - 0.45, CUT_B, t);
     if (flash > 0) { o.fillStyle = `rgba(150,215,255,${flash})`; o.fillRect(0, 0, W, H); }
 }
 
@@ -531,11 +533,11 @@ function drawGrafana(t) {
     panel(71, 12, 67, 32, 'кружки', '#fade2a', 2, t, '', 2.3);
     panel(2, 46, 136, 32, 'зомби-воркеры', '#b877d9', 3, t, '', 0.6);
 }
-const BENCH = [18, 27, 39, 54, 71];
+const BENCH = [18, 27, 39, 54, 71];          // v0.5 … v0.9: the rapier is 0.9
 function drawBench(t) {
     bx.setTransform(2, 0, 0, 2, 0, 0);
     bx.fillStyle = '#0d1117'; bx.fillRect(0, 0, CW, CH);
-    txt(bx, 'rapira · bench', '#58c4dc', 8, 3, 1);
+    txt(bx, 'rapira v0.9 · bench', '#58c4dc', 8, 3, 1);
     txt(bx, 'k req/s', '#6e7681', 7, CW - 34, 2, false);
     bx.fillStyle = '#21262d'; bx.fillRect(3, 12, CW - 6, 1);
     for (let k = 1; k <= 3; k++) { bx.fillStyle = '#161b22'; bx.fillRect(3, 70 - k * 14, CW - 6, 1); }
@@ -550,7 +552,7 @@ function drawBench(t) {
         bx.fillStyle = last ? '#7ee0ff' : '#39a9d6'; bx.fillRect(x, 70 - h, 16, 2);
         bx.fillStyle = last ? '#3fb6e0' : '#1f7fa8'; bx.fillRect(x + 2, 72 - h, 12, h - 2);
         txt(bx, String(val), last ? '#d6f6ff' : '#9fd8ee', 7, x + 1, 60 - h);
-        txt(bx, `v0.${i + 1}`, '#6e7681', 7, x - 1, 71, false);
+        txt(bx, `v0.${i + 5}`, last ? '#9fd8ee' : '#6e7681', 7, x - 1, 71, false);
     });
     if (Math.floor(t * 3) % 2) { bx.fillStyle = '#7ee0ff'; bx.fillRect(CW - 8, CH - 9, 4, 6); }
 }
@@ -646,7 +648,7 @@ function poseAt(t) {
     const turn = smooth(TURN[0], TURN[1], t) - smooth(SIT[0], SIT[0] + 0.5, t);
     const offer = smooth(TURN[0] + 0.3, TURN[1] + 0.2, t) - smooth(TAKE + 0.1, SIT[0] + 0.3, t);
     let bob = 0;
-    for (const i of [2, 3, 4]) { const ms = speaking(i, t); if (ms !== null && beakAt(PLANS[i], ms) === 2) bob = 0.6; }
+    for (const i of [2, 3, 4, 5]) { const ms = speaking(i, t); if (ms !== null && beakAt(PLANS[i], ms) === 2) bob = 0.6; }
     const typing = arms < 0.05;
     return { rise, arms, turn, offer, bob, liftL: typing && pressed(t, -1) ? 1 : 0, liftR: typing && pressed(t, 1) ? 1 : 0 };
 }
@@ -1016,6 +1018,7 @@ function shotB(t) {
     const vSide = toScreen(cam, 1.1, { x: W / 2 - 13 * VP, y: hy + 2 * VP });
     bubble(3, t, vSide, (bw, bh) => ({ bx: 60, by: 330 }));
     bubble(4, t, vSide, (bw, bh) => ({ bx: 60, by: 330 }));
+    bubble(5, t, vSide, (bw, bh) => ({ bx: 60, by: 330 }));
     // in from the window's light
     const flash = 1 - smooth(CUT_B, CUT_B + 0.45, t);
     if (flash > 0) { o.fillStyle = `rgba(150,215,255,${flash})`; o.fillRect(0, 0, W, H); }
@@ -1029,10 +1032,9 @@ function draw(t) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Sound cues (sound.mjs): the game's own synth. Valera's voice is the owl's murmur seven semitones down and level:
+// Sound cues (sound.mjs): the game's own synth. Valera's voice is sound.mjs's own low male voice (speak: 'valera') on
 // the same syllables as the typing in his bubbles, so a real voice can be laid over them.
-const VALERA_PITCH = -7;
-const valeraVoice = (i) => PLANS[i].syllables.map((s) => ({ sfx: 'owl.babble', at: BUBBLES[i].from + s.at / 1000, variant: s.variant, pitch: VALERA_PITCH, vol: 1.5, pan: -0.1 }));
+const valeraVoice = (i) => [{ speak: 'valera', text: textOf(BUBBLES[i]), at: BUBBLES[i].from, pan: -0.1, vol: 1.3 }];
 const flyerCues = FLY.flatMap((f, i) => {
     const start = f.x0 ?? (f.dir < 0 ? W + 260 : -260);
     const tc = f.t0 + (W / 2 - start) / (f.dir * f.v);
