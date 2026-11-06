@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { launch, sleep } from './cdp.mjs';
+import { launch, sleep, SCRATCH } from './cdp.mjs';
+import { createServer } from 'node:net';
 import { mix, writeWav } from './sound.mjs';
 
 // The finished video is named by its place in the evening. Numbers already used in the edit never change: a scene
@@ -21,6 +22,8 @@ const NUMBER = {
     'franken-rise': '06',
     'roadrunner-alive': '07',
     'valera': '08',
+    'franken-down': '09',
+    'epilogue': '10',
 };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -35,9 +38,9 @@ const audioOnly = args.includes('--audio');
 const run = (cmd, a) => new Promise((ok, no) => spawn(cmd, a, { stdio: 'inherit' }).on('close', (c) => (c ? no(new Error(`${cmd} exited ${c}`)) : ok())));
 for (const d of ['_silent', '_audio', '_stills']) mkdirSync(path.join(OUT, d), { recursive: true });
 
-// One render at a time: a second one would wipe the shared browser profile, attach to the running browser and close it.
-// The lock file is taken atomically; a later run waits for it, and takes over one left by a process that died.
-const LOCK = path.join(OUT, '_silent', '.render.lock');
+// Renders of different scenes run side by side: each gets its own free ports and its own browser profile. Two renders
+// of one scene would write the same files, so a lock file per scene queues them; one left by a dead process is taken over.
+const LOCK = path.join(OUT, '_silent', `.render-${scene}.lock`);
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 for (let said = false; ; await sleep(2000)) {
     try { writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); break; } catch {}
@@ -48,9 +51,12 @@ for (let said = false; ; await sleep(2000)) {
 const unlock = () => { try { if (readFileSync(LOCK, 'utf8') === String(process.pid)) rmSync(LOCK); } catch {} };
 process.on('exit', unlock);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
-const server = spawn('node', [path.join(HERE, 'serve.js'), '8899'], { stdio: 'ignore' });
+const freePort = () => new Promise((ok) => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(port)); }); });
+const HTTP = await freePort(), CDP = await freePort();
+const server = spawn('node', [path.join(HERE, 'serve.js'), String(HTTP)], { stdio: 'ignore' });
 await sleep(700);
-const B = await launch('cutvid', 9451, { w: 1920, h: 1080, fresh: true });
+const B = await launch(`cutvid-${process.pid}`, CDP, { w: 1920, h: 1080, fresh: true });
+process.on('exit', () => { try { rmSync(path.join(SCRATCH, `edge-cutvid-${process.pid}`), { recursive: true, force: true }); } catch {} });
 const shot = async () => Buffer.from((await B.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true, clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } })).result.data, 'base64');
 const errs = () => B.logs.filter((l) => /error|exception/i.test(l));
 
@@ -71,7 +77,7 @@ async function renderVideo(duration) {
 }
 
 try {
-    await B.go(`http://localhost:8899/scratch/${scene}.html`);
+    await B.go(`http://localhost:${HTTP}/scratch/${scene}.html`);
     for (let i = 0; i < 50 && (await B.eval('document.title')) !== 'ready'; i++) await sleep(200);
     if (errs().length) throw new Error(errs().join('\n'));
     if (stills) {
