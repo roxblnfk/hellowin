@@ -1,22 +1,33 @@
 // node video.mjs <scene> [--fps 60] [--stills 1,2.5,...] [--audio]
-//   default   — frames → ../_silent/<scene>.mp4, sound (window.SOUND) → ../_audio/<scene>.wav, both → ../<NN>-<scene>.mp4 (NN: place in ORDER)
+//   default   — frames → ../_silent/<scene>.mp4, sound (window.SOUND) → ../_audio/<scene>.wav, both → ../<NN>-<scene>.mp4 (NN: the scene's NUMBER)
 //   --audio   — only the sound, muxed onto the existing silent video
 //   --stills  — single frames → ../_stills/<scene>-<t>.png
 import { spawn } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { mix, writeWav } from './sound.mjs';
 
-// Story order: the finished video is named by its place in the evening, so a folder listing reads as the edit.
-const ORDER = ['bar-intro', 'magic-place', 'candles', 'nightfall', 'green-blast', 'franken-rise', 'roadrunner-alive'];
+// The finished video is named by its place in the evening. Numbers already used in the edit never change: a scene
+// added between two others takes a sub-number (05.1, 05.2), one added at the end takes the next number.
+const NUMBER = {
+    'bar-intro': '01',
+    'magic-place': '02',
+    'candles': '03',
+    'nightfall': '04',
+    'green-blast': '05',
+    'circle': '05.1',
+    'franken-rise': '06',
+    'roadrunner-alive': '07',
+    'valera': '08',
+};
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '..');
 const args = process.argv.slice(2);
 const scene = args[0];
-const final = `${String(ORDER.indexOf(scene) + 1 || 99).padStart(2, '0')}-${scene}.mp4`;
+const final = `${NUMBER[scene] ?? '99'}-${scene}.mp4`;
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
 const fps = Number(opt('--fps', 60));
 const stills = opt('--stills', null);
@@ -24,6 +35,19 @@ const audioOnly = args.includes('--audio');
 const run = (cmd, a) => new Promise((ok, no) => spawn(cmd, a, { stdio: 'inherit' }).on('close', (c) => (c ? no(new Error(`${cmd} exited ${c}`)) : ok())));
 for (const d of ['_silent', '_audio', '_stills']) mkdirSync(path.join(OUT, d), { recursive: true });
 
+// One render at a time: a second one would wipe the shared browser profile, attach to the running browser and close it.
+// The lock file is taken atomically; a later run waits for it, and takes over one left by a process that died.
+const LOCK = path.join(OUT, '_silent', '.render.lock');
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+for (let said = false; ; await sleep(2000)) {
+    try { writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); break; } catch {}
+    const owner = Number(readFileSync(LOCK, 'utf8'));
+    if (!alive(owner)) { rmSync(LOCK, { force: true }); continue; }
+    if (!said) { console.log(`waiting for the render of pid ${owner}`); said = true; }
+}
+const unlock = () => { try { if (readFileSync(LOCK, 'utf8') === String(process.pid)) rmSync(LOCK); } catch {} };
+process.on('exit', unlock);
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 const server = spawn('node', [path.join(HERE, 'serve.js'), '8899'], { stdio: 'ignore' });
 await sleep(700);
 const B = await launch('cutvid', 9451, { w: 1920, h: 1080, fresh: true });

@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// Valera: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+// Finale step 5 of the game, where the owl flew off to: over the cursed world under the blood moon, past bats, crows
+// and zombie workers clawing out of the ground, to a far window in cold blue light. Inside, from behind, Valera — a dark
+// silhouette in a backwards cap — types on a split keyboard before two monitors (the cursed world's Grafana, Rapira's
+// benchmarks). The owl comes in through the window's vent pane and tells him; he stands, blue arcs run over his outline
+// as the rapier charges somewhere in the room behind him, and he hands it over half turned. The owl flies off with it.
+// Valera's face is never shown: he is only ever a silhouette.
+import { PALETTE } from '/js/pixel/palette.js';
+import { DECOR, pumpkinLayers, seedOf } from '/js/pixel/sprites.js';
+import { NIGHT, bakeLit, halo, paintSky, relightCanvas } from '/js/pixel/night.js';
+import { OWL, OWL_FLIGHT, armed, glowing } from '/js/pixel/owl.js';
+import { FLYERS } from '/js/pixel/flyers.js';
+import { wanderArt } from '/js/pixel/deaths.js';
+import { BAR_MUG, bakeBar } from '/js/pixel/bar.js';
+import { speechPlan, beakAt, wingAt } from '/js/owl-speech.js';
+
+const W = 1920, H = 1080;
+const OUT = document.getElementById('out').getContext('2d');
+let o = OUT;
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const rgba = (n, a) => `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+const lit = new Map();
+const litOf = (s, l) => { const k = s; if (!lit.has(k)) lit.set(k, new Map()); const m = lit.get(k); if (!m.has(l)) m.set(l, bakeLit(s, l)); return m.get(l); };
+function put(c, def, x, y, s, flip = false) {
+    if (!flip) { o.drawImage(c, Math.round(x - def.anchor.x * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s); return; }
+    o.save(); o.translate(Math.round(x), 0); o.scale(-1, 1);
+    o.drawImage(c, Math.round(-(def.w - def.anchor.x) * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s);
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. PRE and POST are calm handles for the editor's transitions; the fades stay inside them.
+const PRE = 2, POST = 2;
+const PUSH = 7.8;                    // the camera turns to the far window and dives into it
+const CUT_B = 11.0;                  // → the room, behind Valera
+const FORT = 13.0;                   // the vent pane swings open
+const OWL_IN = [13.15, 14.05];       // the owl flies in and lands on the right monitor
+const HOOT = 14.3;
+const BUBBLES = [
+    { who: 'owl', from: 15.25, to: 20.9, lines: ['Валера, настало твоё время.', 'У нас проблема.'] },
+    { who: 'owl', from: 21.2, to: 25.2, lines: ['Там это… Франкен.'] },
+    { who: 'valera', from: 25.5, to: 29.4, lines: ['Ни слова больше!'] },
+    { who: 'valera', from: 36.0, to: 42.0, lines: ['Она ещё не готова,', 'но с чудовищем справится.'] },
+    { who: 'valera', from: 42.3, to: 46.5, lines: ['Ты знаешь, что делать.'] },
+];
+const textOf = (b) => b.lines.join(' ');
+const PLANS = BUBBLES.map((b) => speechPlan(textOf(b)));
+const KEYS_STOP = BUBBLES[0].from + PLANS[0].ms / 1000 + 0.15;   // the typing breaks off after the first line
+const STAND = [27.3, 28.3];          // Valera gets up, back to the camera
+const CHARGE = [28.6, 33.6];         // the rapier charges behind him: arcs over his outline, sparks, the hum
+const CLICK = CHARGE[1];
+const TURN = [34.5, 35.3];           // he turns half round and holds the rapier out
+const TAKE = 46.7;                   // the owl takes it
+const SIT = [47.4, 48.4];            // back down to the keyboard
+const EXIT = [49.0, 49.85];          // the owl flies out through the vent pane…
+const AWAY = [49.85, 52.5];          // …and away into the night
+const DURATION = AWAY[1] + POST;
+
+// Characters typed `ms` into a bubble: each word as the speech reaches it (owl-speech.js syllables).
+function typedOf(i, ms) {
+    const text = textOf(BUBBLES[i]), plan = PLANS[i];
+    const words = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+    const counts = words.map((m) => Math.max(1, Math.min(5, (m[0].match(/[аеёиоуыэюяaeiouy]/giu) ?? []).length || Math.ceil(m[0].length / 3))));
+    if (counts.reduce((a, c) => a + c, 0) !== plan.syllables.length) return Math.floor(text.length * clamp(ms / plan.ms));
+    let n = 0, k = 0;
+    for (let w = 0; w < words.length; w++) {
+        const first = plan.syllables[k], last = plan.syllables[k + counts[w] - 1];
+        k += counts[w];
+        const start = first.at, end = last.at + last.len, m = words[w];
+        if (ms < start) return n;
+        const into = clamp((ms - start) / Math.max(1, end - start));
+        n = m.index + Math.ceil(m[0].length * into);
+        if (into < 1) return n;
+        n = words[w + 1]?.index ?? text.length;
+        if (w === words.length - 1) n = text.length;
+    }
+    return n;
+}
+const speaking = (i, t) => { const ms = (t - BUBBLES[i].from) * 1000; return ms >= 0 && ms <= PLANS[i].ms + 150 ? ms : null; };
+
+// Valera's keys: runs of strokes, left and right half of the split keyboard, the space under a thumb now and then.
+function keyRun(from, to, seed) {
+    const out = [];
+    let t = from + 0.05, n = 0;
+    while (t < to) {
+        const space = hash(seed * 31 + n * 1.91) < 0.13;
+        out.push({ t, side: space ? 0 : hash(seed * 17 + n * 3.71) < 0.5 ? -1 : 1, space, n });
+        n++;
+        t += 0.06 + hash(seed * 7 + n * 7.13) * 0.12;
+        if (hash(seed * 3 + n * 5.37) < 0.07) t += 0.3 + hash(seed + n * 2.2) * 0.45;
+    }
+    return out;
+}
+const KEYS = [...keyRun(CUT_B, KEYS_STOP, 1), ...keyRun(SIT[1] + 0.1, DURATION, 2)];
+const pressed = (t, side) => KEYS.some((k) => t >= k.t && t < k.t + 0.08 && (k.side === side || k.side === 0));
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot A: the flight. The cursed world in the game's art px (6 screen px each), side view as in the game: sky, far
+// hills, a row of dead trees, then the lawn in depth — each row of it scrolls with its own parallax.
+const S = 6, MW = 320, MH = 180, HZ = 74;
+const X = (t) => (t < PUSH ? 42 * t : 42 * PUSH + 42 * (t - PUSH) - (21 * (t - PUSH) ** 2) / (CUT_B - PUSH));
+const rowF = (y) => 0.3 + 0.95 * ((y - HZ) / (MH - HZ));
+
+const SKY = (() => { const [c, x] = canvas(MW + 80, HZ + 1); paintSky(x, MW + 80, HZ + 1, 'blood', { seed: 13 }); return c; })();
+const HILLS = (() => {
+    const w = 900, h = DECOR.hills.h;
+    const [c, x] = canvas(w, h);
+    for (let k = 0; k < w; k += DECOR.hills.w) x.drawImage(bakeLit(DECOR.hills, 'day'), k, 0);
+    return relightCanvas(c, 'blood');
+})();
+const HILLS_FAR = (() => {
+    const [c, x] = canvas(HILLS.width, HILLS.height);
+    x.drawImage(HILLS, 0, 0);
+    x.globalCompositeOperation = 'source-atop'; x.fillStyle = 'rgba(70,14,30,0.75)'; x.fillRect(0, 0, c.width, c.height);
+    return c;
+})();
+// The far house: walls and a pitched roof in the dark, one window in cold blue light.
+const HOUSE = (() => {
+    const rows = [
+        '.........OO........',
+        '.........OO........',
+        '.......OOOOO.......',
+        '......OkkkkkO......',
+        '.....OkkkkkkkO.....',
+        '....OkkkkkkkkkO....',
+        '...OkkkkkkkkkkkO...',
+        '..OkkkkkkkkkkkkkO..',
+        '.OOOOOOOOOOOOOOOOO.',
+        '..OwwwwwwwwwwwwwO..',
+        '..OwwwwOOOOOOwwwO..',
+        '..OwwwwOBbbbOwwwO..',
+        '..OwwwwObbbbOwwwO..',
+        '..OwwwwOOOOOOwwwO..',
+        '..OwwwwOBbbbOwwwO..',
+        '..OwwwwObbbbOwwwO..',
+        '..OwwwwOOOOOOwwwO..',
+        '..OwwwwwwwwwwwwwO..',
+        '..OwwwOOOwwwwwwwO..',
+        '..OwwwOdOwwwwwwwO..',
+        '.OOOOOOOOOOOOOOOOO.',
+    ];
+    return { w: rows[0].length, h: rows.length, rows, legend: { '.': null, O: 'outline', k: 'crowDark', w: 'crow', d: 'barkDark', b: 'eyeBlue', B: 'skyLight' }, anchor: { x: 9, y: rows.length - 1 } };
+})();
+const HOUSE_C = (() => {
+    const day = bakeLit(HOUSE, 'day');
+    const c = relightCanvas(day, 'blood');
+    const x = c.getContext('2d');
+    HOUSE.rows.forEach((r, y) => [...r].forEach((ch, xx) => { if (ch === 'b' || ch === 'B') { x.fillStyle = hex(ch === 'b' ? PALETTE.eyeBlue : PALETTE.skyLight); x.fillRect(xx, y, 1, 1); } }));
+    return c;
+})();
+const HOUSE_F = 0.2;
+const HOUSE_X = X(PUSH) * HOUSE_F + 1330 / S, HOUSE_Y = HZ - 3;
+const WINDOW = { x: HOUSE_X - HOUSE.anchor.x + 10, y: HOUSE_Y - HOUSE.anchor.y + 13 };   // the window's centre, art px
+const TREES = Array.from({ length: 16 }, (_, i) => ({ x: i * 47 + hash(i + 3) * 30, def: DECOR.farTree[i % DECOR.farTree.length] }))
+    .filter((tr) => Math.abs(tr.x - (HOUSE_X / HOUSE_F) * 0.38) > 40);
+
+// The lawn: blood-lit grass with scorched patches, wider than the whole flight.
+const GW = 1300;
+const GROUND = (() => {
+    const [c, x] = canvas(GW, MH - HZ);
+    for (let y = 0; y < MH - HZ; y++) for (let xx = 0; xx < GW; xx++) {
+        const n = hash(xx * 0.37 + y * 13.1);
+        const scorch = Math.sin(xx * 0.021 + Math.sin(y * 0.13) * 2) + Math.sin(xx * 0.057 + y * 0.09) > 1.1;
+        const k = scorch ? (n < 0.3 ? 'ashDark' : n < 0.8 ? 'ash' : 'ashLight') : n < 0.07 ? 'leafLight' : n < 0.25 ? 'leafDark' : 'leaf';
+        x.fillStyle = hex(PALETTE[k]); x.fillRect(xx, y, 1, 1);
+    }
+    return relightCanvas(c, 'blood');
+})();
+const TOMB = { w: 8, h: 11, rows: ['..OOOO..', '.OlllsO.', 'OllsssdO', 'OlsOOsdO', 'OlOOOOdO', 'OlsOOsdO', 'OlsOOsdO', 'OlssssdO', 'OlssssdO', 'OOOOOOOO', 'OmmmmmmO'], legend: { '.': null, O: 'outline', l: 'stoneLight', s: 'stone', d: 'stoneDark', m: 'soilDark' }, anchor: { x: 4, y: 10 } };
+const PROPS = [];
+for (let i = 0; i < 70; i++) {
+    const y = HZ + 8 + Math.floor(hash(i + 50) * (MH - HZ - 6));
+    const x = hash(i + 90) * (GW - 200);
+    const r = hash(i + 7);
+    PROPS.push({ x, y, kind: r < 0.22 ? 'pumpkin' : r < 0.42 ? 'tomb' : r < 0.6 ? 'stone' : 'weed', seed: i, size: hash(i + 11) < 0.5 ? 's' : 'm' });
+}
+// Zombie workers clawing up out of the ground where the camera will be when they rise.
+const ZOMBIES = [[2.7, 1380, 150], [3.4, 1720, 122], [4.1, 1080, 168], [4.8, 1500, 138], [5.5, 1830, 160], [6.1, 1230, 116], [6.8, 1640, 148], [7.4, 1420, 172]]
+    .map(([tr, sx, y]) => ({ tr, y, x: X(tr) * rowF(y) + sx / S }));
+const RISE_FRAME = 0.18;
+function zombieAt(z, t) {
+    if (t < z.tr) return null;
+    const age = t - z.tr, rise = wanderArt().rise;
+    if (age < RISE_FRAME * 5) return { def: rise[Math.floor(age / RISE_FRAME)], x: z.x };
+    const walk = Math.max(0, age - RISE_FRAME * 5 - 0.5);
+    if (walk <= 0) return { def: FLYERS.zombie[1].idle[frameAt(age * 1000, 2, 600)], x: z.x };
+    return { def: FLYERS.zombie[1].fly[frameAt(walk * 1000 + z.tr * 300, 4, 210)], x: z.x - walk * 6, flip: true };
+}
+function pumpkinAt(p, x, y, ms) {
+    const L = pumpkinLayers(11, p.size, seedOf(`pumpkin-${p.seed}`), 'franken');
+    const h = halo(p.size === 'm' ? 14 : 11, 4, 'franken');
+    o.save(); o.globalCompositeOperation = 'lighter'; o.globalAlpha = 0.45; put(litOf(h, 'day'), h, x, y, S); o.restore();
+    const at = (list, per) => list[frameAt(ms + p.seed * 97, list.length, per)];
+    if (L.auraFrames) put(litOf(at(L.auraFrames, 160), 'day'), L, x, y, S);
+    put(litOf(L.layers.back, 'blood'), L, x, y, S);
+    if (L.glowFrames) put(litOf(at(L.glowFrames, 120), 'day'), L, x, y, S);
+    put(litOf(L.layers.body, 'blood'), L, x, y, S);
+    put(litOf(L.layers.rim, 'blood'), L, x, y, S);
+    if (L.layers.stem) put(litOf(L.layers.stem, 'blood'), L, x, y, S);
+    if (L.fireFrames) put(litOf(at(L.fireFrames, 110), 'day'), L, x, y, S);
+}
+
+// The night's flyers in screen space: they cross toward and past the owl, the near ones big and out of focus.
+const FLY = [
+    { k: 'bat', d: 1, s: 5, t0: 0, x0: 1300, y: 200, v: 90, dir: -1 },
+    { k: 'crow', d: 1, s: 5, t0: 0, x0: 1700, y: 120, v: 70, dir: -1 },
+    { k: 'bat', d: 1, s: 4, t0: 0, x0: 400, y: 150, v: 60, dir: -1 },
+    { k: 'bat', d: 2, s: 8, t0: 2.2, y: 250, v: 560, dir: -1 },
+    { k: 'crow', d: 2, s: 9, t0: 2.8, y: 170, v: 470, dir: -1 },
+    { k: 'bat', d: 2, s: 20, t0: 3.5, y: 560, v: 1500, dir: -1, near: true },
+    { k: 'ghost', d: 2, s: 8, t0: 3.9, y: 330, v: 280, dir: -1 },
+    { k: 'bat', d: 1, s: 6, t0: 4.4, y: 110, v: 420, dir: -1 },
+    { k: 'bat', d: 1, s: 6, t0: 4.55, y: 150, v: 440, dir: -1 },
+    { k: 'bat', d: 1, s: 6, t0: 4.7, y: 95, v: 410, dir: -1 },
+    { k: 'witch', d: 2, s: 7, t0: 4.6, y: 110, v: 330, dir: 1 },
+    { k: 'crow', d: 2, s: 22, t0: 5.7, y: 300, v: 1700, dir: -1, near: true },
+    { k: 'crow', d: 2, s: 8, t0: 6.3, y: 230, v: 450, dir: -1 },
+    { k: 'bat', d: 2, s: 8, t0: 6.9, y: 300, v: 600, dir: -1 },
+    { k: 'bat', d: 2, s: 7, t0: 7.05, y: 260, v: 580, dir: -1 },
+];
+const flyX = (f, t) => (f.x0 ?? (f.dir < 0 ? W + 260 : -260)) + f.dir * f.v * (t - f.t0);
+function drawFlyer(f, i, t) {
+    if (t < f.t0) return;
+    const x = flyX(f, t);
+    if (x < -500 || x > W + 500) return;
+    const set = FLYERS[f.k][f.d];
+    const def = set.fly[frameAt(t * 1000 + i * 137, 4, f.k === 'crow' ? 110 : f.k === 'ghost' ? 160 : 75)];
+    const y = f.y + Math.sin(t * (f.k === 'bat' ? 7 : 2.5) + i) * (f.k === 'bat' ? 18 : 10);
+    put(litOf(def, 'blood'), def, x, y, f.s, f.dir < 0);
+}
+
+// The owl in flight, big in screen space.
+const OWL_A = 9;
+function owlA(t) {
+    let x = 760 + 50 * Math.sin(t * 0.55), y = 400 + 34 * Math.sin(t * 1.15);
+    return { x, y };
+}
+
+// Out of focus without canvas filters (slow in the software renderer): paint into a buffer 1/k the size and stretch
+// it back smoothed.
+const softBufs = new Map();
+function soft(k, paint) {
+    if (!softBufs.has(k)) softBufs.set(k, canvas(Math.ceil(W / k), Math.ceil(H / k)));
+    const [c, x] = softBufs.get(k);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height); x.setTransform(1 / k, 0, 0, 1 / k, 0, 0);
+    o = x; paint(); o = OUT;
+    o.save(); o.imageSmoothingEnabled = true; o.drawImage(c, 0, 0, c.width * k, c.height * k); o.restore();
+}
+function vignette(k = 0.6, tint = '8,4,12') {
+    const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.34, W / 2, H * 0.5, H * 1.08);
+    v.addColorStop(0, `rgba(${tint},0)`); v.addColorStop(1, `rgba(${tint},${k})`);
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+}
+function wash(x, y, r, color) {
+    const g = o.createRadialGradient(x, y, 10, x, y, r);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+    o.save(); o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.restore();
+}
+const MOTES = Array.from({ length: 70 }, (_, i) => ({ x: hash(i) * W, ph: hash(i + 3), v: 12 + hash(i + 5) * 30, s: hash(i + 9) < 0.25 ? 10 : 6, d: 0.5 + hash(i + 13), green: hash(i + 17) < 0.35 }));
+function motes(t, pan, alpha, cold = false) {
+    for (const e of MOTES) {
+        const y = H - ((t * e.v * e.d + e.ph * H * 1.3) % (H * 1.3));
+        const x = ((e.x + Math.sin(t * 0.7 + e.ph * 9) * 30 - pan * e.d) % W + W) % W;
+        const a = (0.15 + 0.4 * Math.sin(t * 2.4 + e.ph * 20) ** 2) * alpha;
+        o.fillStyle = cold ? `rgba(170,215,255,${a * 0.6})` : e.green ? `rgba(200,240,90,${a})` : `rgba(255,120,90,${a})`;
+        const s = e.s * e.d;
+        o.fillRect(Math.round(x / 6) * 6, Math.round(y / 6) * 6, s, s);
+    }
+}
+
+function shotA(t) {
+    const ms = t * 1000, x = X(t);
+    const k = smooth(PUSH, CUT_B - 0.15, t);
+    const dive = k ** 2.4;
+    const z = Math.exp(Math.log(45) * dive);
+    const bob = 6 * Math.sin(t * 0.8);
+    // where the window is on screen without the dive, and where the dive centres it
+    const wp = { x: (WINDOW.x - x * HOUSE_F) * S, y: (WINDOW.y) * S + bob * 0.3 };
+    const c = { x: lerp(wp.x, W / 2, smooth(PUSH, CUT_B - 0.6, t)), y: lerp(wp.y, H * 0.48, smooth(PUSH, CUT_B - 0.6, t)) };
+    const far = (fn) => { o.save(); o.translate(c.x, c.y); o.scale(z, z); o.translate(-wp.x, -wp.y); fn(); o.restore(); };
+    o.fillStyle = hex(PALETTE.bloodTop); o.fillRect(0, 0, W, H);
+    far(() => {
+        o.drawImage(SKY, -x * 0.05 * S - 40 * S, bob * 0.2, (MW + 80) * S, (HZ + 1) * S);
+        const moon = { x: 250 - x * 0.03, y: 20 };
+        put(litOf(NIGHT.bloodMoonHalo, 'day'), NIGHT.bloodMoonHalo, moon.x * S, moon.y * S, S);
+        put(litOf(NIGHT.bloodMoon, 'day'), NIGHT.bloodMoon, moon.x * S, moon.y * S, S);
+    });
+    // far hills out of focus, the house sharp on the near ridge
+    const hillsPaint = () => far(() => {
+        o.fillStyle = '#2c0f16'; o.fillRect(-2 * W, HZ * S - 4 * S, 5 * W, 3 * H);
+        o.drawImage(HILLS_FAR, -((x * 0.1) % DECOR.hills.w) * S - DECOR.hills.w * S, (HZ - HILLS.height - 9) * S + bob * 0.3, HILLS.width * S, HILLS.height * S);
+        o.drawImage(HILLS, -((x * HOUSE_F) % DECOR.hills.w) * S - DECOR.hills.w * S, (HZ - HILLS.height + 1) * S + bob * 0.3, HILLS.width * S, HILLS.height * S);
+    });
+    if (dive < 0.05) soft(4, hillsPaint); else hillsPaint();
+    far(() => {
+        wash((WINDOW.x - x * HOUSE_F) * S, WINDOW.y * S + bob * 0.3, 160, `rgba(80,190,255,${0.35 + 0.08 * Math.sin(t * 7)})`);
+        o.drawImage(HOUSE_C, (HOUSE_X - HOUSE.anchor.x - x * HOUSE_F) * S, (HOUSE_Y - HOUSE.anchor.y) * S + bob * 0.3, HOUSE.w * S, HOUSE.h * S);
+    });
+    // the near ground drops away as the camera dives at the window
+    const drop = dive * 1400;
+    o.save(); o.globalAlpha = 1 - smooth(0.2, 0.7, dive); o.translate(0, drop);
+    soft(3, () => { for (const tr of TREES) { const sx = (tr.x - x * 0.38) * S; if (sx > -200 && sx < W + 200) put(litOf(tr.def, 'blood'), tr.def, sx, (HZ + 3) * S + bob * 0.5, S); } });
+    for (let y = HZ; y < MH; y++) {
+        const off = x * rowF(y);
+        const sx = Math.floor(off), fr = off - sx;
+        o.drawImage(GROUND, sx % GW, y - HZ, MW + 2, 1, -fr * S, y * S + bob, (MW + 2) * S, S);
+    }
+    const items = [];
+    for (const p of PROPS) {
+        const sx = (p.x - x * rowF(p.y)) * S;
+        if (sx < -150 || sx > W + 150) continue;
+        items.push({ y: p.y, draw: () => {
+            const yy = p.y * S + bob;
+            if (p.kind === 'pumpkin') pumpkinAt(p, sx, yy, ms);
+            else if (p.kind === 'tomb') put(litOf(TOMB, 'blood'), TOMB, sx, yy, S);
+            else if (p.kind === 'stone') { const d = DECOR.stone[p.seed % DECOR.stone.length]; put(litOf(d, 'blood'), d, sx, yy, S); }
+            else { const d = DECOR.weed[p.seed % DECOR.weed.length]; put(litOf(d, 'blood'), d, sx, yy, S); }
+        } });
+    }
+    for (const zb of ZOMBIES) {
+        const a = zombieAt(zb, t);
+        if (!a) continue;
+        const sx = (a.x - x * rowF(zb.y)) * S;
+        items.push({ y: zb.y + 0.5, draw: () => {
+            const yy = zb.y * S + bob;
+            if (t - zb.tr < 0.5) { o.fillStyle = `rgba(160,255,90,${0.25 * (1 - (t - zb.tr) / 0.5)})`; o.fillRect(sx - 60, yy - 12, 120, 18); }
+            put(litOf(a.def, 'blood'), a.def, sx, yy, S, a.flip);
+        } });
+    }
+    items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+    o.restore();
+    // green glow off the cursed pumpkins, red from the moon
+    wash(W * 0.82, 140, 900, 'rgba(255,60,50,0.10)');
+    const fade = 1 - smooth(0.1, 0.5, dive);
+    o.save(); o.globalAlpha = fade;
+    FLY.forEach((f, i) => { if (!f.near) drawFlyer(f, i, t); });
+    o.restore();
+    // the owl, diving into the window
+    const p = owlA(t);
+    const ox = lerp(p.x, c.x, smooth(PUSH + 0.3, CUT_B - 0.5, t)), oy = lerp(p.y, c.y, smooth(PUSH + 0.3, CUT_B - 0.5, t));
+    const os = OWL_A * (1 - 0.95 * smooth(PUSH + 0.2, CUT_B - 0.4, t));
+    if (t < CUT_B - 0.45) {
+        const def = OWL_FLIGHT.fly[frameAt(ms, 4, 95)];
+        put(litOf(glowing(def), 'night'), def, ox, oy + def.anchor.y * os * 0.5, os);
+    }
+    o.save(); o.globalAlpha = fade;
+    soft(4, () => FLY.forEach((f, i) => { if (f.near) drawFlyer(f, i, t); }));
+    o.restore();
+    motes(t, x * S * 0.6, 0.7 * fade);
+    vignette(0.65);
+    // the window's light takes the whole screen
+    const flash = smooth(CUT_B - 1.0, CUT_B, t);
+    if (flash > 0) { o.fillStyle = `rgba(150,215,255,${flash})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The room, in screen px with depth layers (1 — the desk). Back wall with the window, two monitors, the desk, the split
+// keyboard; Valera in front of them all.
+const WIN = { x: 1440, y: 30, w: 420, h: 210 };
+const VENT = { x: 1660, y: 44, w: 186, h: 86 };      // the vent pane, top right of the window, hinged on its left side
+const SKY_ROOM = (() => { const [c, x] = canvas(Math.ceil(WIN.w / 6), Math.ceil(WIN.h / 6) + 1); paintSky(x, c.width, c.height, 'blood', { seed: 4 }); return c; })();
+const MOON_IN = { x: WIN.x + 120, y: WIN.y + 80 };
+const WALL = (() => {
+    const [c, x] = canvas(W + 300, H + 200);
+    const ox = 150, oy = 100;
+    const P = 10;
+    const tones = ['#0b0d19', '#10142a', '#16203f', '#1d2b55'];
+    const mons = [[560, 440], [1360, 440]];
+    for (let gy = 0; gy < c.height / P; gy++) for (let gx = 0; gx < c.width / P; gx++) {
+        const px = gx * P - ox + P / 2, py = gy * P - oy + P / 2;
+        let l = 0;
+        for (const [mx, my] of mons) l += Math.max(0, 1 - Math.hypot((px - mx) / 900, (py - my) / 520));
+        const d = ([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]][gy & 3][gx & 3] + 0.5) / 16;
+        let k = Math.min(3, Math.floor(l * 2.2 + d));
+        if (gx % 9 === 0) k = Math.max(0, k - 1);
+        x.fillStyle = tones[k]; x.fillRect(gx * P, gy * P, P, P);
+    }
+    // the poster: RoadRunner running, in a frame
+    const pf = { x: 70 + ox, y: 90 + oy, w: 250, h: 300 };
+    x.fillStyle = '#05060a'; x.fillRect(pf.x - 10, pf.y - 10, pf.w + 20, pf.h + 20);
+    x.fillStyle = '#26203a'; x.fillRect(pf.x, pf.y, pf.w, pf.h);
+    x.fillStyle = '#3a2440'; for (let k = 0; k < 6; k++) x.fillRect(pf.x, pf.y + pf.h - 40 - k * 20, pf.w, 10);
+    const rr = FLYERS.roadrunner[2].fly[1];
+    x.drawImage(bakeLit(rr, 'night'), pf.x + pf.w / 2 - rr.w * 4, pf.y + 70, rr.w * 8, rr.h * 8);
+    x.fillStyle = '#7a8cc0'; x.font = '700 40px Consolas, monospace'; x.fillText('MEEP', pf.x + 78, pf.y + 270);
+    // a shelf with books under it
+    x.fillStyle = '#05060a'; x.fillRect(ox + 40, oy + 470, 320, 16);
+    x.fillStyle = '#1d1a2a'; x.fillRect(ox + 40, oy + 470, 320, 8);
+    ['#3e2e5c', '#7e1e2e', '#2f6a40', '#34487c', '#5a4a44', '#3e2e5c', '#86482c'].forEach((col, k) => {
+        const h = 70 + (k * 37) % 30;
+        x.fillStyle = '#05060a'; x.fillRect(ox + 60 + k * 36, oy + 470 - h, 32, h);
+        x.fillStyle = col; x.fillRect(ox + 64 + k * 36, oy + 474 - h, 24, h - 4);
+    });
+    // the window: blood sky, the moon, the hills; the vent pane is drawn live
+    const wx = WIN.x + ox, wy = WIN.y + oy;
+    x.drawImage(SKY_ROOM, wx, wy, SKY_ROOM.width * 6, SKY_ROOM.height * 6);
+    const m = NIGHT.bloodMoon, mh = NIGHT.bloodMoonHalo;
+    x.drawImage(bakeLit(mh, 'day'), MOON_IN.x + ox - mh.anchor.x * 4, MOON_IN.y + oy - mh.anchor.y * 4, mh.w * 4, mh.h * 4);
+    x.drawImage(bakeLit(m, 'day'), MOON_IN.x + ox - m.anchor.x * 4, MOON_IN.y + oy - m.anchor.y * 4, m.w * 4, m.h * 4);
+    x.drawImage(HILLS, 0, 0, 70, HILLS.height, wx, wy + WIN.h - HILLS.height * 6 + 20, 70 * 6, HILLS.height * 6);
+    x.fillStyle = '#05060a';
+    x.fillRect(wx - 16, wy - 16, WIN.w + 32, 16); x.fillRect(wx - 16, wy + WIN.h, WIN.w + 32, 20);
+    x.fillRect(wx - 16, wy, 16, WIN.h); x.fillRect(wx + WIN.w, wy, 16, WIN.h);
+    x.fillRect(VENT.x + ox - 14, wy, 14, WIN.h); x.fillRect(VENT.x + ox, VENT.y + oy + VENT.h, VENT.w + 14, 12);
+    x.fillStyle = '#262a3c';
+    x.fillRect(wx - 8, wy - 8, WIN.w + 16, 6); x.fillRect(wx - 10, wy + WIN.h + 2, WIN.w + 20, 8);
+    // the sill catches the monitors' light
+    x.fillStyle = '#3a4a70'; x.fillRect(wx - 10, wy + WIN.h + 2, WIN.w + 20, 3);
+    // red moonlight through the window onto the wall
+    const g = x.createLinearGradient(wx, wy + WIN.h, wx - 160, wy + WIN.h + 380);
+    g.addColorStop(0, 'rgba(120,20,30,0.25)'); g.addColorStop(1, 'rgba(120,20,30,0)');
+    x.fillStyle = g; x.beginPath(); x.moveTo(wx, wy + WIN.h + 10); x.lineTo(wx + WIN.w, wy + WIN.h + 10); x.lineTo(wx + WIN.w - 200, wy + WIN.h + 420); x.lineTo(wx - 220, wy + WIN.h + 420); x.fill();
+    const [b, bx] = canvas(c.width, c.height);
+    bx.filter = 'blur(2px)'; bx.drawImage(c, 0, 0);
+    return { c: b, ox, oy };
+})();
+const MONS = [{ x: 260, y: 260, w: 600, h: 360 }, { x: 1060, y: 260, w: 600, h: 360 }];
+const PERCH = { x: 1560, y: 262 };
+const OWL_P = 8;
+const DESK = (() => {
+    const [c, x] = canvas(W + 400, 520);
+    for (let y = 0; y < 520; y += 10) {
+        const k = y / 520;
+        x.fillStyle = y < 10 ? '#262a3c' : `rgb(${18 + 8 * (1 - k)},${18 + 10 * (1 - k)},${30 + 20 * (1 - k)})`;
+        x.fillRect(0, y, c.width, 10);
+        if (y % 60 === 30) { x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, y, c.width, 4); }
+    }
+    return c;
+})();
+// The split keyboard: two halves, keys staggered by column, on the desk either side of Valera.
+function keyboardHalf(side) {
+    const cols = 6, rows = 4, kw = 42, kh = 15, gap = 6;
+    const w = cols * (kw + gap) + 24, h = rows * (kh + gap) + 30;
+    const [c, x] = canvas(w, h);
+    x.fillStyle = '#05060a'; x.fillRect(0, 6, w, h - 6); x.fillRect(4, 2, w - 8, h);
+    x.fillStyle = '#1a1c28'; x.fillRect(6, 8, w - 12, h - 16);
+    const keys = [];
+    for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+        const stagger = [0, 4, 8, 6, 2, 0][side < 0 ? k : cols - 1 - k];
+        const kx = 12 + k * (kw + gap), ky = 12 + r * (kh + gap) - stagger + 6;
+        x.fillStyle = '#05060a'; x.fillRect(kx - 2, ky - 2, kw + 4, kh + 6);
+        x.fillStyle = '#2c2f40'; x.fillRect(kx, ky, kw, kh + 2);
+        x.fillStyle = '#4a5578'; x.fillRect(kx, ky, kw, 3);
+        keys.push({ x: kx, y: ky });
+    }
+    return { c, keys, w, h };
+}
+const KB = { [-1]: keyboardHalf(-1), [1]: keyboardHalf(1) };
+const KB_AT = { [-1]: { x: 430, y: 935 }, [1]: { x: 1490, y: 935 } };
+const KB_S = 1.4;
+
+// Monitor screens: low-res pixel UIs, text thresholded to hard pixels.
+const textCache = new Map();
+function textImg(str, color, size = 8, bold = true) {
+    const key = `${str}|${color}|${size}|${bold}`;
+    if (textCache.has(key)) return textCache.get(key);
+    const font = `${bold ? '700 ' : ''}${size}px Consolas, "Cascadia Mono", monospace`;
+    const [m, mx] = canvas(4, 4); mx.font = font;
+    const w = Math.ceil(mx.measureText(str).width) + 2, h = size + 4;
+    const [c, x] = canvas(w, h);
+    x.font = font; x.fillStyle = color; x.textBaseline = 'top'; x.fillText(str, 1, 1);
+    const img = x.getImageData(0, 0, w, h);
+    const col = parseInt(color.slice(1), 16);
+    for (let i = 0; i < img.data.length; i += 4) {
+        const on = img.data[i + 3] > 100;
+        img.data[i] = (col >> 16) & 255; img.data[i + 1] = (col >> 8) & 255; img.data[i + 2] = col & 255; img.data[i + 3] = on ? 255 : 0;
+    }
+    x.putImageData(img, 0, 0);
+    textCache.set(key, c);
+    return c;
+}
+const CW = 140, CH = 80;
+const [grafC, gx] = canvas(CW * 2, CH * 2);
+const [benchC, bx] = canvas(CW * 2, CH * 2);
+// Text on the screens at twice their pixel grid, so the letters stay readable.
+function txt(ctx, str, color, size, x, y, bold = true) { const c = textImg(str, color, size * 2, bold); ctx.drawImage(c, x, y, c.width / 2, c.height / 2); return c.width / 2; }
+function series(seed, g) {
+    // a curve that only ever climbs, steeper and steeper, with a little noise on it
+    return (g * 0.6) ** 1.8 + hash(seed * 91 + g) * (4 + g * 0.25);
+}
+function panel(x, y, w, h, title, color, seed, t, unit, per) {
+    gx.fillStyle = '#24272e'; gx.fillRect(x, y, w, h);
+    gx.fillStyle = '#181b1f'; gx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    txt(gx, title, '#c7d0d9', 7, x + 2, y + 1, false);
+    const g0 = Math.floor(t * 7) + 160;
+    const n = w - 6, top = y + 11, bot = y + h - 3;
+    const vals = Array.from({ length: n }, (_, i) => series(seed, g0 + i - n));
+    const max = Math.max(...vals) * 1.05, min = Math.min(...vals);
+    const now = Math.round(vals.at(-1) * per + per * 30);
+    const nw = textImg(`${now}${unit}`, color, 16).width / 2;
+    txt(gx, `${now}${unit}`, color, 8, x + w - nw - 2, y + 1);
+    const c = parseInt(color.slice(1), 16);
+    let prev = null;
+    vals.forEach((v, i) => {
+        const yy = Math.round(bot - ((v - min) / (max - min)) * (bot - top));
+        gx.fillStyle = rgba(c, 0.18); gx.fillRect(x + 3 + i, yy, 1, bot - yy);
+        gx.fillStyle = color;
+        if (prev !== null) gx.fillRect(x + 3 + i, Math.min(prev, yy), 1, Math.abs(prev - yy) + 1);
+        else gx.fillRect(x + 3 + i, yy, 1, 1);
+        prev = yy;
+    });
+    gx.fillStyle = '#2a2e36';
+    for (let k = 1; k < 3; k++) gx.fillRect(x + 3, Math.round(top + ((bot - top) * k) / 3), n, 1);
+}
+function drawGrafana(t) {
+    gx.setTransform(2, 0, 0, 2, 0, 0);
+    gx.fillStyle = '#111217'; gx.fillRect(0, 0, CW, CH);
+    gx.fillStyle = '#1b1c22'; gx.fillRect(0, 0, CW, 10);
+    gx.fillStyle = '#f46800'; gx.fillRect(3, 3, 4, 4); gx.fillStyle = '#fbc55a'; gx.fillRect(4, 4, 2, 2);
+    txt(gx, 'Проклятый мир', '#d8d9da', 8, 10, 0);
+    gx.fillStyle = Math.floor(t * 2) % 2 ? '#73bf69' : '#3c6a38'; gx.fillRect(CW - 6, 4, 3, 3);
+    panel(2, 12, 67, 32, 'клики', '#73bf69', 1, t, '', 41);
+    panel(71, 12, 67, 32, 'кружки', '#fade2a', 2, t, '', 2.3);
+    panel(2, 46, 136, 32, 'зомби-воркеры', '#b877d9', 3, t, '', 0.6);
+}
+const BENCH = [18, 27, 39, 54, 71];
+function drawBench(t) {
+    bx.setTransform(2, 0, 0, 2, 0, 0);
+    bx.fillStyle = '#0d1117'; bx.fillRect(0, 0, CW, CH);
+    txt(bx, 'rapira · bench', '#58c4dc', 8, 3, 1);
+    txt(bx, 'k req/s', '#6e7681', 7, CW - 34, 2, false);
+    bx.fillStyle = '#21262d'; bx.fillRect(3, 12, CW - 6, 1);
+    for (let k = 1; k <= 3; k++) { bx.fillStyle = '#161b22'; bx.fillRect(3, 70 - k * 14, CW - 6, 1); }
+    const run = (t * 0.45) % 1;
+    BENCH.forEach((v, i) => {
+        const last = i === BENCH.length - 1;
+        const grow = last ? smooth(0, 0.85, run) : 1;
+        const val = last ? Math.round(v * (0.6 + 0.4 * grow) + Math.floor(t * 3) % 3) : v;
+        const h = Math.round((val / 80) * 54);
+        const x = 8 + i * 26;
+        bx.fillStyle = '#0b3d4f'; bx.fillRect(x, 70 - h, 16, h);
+        bx.fillStyle = last ? '#7ee0ff' : '#39a9d6'; bx.fillRect(x, 70 - h, 16, 2);
+        bx.fillStyle = last ? '#3fb6e0' : '#1f7fa8'; bx.fillRect(x + 2, 72 - h, 12, h - 2);
+        txt(bx, String(val), last ? '#d6f6ff' : '#9fd8ee', 7, x + 1, 60 - h);
+        txt(bx, `v0.${i + 1}`, '#6e7681', 7, x - 1, 71, false);
+    });
+    if (Math.floor(t * 3) % 2) { bx.fillStyle = '#7ee0ff'; bx.fillRect(CW - 8, CH - 9, 4, 6); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Valera: a silhouette built cell by cell (10 screen px each) from his pose, its outline lit by what is behind him.
+// The cap sits backwards, so from behind its front panel faces the camera with NB on it, over the visor.
+const VP = 10, VW = 200, VH = 132, VOX = 100, VOY = 40;
+const ell = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+function segD(px, py, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const k = clamp(((px - a[0]) * dx + (py - a[1]) * dy) / (dx * dx + dy * dy));
+    return Math.hypot(px - a[0] - dx * k, py - a[1] - dy * k);
+}
+const lerpP = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k)];
+function armPts(side, pose) {
+    const lift = side < 0 ? pose.liftL : pose.liftR;
+    const type = [[side * 32, 30], [side * 43, 49], [side * 53, 41 + lift]];
+    const down = [[side * 34, 30], [side * 39, 55], [side * 38, 78]];
+    let p = type.map((q, i) => lerpP(q, down[i], pose.arms));
+    if (side < 0 && pose.turn > 0) p = p.map((q, i) => [q[0] + (i ? 13 : 6) * pose.turn, q[1]]);
+    if (side > 0 && pose.offer > 0) p = p.map((q, i) => lerpP(q, [[27, 28], [38, 22], [47, 14]][i], pose.offer));
+    return p;
+}
+const NB = [['X..X', 'XX.X', 'X.XX', 'X..X', 'X..X'], ['XXX.', 'X..X', 'XXX.', 'X..X', 'XXX.']];
+const [vC, vX] = canvas(VW, VH);
+const vImg = vX.createImageData(VW, VH);
+const vMask = new Uint8Array(VW * VH);
+function valera(pose, light) {
+    const { turn } = pose;
+    const hx = turn * 3, tw = 1 - 0.22 * turn, tx = turn * 2;
+    const arms = [armPts(-1, pose), armPts(1, pose)];
+    const hb = pose.bob;
+    for (let gy = 0; gy < VH; gy++) for (let gxx = 0; gxx < VW; gxx++) {
+        const vx = gxx - VOX + 0.5, vy = gy - VOY + 0.5;
+        const hy = vy - hb;
+        let r = 0;
+        if (ell(vx, hy, hx, -3, 12, 12.5) && hy < -1) r = 2;
+        else if (ell(vx, hy, hx - turn * 11, 1, 8.5 - turn * 1.5, 2.6 - turn * 0.6) && hy >= -1) r = 3;
+        else if (ell(vx, hy, hx, 0, 11, 13)) r = 1;
+        else if (turn < 0.5 && (ell(vx, hy, hx - 11.3, 3, 2.2, 3.4) || ell(vx, hy, hx + 11.3, 3, 2.2, 3.4))) r = 1;
+        else if (turn >= 0.5 && (ell(vx, hy, hx + 10.6, 4, 2.4, 1.8) || ell(vx, hy, hx + 8, 10, 3, 2.2))) r = 1;
+        else if (Math.abs(vx - hx * 0.5) < 7.5 && vy > 8 && vy < 18) r = 1;
+        else {
+            const bxx = (vx - tx) / tw;
+            if (vy >= 13 && Math.abs(bxx) <= Math.min(Math.max(37 - Math.max(0, vy - 34) * 0.4 * pose.arms, 30), 8 + (vy - 13) * 2.6)) r = 1;
+            else if (ell(bxx, vy, -29, 29, 9, 8) || ell(bxx, vy, 29, 29, 9, 8)) r = 1;
+            else for (const p of arms) {
+                if (segD(vx, vy, p[0], p[1]) < 6.5 || segD(vx, vy, p[1], p[2]) < 5.5 || ell(vx, vy, p[2][0], p[2][1] - 1, 4.5, 3.6)) { r = 1; break; }
+            }
+        }
+        vMask[gy * VW + gxx] = r;
+    }
+    const at = (x, y) => (x < 0 || y < 0 || x >= VW || y >= VH ? 0 : vMask[y * VW + x]);
+    const logo = new Set();
+    if (turn < 0.4) NB.forEach((g, k) => g.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch === 'X') logo.add(Math.round(VOX + hx - 4.5 + k * 5 + x) + (Math.round(VOY + hb - 8 + y)) * VW);
+    })));
+    const [rr, rg, rb] = light.rim;
+    const edges = [];
+    const d = vImg.data;
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+        const i = y * VW + x, m = vMask[i];
+        const p = i * 4;
+        if (!m) { d[p + 3] = 0; continue; }
+        const edge = !at(x, y - 1) || !at(x - 1, y) || !at(x + 1, y);
+        const near = !at(x, y - 2) || !at(x - 2, y) || !at(x + 2, y);
+        let k, col;
+        if (edge) { k = light.edge; edges.push(x, y); }
+        else if (near) k = light.edge * 0.35;
+        else if (m === 3 && at(x, y - 1) === 2) k = light.edge * 0.45;     // the visor's top catches the light
+        else if (m === 2 && at(x, y + 1) === 1) k = light.edge * 0.22;
+        else k = 0;
+        const base = m === 2 ? [0x15, 0x16, 0x20] : m === 3 ? [0x11, 0x12, 0x1a] : [0x0b, 0x0a, 0x12];
+        col = [lerp(base[0], rr, clamp(k)), lerp(base[1], rg, clamp(k)), lerp(base[2], rb, clamp(k))];
+        if (logo.has(i) && m === 2) col = col.map((v, j) => lerp(v, [0xe2, 0xe4, 0xea][j], light.logo));
+        d[p] = col[0]; d[p + 1] = col[1]; d[p + 2] = col[2]; d[p + 3] = 255;
+    }
+    vX.putImageData(vImg, 0, 0);
+    // Only the outer outline for the arcs: the leftmost and rightmost cell of each row, the top cell of each column.
+    const outer = [];
+    for (let y = 0; y < VH; y++) {
+        let a = -1, b = -1;
+        for (let x = 0; x < VW; x++) if (vMask[y * VW + x]) { if (a < 0) a = x; b = x; }
+        if (a >= 0) outer.push(a, y, b, y);
+    }
+    for (let x = 0; x < VW; x++) for (let y = 0; y < VH; y++) if (vMask[y * VW + x]) { if (y > 0) outer.push(x, y); break; }
+    return outer;
+}
+function poseAt(t) {
+    const rise = smooth(STAND[0], STAND[1], t) - smooth(SIT[0] + 0.2, SIT[1], t);
+    const arms = smooth(STAND[0], STAND[0] + 0.5, t) - smooth(SIT[0] + 0.4, SIT[1], t);
+    const turn = smooth(TURN[0], TURN[1], t) - smooth(SIT[0], SIT[0] + 0.5, t);
+    const offer = smooth(TURN[0] + 0.3, TURN[1] + 0.2, t) - smooth(TAKE + 0.1, SIT[0] + 0.3, t);
+    let bob = 0;
+    for (const i of [2, 3, 4]) { const ms = speaking(i, t); if (ms !== null && beakAt(PLANS[i], ms) === 2) bob = 0.6; }
+    const typing = arms < 0.05;
+    return { rise, arms, turn, offer, bob, liftL: typing && pressed(t, -1) ? 1 : 0, liftR: typing && pressed(t, 1) ? 1 : 0 };
+}
+const headY = (pose) => lerp(520, 240, backOut(pose.rise) * 0.97 + 0.03 * pose.rise);
+const toV = (pose, vx, vy) => ({ x: W / 2 + vx * VP, y: headY(pose) + vy * VP });
+
+// The rapier in his hand: the game's rapier (characters.js, `rapier`) drawn long — a blade of gold light over a cup hilt.
+function rapier(x, y, s, t, charge) {
+    const cell = (cx, cy, col) => { o.fillStyle = col; o.fillRect(Math.round(x + cx * s), Math.round(y + cy * s), s, s); };
+    o.save(); o.globalCompositeOperation = 'lighter';
+    // a pixel glow round the blade: gold close in, the charge's blue further out
+    for (let k = 1; k <= 28; k++) {
+        const fall = 1 - k / 34;
+        o.fillStyle = `rgba(255,200,80,${0.35 * fall})`; o.fillRect(x - s, y - k * s, 3 * s, s);
+        o.fillStyle = `rgba(110,200,255,${0.22 * charge * fall})`; o.fillRect(x - 2 * s, y - k * s, s, s); o.fillRect(x + 2 * s, y - k * s, s, s);
+    }
+    o.restore();
+    for (let k = 1; k <= 28; k++) cell(0, -k, k === 28 ? hex(PALETTE.goldGlow) : hex(PALETTE.goldHot));
+    const glint = Math.floor((t * 22) % 40);
+    if (glint < 28) cell(0, -glint - 1, hex(PALETTE.goldCore));
+    for (const [cx, cy, k] of [[-2, 0, 'gold'], [2, 0, 'gold'], [-2, 1, 'gold'], [-1, 1, 'pumpkinGoldDark'], [0, 1, 'pumpkinGoldDark'], [1, 1, 'pumpkinGoldDark'], [2, 1, 'gold'], [-1, 2, 'pumpkinGoldDark'], [0, 2, 'gold'], [1, 2, 'pumpkinGoldDark'], [0, 0, 'goldHot']]) cell(cx, cy, hex(PALETTE[k]));
+}
+
+// Electric arcs: a jagged bolt between two points, pixel by pixel.
+function bolt(a, b, seed, s, core = '#f2fbff', glowC = 'rgba(80,180,255,0.55)', jag = 2.5) {
+    const n = 6;
+    const pts = [a];
+    for (let k = 1; k < n; k++) {
+        const q = k / n;
+        const nx = -(b.y - a.y), ny = b.x - a.x, len = Math.hypot(nx, ny) || 1;
+        const off = (hash(seed + k * 3.3) - 0.5) * 2 * jag * s;
+        pts.push({ x: lerp(a.x, b.x, q) + (nx / len) * off, y: lerp(a.y, b.y, q) + (ny / len) * off });
+    }
+    pts.push(b);
+    for (let k = 1; k < pts.length; k++) {
+        const p = pts[k - 1], q = pts[k];
+        const steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / (s * 0.8)));
+        for (let j = 0; j <= steps; j++) {
+            const x = Math.round(lerp(p.x, q.x, j / steps) / s) * s, y = Math.round(lerp(p.y, q.y, j / steps) / s) * s;
+            o.fillStyle = glowC; o.fillRect(x - s, y - s, 3 * s, 3 * s);
+            o.fillStyle = core; o.fillRect(x, y, s, s);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bubbles: the owl's in cream, Valera's in cold blue; a stepped tail toward the speaker's head.
+const u = 8;
+const STYLE = {
+    owl: { fill: hex(PALETTE.cream), line: hex(PALETTE.outline), text: hex(PALETTE.outline) },
+    valera: { fill: '#cdeeff', line: '#0c1f36', text: '#0c1f36' },
+};
+function frameRect(x, y, w, h, line, fill) {
+    o.fillStyle = line; o.fillRect(x + u, y, w - 2 * u, h); o.fillRect(x, y + u, w, h - 2 * u);
+    o.fillStyle = fill; o.fillRect(x + 2 * u, y + u, w - 4 * u, h - 2 * u); o.fillRect(x + u, y + 2 * u, w - 2 * u, h - 4 * u);
+}
+function bubble(i, t, head, place) {
+    const b = BUBBLES[i], st = STYLE[b.who];
+    const age = t - b.from;
+    if (age < 0 || t > b.to + 0.2) return;
+    const out = t > b.to ? 1 - (t - b.to) / 0.2 : 1;
+    const pop = backOut(age / 0.22) * out;
+    const LH = 70;
+    o.font = '700 56px Consolas, "Cascadia Mono", monospace';
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + 88, bh = b.lines.length * LH + 52;
+    const { bx, by } = place(bw, bh);
+    // the tail: from the edge facing the head, squares shrinking toward it
+    const sx = clamp(head.x, bx + 6 * u, bx + bw - 6 * u), sy = clamp(head.y, by + 5 * u, by + bh - 5 * u);
+    const start = head.x > bx + bw ? { x: bx + bw - 3 * u, y: sy } : head.x < bx ? { x: bx + 3 * u, y: sy } : { x: sx, y: head.y > by + bh ? by + bh - 3 * u : by + 3 * u };
+    const dist = Math.hypot(head.x - start.x, head.y - start.y);
+    const steps = clamp(Math.floor(dist / (3 * u)), 2, 16);
+    const reach = Math.max(0, dist - 40) / dist;
+    o.save();
+    o.globalAlpha = clamp(out * 1.5);
+    o.translate(start.x, start.y); o.scale(pop, pop); o.translate(-start.x, -start.y);
+    o.globalAlpha *= 0.4; o.fillStyle = '#000'; o.fillRect(bx + 2 * u, by + 3 * u, bw, bh); o.globalAlpha = clamp(out * 1.5);
+    const parts = Array.from({ length: steps }, (_, k) => {
+        const q = (k / (steps - 1)) * reach;
+        const r = Math.max(1, 3.5 - (k * 2.5) / steps) * u;
+        return { x: Math.round((start.x + (head.x - start.x) * q) / u) * u, y: Math.round((start.y + (head.y - start.y) * q) / u) * u, r: Math.round(r / u) * u };
+    });
+    o.fillStyle = st.line; parts.forEach((p) => o.fillRect(p.x - p.r - u, p.y - p.r - u, 2 * p.r + 2 * u, 2 * p.r + 2 * u));
+    frameRect(bx, by, bw, bh, st.line, st.fill);
+    o.fillStyle = st.fill; parts.forEach((p) => o.fillRect(p.x - p.r, p.y - p.r, 2 * p.r, 2 * p.r));
+    let left = typedOf(i, age * 1000);
+    o.fillStyle = st.text;
+    b.lines.forEach((s, k) => {
+        const shown = s.slice(0, Math.max(0, left));
+        left -= s.length + 1;
+        o.fillText(shown, bx + 44, by + 26 + 50 + k * LH);
+    });
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The owl in the room.
+function owlTalk(i, t) {
+    const ms = speaking(i, t);
+    if (ms === null) return null;
+    const beak = beakAt(PLANS[i], ms);
+    return wingAt(PLANS[i], ms) ? OWL.beakWing[beak] : OWL.beak[beak];
+}
+function owlRoom(t) {
+    const ms = t * 1000;
+    if (t < OWL_IN[0]) return null;
+    if (t < OWL_IN[1]) {
+        const k = smooth(OWL_IN[0], OWL_IN[1], t);
+        const from = { x: VENT.x + 110, y: VENT.y + 60 }, c = { x: 1700, y: 150 };
+        const x = (1 - k) ** 2 * from.x + 2 * (1 - k) * k * c.x + k * k * PERCH.x;
+        const y = (1 - k) ** 2 * from.y + 2 * (1 - k) * k * c.y + k * k * PERCH.y;
+        const def = t > OWL_IN[1] - 0.15 ? OWL_FLIGHT.takeOff : OWL_FLIGHT.fly[frameAt(ms, 4, 80)];
+        return { x, y, def, s: lerp(5, OWL_P, k), flying: true };
+    }
+    if (t >= EXIT[0]) {
+        if (t < EXIT[0] + 0.15) return { ...PERCH, def: OWL_FLIGHT.takeOff, s: OWL_P, flying: true, armed: true };
+        if (t < EXIT[1]) {
+            const k = smooth(EXIT[0] + 0.15, EXIT[1], t);
+            const to = { x: VENT.x + 100, y: VENT.y + 50 }, c = { x: PERCH.x + 60, y: 90 };
+            const x = (1 - k) ** 2 * PERCH.x + 2 * (1 - k) * k * c.x + k * k * to.x;
+            const y = (1 - k) ** 2 * PERCH.y + 2 * (1 - k) * k * c.y + k * k * to.y;
+            return { x, y, def: OWL_FLIGHT.fly[frameAt(ms, 4, 75)], s: lerp(OWL_P, 4, k), flying: true, armed: true };
+        }
+        return null;
+    }
+    let def;
+    for (const i of [0, 1]) { const f = owlTalk(i, t); if (f) def = f; }
+    if (!def) {
+        if (t >= HOOT && t < BUBBLES[0].from) def = OWL.hoot;
+        else if (t >= CHARGE[0] && t < CLICK + 0.6) def = OWL.hoot;
+        else if (t >= BUBBLES[2].from - 0.3 && t < TAKE) def = OWL.turnLeft[t < BUBBLES[2].from - 0.15 ? 0 : 1];
+        else def = (t % 2.9) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
+    }
+    if (t >= TAKE) return { ...PERCH, def: armed(t < TAKE + 0.5 ? OWL.hoot : OWL.idle[Math.floor(t / 0.7) % 2], Math.floor(t * 6) % 3), s: OWL_P };
+    return { ...PERCH, def, s: OWL_P };
+}
+// The owl gone through the vent: small in the window, flying off toward the moon.
+function owlAway(t) {
+    if (t < AWAY[0] || t > AWAY[1]) return null;
+    const k = (t - AWAY[0]) / (AWAY[1] - AWAY[0]);
+    const e = 1 - (1 - k) ** 1.6;
+    return { x: lerp(VENT.x + 90, MOON_IN.x + 40, e) + Math.sin(k * 9) * 6, y: lerp(VENT.y + 60, MOON_IN.y - 10, e), s: lerp(3.4, 0.6, e), def: OWL_FLIGHT.fly[frameAt(t * 1000, 4, 85)] };
+}
+function drawOwl(p) {
+    put(litOf(glowing(p.def), 'night'), p.def, p.x, p.y + (p.flying ? p.def.anchor.y * p.s * 0.1 : 0), p.s);
+    if (p.armed && p.flying) {
+        // the rapier carried under the talons, level
+        o.save(); o.globalCompositeOperation = 'lighter';
+        o.fillStyle = 'rgba(255,210,90,0.35)'; o.fillRect(p.x - 12 * p.s, p.y - p.s, 24 * p.s, 3 * p.s);
+        o.restore();
+        o.fillStyle = hex(PALETTE.goldHot); o.fillRect(p.x - 10 * p.s, p.y, 17 * p.s, p.s);
+        o.fillStyle = hex(PALETTE.gold); o.fillRect(p.x + 7 * p.s, p.y - p.s, p.s, 3 * p.s);
+        o.fillStyle = hex(PALETTE.pumpkinGoldDark); o.fillRect(p.x + 8 * p.s, p.y, 2 * p.s, p.s);
+    }
+}
+
+// The vent pane: swings in on its left hinge; glass and frame.
+function vent(t) {
+    const a = smooth(FORT - 0.12, FORT + 0.1, t) * 1.15 - 0.08 * Math.sin(clamp((t - FORT - 0.1) / 0.5) * Math.PI) * (t > FORT ? 1 : 0);
+    const ang = clamp(a, 0, 1.2);
+    const w = VENT.w * Math.cos(ang), grow = 1 + 0.35 * Math.sin(ang);
+    const x0 = VENT.x, y0 = VENT.y, y1 = VENT.y + VENT.h;
+    const yt = y0 - (VENT.h * (grow - 1)) / 2, yb = y1 + (VENT.h * (grow - 1)) / 2;
+    o.save();
+    o.beginPath(); o.moveTo(x0, y0); o.lineTo(x0 + w, yt); o.lineTo(x0 + w, yb); o.lineTo(x0, y1); o.closePath();
+    o.fillStyle = `rgba(150,180,230,${0.12 + 0.1 * Math.sin(ang)})`; o.fill();
+    o.lineWidth = 12; o.strokeStyle = '#1a1d2b'; o.stroke();
+    o.lineWidth = 3; o.strokeStyle = '#3a4a70'; o.stroke();
+    o.restore();
+    return ang;
+}
+// Leaves blown in on the gust.
+function gust(t) {
+    if (t < FORT || t > FORT + 2.5) return;
+    for (let i = 0; i < 9; i++) {
+        const k = (t - FORT - hash(i) * 0.4) / (1.4 + hash(i + 4));
+        if (k < 0 || k > 1) continue;
+        const x = VENT.x + 80 - k * (300 + hash(i + 2) * 500), y = VENT.y + 40 + k * k * (300 + hash(i + 7) * 400) + Math.sin(k * 12 + i) * 30;
+        o.fillStyle = hash(i + 9) < 0.5 ? '#5a1820' : '#3a2a1a';
+        o.fillRect(Math.round(x / 8) * 8, Math.round(y / 8) * 8, 16, 8);
+    }
+}
+
+// Camera over the room: a slow drift, a push to the owl as it speaks, back as Valera stands, a tremor in the charge.
+function cameraB(t) {
+    const toOwl = smooth(OWL_IN[1], BUBBLES[0].from + 1.5, t) - smooth(BUBBLES[2].from - 0.6, BUBBLES[2].from + 0.6, t);
+    const armedUp = smooth(TAKE - 0.6, TAKE + 0.2, t) - smooth(EXIT[0] + 0.3, AWAY[0] + 0.8, t);
+    let x = Math.sin(t * 0.31) * 16 + 150 * toOwl + 40 * armedUp, y = Math.cos(t * 0.23) * 8 - 60 * toOwl - 120 * armedUp;
+    let zoom = 1.02 + 0.07 * toOwl + 0.02 * smooth(TURN[0], 46, t);
+    const charge = smooth(CHARGE[0], CLICK, t) * (t < CLICK + 0.05 ? 1 : 0) + (t >= CLICK && t < CLICK + 0.4 ? 1.6 * (1 - (t - CLICK) / 0.4) : 0);
+    const q = Math.floor(t * 30);
+    x += (hash(q) - 0.5) * 16 * charge; y += (hash(q + 7) - 0.5) * 16 * charge;
+    return { x, y, zoom };
+}
+function withLayer(cam, f, fn) {
+    const z = 1 + (cam.zoom - 1) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-W / 2 - cam.x * f, -H / 2 - cam.y * f); fn(); o.restore();
+}
+const toScreen = (cam, f, p) => { const z = 1 + (cam.zoom - 1) * f; return { x: (p.x - W / 2 - cam.x * f) * z + W / 2, y: (p.y - H / 2 - cam.y * f) * z + H / 2 }; };
+
+// The charge's light from the room behind him: 0..1, flickering, dropping off after the click.
+function chargeAt(t) {
+    if (t < CHARGE[0]) return 0;
+    if (t < CLICK) { const k = (t - CHARGE[0]) / (CLICK - CHARGE[0]); return (0.15 + 0.85 * k ** 1.3) * (0.82 + 0.18 * hash(Math.floor(t * 40))); }
+    return 1.3 * Math.exp(-(t - CLICK) / 0.12);
+}
+const SPARKS = Array.from({ length: 70 }, (_, i) => ({ life: 0.5 + hash(i + 1) * 0.6, ph: hash(i + 2), e: hash(i + 3), vx: (hash(i + 4) - 0.5) * 2, vy: -0.4 - hash(i + 5) * 1.1, s: hash(i + 6) < 0.3 ? 2 : 1 }));
+function sparks(t, edges, origin, amount, burstAt = null) {
+    if (!edges.length) return;
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (const [i, p] of SPARKS.entries()) {
+        let age, born;
+        if (burstAt !== null) { age = t - burstAt; born = 0; if (age < 0 || age > p.life * 1.4) continue; }
+        else {
+            if (hash(i + 77) > amount) continue;
+            born = Math.floor((t + p.ph * p.life) / p.life); age = (t + p.ph * p.life) % p.life;
+        }
+        const j = Math.floor(hash(i * 13 + born * 7.7) * (edges.length / 2)) * 2;
+        const ex = origin.x + edges[j] * VP, ey = origin.y + edges[j + 1] * VP;
+        const out = Math.sign(ex - W / 2) || 1;
+        const sp = burstAt !== null ? 900 : 420;
+        const x = ex + (p.vx * 0.6 + out * 0.6) * sp * age, y = ey + p.vy * sp * age + 900 * age * age;
+        const k = age / (p.life * (burstAt !== null ? 1.4 : 1));
+        o.fillStyle = k < 0.3 ? `rgba(240,250,255,${1 - k})` : `rgba(90,190,255,${1 - k})`;
+        o.fillRect(Math.round(x / 8) * 8, Math.round(y / 8) * 8, 8 * p.s, 8 * p.s);
+    }
+    o.restore();
+}
+
+function shotB(t) {
+    const ms = t * 1000;
+    const cam = cameraB(t);
+    const charge = chargeAt(t);
+    const blackout = t > CLICK + 0.05 && t < CLICK + 0.45;   // the monitors drop out for a moment after the click
+    o.fillStyle = '#05060a'; o.fillRect(0, 0, W, H);
+    // the back wall, the window, the vent pane, the owl out in the night
+    withLayer(cam, 0.7, () => {
+        o.drawImage(WALL.c, -WALL.ox, -WALL.oy);
+        const away = owlAway(t);
+        if (away) { o.save(); o.beginPath(); o.rect(WIN.x, WIN.y, WIN.w, WIN.h); o.clip(); drawOwl(away); o.restore(); }
+        vent(t);
+    });
+    // the charge lights the room up from behind him
+    const pose = poseAt(t);
+    const hy = headY(pose);
+    if (charge > 0) {
+        const c = toScreen(cam, 1.1, { x: W / 2, y: hy + 260 });
+        wash(c.x, c.y, 1300, `rgba(120,200,255,${0.75 * clamp(charge)})`);
+        wash(c.x, c.y - 200, 600, `rgba(220,245,255,${0.6 * clamp(charge)})`);
+        o.save(); o.globalCompositeOperation = 'lighter';
+        for (let k = 0; k < 10; k++) {
+            const a = (k / 10) * Math.PI * 2 + t * 0.4 + hash(k) * 0.4, sp = 0.09 + hash(k + 3) * 0.06;
+            o.fillStyle = `rgba(140,210,255,${0.13 * clamp(charge) * (0.6 + 0.4 * hash(Math.floor(t * 20) + k))})`;
+            o.beginPath(); o.moveTo(c.x, c.y); o.lineTo(c.x + Math.cos(a - sp) * 2400, c.y + Math.sin(a - sp) * 2400); o.lineTo(c.x + Math.cos(a + sp) * 2400, c.y + Math.sin(a + sp) * 2400); o.fill();
+        }
+        o.restore();
+    }
+    // monitors
+    withLayer(cam, 0.85, () => {
+        if (!blackout) { wash(560, 440, 700, 'rgba(60,140,255,0.16)'); wash(1360, 440, 700, 'rgba(60,170,255,0.16)'); }
+        drawGrafana(t); drawBench(t);
+        MONS.forEach((m, i) => {
+            o.fillStyle = '#05060a'; o.fillRect(m.x + m.w / 2 - 40, m.y + m.h, 80, 60); o.fillRect(m.x + m.w / 2 - 130, m.y + m.h + 52, 260, 18);
+            o.fillStyle = '#161822'; o.fillRect(m.x + m.w / 2 - 32, m.y + m.h, 64, 54); o.fillRect(m.x + m.w / 2 - 122, m.y + m.h + 56, 244, 8);
+            o.fillStyle = '#05060a'; o.fillRect(m.x - 6, m.y - 6, m.w + 12, m.h + 12);
+            o.fillStyle = '#171922'; o.fillRect(m.x, m.y, m.w, m.h);
+            o.fillStyle = '#2c3352'; o.fillRect(m.x, m.y, m.w, 3);
+            if (blackout) { o.fillStyle = '#020204'; o.fillRect(m.x + 20, m.y + 20, 560, 320); }
+            else o.drawImage(i ? benchC : grafC, m.x + 20, m.y + 20, 560, 320);
+            o.fillStyle = 'rgba(255,255,255,0.03)'; o.fillRect(m.x + 20, m.y + 20, 560, 120);
+        });
+        const p = owlRoom(t);
+        if (p) drawOwl(p);
+    });
+    // the desk and the mug
+    withLayer(cam, 0.95, () => {
+        o.drawImage(DESK, -200, 650);
+        o.fillStyle = '#05060a'; o.fillRect(-200, 650, W + 400, 8);
+        put(bakeBar(BAR_MUG, 'night'), BAR_MUG, 1760, 760, 9);
+    });
+    // the keyboard halves, the pressed keys flashing
+    withLayer(cam, 1.1, () => {
+        for (const side of [-1, 1]) {
+            const kb = KB[side], at = KB_AT[side];
+            const x0 = at.x - (kb.w * KB_S) / 2, y0 = at.y - (kb.h * KB_S) / 2;
+            o.drawImage(kb.c, x0, y0, kb.w * KB_S, kb.h * KB_S);
+            for (const k of KEYS) {
+                if (t < k.t || t > k.t + 0.12 || (k.side !== side && !k.space)) continue;
+                const key = kb.keys[k.space ? (side < 0 ? 23 : 18) : Math.floor(hash(k.n * 3.1 + side) * kb.keys.length)];
+                o.fillStyle = `rgba(140,220,255,${0.7 * (1 - (t - k.t) / 0.12)})`;
+                o.fillRect(x0 + key.x * KB_S, y0 + key.y * KB_S, 42 * KB_S, 17 * KB_S);
+            }
+        }
+    });
+    motes(t, cam.x * 2, 0.5, true);
+    // Valera
+    const mon = blackout ? 0.15 : 0.85 + 0.15 * Math.sin(t * 3.1) * Math.sin(t * 1.7 + 1);
+    const c = clamp(charge);
+    const run = charge > 0.05;
+    const light = {
+        rim: [lerp(0x86, 0xf0, c), lerp(0xd4, 0xfa, c), 0xff],
+        edge: mon * (1 - c) + c * 1.2,
+        logo: (0.28 + 0.1 * Math.sin(t * 2.3)) * mon * (1 - c),
+    };
+    const edges = valera(pose, light);
+    const origin = { x: W / 2 - VOX * VP, y: hy - VOY * VP };
+    withLayer(cam, 1.1, () => {
+        o.drawImage(vC, origin.x, origin.y, VW * VP, VH * VP);
+        // arcs running over his outline, and out of it into the air
+        if (run && t < CLICK + 0.15) {
+            const slot = Math.floor(t * 16);
+            const n = Math.round(2 + 8 * c);
+            o.save(); o.globalCompositeOperation = 'lighter';
+            for (let k = 0; k < edges.length; k += 2) {
+                const ph = (edges[k + 1] * 0.8 + edges[k] * 0.25 - t * 60) % 18;
+                if (ph > -1.5 && ph < 0 || ph > 16.5) { o.fillStyle = `rgba(230,248,255,${0.8 * c})`; o.fillRect(origin.x + edges[k] * VP, origin.y + edges[k + 1] * VP, VP, VP); }
+            }
+            for (let k = 0; k < n; k++) {
+                const j = Math.floor(hash(slot * 7.1 + k * 13.7) * (edges.length / 2)) * 2;
+                const a = { x: origin.x + edges[j] * VP, y: origin.y + edges[j + 1] * VP };
+                let b = null;
+                for (let tries = 0; tries < 12 && !b; tries++) {
+                    const m = Math.floor(hash(slot * 3.3 + k * 5.1 + tries * 1.7) * (edges.length / 2)) * 2;
+                    const d = Math.hypot(edges[m] - edges[j], edges[m + 1] - edges[j + 1]);
+                    if (d > 6 && d < 22) b = { x: origin.x + edges[m] * VP, y: origin.y + edges[m + 1] * VP };
+                }
+                if (b) bolt(a, b, slot * 11 + k, VP / 2, '#f2fbff', 'rgba(70,170,255,0.5)', 3);
+                if (hash(slot + k * 9.9) < 0.35 * c) {
+                    const out = { x: a.x + (a.x - W / 2) * 0.35 + (hash(slot + k) - 0.5) * 200, y: a.y - 80 - hash(slot * 2 + k) * 200 };
+                    bolt(a, out, slot * 5 + k * 3, VP / 2, '#e8f6ff', 'rgba(60,150,255,0.45)', 4);
+                }
+            }
+            o.restore();
+            sparks(t, edges, origin, 0.25 + 0.75 * c);
+        }
+        if (t >= CLICK && t < CLICK + 1.2) sparks(t, edges, origin, 1, CLICK);
+        // the rapier, held out to the owl
+        if (pose.offer > 0.02 && t < TAKE) {
+            const hand = armPts(1, pose)[2];
+            const hp = { x: W / 2 + hand[0] * VP, y: hy + (hand[1] - 2) * VP };
+            const residual = 0.35 + 0.65 * Math.exp(-(t - TURN[1]) / 4);
+            rapier(hp.x, hp.y, VP, t, residual);
+            const slot = Math.floor(t * 9);
+            if (hash(slot * 1.37) < 0.6 * residual) {
+                o.save(); o.globalCompositeOperation = 'lighter';
+                const y0 = hp.y - (4 + hash(slot) * 20) * VP;
+                bolt({ x: hp.x + VP / 2, y: y0 }, { x: hp.x + VP / 2 + (hash(slot + 2) - 0.5) * 120, y: y0 - 40 - hash(slot + 3) * 60 }, slot * 3, VP / 2, '#eaf8ff', 'rgba(70,170,255,0.5)', 2);
+                for (let k = 0; k < 5; k++) {
+                    const age = (t * 3 + hash(k + slot)) % 1;
+                    o.fillStyle = `rgba(150,215,255,${0.8 * (1 - age) * residual})`;
+                    o.fillRect(Math.round((hp.x + (hash(k * 7 + slot) - 0.5) * 80) / 8) * 8, Math.round((hp.y - hash(k * 3 + slot) * 280 + age * 60) / 8) * 8, 8, 8);
+                }
+                o.restore();
+            }
+        }
+    });
+    gust(t);
+    vignette(0.7, '4,6,16');
+    // the click: a flash
+    if (t >= CLICK && t < CLICK + 0.15) { o.fillStyle = `rgba(225,242,255,${0.9 * (1 - (t - CLICK) / 0.15)})`; o.fillRect(0, 0, W, H); }
+    // bubbles
+    const owlP = owlRoom(t);
+    const owlHead = owlP ? toScreen(cam, 0.85, { x: PERCH.x - 30, y: PERCH.y - 13 * OWL_P }) : { x: 0, y: 0 };
+    bubble(0, t, owlHead, (bw) => ({ bx: Math.round(owlHead.x - bw - 140), by: 70 }));
+    bubble(1, t, owlHead, (bw) => ({ bx: Math.round(owlHead.x - bw - 140), by: 70 }));
+    const vHead = toScreen(cam, 1.1, { x: W / 2 + (pose.turn * 3 - 10) * VP, y: hy - 15 * VP });
+    bubble(2, t, vHead, (bw) => ({ bx: 120, by: 70 }));
+    const vSide = toScreen(cam, 1.1, { x: W / 2 - 13 * VP, y: hy + 2 * VP });
+    bubble(3, t, vSide, (bw, bh) => ({ bx: 60, by: 330 }));
+    bubble(4, t, vSide, (bw, bh) => ({ bx: 60, by: 330 }));
+    // in from the window's light
+    const flash = 1 - smooth(CUT_B, CUT_B + 0.45, t);
+    if (flash > 0) { o.fillStyle = `rgba(150,215,255,${flash})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+function draw(t) {
+    if (t < CUT_B) shotA(t); else shotB(t);
+    const black = 1 - smooth(0, 1.0, t) + smooth(DURATION - 0.9, DURATION, t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sound cues (sound.mjs): the game's own synth. Valera's voice is the owl's murmur seven semitones down and level:
+// the same syllables as the typing in his bubbles, so a real voice can be laid over them.
+const VALERA_PITCH = -7;
+const valeraVoice = (i) => PLANS[i].syllables.map((s) => ({ sfx: 'owl.babble', at: BUBBLES[i].from + s.at / 1000, variant: s.variant, pitch: VALERA_PITCH, vol: 1.5, pan: -0.1 }));
+const flyerCues = FLY.flatMap((f, i) => {
+    const start = f.x0 ?? (f.dir < 0 ? W + 260 : -260);
+    const tc = f.t0 + (W / 2 - start) / (f.dir * f.v);
+    if (tc < 0.3 || tc > PUSH + 1) return [];
+    const name = f.k === 'bat' ? 'bat.squeak' : f.k === 'crow' ? 'crow.caw' : f.k === 'ghost' ? 'ghost.wail' : 'witch.cackle';
+    return [{ sfx: name, at: tc - (f.k === 'ghost' ? 0.6 : 0.1), pan: f.dir * 0.2, vol: f.near ? 1.4 : f.d === 1 ? 0.6 : 1, variant: i }];
+});
+const hum = [];
+for (let at = CHARGE[0] + 0.2, k = 0; at < CLICK - 0.2; at += 0.32, k++) {
+    const q = (at - CHARGE[0]) / (CLICK - CHARGE[0]);
+    hum.push({ sfx: 'fly.buzz', at, variant: k, pitch: -14 + 10 * q, vol: 0.5 + 0.9 * q, pan: (k % 2 ? 0.15 : -0.15) });
+}
+const crackles = [];
+for (let k = 0; k < 18; k++) {
+    const q = (k / 18) ** 0.7;
+    crackles.push({ sfx: 'ability.zap', at: CHARGE[0] + 0.5 + q * (CLICK - CHARGE[0] - 0.6), variant: k, pan: (hash(k) - 0.5) * 1.2, vol: 0.25 + 0.5 * q, pitch: 3 + hash(k + 5) * 4 });
+}
+for (let k = 0; k < 7; k++) crackles.push({ sfx: 'ability.zap', at: TURN[1] + 0.4 + k * 1.4 + hash(k + 40) * 0.6, variant: k, pan: 0.35, vol: 0.18, pitch: 7 });
+window.SOUND = [
+    { music: 'cursed', from: 0, to: DURATION, intensity: 0.1, vol: 0.4, fadeIn: 1, fadeOut: 1.2 },
+    { music: 'cursed', from: 0, to: CUT_B + 0.3, intensity: 0.85, vol: 0.45, fadeIn: 1, fadeOut: 0.5 },
+    ...Array.from({ length: 12 }, (_, i) => ({ sfx: 'bush.rustle', at: 0.3 + i * 0.76, variant: i, pitch: -12, vol: 0.45 })),
+    ...flyerCues,
+    ...ZOMBIES.flatMap((z, i) => [
+        { sfx: 'worm.squelch', at: z.tr, variant: i, pitch: -5, vol: 0.5, pan: 0.4 },
+        { sfx: 'zombie.groan', at: z.tr + 0.6, variant: i, vol: 2.2, pan: 0.4 },
+    ]),
+    { sfx: 'owl.hoot', at: PUSH + 0.4, pan: 0.3, vol: 0.8 },
+    // the room
+    ...KEYS.map((k) => ({ sfx: 'ui.click', at: k.t, variant: k.n, pan: k.side * 0.35, pitch: k.space ? -6 : (hash(k.n * 1.7) - 0.5) * 3, vol: k.space ? 1.1 : 0.8 })),
+    { sfx: 'bar.door', at: FORT - 0.72, pan: 0.7, pitch: 3 },
+    { sfx: 'bush.rustle', at: FORT, pan: 0.7, pitch: -6, vol: 1.2 },
+    ...[0, 0.24, 0.48, 0.7].map((d, i) => ({ sfx: 'bush.rustle', at: OWL_IN[0] + d, pan: 0.6, pitch: -11, vol: 0.9, variant: i })),
+    { sfx: 'walk.step', at: OWL_IN[1], pan: 0.5, pitch: 4, vol: 1.5 },
+    { sfx: 'owl.hoot', at: HOOT, pan: 0.5 },
+    ...BUBBLES.flatMap((b, i) => (b.who === 'owl' ? [{ speak: 'owl', text: textOf(b), at: b.from, pan: 0.5, vol: 1.3 }] : valeraVoice(i))),
+    { sfx: 'bar.door', at: STAND[0] - 0.1, pan: 0, pitch: 5, vol: 0.8 },
+    { sfx: 'finale.wake', at: CHARGE[0] + 0.3, vol: 0.8 },
+    ...hum,
+    ...crackles,
+    { sfx: 'ui.click', at: CLICK, pitch: -12, vol: 2 },
+    { sfx: 'shot.rapira', at: CLICK },
+    { sfx: 'ability.zap', at: CLICK + 0.02, variant: 2, vol: 1.2 },
+    { sfx: 'owl.rapier', at: TURN[1] - 0.1, pan: 0.3 },
+    { sfx: 'ability.grant', at: TAKE, pan: 0.5 },
+    { sfx: 'owl.hoot', at: TAKE + 0.25, pan: 0.5, vol: 0.8 },
+    { sfx: 'bar.door', at: SIT[0], pan: 0, pitch: 6, vol: 0.6 },
+    { sfx: 'finale.owlAway', at: EXIT[0], pan: 0.3 },
+];
+window.DURATION = DURATION;
+window.draw = (t) => { draw(t); return true; };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
+document.title = 'ready';
+</script>
+</body>
+</html>
