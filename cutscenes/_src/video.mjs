@@ -1,5 +1,5 @@
 // node video.mjs <scene> [--fps 60] [--stills 1,2.5,...] [--audio]
-//   default   — frames → ../_silent/<scene>.mp4, sound (window.SOUND) → ../_audio/<scene>.wav, both → ../<scene>.mp4
+//   default   — frames → ../_silent/<scene>.mp4, sound (window.SOUND) → ../_audio/<scene>.wav, both → ../<NN>-<scene>.mp4 (NN: place in ORDER)
 //   --audio   — only the sound, muxed onto the existing silent video
 //   --stills  — single frames → ../_stills/<scene>-<t>.png
 import { spawn } from 'node:child_process';
@@ -9,10 +9,14 @@ import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { mix, writeWav } from './sound.mjs';
 
+// Story order: the finished video is named by its place in the evening, so a folder listing reads as the edit.
+const ORDER = ['bar-intro', 'franken-rise', 'roadrunner-alive'];
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '..');
 const args = process.argv.slice(2);
 const scene = args[0];
+const final = `${String(ORDER.indexOf(scene) + 1 || 99).padStart(2, '0')}-${scene}.mp4`;
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
 const fps = Number(opt('--fps', 60));
 const stills = opt('--stills', null);
@@ -59,8 +63,8 @@ try {
         const wav = path.join(OUT, '_audio', `${scene}.wav`);
         writeWav(wav, mix(cues, duration));
         await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(OUT, '_silent', `${scene}.mp4`), '-i', wav,
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', path.join(OUT, `${scene}.mp4`)]);
-        console.log('muxed', `${scene}.mp4`);
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', path.join(OUT, final)]);
+        console.log('muxed', final);
     }
     if (errs().length) console.log(errs().join('\n'));
 } finally { await B.close(); server.kill(); }

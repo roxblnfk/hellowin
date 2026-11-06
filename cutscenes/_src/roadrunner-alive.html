@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// RoadRunner is alive: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+import { PALETTE } from '/js/pixel/palette.js';
+import { DECOR, bake, pumpkinLayers, seedOf } from '/js/pixel/sprites.js';
+import { ASH } from '/js/pixel/bonfire.js';
+import { EMISSIVE, LIT_PALETTE, NIGHT, halo, paintSky, relightCanvas } from '/js/pixel/night.js';
+import { characterFrame, randomLook } from '/js/pixel/characters.js';
+import { OWL, glowing } from '/js/pixel/owl.js';
+import { FRANKEN, RUNNER, FX, FINALE_EMISSIVE, frankenHalo, runnerAura } from '/js/pixel/finale.js';
+import { speechPlan, beakAt, wingAt } from '/js/owl-speech.js';
+
+const W = 1920, H = 1080;
+const o = document.getElementById('out').getContext('2d');
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. The run follows the game's step 3 (finale-timeline.js): the horizon for 1.5 s, the diagonal down
+// to the front by 4.0 s, the stop, «мип-мип» at 5.0 s (T.meep).
+const CUT1 = 6.6;                   // owl close-up → the wide stage
+const RUN0 = 7.6;                   // RoadRunner shows on the horizon
+const HORIZON_S = 1.5, ARRIVE_S = 4.0, STOP_S = 4.35;
+const CUT2 = RUN0 + 4.55;           // → RoadRunner up close
+const MEEP = RUN0 + 5.0;
+const CUT3 = MEEP + 3.4;            // → the owl and RoadRunner together
+const DURATION = CUT3 + 12.6;
+const BUBBLES = [
+    { from: 1.6, to: CUT1 - 0.25, lines: ['Походу…', 'ошибочка вышла.'] },
+    { from: MEEP, to: CUT3 - 0.2, lines: ['Мип-мип!'], meep: true },
+    { from: CUT3 + 0.6, to: CUT3 + 4.9, lines: ['RoadRunner', 'никогда не умирал.'] },
+    { from: CUT3 + 5.3, to: DURATION - 0.9, lines: ['Кто, по-вашему,', 'весь вечер обрабатывал', 'ваши клики?'] },
+];
+const textOf = (b) => b.lines.join(' ');
+const PLANS = BUBBLES.map((b) => (b.meep ? null : speechPlan(textOf(b))));
+
+// Characters typed `ms` into a line: each word as the speech reaches it (owl-speech.js syllables), so the bubble keeps
+// pace with the voice and holds on the pauses.
+function typedOf(i, ms) {
+    const b = BUBBLES[i], text = textOf(b);
+    if (b.meep) return ms < 0 ? 0 : ms < 260 ? 4 : text.length;
+    const plan = PLANS[i];
+    const words = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+    const counts = words.map((m) => Math.max(1, Math.min(5, (m[0].match(/[аеёиоуыэюяaeiouy]/giu) ?? []).length || Math.ceil(m[0].length / 3))));
+    if (counts.reduce((a, c) => a + c, 0) !== plan.syllables.length) return Math.floor(text.length * clamp(ms / plan.ms));
+    let n = 0, k = 0;
+    for (let w = 0; w < words.length; w++) {
+        const first = plan.syllables[k], last = plan.syllables[k + counts[w] - 1];
+        k += counts[w];
+        const start = first.at, end = last.at + last.len;
+        const m = words[w];
+        if (ms < start) return n;
+        const into = clamp((ms - start) / Math.max(1, end - start));
+        n = m.index + Math.ceil(m[0].length * into);
+        if (into < 1) return n;
+        n = (words[w + 1]?.index ?? text.length);
+        if (w === words.length - 1) n = text.length;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The stage of the finale (as public/dev/finale.html stages it): 320 × 180 art px, at night after FrankenPHP's reveal.
+const UNLIT = new Set([...EMISSIVE, ...FINALE_EMISSIVE]);
+const baked = new WeakMap();
+function bakeF(sprite, lighting = 'day') {
+    if (!baked.has(sprite)) baked.set(sprite, new Map());
+    const per = baked.get(sprite);
+    if (per.has(lighting)) return per.get(lighting);
+    const [c, ctx] = canvas(sprite.w, sprite.h);
+    const img = ctx.createImageData(sprite.w, sprite.h);
+    for (let y = 0; y < sprite.h; y++) for (let x = 0; x < sprite.w; x++) {
+        const k = sprite.legend[sprite.rows[y][x]];
+        if (!k) continue;
+        const color = UNLIT.has(k) || lighting === 'day' ? PALETTE[k] : LIT_PALETTE[lighting][k];
+        const i = (y * sprite.w + x) * 4;
+        img.data[i] = (color >> 16) & 255; img.data[i + 1] = (color >> 8) & 255; img.data[i + 2] = color & 255; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    per.set(lighting, c);
+    return c;
+}
+const light = (s) => bakeF(s, 'day');
+// RoadRunner half-way between day and night: the moon on him, but alive and bright against the dead lawn.
+const runnerCache = new WeakMap();
+function runnerCanvas(s) {
+    if (runnerCache.has(s)) return runnerCache.get(s);
+    const [c, ctx] = canvas(s.w, s.h);
+    ctx.drawImage(bakeF(s, 'night'), 0, 0);
+    ctx.globalAlpha = 0.55; ctx.drawImage(bakeF(s, 'day'), 0, 0);
+    runnerCache.set(s, c);
+    return c;
+}
+const stamp = (ctx, c, def, x, y) => ctx.drawImage(c, Math.round(x - def.anchor.x), Math.round(y - def.anchor.y));
+const stampFlip = (ctx, c, def, x, y) => { ctx.save(); ctx.translate(Math.round(x), 0); ctx.scale(-1, 1); ctx.drawImage(c, -def.anchor.x, Math.round(y - def.anchor.y)); ctx.restore(); };
+const additive = (ctx, c, def, x, y, a) => { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; stamp(ctx, c, def, x, y); ctx.restore(); };
+const glowCache = new WeakMap();
+const glow = (s) => glowCache.get(s) ?? glowCache.set(s, glowing(s)).get(s);
+
+const MW = 320, MH = 180, HORIZON = 62;
+const CENTRE = { x: 166, y: 124 };
+// The pumpkins where they dropped round the circle.
+const RING = [
+    [-70, -18, 'm', 'pumpkin-1'], [-38, -30, 's', 'pumpkin-2'], [6, -34, 's', 'pumpkin-3'], [44, -28, 'm', 'pumpkin-5'],
+    [78, -12, 's', 'pumpkin-6'], [96, 14, 'l', 'pumpkin-7'], [60, 38, 'm', 'pumpkin-8'], [14, 46, 'l', 'pumpkin-10'],
+    [-34, 44, 'm', 'pumpkin-11'], [-80, 26, 'l', 'pumpkin-13'], [-100, 0, 's', 'pumpkin-14'],
+];
+const TREE_AT = { x: 34, y: 118 };
+const PERCH = { x: TREE_AT.x - DECOR.tree.anchor.x + DECOR.tree.perch[0], y: TREE_AT.y - DECOR.tree.anchor.y + DECOR.tree.perch[1] };
+const looks = Array.from({ length: 6 }, (_, i) => randomLook(((s) => () => ((s = (s * 16807) % 2147483647) / 2147483647))(41 + i * 13)));
+const EDGES = [[-140, 40], [140, 36], [-120, 54], [124, 52], [70, 58], [-150, 0]];
+
+const LAWN = (() => {
+    const [c, ctx] = canvas(MW, MH);
+    let seed = 9;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let x = 0; x < MW; x += DECOR.hills.w) ctx.drawImage(bake(DECOR.hills), x, HORIZON - DECOR.hills.h);
+    for (let y = HORIZON; y < MH; y++) for (let x = 0; x < MW; x++) {
+        const d = Math.hypot((x - CENTRE.x) / 132, (y - CENTRE.y + 4) / 52);
+        let k;
+        if (d < 0.9 || (d < 1 && (x + y) % 2 === 0)) {
+            const lane = ((((x - CENTRE.x) / (y - HORIZON + 30)) * 9) % 1 + 1) % 1;
+            k = lane < 0.2 ? 'soilDark' : lane < 0.3 ? 'soilLight' : 'soil';
+        } else { const n = r(); k = n < 0.06 ? 'leafLight' : n < 0.18 ? 'leafDark' : 'leaf'; }
+        ctx.fillStyle = hex(PALETTE[k]); ctx.fillRect(x, y, 1, 1);
+    }
+    stamp(ctx, bake(DECOR.tree), DECOR.tree, TREE_AT.x, TREE_AT.y);
+    return c;
+})();
+const GROUND = relightCanvas(LAWN, 'night');
+const SKY = (() => { const [c, ctx] = canvas(MW, HORIZON + 1); paintSky(ctx, MW, HORIZON + 1, 'night', { seed: 5 }); return c; })();
+
+function pumpkin(ctx, i, x, y, ms) {
+    const [, , size, id] = RING[i];
+    const L = pumpkinLayers(11, size, seedOf(id), 'violet');
+    const h = halo(size === 'l' ? 16 : 13, 5, 'violet');
+    additive(ctx, light(h), h, x, y, 0.25);
+    const at = (list, per) => list[frameAt(ms + i * 97, list.length, per)];
+    if (L.auraFrames) stamp(ctx, light(at(L.auraFrames, 160)), L, x, y);
+    stamp(ctx, bakeF(L.layers.back, 'night'), L, x, y);
+    if (L.glowFrames) stamp(ctx, light(at(L.glowFrames, 120)), L, x, y);
+    stamp(ctx, bakeF(L.layers.body, 'night'), L, x, y);
+    stamp(ctx, bakeF(L.layers.rim, 'night'), L, x, y);
+    if (L.layers.stem) stamp(ctx, bakeF(L.layers.stem, 'night'), L, x, y);
+    if (L.fireFrames) stamp(ctx, light(at(L.fireFrames, 110)), L, x, y);
+}
+const relit = new Map();
+function walker(ctx, i, x, y, ms) {
+    const dx = CENTRE.x - x;
+    const f = characterFrame(looks[i], { dir: 'side', pose: 'idle', frame: frameAt(ms + i * 170, 2, 600) });
+    if (!relit.has(f.canvas)) relit.set(f.canvas, relightCanvas(f.canvas, 'night'));
+    const c = relit.get(f.canvas);
+    const put = (img) => {
+        if (dx < 0) { ctx.save(); ctx.translate(Math.round(x), 0); ctx.scale(-1, 1); ctx.drawImage(img, -f.anchor.x, Math.round(y - f.anchor.y)); ctx.restore(); }
+        else ctx.drawImage(img, Math.round(x - f.anchor.x), Math.round(y - f.anchor.y));
+    };
+    put(c);
+    if (f.glow) put(f.glow);
+}
+function frankenAt(t) {
+    const s = (t * 1000) % 2400;
+    if (s > 2000 && s < 2270) return FRANKEN.spark[Math.floor((s - 2000) / 90)];
+    return FRANKEN.idle[frameAt(t * 1000, 2, 700)];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// RoadRunner's run, stage px: along the horizon, then down the diagonal to the front, growing; a skid at the stop.
+const SIZES = ['s', 'm', 'l', 'xl'];
+const HEIGHT = { far: 4, s: 12, m: 20, l: 30, xl: 46 };
+function runnerAt(t) {
+    const s = t - RUN0;
+    if (s < 0) return null;
+    if (s < HORIZON_S) return { size: 'far', x: 4 + (s / HORIZON_S) * 210, y: HORIZON + 1, frame: RUNNER.far[frameAt(s * 1000, 4, 100)], run: true };
+    const p = clamp((s - HORIZON_S) / (ARRIVE_S - HORIZON_S));
+    const size = SIZES[p < 0.15 ? 0 : p < 0.4 ? 1 : p < 0.7 ? 2 : 3];
+    const skid = smooth(ARRIVE_S - 0.05, STOP_S, s);
+    const x = 214 + p * 34 + skid * 7;
+    const y = HORIZON + 4 + p * (MH - 12 - HORIZON - 4);
+    const set = RUNNER[size];
+    const run = s < ARRIVE_S;
+    const frame = run ? set.run[frameAt(s * 1000, 4, 70)] : t >= MEEP && t < MEEP + 0.5 ? set.meep : set.stop;
+    return { size, x, y, frame, run, p };
+}
+const auras = {};
+const auraOf = (size) => auras[size] ??= size === 'far' ? runnerAura(9, 6) : runnerAura(Math.round(HEIGHT[size] * 0.55) + 2, Math.round(HEIGHT[size] * 0.62) + 2);
+
+// Dust: a puff every 50 ms where the feet were, rising and thinning; a burst of bigger ones at the skid.
+function dust(ctx, t) {
+    const s = t - RUN0;
+    if (s < 0) return;
+    for (let k = Math.max(0, Math.floor((s - 0.9) / 0.05)); k * 0.05 <= Math.min(s, STOP_S); k++) {
+        const born = k * 0.05, age = s - born, life = 0.9;
+        if (age < 0 || age >= life) continue;
+        const r = runnerAt(RUN0 + born);
+        if (!r) continue;
+        const big = r.size === 'xl' ? 2 : r.size === 'l' || r.size === 'm' ? 1 : 0;
+        const pf = FX.smoke.puff[big][Math.min(3, Math.floor((age / life) * 4))];
+        const up = age * (4 + big * 6), back = age * (6 + big * 8) * (hash(k) * 0.6 + 0.6);
+        ctx.globalAlpha = 0.75 * (1 - age / life);
+        stamp(ctx, bakeF(pf, 'night'), pf, r.x - back - 2, r.y + 1 - up);
+        ctx.globalAlpha = 1;
+    }
+    // the skid
+    for (let k = 0; k < 7; k++) {
+        const born = ARRIVE_S - 0.05 + k * 0.05, age = s - born, life = 1.5;
+        if (age < 0 || age >= life) continue;
+        const pf = FX.smoke.puff[2][Math.min(3, Math.floor((age / life) * 4))];
+        const dir = (k % 2 ? 1 : -1) * (6 + k * 3);
+        ctx.globalAlpha = 0.8 * (1 - age / life);
+        stamp(ctx, bakeF(pf, 'night'), pf, 254 + dir * smooth(0, 1.2, age) * 1.4 - 12, MH - 10 - age * 7 - (k % 3) * 2);
+        ctx.globalAlpha = 1;
+    }
+}
+function drawRunner(ctx, t, flip = false) {
+    const r = runnerAt(t);
+    if (!r) return;
+    const h = HEIGHT[r.size];
+    const a = auraOf(r.size);
+    additive(ctx, light(a), a, r.x, r.y - h / 2, 0.45 + 0.12 * Math.sin(t * 9));
+    // speed streaks behind him
+    if (r.run && r.size !== 'far') {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        for (let k = 0; k < 4; k++) {
+            const yy = Math.round(r.y - h * (0.25 + 0.17 * k));
+            const len = h * (0.8 + hash(k + Math.floor(t * 20)) * 0.9);
+            ctx.fillStyle = `rgba(80,196,255,${0.5 - k * 0.08})`;
+            ctx.fillRect(Math.round(r.x - h * 0.55 - len), yy, Math.round(len), 1);
+        }
+        ctx.restore();
+    }
+    (flip ? stampFlip : stamp)(ctx, r.size === 'far' ? light(r.frame) : runnerCanvas(r.frame), r.frame, r.x, r.y);
+}
+
+// The stage, sky left transparent (the sky is its own layer).
+const [stage, sx] = canvas(MW, MH);
+function drawStage(t, { owl = null, runner = true } = {}) {
+    const ms = t * 1000;
+    sx.clearRect(0, 0, MW, MH);
+    sx.drawImage(GROUND, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h);
+    // RoadRunner on the horizon is behind everything on the lawn
+    const r = runnerAt(t);
+    if (runner && r?.size === 'far') { dust(sx, t); drawRunner(sx, t); }
+    const items = [];
+    items.push({ y: CENTRE.y - 6, draw: () => {
+        stamp(sx, bakeF(ASH.pit, 'night'), ASH.pit, CENTRE.x, CENTRE.y);
+        stamp(sx, light(ASH.circle[7]), ASH.circle[7], CENTRE.x, CENTRE.y);
+        const h = frankenHalo(40, 12); additive(sx, light(h), h, CENTRE.x, CENTRE.y - 2, 0.35);
+    } });
+    RING.forEach(([dx, dy], i) => items.push({ y: CENTRE.y + dy, draw: () => pumpkin(sx, i, CENTRE.x + dx, CENTRE.y + dy, ms) }));
+    EDGES.forEach(([dx, dy], i) => {
+        const x = clamp(CENTRE.x + dx, 8, MW - 8), y = CENTRE.y + dy;
+        items.push({ y, draw: () => walker(sx, i, x, y, ms) });
+    });
+    items.push({ y: CENTRE.y, draw: () => { const f = frankenAt(t); stamp(sx, bakeF(f, 'night'), f, CENTRE.x, CENTRE.y); } });
+    items.push({ y: CENTRE.y + 2, draw: () => {
+        [[-60, 6, 0], [10, 10, 2], [70, 2, 1], [-20, 22, 3]].forEach(([dx, dy, ph]) => {
+            const s = FX.smoke.creep[(frameAt(ms, 4, 300) + ph) % 4];
+            sx.globalAlpha = 0.7; stamp(sx, bakeF(s, 'night'), s, CENTRE.x + dx, CENTRE.y + dy); sx.globalAlpha = 1;
+        });
+    } });
+    if (runner && r && r.size !== 'far') items.push({ y: 999, draw: () => { dust(sx, t); drawRunner(sx, t); } }); // over everything, as the game stages him
+    if (owl) items.push({ y: 1000, draw: () => { const s = owl(t); stamp(sx, bakeF(glow(s), 'night'), s, PERCH.x, PERCH.y); } });
+    items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+    return stage;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shared bits: blurred backdrop, motes, vignette, bubbles.
+function backdrop(t, { z, at, focus, blur = 7, runner = false, bright = 0.8 }) {
+    const st = drawStage(t, { runner });
+    o.save();
+    o.filter = `blur(${blur}px) brightness(${bright})`;
+    o.translate(at.x, at.y); o.scale(z, z); o.translate(-focus.x, -focus.y);
+    o.drawImage(SKY, 0, 0);
+    stamp(o, bake(NIGHT.moonHalo), NIGHT.moonHalo, 250, 22); stamp(o, bake(NIGHT.moon), NIGHT.moon, 250, 22);
+    o.drawImage(st, 0, 0);
+    o.restore();
+    o.filter = 'none';
+}
+function wash(x, y, r, rgba) {
+    const g = o.createRadialGradient(x, y, 30, x, y, r);
+    g.addColorStop(0, rgba); g.addColorStop(1, 'rgba(0,0,0,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+}
+function vignette(k = 0.72) {
+    const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.34, W / 2, H * 0.5, H * 1.08);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${k})`);
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+}
+// FrankenPHP's lime motes drifting in the air; `pan` moves them with the camera, nearer ones faster.
+const MOTES = Array.from({ length: 70 }, (_, i) => ({ x: hash(i) * W, ph: hash(i + 3), v: 18 + hash(i + 5) * 40, s: hash(i + 9) < 0.25 ? 12 : 6, d: 0.5 + hash(i + 13) }));
+function motes(t, pan = 0, alpha = 1) {
+    for (const e of MOTES) {
+        const y = H - ((t * e.v * e.d + e.ph * H * 1.3) % (H * 1.3));
+        const x = ((e.x + Math.sin(t * 0.9 + e.ph * 9) * 30 - pan * e.d) % W + W) % W;
+        const a = (0.2 + 0.4 * Math.sin(t * 3 + e.ph * 20) ** 2) * alpha;
+        o.fillStyle = `rgba(190,255,90,${a})`;
+        const s = e.s * e.d;
+        o.fillRect(Math.round(x / 6) * 6, Math.round(y / 6) * 6, s, s);
+    }
+}
+// RoadRunner's blue sparks rising round him: screen point `c`, spread `w` × `h`.
+function sparks(t, c, w, h, n = 36, px = 8) {
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+        const life = 1.2 + hash(i + 40) * 0.8;
+        const age = (t + hash(i + 7) * life) % life, k = age / life;
+        const x = c.x + (hash(i + 1) - 0.5) * w + Math.sin(t * 3 + i) * 12;
+        const y = c.y + h * 0.1 - k * h * (0.7 + hash(i + 2) * 0.5);
+        o.fillStyle = hash(i + 5) < 0.3 ? `rgba(220,245,255,${0.9 * (1 - k)})` : `rgba(80,196,255,${0.8 * (1 - k)})`;
+        const s = hash(i + 11) < 0.3 ? px * 2 : px;
+        o.fillRect(Math.round(x / px) * px, Math.round(y / px) * px, s, s);
+    }
+    o.restore();
+}
+// A sprite at screen scale `s`, its anchor at (x, y).
+function big(c, def, x, y, s, flip = false) {
+    if (!flip) { o.drawImage(c, Math.round(x - def.anchor.x * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s); return; }
+    o.save(); o.translate(Math.round(x), 0); o.scale(-1, 1);
+    o.drawImage(c, Math.round(-def.anchor.x * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s);
+    o.restore();
+}
+function branch(x0, x1, y, slope, s) {
+    for (let x = x0; x < x1; x += s / 2) {
+        const yy = y + Math.round(((x - (x0 + x1) / 2) * slope) / (s / 2)) * (s / 2);
+        o.fillStyle = '#1a1018'; o.fillRect(x, yy, s / 2, s * 1.6);
+        o.fillStyle = '#3a2a2c'; o.fillRect(x, yy, s / 2, s / 2);
+    }
+}
+
+const u = 8, OUTL = hex(PALETTE.outline), CREAM = hex(PALETTE.cream);
+function frameRect(x, y, w, h, fill = CREAM) {
+    o.fillStyle = OUTL; o.fillRect(x + u, y, w - 2 * u, h); o.fillRect(x, y + u, w, h - 2 * u);
+    o.fillStyle = fill; o.fillRect(x + 2 * u, y + u, w - 4 * u, h - 2 * u); o.fillRect(x + u, y + 2 * u, w - 2 * u, h - 4 * u);
+}
+function bubble(i, t, head, place) {
+    const b = BUBBLES[i];
+    const age = t - b.from;
+    if (age < 0 || t > b.to + 0.2) return;
+    const out = t > b.to ? 1 - (t - b.to) / 0.2 : 1;
+    const pop = backOut(age / (b.meep ? 0.16 : 0.22)) * out;
+    const size = b.meep ? 128 : 56, LH = b.meep ? 140 : 70;
+    o.font = `700 ${size}px Consolas, "Cascadia Mono", monospace`;
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + (b.meep ? 120 : 88), bh = b.lines.length * LH + (b.meep ? 70 : 52);
+    const { bx, by } = place(bw, bh);
+    o.save();
+    o.globalAlpha = clamp(out * 1.5);
+    o.translate(head.x, head.y); o.scale(pop, pop); o.translate(-head.x, -head.y);
+    if (b.meep) { // speed ticks round the shout, in RoadRunner's blue
+        for (let k = 0; k < 14; k++) {
+            const a = (k / 14) * Math.PI * 2 + 0.1, cx = bx + bw / 2, cy = by + bh / 2;
+            const len = 3 + (k % 3);
+            for (let s = 0; s < len; s++) {
+                const px = cx + Math.cos(a) * (bw / 2 + 50 + s * 22), py = cy + Math.sin(a) * (bh / 2 + 40 + s * 22);
+                o.fillStyle = s === 0 ? '#dff4ff' : '#50c4ff';
+                o.fillRect(Math.round(px / u) * u - u, Math.round(py / u) * u - u, 2 * u, 2 * u);
+            }
+        }
+    }
+    o.globalAlpha *= 0.4; o.fillStyle = '#000'; o.fillRect(bx + 2 * u, by + 3 * u, bw, bh); o.globalAlpha = clamp(out * 1.5);
+    frameRect(bx, by, bw, bh);
+    // the tail toward the head
+    const fromRight = head.x > bx + bw / 2;
+    let x = fromRight ? bx + bw - 160 : bx + 60, y = by + bh - 2 * u;
+    const steps = clamp(Math.floor((head.y - 20 - y) / (3 * u)), 2, 16);
+    const dx = (head.x - 30 - x) / steps;
+    for (let k = 0; k < steps; k++) {
+        const w = Math.max(2, 8 - Math.floor((k * 7) / steps)) * u, sxp = Math.round(x / u) * u;
+        o.fillStyle = OUTL; o.fillRect(sxp - u, y + (k ? 0 : 2 * u), w + 2 * u, (k ? 4 : 2) * u);
+        o.fillStyle = CREAM; o.fillRect(sxp, y, w, 3 * u);
+        x += dx; y += 3 * u;
+    }
+    let left = typedOf(i, age * 1000);
+    o.fillStyle = b.meep ? hex(PALETTE.shieldBlue) : OUTL;
+    b.lines.forEach((s, k) => {
+        const shown = s.slice(0, Math.max(0, left));
+        left -= s.length + 1;
+        const tx = bx + (b.meep ? 60 : 44), ty = by + (b.meep ? 35 + 100 : 26 + 50) + k * LH;
+        if (b.meep) {
+            let xx = tx;
+            [...shown].forEach((ch, j) => {
+                const q = Math.floor(t * 20) * 31 + j * 7;
+                const jit = t < MEEP + 0.6 ? 8 : 2;
+                o.fillText(ch, xx + (hash(q) - 0.5) * jit, ty + (hash(q + 5) - 0.5) * jit);
+                xx += o.measureText(ch).width;
+            });
+        } else o.fillText(shown, tx, ty);
+    });
+    o.restore();
+}
+// The owl's beak for bubble i at t: shut / open / wide, the wing up on a gesture.
+function owlTalk(i, t) {
+    const plan = PLANS[i], ms = (t - BUBBLES[i].from) * 1000;
+    if (ms < 0 || ms > plan.ms + 200) return null;
+    const beak = beakAt(plan, ms);
+    return wingAt(plan, ms) ? OWL.beakWing[beak] : OWL.beak[beak];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot 1: the owl up close on its branch, FrankenPHP blurred behind — where the last scene left it. It sags, a drop of
+// sweat rolls down, it looks away on the pause.
+const OWL_S = 34;
+function owlFrame1(t) {
+    if (t < 0.5) return OWL.hoot;
+    if (t < 1.45) return OWL.turnLeft[t < 0.75 ? 0 : 1];
+    const talk = owlTalk(0, t);
+    if (talk) {
+        const ms = (t - BUBBLES[0].from) * 1000;
+        const plan = PLANS[0];
+        // on the pause after «Походу…» it glances away
+        const gap = plan.syllables.find((s, k) => k > 0 && s.at > ms && plan.syllables[k - 1].at + plan.syllables[k - 1].len < ms);
+        if (gap && gap.at - ms > 120) return OWL.turnRight[0];
+        return talk;
+    }
+    if ((t % 2.7) < 0.13) return OWL.blink;
+    return t > 4.6 && t < 5.4 ? OWL.turnRight[0] : OWL.idle[Math.floor(t / 0.7) % 2];
+}
+function sweat(x, y, s, a) {
+    const rows = ['..O..', '.OwO.', 'OwbbO', 'ObbbO', '.OOO.'];
+    const col = { O: '#1b2a44', w: '#e8f8ff', b: '#7cc8ff' };
+    o.globalAlpha = a;
+    rows.forEach((r, j) => [...r].forEach((ch, i) => { if (ch !== '.') { o.fillStyle = col[ch]; o.fillRect(Math.round(x + i * s), Math.round(y + j * s), s, s); } }));
+    o.globalAlpha = 1;
+}
+function shot1(t) {
+    const zoom = 1 + 0.07 * smooth(0, CUT1, t);
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    backdrop(t, { z: 9 * (1 + (zoom - 1) * 0.4), at: { x: W * 0.36 - t * 8, y: H * 0.5 }, focus: { x: CENTRE.x + 4, y: CENTRE.y - 52 } });
+    wash(W * 0.36, H * 0.45, 900, 'rgba(170,255,80,0.2)');
+    motes(t, t * 20, 0.6);
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const perch = { x: 1390 + t * 6, y: 900 + Math.round(smooth(0.4, 1.2, t) * 6) };
+    branch(900, W + 300, perch.y, 0.08, OWL_S);
+    const f = owlFrame1(t);
+    big(bakeF(glow(f), 'night'), f, perch.x, perch.y, OWL_S);
+    // the drop of sweat, down the side of its head
+    const d = smooth(2.3, 4.2, t);
+    if (t > 2.2 && t < 4.6) sweat(perch.x - 8 * OWL_S, perch.y - 15.5 * OWL_S + d * 4 * OWL_S, OWL_S / 2.5, 1 - smooth(4.0, 4.5, t));
+    o.restore();
+    vignette(0.75);
+    const head = { x: W / 2 + (perch.x - W / 2) * zoom - 80, y: H / 2 + (perch.y - 15 * OWL_S - H / 2) * zoom };
+    bubble(0, t, head, (bw) => ({ bx: head.x - bw - 150, by: 130 }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot 2: the wide stage; RoadRunner comes in off the horizon, the camera following him down to the front.
+const S = W / MW; // 6: the whole stage
+function cameraB(t) {
+    const r = runnerAt(t);
+    let cx = 150 + (t - CUT1) * 2, cy = 92, z = 1.32;
+    if (r) {
+        const s = t - RUN0;
+        const lead = smooth(0, HORIZON_S, s);
+        cx = lerp(cx, clamp(r.x + 20, 120, 215), lead * 0.8);
+        cy = lerp(cy, 84, lead);
+        z = lerp(z, 1.85, lead);
+        const down = smooth(HORIZON_S, ARRIVE_S, s);
+        cx = lerp(cx, 222, down); cy = lerp(cy, 118, down); z = lerp(z, 1.62, down);
+        // the push in on him as he stops
+        const push = smooth(ARRIVE_S, CUT2 - RUN0, s);
+        cx = lerp(cx, 250, push); cy = lerp(cy, 140, push); z = lerp(z, 2.6, push);
+    }
+    const q = Math.floor(t * 30);
+    const s = t - RUN0;
+    const amp = s > ARRIVE_S - 0.1 && s < STOP_S + 0.3 ? 1.4 * (1 - smooth(ARRIVE_S, STOP_S + 0.3, s)) : 0;
+    return { cx: cx + 0.6 * Math.sin(t * 0.37) + (hash(q) - 0.5) * 2 * amp, cy: cy + 0.4 * Math.sin(t * 0.5) + (hash(q + 77) - 0.5) * 2 * amp, z };
+}
+function layer(cam, f, fn, neutral = { x: MW / 2, y: MH / 2 }) {
+    const z = S * (1 + (cam.z - 1) * f);
+    const cx = neutral.x + (cam.cx - neutral.x) * f, cy = neutral.y + (cam.cy - neutral.y) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-cx, -cy); fn(); o.restore();
+    return (p) => ({ x: (p.x - cx) * z + W / 2, y: (p.y - cy) * z + H / 2 });
+}
+// Foreground: a dark tuft line along the bottom and a fallen pumpkin's silhouette, faster than the stage.
+const TUFTS = Array.from({ length: 70 }, (_, i) => ({ x: i * 36 + hash(i) * 20 - 300, h: 20 + hash(i + 50) * 50, w: 12 + (hash(i + 9) < 0.5 ? 12 : 0) }));
+function foreground(cam) {
+    const off = -(cam.cx - 166) * S * 1.5, lift = -(cam.cy - 100) * S * 0.6;
+    for (const tu of TUFTS) {
+        const x = Math.round((tu.x + off) / 12) * 12, y = H + 40 + lift;
+        o.fillStyle = '#07070c'; o.fillRect(x, Math.round((y - tu.h) / 12) * 12, tu.w, tu.h + 200);
+        o.fillStyle = 'rgba(150,230,90,0.35)'; o.fillRect(x, Math.round((y - tu.h) / 12) * 12, 12, 12);
+    }
+}
+function owlFrameB(t) {
+    const r = runnerAt(t);
+    if (r && r.size !== 'far') return OWL.turnRight[1];
+    if (r) return OWL.turnRight[0];
+    return (t % 3.1) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
+}
+function shot2(t) {
+    const cam = cameraB(t);
+    o.fillStyle = '#000'; o.fillRect(0, 0, W, H);
+    layer(cam, 0.35, () => {
+        o.drawImage(SKY, -60, -20, MW + 120, HORIZON + 21);
+        stamp(o, bake(NIGHT.moonHalo), NIGHT.moonHalo, 250, 22); stamp(o, bake(NIGHT.moon), NIGHT.moon, 250, 22);
+    });
+    const toScreen = layer(cam, 1, () => o.drawImage(drawStage(t, { owl: owlFrameB }), 0, 0));
+    const f = toScreen({ x: CENTRE.x, y: CENTRE.y - 40 });
+    wash(f.x, f.y, 900, 'rgba(170,255,80,0.16)');
+    const r = runnerAt(t);
+    if (r) { const p = toScreen({ x: r.x, y: r.y - HEIGHT[r.size] / 2 }); wash(p.x, p.y, 120 + HEIGHT[r.size] * S * cam.z * 1.2, 'rgba(80,170,255,0.22)'); }
+    motes(t, (cam.cx - 150) * 30, 0.8);
+    foreground(cam);
+    vignette(0.7);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot 3: RoadRunner up close, low and big, FrankenPHP blurred behind; «Мип-мип!».
+const RR_S = 13;
+function runnerFrame3(t) {
+    const k = t - MEEP;
+    if (k >= 0 && k < 0.22) return RUNNER.xl.meep;
+    if (k >= 0.26 && k < 0.6) return RUNNER.xl.meep;
+    return RUNNER.xl.stop;
+}
+function shot3(t) {
+    const k = t - CUT2;
+    const zoom = 1 + 0.05 * smooth(0, CUT3 - CUT2, k) + 0.05 * smooth(MEEP, MEEP + 0.15, t) * (1 - smooth(MEEP + 0.3, MEEP + 1.2, t));
+    const q = Math.floor(t * 30);
+    const amp = t > MEEP && t < MEEP + 0.6 ? 6 : 0;
+    const sh = { x: (hash(q) - 0.5) * 2 * amp, y: (hash(q + 3) - 0.5) * 2 * amp };
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    backdrop(t, { z: 9.5 * (1 + (zoom - 1) * 0.4), at: { x: W * 0.3 - k * 10 + sh.x * 0.3, y: H * 0.42 + sh.y * 0.3 }, focus: { x: CENTRE.x, y: CENTRE.y - 50 }, blur: 8, bright: 0.7 });
+    wash(W * 0.28, H * 0.4, 800, 'rgba(170,255,80,0.14)');
+    o.save();
+    o.translate(W / 2 + sh.x, H / 2 + sh.y); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const feet = { x: 760 + 30 * (1 - backOut(k / 0.35)), y: 1060 };
+    const bob = Math.floor(t / 0.35) % 2 && t > MEEP + 0.6 ? -RR_S : 0;
+    wash(feet.x + 40, feet.y - 300, 700, `rgba(80,170,255,${0.3 + 0.08 * Math.sin(t * 8)})`);
+    // ground shadow and the aura round him
+    o.fillStyle = 'rgba(0,0,0,0.45)'; o.fillRect(feet.x - 30 * RR_S, feet.y - RR_S, 56 * RR_S, 2 * RR_S);
+    const a = auraOf('xl');
+    o.save(); o.globalCompositeOperation = 'lighter'; o.globalAlpha = 0.5 + 0.12 * Math.sin(t * 9);
+    big(light(a), a, feet.x + 2 * RR_S, feet.y - 23 * RR_S + bob, RR_S); o.restore();
+    const f = runnerFrame3(t);
+    big(runnerCanvas(f), f, feet.x, feet.y + bob, RR_S);
+    o.restore();
+    sparks(t, { x: feet.x + 40, y: feet.y - 250 }, 900, 700, 40, 10);
+    // settling dust from the skid, screen space
+    for (let i = 0; i < 9; i++) {
+        const pf = FX.smoke.puff[2][Math.min(3, Math.floor(clamp(k / 2.2) * 4))];
+        o.globalAlpha = 0.55 * (1 - smooth(0, 2.4, k));
+        big(bakeF(pf, 'night'), pf, 200 + i * 200 + hash(i) * 80 + (i < 4 ? -1 : 1) * k * 60, H + 30 - k * 40 - hash(i + 3) * 60, 9);
+        o.globalAlpha = 1;
+    }
+    motes(t, t * 30, 0.5);
+    vignette(0.65);
+    const head = { x: W / 2 + (feet.x + 22 * RR_S - W / 2) * zoom, y: H / 2 + (feet.y - 40 * RR_S - H / 2) * zoom };
+    bubble(1, t, head, (bw, bh) => ({ bx: Math.min(W - bw - 60, head.x + 60), by: 90 }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot 4: the owl on its branch in the left foreground, RoadRunner right of it facing back, FrankenPHP blurred between
+// them; the camera trucks slowly toward RoadRunner.
+const OWL4 = 28, RR4 = 9;
+function owlFrame4(t) {
+    for (const i of [2, 3]) { const f = owlTalk(i, t); if (f) return f; }
+    if ((t % 2.9) < 0.13) return OWL.blink;
+    return t < BUBBLES[2].from ? OWL.turnRight[1] : OWL.turnRight[0];
+}
+function shot4(t) {
+    const k = t - CUT3;
+    const go = smooth(0, DURATION - CUT3, k);
+    const px = go * 220, zoom = 1 + 0.08 * go;
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(1 + (zoom - 1) * 0.3, 1 + (zoom - 1) * 0.3); o.translate(-W / 2, -H / 2);
+    backdrop(t, { z: 7, at: { x: W * 0.55 - px * 0.3, y: H * 0.47 }, focus: { x: CENTRE.x, y: CENTRE.y - 46 }, blur: 6, bright: 0.75 });
+    o.restore();
+    wash(W * 0.55 - px * 0.3, H * 0.4, 700, 'rgba(170,255,80,0.12)');
+    // RoadRunner, midground right, facing the owl
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(1 + (zoom - 1) * 0.7, 1 + (zoom - 1) * 0.7); o.translate(-W / 2, -H / 2);
+    const feet = { x: 1430 - px * 0.7, y: 1000 };
+    const bob = Math.floor(t / 0.4) % 2 ? -RR4 : 0;
+    wash(feet.x, feet.y - 220, 560, `rgba(80,170,255,${0.26 + 0.06 * Math.sin(t * 8)})`);
+    o.fillStyle = 'rgba(0,0,0,0.45)'; o.fillRect(feet.x - 28 * RR4, feet.y - RR4, 56 * RR4, 2 * RR4);
+    const a = auraOf('xl');
+    o.save(); o.globalCompositeOperation = 'lighter'; o.globalAlpha = 0.5 + 0.12 * Math.sin(t * 9);
+    big(light(a), a, feet.x - 2 * RR4, feet.y - 23 * RR4 + bob, RR4); o.restore();
+    big(runnerCanvas(RUNNER.xl.stop), RUNNER.xl.stop, feet.x, feet.y + bob, RR4, true);
+    o.restore();
+    sparks(t, { x: feet.x - 20, y: feet.y - 220 }, 560, 520, 26, 8);
+    // the owl and its branch, foreground left
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const perch = { x: 470 - px, y: 1000 };
+    branch(-200, 820 - px, perch.y, -0.06, OWL4);
+    const f = owlFrame4(t);
+    big(bakeF(glow(f), 'night'), f, perch.x, perch.y, OWL4);
+    o.restore();
+    motes(t, px * 2, 0.6);
+    vignette(0.7);
+    const head = { x: W / 2 + (perch.x + 3 * OWL4 - W / 2) * zoom, y: H / 2 + (perch.y - 15 * OWL4 - H / 2) * zoom };
+    bubble(2, t, head, (bw) => ({ bx: Math.max(60, head.x - 120), by: 90 }));
+    bubble(3, t, head, (bw) => ({ bx: Math.max(60, head.x - 120), by: 90 }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+function draw(t) {
+    if (t < CUT1) shot1(t);
+    else if (t < CUT2) shot2(t);
+    else if (t < CUT3) shot3(t);
+    else shot4(t);
+    // a white frame on the cut to RoadRunner, fading
+    if (t >= CUT2 && t < CUT2 + 0.1) { o.fillStyle = `rgba(220,240,255,${0.8 * (1 - (t - CUT2) / 0.1)})`; o.fillRect(0, 0, W, H); }
+    const black = 1 - smooth(0, 0.7, t) + smooth(DURATION - 0.8, DURATION, t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// Sound cues (sound.mjs): the game's own synth, timed as sound.js times finale step 3; its music is `blood`.
+const OWL_PAN1 = 0.4, OWL_PAN4 = -0.5;
+window.SOUND = [
+    { music: 'blood', from: 0, to: DURATION, intensity: [[0, 0.12], [RUN0, 0.12], [RUN0 + ARRIVE_S, 0.55], [MEEP + 0.7, 1], [CUT3, 1], [CUT3 + 1.5, 0.45]], fadeIn: 1.5, fadeOut: 1.2 },
+    { sfx: 'owl.hoot', at: BUBBLES[0].from - 0.95, pan: OWL_PAN1, vol: 0.8 },
+    { speak: 'owl', text: textOf(BUBBLES[0]), at: BUBBLES[0].from, pan: OWL_PAN1, pitch: -1 },
+    { sfx: 'finale.run', at: RUN0, pan: 0.1 },
+    { sfx: 'finale.meep', at: MEEP, variant: 0 },
+    { speak: 'owl', text: textOf(BUBBLES[2]), at: BUBBLES[2].from, pan: OWL_PAN4 },
+    { speak: 'owl', text: textOf(BUBBLES[3]), at: BUBBLES[3].from, pan: OWL_PAN4 },
+];
+window.DURATION = DURATION;
+window.draw = (t) => { draw(t); return true; };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
+document.title = 'ready';
+</script>
+</body>
+</html>

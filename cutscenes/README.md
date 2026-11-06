@@ -8,14 +8,15 @@ its sound cues (`window.SOUND`, see `_src/sound.mjs`). Headless Edge captures th
 
 ```
 cd cutscenes/_src
-node video.mjs bar-intro                 # → ../bar-intro.mp4 (1080p60 + sound), ~7 min
+node video.mjs bar-intro                 # → ../01-bar-intro.mp4 (1080p60 + sound), ~7 min
 node video.mjs bar-intro --audio         # sound only, onto the last silent render
 node video.mjs bar-intro --stills 2,7.5  # single frames → ../_stills/
 ```
 
 Needs Node 22+, Microsoft Edge and ffmpeg in PATH.
 
-| Scene | What happens |
-|---|---|
-| `bar-intro` | the owl pours beer and calls everyone to the ritual; a fly on the foam gets shot |
-| `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
+| # | Scene | What happens |
+|---|---|---|
+| 01 | `bar-intro` | the owl pours beer and calls everyone to the ritual; a fly on the foam gets shot |
+| 02 | `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
+| 03 | `roadrunner-alive` | «Походу… ошибочка вышла.» — RoadRunner runs in off the horizon alive, «Мип-мип!», the owl explains |
