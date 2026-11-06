@@ -16,6 +16,7 @@ import { halo, relightCanvas } from '/js/pixel/night.js';
 import { bake } from '/js/pixel/sprites.js';
 import { PALETTE } from '/js/pixel/palette.js';
 import { FLYERS } from '/js/pixel/flyers.js';
+import { SHOT_FX } from '/js/pixel/characters.js';
 
 const W = 1920, H = 1080, lit = 'firelight';
 const o = document.getElementById('out').getContext('2d');
@@ -29,18 +30,22 @@ const canvas = (w, h) => { const c = document.createElement('canvas'); c.width =
 
 // ---------------------------------------------------------------------------------------------------------------
 // Timeline (seconds).
+// PRE and POST are handles for the editor's transitions: the bar goes on before the first line and after the last.
+const PRE = 2, POST = 2;
 const BUBBLES = [
-    { from: 1.2, to: 5.4, lines: ['Ребята, сегодня Хэллоуин!', 'Ух-ху!'] },
-    { from: 5.9, to: 10.3, lines: ['И RoadRunner', 'можно воскресить!'] },
-    { from: 10.7, to: 16.4, lines: ['Я знаю одно магическое', 'место неподалёку…', 'За мной!'] },
+    { from: PRE + 1.2, to: PRE + 5.4, lines: ['Ребята, сегодня Хэллоуин!', 'Ух-ху!'] },
+    { from: PRE + 5.9, to: PRE + 10.3, lines: ['И RoadRunner', 'можно воскресить!'] },
+    { from: PRE + 10.7, to: PRE + 16.4, lines: ['Я знаю одно магическое', 'место неподалёку…', 'За мной!'] },
 ];
 const CPS = 24;
-const POUR = [0.5, 3.5];
-const GO = 10.7 + 'Я знаю одно магическое место неподалёку…За мной!'.length / CPS + 0.1;
-const DURATION = 17.2;
+const POUR = [PRE + 0.5, PRE + 3.5];
+const GO = BUBBLES[2].from + BUBBLES[2].lines.join('').length / CPS + 0.1;
+const DURATION = PRE + 17.2 + POST;
 // The fly that lands on the counter in front of the owl and gets shot from the crowd.
 const FLY = FLYERS.fly[1];
-const FLY_IN = 6.0, FLY_LAND = 7.6, SHOT = 9.1;
+const FLY_IN = PRE + 6.0, FLY_LAND = PRE + 7.6, SHOT = PRE + 9.1;
+// An empty mug thrown from the crowd at one of the flies over the owl (mug-throw.js THROW: 0.42 s in the air).
+const MUG = GO + 1.4, MUG_AIR = 0.42, MUG_FLY = 2;
 
 // ---------------------------------------------------------------------------------------------------------------
 // The midground at art scale M: counter, keg, owl, mugs, beer. Margins let the camera move.
@@ -80,6 +85,17 @@ cex.drawImage(litBase, 0, top, aw, 3, 0, 0, aw, 3);
 const owlBakes = new Map();
 const owlCanvas = (f) => { if (!owlBakes.has(f)) owlBakes.set(f, bakeBar(f, lit)); return owlBakes.get(f); };
 const mugC = bakeBar(BAR_MUG, lit);
+const thrownC = SHOT_FX.mug.map((sp) => bakeBar(sp, lit));
+const shardC = SHOT_FX.shards.map((sp) => bakeBar(sp, lit));
+const foamC = SHOT_FX.foam.map((sp) => bakeBar(sp));
+const glintC = bakeBar(SHOT_FX.glint);
+// A fly circling the light over the counter, art px.
+function hover(i, t) {
+    const cx = owlA.x - 30 + i * 22, cy = top - 20 - i * 3;
+    const a = t * (1.3 + i * 0.4) + i * 2;
+    return { x: cx + Math.sin(a) * 9 + Math.sin(t * 3.1 + i) * 2, y: cy + Math.sin(t * (2.1 + i * 0.3) + i) * 4, left: Math.cos(a) < 0 };
+}
+const mugHit = hover(MUG_FLY, MUG);
 const flyBakes = new Map();
 const mugs = [];
 for (let x = owlA.x - 14, i = 0; x > MG - 6; x -= 10, i++) mugs.push({ x, y: top + 2 + (i % 2), fx: x + (hash(i) < 0.5 ? -4 : 4), spill: i % 3 !== 2 });
@@ -98,7 +114,7 @@ function owlFrame(t) {
         if (t >= b.from && t < typedUntil && t > POUR[1]) return OWL_BAR.talk[Math.floor(t / 0.11) % 2];
     }
     if (t > SHOT + 0.03 && t < SHOT + 0.3) return OWL_BAR.blink;
-    if ((t > 7.2 && t < 9.4) || t > GO) return OWL_BAR.talk[2];
+    if ((t > PRE + 7.2 && t < PRE + 9.4) || t > GO) return OWL_BAR.talk[2];
     return blink ? OWL_BAR.blink : OWL_BAR.idle[Math.floor(t / 0.7) % 2];
 }
 
@@ -150,11 +166,26 @@ function drawMid(t) {
         x.save(); x.translate(Math.round(px), 0); x.scale(-1, 1); x.drawImage(c, -sp.anchor.x, Math.round(py - sp.anchor.y)); x.restore();
     };
     for (let i = 0; i < 3; i++) {
-        const cx = owlA.x - 30 + i * 22, cy = top - 20 - i * 3;
-        const a = t * (1.3 + i * 0.4) + i * 2;
-        const fx = cx + Math.sin(a) * 9 + Math.sin(t * 3.1 + i) * 2;
-        const fy = cy + Math.sin(t * (2.1 + i * 0.3) + i) * 4;
-        put(FLY.fly[Math.floor(t * 25 + i) % 4], fx, fy, Math.cos(a) < 0);
+        if (i === MUG_FLY && t >= MUG) continue;
+        const h = hover(i, t);
+        put(FLY.fly[Math.floor(t * 25 + i) % 4], h.x, h.y, h.left);
+    }
+    // the fly the mug hit: a jolt, a tumble down past the keg, a splat on the counter; glass and foam all around
+    if (t >= MUG) {
+        const s = t - MUG, fall = 0.55, drop = top + 1 - mugHit.y;
+        if (s < 0.1) put(FLY.hit, mugHit.x, mugHit.y);
+        else if (s < 0.1 + fall) {
+            const k = (s - 0.1) / fall;
+            put(FLY.fall[Math.floor(t / 0.06) % 2], mugHit.x + k * 7, mugHit.y - Math.sin(k * Math.PI) * 4 + k * k * drop);
+        } else put(FLY.splat, mugHit.x + 7, top + 2);
+        if (s < 0.12) x.drawImage(glintC, Math.round(mugHit.x - SHOT_FX.glint.anchor.x), Math.round(mugHit.y - SHOT_FX.glint.anchor.y));
+        const bits = [...Array.from({ length: 9 }, (_, k) => ({ k, img: shardC[k % shardC.length], a: -Math.PI / 2 + (hash(k + 40) * 2 - 1) * 1.7, v: 40 + hash(k + 50) * 55, g: 260, life: 0.5 + hash(k + 60) * 0.35 })),
+            ...Array.from({ length: 6 }, (_, k) => ({ k, img: foamC[k % foamC.length], a: hash(k + 70) * Math.PI * 2, v: 25 + hash(k + 80) * 35, up: 15, g: 180, life: 0.35 + hash(k + 90) * 0.25 }))];
+        for (const b of bits) {
+            if (s > b.life) continue;
+            const px = mugHit.x + Math.cos(b.a) * b.v * s, py = mugHit.y + (Math.sin(b.a) * b.v - (b.up ?? 0)) * s + 0.5 * b.g * s * s;
+            x.drawImage(b.img, Math.round(px), Math.round(py));
+        }
     }
     // the landing fly: in from the left, a loop, down onto the counter; legs rubbed; shot; tumbles; a splat
     const land = { x: setMug.x + 1, y: top - 4 };
@@ -251,8 +282,8 @@ const CROWD = [
 // ---------------------------------------------------------------------------------------------------------------
 // Camera: a slow drift and push toward the owl on «воскресить», a pull back for «За мной!».
 function camera(t) {
-    let zoom = 1 + 0.04 * smooth(0, 5.9, t) + 0.62 * smooth(5.9, 7.5, t) - 0.62 * smooth(10.4, 12.2, t) - 0.03 * smooth(GO, DURATION, t);
-    const push = smooth(5.9, 7.5, t) - smooth(10.4, 12.2, t);
+    let zoom = 1 + 0.04 * smooth(0, PRE + 5.9, t) + 0.62 * smooth(PRE + 5.9, PRE + 7.5, t) - 0.62 * smooth(PRE + 10.4, PRE + 12.2, t) - 0.03 * smooth(GO, DURATION, t);
+    const push = smooth(PRE + 5.9, PRE + 7.5, t) - smooth(PRE + 10.4, PRE + 12.2, t);
     const owlScreen = { x: (owlA.x - MG) * M, y: (owlA.y - MG - 12) * M };
     const x = Math.sin(t * 0.35) * 28 + (owlScreen.x - W / 2) * 0.85 * push;
     const y = Math.cos(t * 0.27) * 10 + (owlScreen.y - H / 2) * 0.8 * push;
@@ -388,6 +419,19 @@ function draw(t) {
         }
         o.fillStyle = 'rgba(255,240,180,0.25)'; o.fillRect(0, 0, W, H);
     }
+    // the empty mug: up from the crowd on the right in an arc, turning, shrinking into the depth, onto the fly
+    if (t >= MUG - MUG_AIR && t < MUG) {
+        const k = (t - MUG + MUG_AIR) / MUG_AIR;
+        const to = toScreen(cam, 1, { x: (mugHit.x - MG) * M, y: (mugHit.y - MG) * M });
+        const from = { x: 1640, y: H + 80 };
+        const lift = Math.hypot(to.x - from.x, to.y - from.y) * 0.3;
+        const px = from.x + (to.x - from.x) * k, py = from.y + (to.y - from.y) * k - 4 * lift * k * (1 - k);
+        const turn = Math.floor(k * 6) % 4, sp = SHOT_FX.mug[turn];
+        const sc = M * cam.zoom * (1.7 - 0.7 * k);
+        o.save(); o.translate(Math.round(px), Math.round(py)); o.scale(-1, 1);
+        o.drawImage(thrownC[turn], -sp.anchor.x * sc, -sp.anchor.y * sc, sp.w * sc, sp.h * sc);
+        o.restore();
+    }
     // vignette
     const g = o.createRadialGradient(W / 2, H * 0.45, H * 0.32, W / 2, H * 0.5, H * 1.1);
     g.addColorStop(0, 'rgba(12,4,14,0)'); g.addColorStop(1, 'rgba(12,4,14,0.8)');
@@ -409,12 +453,15 @@ window.SOUND = [
     ...BUBBLES.map((b) => ({ speak: 'owl', text: b.lines.join(' '), at: b.from, pan: owlPan })),
     { sfx: 'bar.pour', at: POUR[0], pan: owlPan + 0.1 },
     { sfx: 'bar.mug', at: POUR[1] + 0.18, pan: owlPan },
-    ...Array.from({ length: 10 }, (_, i) => ({ sfx: 'fly.buzz', at: 0.4 + i * 1.65, pan: Math.sin(i * 2.1) * 0.6, vol: 0.45 })),
+    ...Array.from({ length: Math.ceil((DURATION - 0.4) / 1.65) }, (_, i) => ({ sfx: 'fly.buzz', at: 0.4 + i * 1.65, pan: Math.sin(i * 2.1) * 0.6, vol: 0.45 })),
     { sfx: 'fly.buzz', at: FLY_IN, pan: -0.5, vol: 0.9 },
     { sfx: 'fly.buzz', at: FLY_IN + 0.8, pan: 0.1, vol: 0.8 },
     { sfx: 'shot.pistol', at: SHOT - 0.04, pan: -0.7 },
     { sfx: 'flyer.hit', at: SHOT, pan: 0.2 },
     { sfx: 'flyer.fall', at: SHOT + 0.05, pan: 0.2 },
+    { sfx: 'mug.shatter', at: MUG, pan: 0.3 },
+    { sfx: 'flyer.hit', at: MUG, pan: 0.3, variant: 1 },
+    { sfx: 'flyer.fall', at: MUG + 0.08, pan: 0.3, variant: 1 },
     { sfx: 'clink.cheer', at: GO, vol: 1.2 },
     { sfx: 'clink.glass', at: GO + 0.25, pan: -0.3 },
     { sfx: 'clink.glass', at: GO + 0.45, pan: 0.4, variant: 1 },

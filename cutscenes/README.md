@@ -18,5 +18,6 @@ Needs Node 22+, Microsoft Edge and ffmpeg in PATH.
 | # | Scene | What happens |
 |---|---|---|
 | 01 | `bar-intro` | the owl pours beer and calls everyone to the ritual; a fly on the foam gets shot |
-| 02 | `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
-| 03 | `roadrunner-alive` | «Походу… ошибочка вышла.» — RoadRunner runs in off the horizon alive, «Мип-мип!», the owl explains |
+| 02 | `magic-place` | the owl leads everyone to the pumpkin patch, the elephant tows its banner by, chickens among the untouched pumpkins, a duck from the bush gets shot |
+| 03 | `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
+| 04 | `roadrunner-alive` | «Походу… ошибочка вышла.» — RoadRunner runs in off the horizon alive, «Мип-мип!», the owl explains |
