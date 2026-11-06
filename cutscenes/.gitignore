@@ -1,0 +1,6 @@
+# Renders: rebuilt by _src/video.mjs, kept out of git.
+*.mp4
+*.png
+/_silent/
+/_audio/
+/_stills/
