@@ -1,0 +1,1182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// The epilogue: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+// Morning in the bar: RoadRunner behind the counter with a mug, the heroes with rapiers on their backs, game on the
+// counter, toasts and «Мип-мип!». The owl looks round, sums the evening up, finally remembers the necromancer's name at
+// his empty place by the counter's end, and doubts it is over. A dissolve to the ash pile on the empty field at dawn:
+// the wind blows it away, leaving two bolts and the black glasses; zombie workers' hands come out of the ground, take
+// the bolts and pull them under. The thud, a dark that looks like the end — and back: a duck lands, puts the glasses
+// on, «Кря.», flies off in them.
+import { DEFAULT_BAR_LAYOUT as layout, BAR_FLICKER_MS, BAR_MUG, barLights, barOwlSpot, barProps, bakeBar, paintBar } from '/js/pixel/bar.js';
+import { OWL, OWL_BAR, pourFrame } from '/js/pixel/owl.js';
+import { characterFrame } from '/js/pixel/characters.js';
+import { EMISSIVE, halo, litColor, relightCanvas, paintSky } from '/js/pixel/night.js';
+import { DECOR, bake } from '/js/pixel/sprites.js';
+import { PALETTE } from '/js/pixel/palette.js';
+import { FLYERS } from '/js/pixel/flyers.js';
+import { RUNNER, BOSS, FRANKEN, FINALE_EMISSIVE } from '/js/pixel/finale.js';
+import { speechPlan, beakAt, wingAt } from '/js/owl-speech.js';
+
+const W = 1920, H = 1080;
+const OUT = document.getElementById('out').getContext('2d');
+let o = OUT;
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. Each line of the owl stays up for its speech, or the reading of it, plus 2.5 s.
+const POUR = [0.25, 2.45];
+const LIFT1 = 2.2, MEEP1 = 2.75;          // RoadRunner raises his mug: «Мип-мип!»
+const CLINK1 = 5.3;                       // everyone clinks
+const LIFT2 = 7.0, MEEP2 = 7.4, CLINK2 = 8.4; // another toast, another «Мип-мип!»
+const LOOK = [10.4, 12.8];                // the owl looks round at everyone
+const HOOT = 12.9;
+const OWL_LINES = [
+    ['Вот это был вечер…', 'Мы воскрешали RoadRunner,', 'а он даже не умирал.'],
+    ['Похоже, слух о его смерти', 'пустил некромант.', 'Как его… Дун… Дуг…'],
+    ['Дунглас! Вспомнила!'],
+    ['Кстати, его с тех пор', 'никто не видел.'],
+    ['Не нравится мне это…', 'Неспроста всё это.'],
+    ['Кто знает…', 'может, это ещё не конец…'],
+];
+const BUBBLES = [
+    { from: 3.1, lines: ['Мип-мип!'], meep: true, who: 'rr' },
+    { from: MEEP2 + 0.15, lines: ['Мип-мип!'], meep: true, who: 'rr' },
+];
+BUBBLES[0].to = CLINK1 - 0.3;
+BUBBLES[1].to = MEEP2 + 2.6;
+{
+    let at = HOOT + 0.95;
+    OWL_LINES.forEach((lines, i) => {
+        const text = lines.join(' ');
+        const plan = speechPlan(text);
+        const read = Math.max(plan.ms / 1000, text.length / 15);
+        const hold = read + 2.5;
+        BUBBLES.push({ from: at, to: at + hold, lines, who: 'owl', plan, hop: i === 2 });
+        // the pause before the name: the owl freezes, its eyes go wide
+        at += hold + (i === 1 ? 1.3 : 0.45);
+    });
+}
+const LB = (i) => BUBBLES[2 + i];
+const FREEZE = [LB(2).from - 1.0, LB(2).from];
+const DISSOLVE = [LB(5).to - 0.2, LB(5).to + 2.0];
+// The field, from F.
+const F = DISSOLVE[0];
+const BLOW = [F + 2.0, F + 6.8];
+const STIR = F + 8.4, CRACK = [F + 8.9, F + 10.0];
+const HANDS = [{ rise: F + 10.0 }, { rise: F + 10.55 }];
+for (const h of HANDS) {
+    h.grope = h.rise + 0.45;
+    h.lean = h.rise + 1.45;         // down onto the bolt
+    h.grab = h.lean + 0.38;
+    h.lift = h.grab + 0.3;          // back upright with it
+    h.sink = h.lift + 0.75;         // pulled under
+    h.gone = h.sink + 0.55;
+}
+const CLOSE = [HANDS[1].gone + 0.1, HANDS[1].gone + 0.8];
+const THUD = CLOSE[1] + 0.35;
+const DARK = [THUD + 0.5, THUD + 2.0, THUD + 2.8, THUD + 3.9];  // down, black, up
+const DUCK_IN = [DARK[3] + 0.3, DARK[3] + 2.0];
+const PICK = DUCK_IN[1] + 0.6;            // dips to the glasses
+const WEAR = PICK + 0.55;                 // they are on
+const QUACK = WEAR + 1.0;
+BUBBLES.push({ from: QUACK, to: QUACK + 3.0, lines: ['Кря.'], who: 'duck', plan: null });
+const TAKEOFF = QUACK + 3.3;
+const ACCENT = TAKEOFF + 1.5;
+const FINAL = [TAKEOFF + 1.9, TAKEOFF + 2.9];
+const DURATION = FINAL[1] + 0.6;
+
+const textOf = (b) => b.lines.join(' ');
+// Characters typed `ms` into bubble b: each word as the speech reaches it (owl-speech.js syllables).
+function typedOf(b, ms) {
+    const text = textOf(b);
+    if (b.meep) return ms < 0 ? 0 : ms < 260 ? 4 : text.length;
+    if (!b.plan) return Math.floor(clamp(ms / 300) * text.length);
+    const plan = b.plan;
+    const words = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+    const counts = words.map((m) => Math.max(1, Math.min(5, (m[0].match(/[аеёиоуыэюяaeiouy]/giu) ?? []).length || Math.ceil(m[0].length / 3))));
+    if (counts.reduce((a, c) => a + c, 0) !== plan.syllables.length) return Math.floor(text.length * clamp(ms / plan.ms));
+    let n = 0, k = 0;
+    for (let w = 0; w < words.length; w++) {
+        const first = plan.syllables[k], last = plan.syllables[k + counts[w] - 1];
+        k += counts[w];
+        const start = first.at, end = last.at + last.len;
+        const m = words[w];
+        if (ms < start) return n;
+        const into = clamp((ms - start) / Math.max(1, end - start));
+        n = m.index + Math.ceil(m[0].length * into);
+        if (into < 1) return n;
+        n = words[w + 1]?.index ?? text.length;
+        if (w === words.length - 1) n = text.length;
+    }
+    return n;
+}
+
+// Out of focus without canvas filters (slow in the software renderer): paint into a buffer 1/k the size and stretch
+// it back smoothed; `amount` crossfades from the sharp painting (null — soft only).
+const softBufs = new Map();
+function soft(amount, k, paint) {
+    if (amount !== null && amount <= 0.04) { paint(); return; }
+    if (!softBufs.has(k)) softBufs.set(k, canvas(Math.ceil(W / k), Math.ceil(H / k)));
+    const [c, x] = softBufs.get(k);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height); x.setTransform(1 / k, 0, 0, 1 / k, 0, 0);
+    const keep = o;
+    o = x; paint(); o = keep;
+    if (amount !== null) paint();
+    o.save(); o.globalAlpha = amount === null ? 1 : clamp(amount); o.imageSmoothingEnabled = true;
+    o.drawImage(c, 0, 0, c.width * k, c.height * k);
+    o.restore();
+}
+
+// ===============================================================================================================
+// THE BAR (bar-intro.html's counter, keg and hall), in the morning.
+const lit = 'firelight';
+const M = 14, MG = 12;
+const aw = Math.ceil(W / M) + 2 * MG, ah = Math.ceil(H / M) + 2 * MG;
+const top = MG + Math.round((H / M) * 0.6);
+const ax = (f) => MG + Math.round((W / M) * f);
+const owlA = { x: ax(0.68), y: top + 3 };
+const rrA = { x: ax(0.47), y: top + 9 };              // RR_BAR_HIDE rows under the counter's back edge
+const SPOT = { x: ax(0.215) };                          // the necromancer's place in nightfall.html
+const POST = { x: ax(0.10) };                         // a post by the counter's end with a hook on it
+const tap = { x: owlA.x + OWL_BAR.tap.x, y: owlA.y + OWL_BAR.tap.y };
+const owlMug = { x: owlA.x + OWL_BAR.mug.x, y: owlA.y + OWL_BAR.mug.y };
+const setMug = { x: owlA.x - 6, y: top + 2 };
+
+const [base, bx] = canvas(aw, ah);
+{
+    const P = (x, y, k) => { bx.fillStyle = hex(PALETTE[k]); bx.fillRect(x, y, 1, 1); };
+    // the post behind the counter's end, up out of the frame, with an iron hook
+    for (let y = 0; y < top; y++) for (let x = POST.x - 3; x <= POST.x + 3; x++) {
+        const e = x === POST.x - 3 || x === POST.x + 3;
+        P(x, y, e ? 'outline' : x === POST.x - 2 ? 'timberLight' : x === POST.x + 2 ? 'timberDeep' : (y * 3 + x) % 17 === 0 ? 'timberDark' : 'timber');
+    }
+    for (const [dx, dy, k] of [[4, -30, 'outline'], [4, -29, 'ironLight'], [5, -29, 'iron'], [6, -29, 'outline'], [6, -30, 'iron'], [6, -31, 'outline'], [4, -28, 'outline'], [5, -28, 'outline']]) P(POST.x + dx, top + dy, k);
+    for (let y = top + 3; y < ah; y++) for (let x = 0; x < aw; x++) {
+        const plank = x % 7;
+        let k = plank === 0 ? 'timberDeep' : plank === 6 ? 'timberDark' : (x * 3 + y * 7) % 23 === 0 ? 'timberDark' : 'timber';
+        if (y === top + 3) k = 'outline';
+        if (y === top + 4) k = 'timberDark';
+        if (y === top + 9) k = 'ironLight';
+        if (y === top + 10) k = 'iron';
+        P(x, y, k);
+    }
+    for (let x = 0; x < aw; x++) { P(x, top, 'outline'); P(x, top + 1, x % 9 === 4 ? 'timberShine' : 'timberLight'); P(x, top + 2, 'timberLight'); }
+    const keg = { x1: tap.x + 3, x2: tap.x + 15, y2: top, y1: top - 13 };
+    for (let y = keg.y1; y < keg.y2; y++) for (let x = keg.x1; x <= keg.x2; x++) {
+        const edge = x === keg.x1 || x === keg.x2 || y === keg.y1;
+        const band = y === keg.y1 + 2 || y === keg.y2 - 3;
+        const b = (x - keg.x1) / (keg.x2 - keg.x1);
+        P(x, y, edge ? 'outline' : band ? (x % 3 ? 'iron' : 'ironLight') : b < 0.3 ? 'plankLight' : b > 0.8 ? 'plankDark' : 'plank');
+    }
+    for (let x = tap.x; x < keg.x1; x++) { P(x, tap.y - 1, 'outline'); P(x, tap.y, 'ironLight'); P(x, tap.y + 1, 'outline'); }
+    P(tap.x + 1, tap.y - 2, 'ironLight'); P(tap.x + 1, tap.y - 3, 'ironLight'); P(tap.x + 1, tap.y - 4, 'outline');
+}
+const litBase = relightCanvas(base, lit);
+const barBakes = new Map();
+const barBake = (def) => barBakes.get(def) ?? barBakes.set(def, bakeBar(def, lit)).get(def);
+// RoadRunner keeps more of his own blue in the morning light: the bar's light and his day colours half and half.
+const rrBakes = new Map();
+function rrBake(def) {
+    if (rrBakes.has(def)) return rrBakes.get(def);
+    const [c, x] = canvas(def.w, def.h);
+    x.drawImage(bakeBar(def, lit), 0, 0); x.globalAlpha = 0.5; x.drawImage(bakeBar(def, 'day'), 0, 0);
+    rrBakes.set(def, c);
+    return c;
+}
+const mugC = bakeBar(BAR_MUG, lit);
+
+// The necromancer's mug, left half drunk: no foam, the beer down to two rows, a ring of dried foam on the glass.
+const HALF_MUG = { ...BAR_MUG, rows: ['.OOOOO...', 'Og...gO..', 'Oc.c.cOO.', 'O.....OgO', 'OyYYYgO.O', 'OyYYYgOgO', 'OgggggOO.', '.OOOOO...'] };
+// His hood on the hook: the cowl hangs empty, its opening black, the robe's shoulders slumped under it.
+const HOOD = (() => {
+    const w = 17, h = 26;
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const cx = 8;
+        const cowl = ((x - cx) / 6.5) ** 2 + ((y - 7.5) / 7.5) ** 2 <= 1;
+        const k = (y - 9) / (h - 9);
+        const drape = y >= 9 && Math.abs(x + 0.5 - cx - 0.5) <= 4.5 + k * 4 - (y === h - 1 && x % 3 === 1 ? 1 : 0);
+        if (cowl || drape) g[y][x] = 'k';
+    }
+    for (let y = 0; y < h; y++) {
+        const xs = g[y].flatMap((ch, x) => (ch !== '.' ? [x] : []));
+        if (!xs.length) continue;
+        const l = xs[0], r = xs[xs.length - 1];
+        for (const x of xs) {
+            const f = (x - l) / Math.max(1, r - l);
+            g[y][x] = f > 0.8 ? 'h' : f < 0.3 ? 'K' : 'k';
+            if (y > 11 && (x === 6 || x === 10) && (y + x) % 4 !== 0) g[y][x] = 'v';
+        }
+    }
+    // the opening: a black oval, nobody in it
+    for (let y = 3; y < 13; y++) for (let x = 4; x < 13; x++) if (((x - 8.5) / 3.3) ** 2 + ((y - 8) / 4.6) ** 2 <= 1) g[y][x] = 'X';
+    const out = g.map((r) => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== '.') continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
+    }
+    return { w, h, rows: out.map((r) => r.join('')), legend: { '.': null, O: 'outline', K: 'crowDark', k: 'crow', h: 'crowLight', v: 'violetDark', X: 'eyeBlack' }, anchor: { x: 8, y: 0 } };
+})();
+
+// Game on the counter: a duck and two hens belly up, between RoadRunner and the necromancer's end.
+const GAME = [
+    { def: FLYERS.duck[1].fall[1], x: ax(0.295), y: top + 2 },
+    { def: FLYERS.chicken[1].fall[1], x: ax(0.33), y: top + 2, flip: true },
+    { def: FLYERS.duck[1].fall[1], x: ax(0.585), y: top + 2, flip: true },
+];
+
+// ---------------------------------------------------------------------------------------------------------------
+// The owl.
+function owlTalkFrame(b, t) {
+    const ms = (t - b.from) * 1000;
+    if (ms < 0 || ms > b.plan.ms + 150) return null;
+    let k = beakAt(b.plan, ms);
+    const wing = wingAt(b.plan, ms);
+    if (b.hop) return k ? OWL_BAR.beakWing[2] : OWL_BAR.beak[2];
+    return wing ? OWL_BAR.beakWing[k] : OWL_BAR.beak[k];
+}
+function owlFrame(t) {
+    if (t >= POUR[0] && t < POUR[1]) return pourFrame((t - POUR[0]) / (POUR[1] - POUR[0]));
+    if (t >= POUR[1] && t < POUR[1] + 0.18) return OWL_BAR.set[0];
+    if (t >= POUR[1] + 0.18 && t < POUR[1] + 0.36) return OWL_BAR.set[1];
+    for (const c of [CLINK1, CLINK2]) if (t >= c - 0.1 && t < c + 0.9) return OWL_BAR.talk[2];
+    if (t >= LOOK[0] && t < LOOK[1]) {
+        const k = (t - LOOK[0]) / (LOOK[1] - LOOK[0]);
+        return [OWL.turnLeft[0], OWL.turnLeft[1], OWL.turnLeft[1], OWL.turnLeft[0], OWL_BAR.idle[0], OWL.turnRight[0], OWL.turnRight[1], OWL.turnRight[0]][Math.floor(k * 8)];
+    }
+    if (t >= HOOT - 0.05 && t < HOOT + 0.45) return OWL.hoot;
+    for (const b of BUBBLES) if (b.who === 'owl') { const f = owlTalkFrame(b, t); if (f) return f; }
+    if (t >= FREEZE[0] && t < FREEZE[0] + 0.12) return OWL_BAR.blink;
+    if (t >= FREEZE[0] + 0.12 && t < LB(2).to) return OWL_BAR.beak[2];
+    // remembering: a look over at the counter's end while it struggles for the name
+    if (t >= LB(1).from + 2.6 && t < FREEZE[0]) return OWL.turnLeft[0];
+    const blink = (t % 3.3) < 0.13;
+    return blink ? OWL_BAR.blink : OWL_BAR.idle[Math.floor(t / 0.7) % 2];
+}
+
+// RoadRunner: the mug at the chest; lifted for the toasts (RUNNER.l.bar 1–3), lowered after.
+function rrFrame(t) {
+    const up = (a, b) => (t < a ? -1 : t < b ? Math.min(3, 1 + Math.floor(((t - a) / (b - a)) * 3)) : 3);
+    for (const [a, down] of [[LIFT1, CLINK1 + 1.0], [LIFT2, CLINK2 + 1.2]]) {
+        if (t >= a && t < down) return RUNNER.l.bar[up(a, a + 0.45)];
+        if (t >= down && t < down + 0.4) return RUNNER.l.bar[3 - Math.min(3, 1 + Math.floor(((t - down) / 0.4) * 3))];
+    }
+    return RUNNER.l.bar[0];
+}
+const rrHop = (t) => {
+    for (const m of [MEEP1, MEEP2]) if (t >= m && t < m + 0.6) return Math.floor((t - m) / 0.15) % 2;
+    return 0;
+};
+
+const mid = canvas(aw, ah);
+function drawMid(t) {
+    const [c, x] = mid;
+    x.clearRect(0, 0, aw, ah);
+    x.drawImage(litBase, 0, 0);
+    const P = (px, py, col) => { x.fillStyle = hex(col); x.fillRect(Math.round(px), Math.round(py), 1, 1); };
+    // the hood on its hook, swaying a hair
+    const sway = Math.round(Math.sin(t * 0.8) * 0.4);
+    x.drawImage(barBake(HOOD), POST.x + 5 - HOOD.anchor.x + sway, top - 29);
+    // RoadRunner and the owl behind the counter
+    const rf = rrFrame(t);
+    x.drawImage(rrBake(rf), rrA.x - rf.anchor.x, rrA.y - rf.anchor.y - rrHop(t));
+    const f = owlFrame(t);
+    x.drawImage(barBake(f), owlA.x - f.anchor.x, owlA.y - f.anchor.y);
+    // the counter over their lower halves
+    x.drawImage(litBase, 0, top, aw, ah - top, 0, top, aw, ah - top);
+    // mugs: the owl's freshly poured one, the necromancer's half-drunk one
+    if (t > POUR[1] + 0.1) x.drawImage(mugC, setMug.x - BAR_MUG.anchor.x, setMug.y - BAR_MUG.anchor.y);
+    x.drawImage(barBake(HALF_MUG), SPOT.x + 3 - BAR_MUG.anchor.x, top + 2 - BAR_MUG.anchor.y);
+    // the game
+    for (const g of GAME) {
+        const cv = barBake(g.def);
+        if (g.flip) { x.save(); x.translate(g.x, 0); x.scale(-1, 1); x.drawImage(cv, -g.def.w / 2, g.y - g.def.h + 1); x.restore(); }
+        else x.drawImage(cv, Math.round(g.x - g.def.w / 2), g.y - g.def.h + 1);
+    }
+    // the pour
+    const flow = Math.floor(t * 24);
+    const BEER = [PALETTE.pumpkinShine, PALETTE.pumpkinLight], FOAM = [PALETTE.white, PALETTE.cream];
+    if (t >= POUR[0] && t < POUR[1] + 0.2) {
+        for (let y = tap.y + 1; y < owlMug.y - 5; y++) P(tap.x + 1, y, BEER[(y + flow) % 2]);
+        const rise = smooth(POUR[0], POUR[1], t);
+        if (rise > 0.6) for (let k = -2; k <= 2; k++) P(owlMug.x + k, owlMug.y - 7 - (rise > 0.85 && Math.abs(k) < 1 ? 1 : 0), FOAM[(k + flow + 9) % 2]);
+    }
+    // the owl's mug: its foam breathing
+    if (t > POUR[1] + 0.1) for (let k = -2; k <= 2; k++) P(setMug.x + k + 1, setMug.y - 8 - ((Math.floor(t * 2) + k) % 3 === 0 ? 1 : 0), FOAM[(k + 9) % 2]);
+    return c;
+}
+
+// The hall behind: the game's bar, softened and dimmed once, wider than the screen.
+const back = (() => {
+    const hw = 320, hh = 180;
+    const [hall, hx] = canvas(hw, hh);
+    paintBar(hx, hw, hh, layout, { lighting: lit });
+    for (const l of barLights(layout, hw, hh)) {
+        if (l.halo) { hx.save(); hx.globalCompositeOperation = 'lighter'; hx.globalAlpha = 0.3; hx.drawImage(bake(halo(l.halo.rx, l.halo.ry, 'warm')), l.halo.x - l.halo.rx, l.halo.y - l.halo.ry); hx.restore(); }
+        hx.drawImage(l.frames[Math.floor(900 / BAR_FLICKER_MS + l.phase) % l.frames.length], l.x - l.anchor.x, l.y - l.anchor.y);
+    }
+    for (const p of barProps(layout, hw, hh, { lighting: lit })) if (p.y < hh * 0.42) hx.drawImage(p.canvas, p.x - p.anchor.x, p.y - p.anchor.y);
+    const spot = barOwlSpot(layout, hw, hh);
+    const Zb = M * 0.75, cw = (W * 1.5) / Zb, ch = (H * 1.4) / Zb;
+    const sx = Math.max(0, Math.min(hw - cw, spot.x - cw * 0.6)), sy = Math.max(0, spot.y - ch * 0.95);
+    const [c, x] = canvas(Math.round(W * 1.5), Math.round(H * 1.4));
+    x.filter = 'blur(5px) brightness(0.75) saturate(0.95)';
+    x.drawImage(hall, sx, sy, cw, ch, 0, 0, c.width, c.height);
+    x.filter = 'none';
+    // morning: a warm wash over the hall
+    x.globalCompositeOperation = 'soft-light'; x.fillStyle = 'rgba(255,200,130,0.5)'; x.fillRect(0, 0, c.width, c.height);
+    return c;
+})();
+
+// ---------------------------------------------------------------------------------------------------------------
+// The heroes in the foreground, seen from behind: lit by the bar, shaded, a warm rim on the window side, the rapier in
+// its scabbard slung across the back (hilt over the right shoulder), beer keeping its colour.
+const L = {
+    witch: { body: 'witch', cloak: 'cape', face: 'grin', eyes: 'green', hat: 'witch' },
+    cat: { body: 'cat', cloak: 'none', face: 'smile', eyes: 'amber', hat: 'none' },
+    skel: { body: 'skeleton', cloak: 'none', face: 'smile', eyes: 'amber', hat: 'pumpkin' },
+    mummy: { body: 'mummy', cloak: 'none', face: 'scared', eyes: 'blue', hat: 'top-hat' },
+    scare: { body: 'scarecrow', cloak: 'poncho', face: 'stitches', eyes: 'violet', hat: 'horns' },
+    vamp: { body: 'vampire', cloak: 'cape', face: 'fangs', eyes: 'red', hat: 'none' },
+};
+// The scabbard's line from the hilt over the right shoulder down across the back to the left hip, frame px from the
+// anchor, for a figure `tall` px from the feet to the top of the head.
+function rapierPath(tall) {
+    const k = tall / 40, a = [Math.round(6 * k) + 1, Math.round(-30 * k)], b = [Math.round(-8 * k), Math.round(-8 * k)];
+    const n = Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+    return Array.from({ length: n + 1 }, (_, i) => [Math.round(lerp(a[0], b[0], i / n)), Math.round(lerp(a[1], b[1], i / n))]);
+}
+const heroCache = new Map();
+function hero(look, dir, pose, frame, rimLeft) {
+    const key = JSON.stringify([look, dir, pose, frame, rimLeft]);
+    if (heroCache.has(key)) return heroCache.get(key);
+    const f = characterFrame(look, { dir, pose, frame, item: 'beer' });
+    const w = f.canvas.width, h = f.canvas.height;
+    const src = f.canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const [c, cx] = canvas(w, h);
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && src[(y * w + x) * 4 + 3] > 0;
+    // against the light: a dark figure, a warm rim on the window side and on top (bar-intro.html's crowd)
+    const img = cx.createImageData(w, h);
+    const lx = rimLeft ? -1 : 1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (!on(x, y)) continue;
+        const col = !on(x, y - 1) || !on(x + lx, y) ? [0xf0, 0x9a, 0x4c] : !on(x + lx * 2, y) ? [0xa8, 0x4c, 0x26] : !on(x, y - 2) || !on(x + lx * 3, y) ? [0x4a, 0x22, 0x20] : [0x1c, 0x0e, 0x16];
+        img.data.set([...col, 255], (y * w + x) * 4);
+    }
+    cx.putImageData(img, 0, 0);
+    // the rapier on the back
+    const ox = f.anchor.x, oy = f.anchor.y;
+    let headTop = h;
+    for (let y = 0; y < h; y++) for (let x = ox - 5; x <= ox + 5; x++) if (on(x, y)) headTop = Math.min(headTop, y);
+    const path = rapierPath(oy - headTop);
+    for (const [rx, ry] of path) {
+        cx.fillStyle = '#0a0408'; cx.fillRect(ox + rx - 1, oy + ry, 3, 1);
+        cx.fillStyle = '#7a4228'; cx.fillRect(ox + rx, oy + ry, 1, 1);
+        if ((rx + ry) % 5 === 0) { cx.fillStyle = '#b06a3a'; cx.fillRect(ox + rx, oy + ry, 1, 1); }
+    }
+    // the hilt over the shoulder: a golden cup guard across the line, the grip on up, a pommel; a gold chape at the tip
+    const P1 = (x, y, col) => { cx.fillStyle = col; cx.fillRect(ox + x, oy + y, 1, 1); };
+    const GOLD = '#f2c44a', GOLDD = '#b07a20', SHINE = '#fff2b0', OUT = hex(PALETTE.outline);
+    const [ax0, ay0] = path[0];
+    for (const [x, y] of [[-2, -2], [-1, -1], [0, 0], [1, 1], [2, 2]]) { P1(ax0 + x - 1, ay0 + y, OUT); P1(ax0 + x + 1, ay0 + y, OUT); }
+    for (const [x, y] of [[-2, -2], [-1, -1], [0, 0], [1, 1], [2, 2]]) P1(ax0 + x, ay0 + y, x === -1 ? SHINE : x > 0 ? GOLDD : GOLD);
+    for (const [x, y] of [[1, -2], [2, -3]]) { P1(ax0 + x + 1, ay0 + y, OUT); P1(ax0 + x - 1, ay0 + y, OUT); P1(ax0 + x, ay0 + y, '#5a3a2a'); }
+    P1(ax0 + 3, ay0 - 4, GOLD); P1(ax0 + 4, ay0 - 4, OUT); P1(ax0 + 2, ay0 - 4, OUT); P1(ax0 + 3, ay0 - 5, OUT);
+    const [tx, ty] = path.at(-1);
+    P1(tx, ty, GOLD); P1(tx - 1, ty + 1, GOLDD);
+    if (f.beer) cx.drawImage(f.beer, 0, 0);
+    const out = { canvas: c, anchor: f.anchor, muzzle: f.muzzle };
+    heroCache.set(key, out);
+    return out;
+}
+const CROWD = [
+    { look: L.skel, x: 700, s: 13, cut: 2, dir: 'back', depth: 1.25 },
+    { look: L.vamp, x: 1290, s: 13, cut: 2, dir: 'back', depth: 1.25 },
+    { look: L.cat, x: 380, s: 15, cut: 4, dir: 'back', depth: 1.4 },
+    { look: L.mummy, x: 1580, s: 15, cut: 4, dir: 'back', depth: 1.4 },
+    { look: L.witch, x: 80, s: 18, cut: 7, dir: 'back', depth: 1.6 },
+    { look: L.scare, x: 1860, s: 18, cut: 7, dir: 'back', depth: 1.6 },
+];
+// How far the crowd's mugs are up: a toast lifts them, a clink brings them in.
+const cheer = (t) => Math.max(smooth(CLINK1 - 0.5, CLINK1 - 0.1, t) * (1 - smooth(CLINK1 + 1.2, CLINK1 + 1.9, t)), smooth(CLINK2 - 0.5, CLINK2 - 0.1, t) * (1 - smooth(CLINK2 + 1.2, CLINK2 + 1.9, t)));
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bar camera: world point (screen px of the counter plane at zoom 1) at the centre, and the zoom.
+const toWorld = (p) => ({ x: (p.x - MG) * M, y: (p.y - MG) * M });
+const owlHeadW = () => toWorld({ x: owlA.x, y: owlA.y - 14 });
+const rrHeadW = () => toWorld({ x: rrA.x + 4, y: rrA.y - 26 });
+const KEYS = (() => {
+    const wide = { x: W / 2 + 120, y: H / 2 - 10, z: 1.04 };
+    const rr = { x: rrHeadW().x + 60, y: rrHeadW().y + 160, z: 1.32 };
+    const owl = { x: owlHeadW().x - 120, y: owlHeadW().y + 150, z: 1.36 };
+    const spot = { x: toWorld({ x: SPOT.x, y: 0 }).x + 420, y: H / 2 - 30, z: 1.25 };
+    const close = { x: owlHeadW().x - 60, y: owlHeadW().y + 70, z: 1.85 };
+    return { wide, rr, owl, spot, close };
+})();
+// [time, key] stops; the camera eases from one to the next over the gap between them
+const PATH = [
+    [0, 'wide'], [LIFT1 - 0.1, 'wide'], [MEEP1 + 0.2, 'rr'], [CLINK1 - 0.7, 'rr'], [CLINK1 - 0.1, 'wide'],
+    [LOOK[0], 'wide'], [HOOT + 0.5, 'owl'], [LB(1).from + 1.1, 'owl'], [LB(1).from + 3.3, 'spot'], [LB(3).to - 0.2, 'spot'],
+    [LB(4).from + 0.6, 'owl'], [LB(5).from - 0.3, 'owl'], [DISSOLVE[1], 'close'],
+];
+function barCamera(t) {
+    let i = 0;
+    while (i < PATH.length - 1 && t >= PATH[i + 1][0]) i++;
+    const [t0, k0] = PATH[i], [t1, k1] = PATH[Math.min(i + 1, PATH.length - 1)];
+    const k = t1 > t0 ? smooth(t0, t1, t) : 1;
+    const a = KEYS[k0], b = KEYS[k1];
+    let x = lerp(a.x, b.x, k), y = lerp(a.y, b.y, k), z = lerp(a.z, b.z, k);
+    // a breath of drift, punches on the toasts and on the name
+    x += Math.sin(t * 0.35) * 14; y += Math.cos(t * 0.27) * 6;
+    for (const c of [CLINK1, CLINK2]) z += 0.035 * smooth(c - 0.08, c + 0.05, t) * (1 - smooth(c + 0.2, c + 1.2, t));
+    z += 0.07 * smooth(LB(2).from - 0.05, LB(2).from + 0.12, t) * (1 - smooth(LB(2).from + 0.6, LB(2).from + 2.2, t));
+    const q = Math.floor(t * 30);
+    const amp = [CLINK1, CLINK2].some((c) => t > c && t < c + 0.25) ? 4 : 0;
+    return { x: x - W / 2 + (hash(q) - 0.5) * amp, y: y - H / 2 + (hash(q + 3) - 0.5) * amp, zoom: z };
+}
+function withLayer(cam, f, fn) {
+    const z = 1 + (cam.zoom - 1) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-W / 2 - cam.x * f, -H / 2 - cam.y * f); fn(); o.restore();
+}
+const toScreen = (cam, f, p) => { const z = 1 + (cam.zoom - 1) * f; return { x: (p.x - W / 2 - cam.x * f) * z + W / 2, y: (p.y - H / 2 - cam.y * f) * z + H / 2 }; };
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bubbles.
+const u = 8, OUTL = hex(PALETTE.outline), CREAM = hex(PALETTE.cream);
+function frameRect(x, y, w, h, fill = CREAM) {
+    o.fillStyle = OUTL; o.fillRect(x + u, y, w - 2 * u, h); o.fillRect(x, y + u, w, h - 2 * u);
+    o.fillStyle = fill; o.fillRect(x + 2 * u, y + u, w - 4 * u, h - 2 * u); o.fillRect(x + u, y + 2 * u, w - 2 * u, h - 4 * u);
+}
+function bubble(b, t, head, place) {
+    const age = t - b.from;
+    if (age < 0 || t > b.to + 0.2) return;
+    const out = t > b.to ? 1 - (t - b.to) / 0.2 : 1;
+    const pop = backOut(age / (b.meep || b.hop ? 0.16 : 0.22)) * out;
+    const size = b.meep ? 128 : b.hop ? 72 : 56, LH = b.meep ? 140 : b.hop ? 88 : 70;
+    o.font = `700 ${size}px Consolas, "Cascadia Mono", monospace`;
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + (b.meep ? 120 : 88), bh = b.lines.length * LH + (b.meep ? 70 : 52);
+    let { bx, by } = place(bw, bh);
+    bx = clamp(bx, 50, W - bw - 50); by = clamp(by, 40, H - bh - 40);
+    // the name: the bubble jumps up and lands twice
+    if (b.hop) by -= Math.abs(Math.sin(age * 9)) * 46 * Math.exp(-age * 2.6);
+    o.save();
+    o.globalAlpha = clamp(out * 1.5);
+    o.translate(head.x, head.y); o.scale(pop, pop); o.translate(-head.x, -head.y);
+    if (b.meep || b.hop) { // ticks round the shout: RoadRunner's blue, the owl's gold for the name
+        for (let k = 0; k < 14; k++) {
+            const a = (k / 14) * Math.PI * 2 + 0.1, cx = bx + bw / 2, cy = by + bh / 2;
+            const len = 3 + (k % 3);
+            for (let s = 0; s < len; s++) {
+                const px = cx + Math.cos(a) * (bw / 2 + 50 + s * 22), py = cy + Math.sin(a) * (bh / 2 + 40 + s * 22);
+                o.fillStyle = b.meep ? (s === 0 ? '#dff4ff' : '#50c4ff') : (s === 0 ? '#fff6c8' : '#ffc640');
+                o.fillRect(Math.round(px / u) * u - u, Math.round(py / u) * u - u, 2 * u, 2 * u);
+            }
+        }
+    }
+    o.globalAlpha *= 0.4; o.fillStyle = '#000'; o.fillRect(bx + 2 * u, by + 3 * u, bw, bh); o.globalAlpha = clamp(out * 1.5);
+    frameRect(bx, by, bw, bh);
+    // the tail toward the head
+    const fromRight = head.x > bx + bw / 2;
+    let x = fromRight ? bx + bw - 160 : bx + 60, y = by + bh - 2 * u;
+    const steps = clamp(Math.floor((head.y - 20 - y) / (3 * u)), 2, 16);
+    const dx = (head.x - 30 - x) / steps;
+    for (let k = 0; k < steps; k++) {
+        const w = Math.max(2, 8 - Math.floor((k * 7) / steps)) * u, sxp = Math.round(x / u) * u;
+        o.fillStyle = OUTL; o.fillRect(sxp - u, y + (k ? 0 : 2 * u), w + 2 * u, (k ? 4 : 2) * u);
+        o.fillStyle = CREAM; o.fillRect(sxp, y, w, 3 * u);
+        x += dx; y += 3 * u;
+    }
+    let left = typedOf(b, age * 1000);
+    o.fillStyle = b.meep ? hex(PALETTE.shieldBlue) : OUTL;
+    b.lines.forEach((s, k) => {
+        const shown = s.slice(0, Math.max(0, left));
+        left -= s.length + 1;
+        const tx = bx + (b.meep ? 60 : 44), ty = by + (b.meep ? 35 + 100 : b.hop ? 26 + 64 : 26 + 50) + k * LH;
+        if (b.meep) {
+            let xx = tx;
+            [...shown].forEach((ch, j) => {
+                const q = Math.floor(t * 20) * 31 + j * 7;
+                const jit = age < 0.6 ? 8 : 2;
+                o.fillText(ch, xx + (hash(q) - 0.5) * jit, ty + (hash(q + 5) - 0.5) * jit);
+                xx += o.measureText(ch).width;
+            });
+        } else o.fillText(shown, tx, ty);
+    });
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Morning light: shafts from a window high on the left, dust drifting through them.
+const BEAMS = [{ x: 200, w: 150 }, { x: 520, w: 90 }, { x: 760, w: 210 }, { x: 1180, w: 120 }];
+const SLANT = 0.55;
+const inBeam = (x, y) => BEAMS.some((b) => { const bx = b.x + (y + 200) * SLANT; return x > bx && x < bx + b.w; });
+function beams(cam, t) {
+    withLayer(cam, 0.7, () => {
+        o.save(); o.globalCompositeOperation = 'lighter';
+        for (const [i, b] of BEAMS.entries()) {
+            const a = 0.075 + 0.03 * Math.sin(t * 0.6 + i * 1.7);
+            const g = o.createLinearGradient(0, -300, 0, H + 200);
+            g.addColorStop(0, `rgba(255,214,150,${a * 1.4})`); g.addColorStop(1, 'rgba(255,190,120,0)');
+            o.fillStyle = g;
+            o.beginPath();
+            o.moveTo(b.x - 200 * SLANT, -400); o.lineTo(b.x + b.w - 200 * SLANT, -400);
+            o.lineTo(b.x + b.w + (H + 400) * SLANT, H + 200); o.lineTo(b.x + (H + 400) * SLANT, H + 200);
+            o.closePath(); o.fill();
+        }
+        o.restore();
+    });
+}
+const MOTES = Array.from({ length: 140 }, (_, i) => ({ x: hash(i) * W * 1.4 - W * 0.2, y: hash(i + 99) * H, s: hash(i + 7) < 0.25 ? 1 : 0.5, v: 6 + hash(i + 3) * 14, ph: hash(i + 5) * 6, f: 0.6 + hash(i + 11) * 1.0 }));
+function motes(cam, t) {
+    for (const m of MOTES) {
+        withLayer(cam, m.f, () => {
+            const x = m.x + Math.sin(t * 0.4 + m.ph) * 40 + t * 6, y = ((m.y - t * m.v) % H + H) % H;
+            const s = M * m.s * (m.f > 1.3 ? 1.3 : 1);
+            const lit2 = inBeam(x, y) ? 1 : 0.25;
+            const a = (0.2 + 0.45 * hash(m.ph)) * (0.6 + 0.4 * Math.sin(t * 2 + m.ph)) * lit2;
+            o.fillStyle = `rgba(255,236,190,${a})`;
+            o.fillRect(Math.round(x / s) * s, Math.round(y / s) * s, s, s);
+        });
+    }
+}
+
+// Foam leaping off the mugs on the clinks, and a little all along.
+function foam(sprays, t) {
+    const bursts = [CLINK1, CLINK2];
+    for (const sp of sprays) withLayer(sp.cam, sp.depth, () => {
+        for (const c of bursts) {
+            const age = t - c;
+            if (age < 0 || age > 1.3) continue;
+            for (let k = 0; k < 16; k++) {
+                const seed = sp.i * 100 + k + c * 10;
+                const vx = (hash(seed) - 0.5) * 9 + sp.toward * 3, vy = -(5 + hash(seed + 1) * 7);
+                const px = sp.x + vx * age * 5 * sp.s * 0.7, py = sp.y + (vy * age * 5 + 14 * age * age * 5) * sp.s * 0.7;
+                const q = Math.max(6, Math.round(sp.s * (hash(seed + 2) < 0.35 ? 1 : 0.55)));
+                const cc = hash(seed + 3);
+                o.globalAlpha = 1 - smooth(0.7, 1.3, age);
+                o.fillStyle = hex(cc < 0.45 ? PALETTE.white : cc < 0.8 ? PALETTE.cream : PALETTE.pumpkinShine);
+                o.fillRect(Math.round(px / q) * q, Math.round(py / q) * q, q, q);
+            }
+            o.globalAlpha = 1;
+        }
+    });
+}
+// A glint where the mugs meet.
+function clinkStar(x, y, age, s = 1) {
+    if (age < 0 || age > 0.35) return;
+    const k = age / 0.35, r = (30 + 90 * k) * s, px = 10;
+    o.save(); o.globalCompositeOperation = 'lighter';
+    o.fillStyle = `rgba(255,248,210,${1 - k})`;
+    for (let d = -r; d <= r; d += px) {
+        o.fillRect(Math.round((x + d) / px) * px, Math.round(y / px) * px, px, px);
+        o.fillRect(Math.round(x / px) * px, Math.round((y + d) / px) * px, px, px);
+    }
+    o.restore();
+}
+
+function drawBar(t) {
+    const cam = barCamera(t);
+    o.fillStyle = '#140a10'; o.fillRect(0, 0, W, H);
+    withLayer(cam, 0.35, () => o.drawImage(back, -W * 0.25, -H * 0.2));
+    withLayer(cam, 1, () => {
+        o.drawImage(drawMid(t), -MG * M, -MG * M, aw * M, ah * M);
+        const oc = toWorld({ x: owlA.x - 2, y: owlA.y - 14 });
+        const g = o.createRadialGradient(oc.x, oc.y, 30, oc.x, oc.y, 760);
+        g.addColorStop(0, 'rgba(255,200,120,0.22)'); g.addColorStop(1, 'rgba(255,160,80,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(-W, -H, 3 * W, 3 * H); o.globalCompositeOperation = 'source-over';
+    });
+    beams(cam, t);
+    // RoadRunner's toast: a glint at his mug on each clink
+    for (const c of [CLINK1, CLINK2]) {
+        const p = toScreen(cam, 1, toWorld({ x: rrA.x + 7, y: rrA.y - 24 }));
+        clinkStar(p.x, p.y, t - c, cam.zoom);
+    }
+    motes(cam, t);
+    // the crowd, softened when the camera leans in on the counter
+    const ch = cheer(t);
+    const sprays = [];
+    const paintCrowd = () => { sprays.length = 0; CROWD.forEach((m, i) => {
+        withLayer(cam, m.depth, () => {
+            const clink = [CLINK1, CLINK2].some((c) => t >= c - 0.15 && t < c + 0.7);
+            const pose = clink ? 'clink' : 'toast';
+            const frame = clink ? (Math.floor(t / 0.2) % 2) : (ch > 0.5 ? 1 : Math.floor(t / 0.9 + i * 0.37) % 2);
+            const rimLeft = m.x > W * 0.55;
+            const sil = hero(m.look, m.dir, pose, frame, rimLeft);
+            const bob = Math.sin(t * 2.2 + i * 1.3) * m.s * 0.3;
+            const lift = ch * m.s * (2 + (i % 2)) + Math.abs(Math.sin(t * 7 + i)) * ch * m.s * 0.6;
+            const lean = ch * (m.x < W * 0.55 ? 1 : -1) * m.s * 2.5;
+            const feet = H + m.cut * m.s - bob - lift;
+            const x0 = m.x + lean;
+            o.save(); o.translate(x0, feet); if (rimLeft) o.scale(-1, 1);
+            o.drawImage(sil.canvas, -sil.anchor.x * m.s, -sil.anchor.y * m.s, sil.canvas.width * m.s, sil.canvas.height * m.s);
+            o.restore();
+            if (sil.muzzle) sprays.push({ cam, depth: m.depth, x: x0 + (rimLeft ? -1 : 1) * (sil.muzzle[0] - sil.anchor.x) * m.s, y: feet + (sil.muzzle[1] - sil.anchor.y) * m.s, s: m.s, i, toward: m.x < W * 0.55 ? 1 : -1 });
+        });
+    }); };
+    const blur = clamp((cam.zoom - 1.12) * 4);
+    soft(blur, 4, paintCrowd);
+    foam(sprays, t);
+    for (const sp of sprays) for (const c of [CLINK1, CLINK2]) withLayer(cam, sp.depth, () => clinkStar(sp.x, sp.y, t - c - sp.i * 0.03));
+    // vignette, warm
+    const g = o.createRadialGradient(W / 2, H * 0.45, H * 0.34, W / 2, H * 0.5, H * 1.1);
+    g.addColorStop(0, 'rgba(20,8,10,0)'); g.addColorStop(1, 'rgba(20,8,10,0.72)');
+    o.fillStyle = g; o.fillRect(0, 0, W, H);
+    // bubbles
+    const rr = toScreen(cam, 1, rrHeadW());
+    for (const b of BUBBLES.slice(0, 2)) bubble(b, t, rr, (bw, bh) => ({ bx: rr.x - bw / 2 - 40, by: rr.y - bh - 260 * cam.zoom }));
+    const f = owlFrame(t);
+    const head = toScreen(cam, 1, toWorld({ x: owlA.x - f.anchor.x + 9, y: owlA.y - f.anchor.y + 7 }));
+    for (const b of BUBBLES) if (b.who === 'owl') bubble(b, t, head, (bw, bh) => ({ bx: head.x - bw - 60, by: Math.min(head.y - bh - 150, 110) }));
+}
+
+// ===============================================================================================================
+// THE FIELD at dawn: the ash pile on the empty field. Art 320 × 180 at S = 6 screen px at zoom 1.
+const S = 6, MW = 320, MH = 180, HZ = 74;
+const UNLIT = new Set([...EMISSIVE, ...FINALE_EMISSIVE]);
+const DAWN = (key) => (UNLIT.has(key) ? PALETTE[key] : litColor(PALETTE[key], 'dawn'));
+const dawnBakes = new Map();
+function dawnBake(sprite) {
+    if (dawnBakes.has(sprite)) return dawnBakes.get(sprite);
+    const [c, ctx] = canvas(sprite.w, sprite.h);
+    const img = ctx.createImageData(sprite.w, sprite.h);
+    for (let y = 0; y < sprite.h; y++) for (let x = 0; x < sprite.w; x++) {
+        const k = sprite.legend[sprite.rows[y][x]];
+        if (!k) continue;
+        const col = DAWN(k), i = (y * sprite.w + x) * 4;
+        img.data[i] = (col >> 16) & 255; img.data[i + 1] = (col >> 8) & 255; img.data[i + 2] = col & 255; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    dawnBakes.set(sprite, c);
+    return c;
+}
+const dhex = (key) => hex(DAWN(key));
+const ASH_FLY = ['#b4aab0', '#8a8088'];   // grains on the wind catch the low sun
+const P0 = { x: 160, y: 128 };                        // the pile's foot
+const GLASSES_AT = { x: 160, y: 129 };
+// franken-down.html leaves the bolts and the glasses on top of the heap; the wind lays them down on the ground.
+const BOLTS = [{ x: 148, y: 129, from: { x: P0.x - 9, y: P0.y - 8 } }, { x: 172, y: 129, from: { x: P0.x + 11, y: P0.y - 6 } }];
+const GLASSES_FROM = { x: P0.x - 1, y: P0.y - 11 };
+const CRACKS = [{ x: 133, y: 131, side: 1 }, { x: 187, y: 131, side: -1 }];
+
+// The sky and the far hills (soft), the lawn (sharp).
+const SKYC = (() => {
+    const [c, x] = canvas(MW * 2, HZ + 1);
+    paintSky(x, MW * 2, HZ + 1, 'dawn', { stars: false });
+    return c;
+})();
+const FAR = (() => {
+    const [c, x] = canvas(MW * 2, MH);
+    for (let i = 0; i < MW * 2; i += DECOR.hills.w) x.drawImage(dawnBake(DECOR.hills), i, HZ - DECOR.hills.h + 2);
+    for (let i = 0; i < 9; i++) {
+        const d = DECOR.farTree[i % DECOR.farTree.length];
+        x.drawImage(dawnBake(d), Math.round(30 + i * 68 + hash(i) * 30), HZ - d.h + 3);
+    }
+    x.fillStyle = dhex('leafDark'); x.fillRect(0, HZ + 2, MW * 2, MH);
+    return c;
+})();
+const LAWN = (() => {
+    const [c, x] = canvas(MW, MH);
+    let seed = 5;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    // value noise in cells that flatten toward the horizon: burnt soil in patches, not in single pixels
+    const cell = (i, j) => hash(i * 17.3 + j * 91.7 + 3);
+    const noise = (x, y) => {
+        const cw = 9, ch = 4 + (y - HZ) * 0.06;
+        const fx = x / cw, fy = (y - HZ) / ch, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+        const su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+        return lerp(lerp(cell(i, j), cell(i + 1, j), su), lerp(cell(i, j + 1), cell(i + 1, j + 1), su), sv);
+    };
+    const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+    for (let y = HZ; y < MH; y++) for (let xx = 0; xx < MW; xx++) {
+        const d = Math.hypot((xx - P0.x) / 150, (y - P0.y) / 46);
+        const n = noise(xx, y) + (bayer[(y % 4) * 4 + (xx % 4)] / 16 - 0.5) * 0.18;
+        const sp = r();
+        let k;
+        if (d < 1.0 || (d < 1.15 && (xx + y) % 2 === 0)) k = sp < 0.025 ? 'ashLight' : sp < 0.06 ? 'ashDark' : n < 0.42 ? 'soilDark' : n < 0.9 ? 'soil' : 'ash';
+        else k = sp < 0.03 ? 'leafLight' : n < 0.4 ? 'leafDark' : n < 0.48 && sp < 0.5 ? 'soilDark' : 'leaf';
+        if (y < HZ + 4 && (xx + y) % 2) k = 'leafDark';
+        x.fillStyle = dhex(k); x.fillRect(xx, y, 1, 1);
+    }
+    // charred stalks lying about, a few stones
+    for (let i = 0; i < 26; i++) {
+        const sx = Math.round(30 + r() * 260), sy = Math.round(HZ + 12 + r() * 90), len = 3 + Math.round(r() * 5), dir = r() < 0.5 ? 1 : -1;
+        if (Math.abs(sx - P0.x) < 40 && Math.abs(sy - P0.y) < 10) continue;
+        for (let k = 0; k < len; k++) { x.fillStyle = dhex(k % 3 ? 'ashDark' : 'outline'); x.fillRect(sx + k * dir, sy - Math.round(k * 0.3), 1, 1); }
+    }
+    for (let i = 0; i < 7; i++) {
+        const st = DECOR.stone[i % DECOR.stone.length];
+        const sx = Math.round(20 + r() * 280), sy = Math.round(HZ + 20 + r() * 80);
+        if (Math.abs(sx - P0.x) < 50 && Math.abs(sy - P0.y) < 14) continue;
+        x.drawImage(dawnBake(st), sx - (st.anchor?.x ?? 0), sy - (st.anchor?.y ?? 0));
+    }
+    return c;
+})();
+
+// The ash pile, pixel by pixel: each blown off the top and the windward side first, then flying off on the wind.
+const ASHPIX = (() => {
+    const def = BOSS.ash[0];
+    const c = dawnBake(def);
+    const d = c.getContext('2d').getImageData(0, 0, def.w, def.h).data;
+    const list = [];
+    let minY = def.h;
+    for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) if (d[(y * def.w + x) * 4 + 3]) minY = Math.min(minY, y);
+    const tall = def.h - minY;
+    for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) {
+        const i = (y * def.w + x) * 4;
+        if (!d[i + 3]) continue;
+        const hgt = (def.h - y) / tall;
+        const n = (x * 7 + y * 13) % 97;
+        const k = 0.6 * (1 - hgt) + 0.3 * ((x - def.anchor.x + 30) / 60) + 0.18 * hash(n + x * 0.3);
+        list.push({ x: P0.x + x - def.anchor.x, y: P0.y + y - def.anchor.y, col: `rgb(${d[i]},${d[i + 1]},${d[i + 2]})`, tb: lerp(BLOW[0], BLOW[1], clamp(k / 1.05)), seed: i });
+    }
+    return { list, top: P0.y - tall };
+})();
+
+// The bolts: FrankenPHP's own pixels (FRANKEN.talk[1]), the left and the right one, as franken-down.html drops them;
+// anchor at the bottom middle.
+const BOLT_DEFS = (() => {
+    const def = FRANKEN.talk[1], fx0 = def.w >> 1;
+    const keys = { frankenBoltShine: 'W', frankenBolt: 'B', frankenBoltDark: 'b' };
+    const sides = [[], []];
+    for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) {
+        const ch = keys[def.legend[def.rows[y][x]]];
+        if (ch) sides[x < fx0 ? 0 : 1].push({ x, y, ch });
+    }
+    return sides.map((pxs) => {
+        const x0 = Math.min(...pxs.map((p) => p.x)), y0 = Math.min(...pxs.map((p) => p.y));
+        const w = Math.max(...pxs.map((p) => p.x)) - x0 + 1, h = Math.max(...pxs.map((p) => p.y)) - y0 + 1;
+        const g = Array.from({ length: h }, () => Array(w).fill('.'));
+        for (const p of pxs) g[p.y - y0][p.x - x0] = p.ch;
+        return { w, h, rows: g.map((r) => r.join('')), legend: { '.': null, W: 'frankenBoltShine', B: 'frankenBolt', b: 'frankenBoltDark' }, anchor: { x: w >> 1, y: h - 1 } };
+    });
+})();
+const settle = (t) => { const k = smooth(BLOW[0] + 0.8, BLOW[1] - 0.4, t); return k * k; };
+function boltPos(i, t) {
+    const b = BOLTS[i], d = BOLT_DEFS[i], k = settle(t);
+    return { x: lerp(b.from.x, b.x, k), y: lerp(b.from.y + d.h - 1, b.y, k) - Math.sin(k * Math.PI) * 2 };
+}
+// The glasses, as they lie (BOSS.glassesFallen), and as the duck wears them: the same, a pixel narrower.
+const GLASSES = BOSS.glassesFallen;
+
+// Zombie workers' hands: a forearm in a torn grey sleeve, the hand open / clawing / a fist. 15 × 26, the wrist's
+// root at the bottom middle (7, 25).
+const HAND_LEGEND = { '.': null, O: 'outline', Z: 'zombie', z: 'zombieShade', c: 'gray', C: 'ashDark', n: 'bark' };
+function handSprite(kind) {
+    const w = 15, h = 26;
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    const set = (x, y, ch) => { if (x >= 0 && y >= 0 && x < w && y < h) g[y][x] = ch; };
+    // forearm and the sleeve, ragged at its cuff
+    for (let y = 12; y < h; y++) for (let x = 5; x <= 9; x++) set(x, y, x === 9 ? 'z' : 'Z');
+    for (let y = 18; y < h; y++) for (let x = 4; x <= 10; x++) {
+        if (y === 18 && (x === 5 || x === 8)) continue;
+        if (y === 19 && x === 8) continue;
+        set(x, y, x > 8 ? 'C' : 'c');
+    }
+    // palm
+    const palmTop = kind === 'fist' ? 6 : 7;
+    for (let y = palmTop; y < 13; y++) for (let x = 4; x <= 10; x++) {
+        if ((y === palmTop) && (x === 4 || x === 10)) continue;
+        set(x, y, x >= 9 ? 'z' : 'Z');
+    }
+    const line = (x0, y0, x1, y1, ch = 'Z') => {
+        const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+        for (let i = 0; i <= n; i++) set(Math.round(lerp(x0, x1, i / n)), Math.round(lerp(y0, y1, i / n)), ch);
+    };
+    if (kind === 'open') {
+        line(4, 7, 2, 2); line(6, 7, 5, 1); line(8, 7, 9, 1); line(10, 7, 12, 3, 'z');
+        line(4, 10, 1, 8);                    // thumb
+    } else if (kind === 'claw') {
+        line(4, 7, 3, 4); set(4, 3, 'Z'); line(6, 7, 6, 3); set(7, 2, 'Z'); line(8, 7, 8, 3); set(9, 2, 'Z'); line(10, 7, 11, 4, 'z'); set(10, 3, 'z');
+        line(4, 10, 2, 9); set(2, 8, 'Z');
+    } else {
+        // the fist: knuckles over the top, the thumb across
+        for (let x = 4; x <= 10; x++) set(x, 5, x % 2 ? 'Z' : 'z');
+        line(5, 9, 9, 9, 'z');
+    }
+    const out = g.map((r) => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== '.') continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
+    }
+    return { w, h, rows: out.map((r) => r.join('')), legend: HAND_LEGEND, anchor: { x: 7, y: 25 } };
+}
+const HAND = { open: handSprite('open'), claw: handSprite('claw'), fist: handSprite('fist') };
+const ARM = 17;   // from the wrist's root to the palm's middle
+
+// A sitting duck (the game's ducks only fly): flyers.js DUCK's shapes at depth 2 (26 px), the wing folded on the
+// body, the feet tucked; anchor under the belly.
+const DUCK_LEGEND = { '.': null, O: 'outline', K: 'outline', G: 'duckGray', g: 'duckGrayDark', B: 'duckBrown', b: 'duckBrownLight', H: 'mallard', h: 'mallardLight', s: 'speculum', w: 'white', Y: 'beak', o: 'pumpkin' };
+const SIT_DUCK = (() => {
+    const k = 26 / 24, w = 27, h = 17;
+    const ell = (cx, cy, rx, ry) => (x, y) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+    const cap = (x1, y1, x2, y2, r) => (x, y) => { const dx = x2 - x1, dy = y2 - y1; const q = clamp(((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)); return Math.hypot(x - x1 - dx * q, y - y1 - dy * q) <= r; };
+    const poly = (pts) => (x, y) => { let inside = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside; } return inside; };
+    const parts = [
+        [poly([[5, 9.6], [0.6, 8.4], [1, 10.8], [5, 12.9]]), (x) => (x < 2.6 ? 'w' : 'g')],
+        [ell(11, 11.5, 7.6, 4.1), (x, y) => (x > 14.5 && y < 13.6 ? (y < 10.4 ? 'b' : 'B') : y > 14.2 ? 'g' : 'G')],
+        [ell(10, 10.6, 5.4, 2.3), (x, y) => (x < 7 ? 'g' : y > 11.4 ? 's' : 'G')],
+        [cap(16, 10.6, 18.8, 6.4, 1.9), (x, y) => (y > 10.1 ? 'B' : y > 9.2 ? 'w' : 'H')],
+        [ell(19.6, 4.8, 2.7, 2.7), (x, y) => (x < 19.2 && y < 4.4 ? 'h' : 'H')],
+        [ell(20.4, 4.2, 0.6, 0.6), () => 'K'],
+        [poly([[21.5, 4.3], [24, 5.5], [21.5, 6.6]]), () => 'Y'],
+    ];
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const px = (x + 0.5) / k, py = (y + 0.5) / k + 0.2;
+        for (const [test, col] of parts) if (test(px, py)) g[y][x] = col(px, py);
+    }
+    // the eye, at least one pixel
+    g[Math.floor(4.2 * k)][Math.floor(20.4 * k)] = 'K';
+    const out = g.map((r) => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== '.') continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
+    }
+    const bottom = out.reduce((m, r, y) => (r.some((c) => c !== '.') ? y : m), 0);
+    return { w, h, rows: out.map((r) => r.join('')), legend: DUCK_LEGEND, anchor: { x: 12, y: bottom }, eye: [Math.floor(20.4 * k), Math.floor(4.2 * k)] };
+})();
+const DUCKF = FLYERS.duck[2];
+const DUCK_SPOT = { x: 143, y: 130 };
+const GLASSES_DROP = 4;   // the glasses' bottom this far under the eye: the lenses over the eye     // where it lands: left of the glasses, facing them
+
+// ---------------------------------------------------------------------------------------------------------------
+const [STAGE, sx] = canvas(MW, MH);
+const ground = (x, y, k) => { sx.fillStyle = dhex(k); sx.fillRect(Math.round(x), Math.round(y), 1, 1); };
+function crackAt(c, t, i) {
+    const k = smooth(CRACK[0] + i * 0.4, CRACK[1] + i * 0.4, t) * (1 - smooth(CLOSE[0], CLOSE[1], t));
+    if (k <= 0) return;
+    // jagged dark lines out of the hole, the soil heaving at its lip
+    for (let a = 0; a < 5; a++) {
+        let x = c.x, y = c.y;
+        const ang = (a / 5) * Math.PI * 2 + hash(i * 9 + a) * 0.8;
+        const len = (3 + hash(a + i * 5) * 7) * k;
+        for (let s = 0; s < len; s++) {
+            x += Math.cos(ang) + (hash(a * 31 + s) - 0.5) * 0.9; y += Math.sin(ang) * 0.45;
+            ground(x, y, s < len * 0.6 ? 'outline' : 'soilDark');
+        }
+    }
+    const open = smooth(HANDS[i].rise - 0.15, HANDS[i].rise + 0.2, t) * (1 - smooth(HANDS[i].gone - 0.2, CLOSE[1], t));
+    const r = Math.round(1 + open * 4);
+    for (let dx = -r - 2; dx <= r + 2; dx++) {
+        const e = Math.abs(dx) > r;
+        ground(c.x + dx, c.y + 1, e ? 'soilLight' : 'outline');
+        if (!e) ground(c.x + dx, c.y, 'soilDark');
+        if (e && open > 0.3) ground(c.x + dx, c.y - 1 - (Math.abs(dx) === r + 1 ? 1 : 0), 'soil');
+    }
+}
+function handAt(h, c, t, i) {
+    if (t < h.rise - 0.05 || t > h.gone) return null;
+    const rise = backOut((t - h.rise) / 0.45);
+    let lean = 0, kind = 'open', depth = (1 - clamp(rise)) * 26, bolt = false;
+    if (t >= h.grope && t < h.lean) {
+        kind = Math.floor((t - h.grope) / 0.16) % 3 === 1 ? 'claw' : 'open';
+        lean = Math.sin((t - h.grope) * 7) * 0.22;
+    }
+    if (t >= h.lean) lean = lerp(0.12, 1.2, smooth(h.lean, h.lean + 0.28, t));
+    if (t >= h.lean + 0.2) kind = 'claw';
+    if (t >= h.grab) { kind = 'fist'; bolt = true; }
+    if (t >= h.lift) lean = lerp(1.2, -0.1, smooth(h.lift, h.lift + 0.35, t)) + Math.sin((t - h.lift) * 18) * 0.05 * (1 - smooth(h.lift, h.sink, t));
+    if (t >= h.sink) depth = Math.pow(smooth(h.sink, h.gone, t), 1.6) * 30;
+    return { x: c.x, y: c.y + 2 + depth, lean: lean * c.side, kind, bolt };
+}
+function boltOnGround(i, t) { return t < HANDS[i].grab; }
+function glassesAt(t) {
+    const k = settle(t - 0.3);
+    return { x: lerp(GLASSES_FROM.x, GLASSES_AT.x, k), y: lerp(GLASSES_FROM.y, GLASSES_AT.y, k) - Math.sin(k * Math.PI) * 2 };
+}
+function duckAt(t) {
+    if (t < DUCK_IN[0]) return null;
+    if (t < DUCK_IN[1]) {
+        const k = (t - DUCK_IN[0]) / (DUCK_IN[1] - DUCK_IN[0]);
+        const e = 1 - (1 - k) ** 2;
+        const x = lerp(DUCK_SPOT.x - 120, DUCK_SPOT.x, e), y = lerp(DUCK_SPOT.y - 70, DUCK_SPOT.y - 2, e) - Math.sin(k * Math.PI) * 6;
+        const fast = k < 0.8;
+        return { def: DUCKF.fly[frameAt((t - DUCK_IN[0]) * 1000, 4, fast ? 85 : 60)], x, y, fly: true };
+    }
+    if (t < TAKEOFF) {
+        const s = t - DUCK_IN[1];
+        const tilt = t >= PICK && t < WEAR + 0.15 ? smooth(PICK, PICK + 0.2, t) * (1 - smooth(WEAR - 0.05, WEAR + 0.15, t)) : 0;
+        const settle = s < 0.25 ? Math.round(Math.sin(s * 25) * 1) : 0;
+        const hop = t >= WEAR && t < WEAR + 0.25 ? -Math.round(Math.sin(((t - WEAR) / 0.25) * Math.PI) * 2) : 0;
+        return { def: SIT_DUCK, x: DUCK_SPOT.x, y: DUCK_SPOT.y + settle + hop, tilt: tilt * 0.45, sit: true };
+    }
+    const s = t - TAKEOFF;
+    const x = DUCK_SPOT.x + s * 34 + s * s * 22, y = DUCK_SPOT.y - 3 - s * 18 - s * s * 16;
+    return { def: DUCKF.fly[frameAt(s * 1000, 4, 70)], x, y, fly: true };
+}
+// Where the glasses sit on the duck's eye: sprite px from the anchor.
+const eyeOf = (d) => (d.sit ? { x: SIT_DUCK.eye[0] - SIT_DUCK.anchor.x, y: SIT_DUCK.eye[1] - SIT_DUCK.anchor.y } : { x: Math.floor(20.4 * 26 / 24) - d.def.anchor.x, y: Math.floor(4.2 * 26 / 24) - d.def.anchor.y });
+
+function drawStage(t) {
+    sx.clearRect(0, 0, MW, MH);
+    sx.drawImage(LAWN, 0, 0);
+    CRACKS.forEach((c, i) => crackAt(c, t, i));
+    // the ground stirring before it cracks: grains of ash jumping round the spots
+    if (t > STIR && t < CRACK[1] + 0.6) CRACKS.forEach((c, i) => {
+        const a = smooth(STIR, CRACK[0], t);
+        for (let k = 0; k < 10; k++) {
+            const q = Math.floor(t * 14) + k * 7 + i * 50;
+            const jx = c.x + (hash(k + i * 20) - 0.5) * 14, jy = c.y + (hash(k + 3 + i * 20) - 0.5) * 5;
+            ground(jx, jy - (hash(q) < 0.5 * a ? 1 : 0), hash(k) < 0.5 ? 'ashLight' : 'soilLight');
+        }
+    });
+    // the thin layer of pale ash the wind leaves where the heap stood
+    for (let y = P0.y - 4; y <= P0.y + 4; y++) for (let xx = P0.x - 30; xx <= P0.x + 30; xx++) {
+        const e = ((xx - P0.x) / 29) ** 2 + ((y - P0.y - 0.5) / 4.2) ** 2;
+        if (e > 1) continue;
+        const b = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5][(y & 3) * 4 + (xx & 3)] / 16;
+        if (e > 0.6 && b < (e - 0.6) * 2.5) continue;
+        ground(xx, y, e < 0.35 && b < 0.6 ? 'ashLight' : 'ash');
+    }
+    // the heap, what is left of it
+    for (const p of ASHPIX.list) if (t < p.tb) { sx.fillStyle = p.col; sx.fillRect(p.x, p.y, 1, 1); }
+    // the bolts and the glasses on it, lowered with it to the ground
+    BOLTS.forEach((b, i) => {
+        if (!boltOnGround(i, t)) return;
+        const d = BOLT_DEFS[i], p = boltPos(i, t);
+        sx.drawImage(dawnBake(d), Math.round(p.x - d.anchor.x), Math.round(p.y - d.anchor.y));
+    });
+    const d = duckAt(t);
+    const worn = d && t >= WEAR;
+    if (!worn) {
+        // on the ground, or tossed up onto the duck's head as it dips for them
+        let { x: gx, y: gy } = glassesAt(t);
+        if (d && t >= PICK + 0.25 && t < WEAR) {
+            const k = (t - PICK - 0.25) / (WEAR - PICK - 0.25);
+            const e = eyeOf(d);
+            gx = lerp(GLASSES_AT.x, d.x + e.x + 1, k); gy = lerp(GLASSES_AT.y, d.y + e.y + GLASSES_DROP, k) - Math.sin(k * Math.PI) * 5;
+        }
+        sx.drawImage(dawnBake(GLASSES), Math.round(gx - GLASSES.anchor.x), Math.round(gy - GLASSES.anchor.y));
+    }
+    // the ash on the wind
+    for (const p of ASHPIX.list) {
+        if (t < p.tb) continue;
+        const a = t - p.tb, life = 1.4 + hash(p.seed) * 1.6;
+        if (a > life) continue;
+        const v = 26 + hash(p.seed + 1) * 40;
+        const px = p.x + v * a + a * a * 14, py = p.y - (4 + hash(p.seed + 2) * 10) * a + Math.sin(a * 5 + p.seed) * 1.5;
+        sx.globalAlpha = 1 - a / life;
+        sx.fillStyle = a < 0.15 ? p.col : hash(p.seed + 3) < 0.5 ? ASH_FLY[0] : ASH_FLY[1];
+        sx.fillRect(Math.round(px), Math.round(py), 1, 1);
+    }
+    sx.globalAlpha = 1;
+    // the hands, out of the ground only
+    HANDS.forEach((h, i) => {
+        const c = CRACKS[i];
+        const st = handAt(h, c, t, i);
+        if (!st) return;
+        sx.save();
+        sx.beginPath(); sx.rect(0, 0, MW, c.y + 1); sx.clip();
+        sx.translate(st.x, st.y); sx.rotate(st.lean);
+        const def = HAND[st.kind];
+        sx.drawImage(dawnBake(def), -def.anchor.x, -def.anchor.y);
+        if (st.bolt) { const d = BOLT_DEFS[i]; sx.drawImage(dawnBake(d), -d.anchor.x, -ARM - 4 - d.anchor.y); }
+        sx.restore();
+    });
+    // dirt thrown up as each hand breaks out, and as the ground closes
+    HANDS.forEach((h, i) => {
+        const c = CRACKS[i];
+        for (const [at, n, up] of [[h.rise, 12, 30], [h.sink + 0.2, 6, 14]]) {
+            const a = t - at;
+            if (a < 0 || a > 0.8) continue;
+            for (let k = 0; k < n; k++) {
+                const vx = (hash(k + i * 40 + at) - 0.5) * 30, vy = -(10 + hash(k + 7 + i * 40) * up);
+                const px = c.x + vx * a, py = c.y + vy * a + 60 * a * a;
+                if (py > c.y + 1) continue;
+                ground(px, py, hash(k + 3) < 0.4 ? 'soilLight' : hash(k + 5) < 0.6 ? 'soil' : 'ash');
+            }
+        }
+    });
+    // the duck
+    if (d) {
+        const cv = dawnBake(d.def);
+        sx.save();
+        sx.translate(Math.round(d.x), Math.round(d.y));
+        if (d.tilt) sx.rotate(d.tilt);
+        sx.drawImage(cv, -d.def.anchor.x, -d.def.anchor.y);
+        if (worn) { const e = eyeOf(d); sx.drawImage(dawnBake(GLASSES), e.x - GLASSES.anchor.x + 1, e.y - GLASSES.anchor.y + GLASSES_DROP); }
+        sx.restore();
+    }
+    return STAGE;
+}
+
+// The field camera: centre (art px) and zoom.
+function fieldCamera(t) {
+    const s = t - F;
+    let cx = P0.x, cy = P0.y - 20, z = lerp(1.8, 2.05, smooth(F, BLOW[1], t));
+    // closer on the bolts while the ground breaks, closer still on the hands
+    const k1 = smooth(BLOW[1] + 0.5, CRACK[0], t);
+    z = lerp(z, 2.5, k1); cy = lerp(cy, P0.y - 9, k1);
+    const k2 = smooth(HANDS[0].rise, HANDS[0].rise + 1.2, t) * (1 - smooth(CLOSE[0], THUD + 1.5, t));
+    z += 0.25 * k2;
+    // the duck
+    const k3 = smooth(DUCK_IN[0] - 0.4, DUCK_IN[1] + 0.4, t);
+    cx = lerp(cx, DUCK_SPOT.x + 8, k3); cy = lerp(cy, DUCK_SPOT.y - 12, k3); z = lerp(z, 2.75, k3);
+    z += 0.35 * smooth(WEAR, WEAR + 0.25, t) * (1 - smooth(TAKEOFF - 0.4, TAKEOFF + 0.4, t));
+    cy -= 6 * smooth(WEAR, WEAR + 0.25, t) * (1 - smooth(TAKEOFF - 0.4, TAKEOFF + 0.4, t));
+    const k4 = smooth(TAKEOFF, TAKEOFF + 1.6, t);
+    cx = lerp(cx, DUCK_SPOT.x + 40, k4); cy = lerp(cy, DUCK_SPOT.y - 40, k4); z = lerp(z, 2.2, k4);
+    cx += Math.sin(s * 0.3) * 1.2; cy += Math.cos(s * 0.23) * 0.6;
+    // the thud
+    const q = Math.floor(t * 30);
+    const amp = t > THUD && t < THUD + 0.5 ? 1.6 * (1 - (t - THUD) / 0.5) : 0;
+    return { cx: cx + (hash(q) - 0.5) * 2 * amp, cy: cy + (hash(q + 7) - 0.5) * 2 * amp, z };
+}
+function layer(cam, f, fn, neutral = { x: MW / 2, y: MH / 2 }) {
+    const z = S * (1 + (cam.z - 1) * f);
+    const cx = neutral.x + (cam.cx - neutral.x) * f, cy = neutral.y + (cam.cy - neutral.y) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-cx, -cy); fn(z); o.restore();
+    return (p) => ({ x: (p.x - cx) * z + W / 2, y: (p.y - cy) * z + H / 2 });
+}
+const FG = Array.from({ length: 40 }, (_, i) => {
+    const list = DECOR.grass;
+    return { def: list[Math.floor(hash(i + 7) * list.length)], x: i * 62 + hash(i) * 40 - 300, s: 0.8 + hash(i + 11) * 0.7, ph: hash(i + 13) * 6 };
+});
+// Ash in the air: a drift all along, thick while the pile goes.
+const DRIFT = Array.from({ length: 80 }, (_, i) => ({ y: hash(i + 99) * H, x: hash(i) * W, v: 120 + hash(i + 3) * 260, s: hash(i + 7) < 0.3 ? 12 : 7, ph: hash(i + 5) * 6, d: 0.5 + hash(i + 11) }));
+function drift(t, cam) {
+    const gust = 0.35 + 0.65 * smooth(BLOW[0] - 0.5, BLOW[0] + 0.8, t) * (1 - smooth(BLOW[1], BLOW[1] + 2, t));
+    const a0 = (1 - smooth(DARK[0], DARK[1], t)) + smooth(DARK[2], DARK[3], t) * 0.6;
+    for (const m of DRIFT) {
+        const x = ((m.x + t * m.v * m.d - (cam.cx - 160) * 10 * m.d) % (W + 100) + W + 100) % (W + 100) - 50;
+        const y = m.y + Math.sin(t * 1.3 + m.ph) * 30 - (cam.cy - 120) * 6 * m.d;
+        const a = (0.15 + 0.35 * hash(m.ph)) * gust * Math.min(1, a0);
+        if (a <= 0.01) continue;
+        o.fillStyle = `rgba(200,190,196,${a})`;
+        o.fillRect(Math.round(x / 6) * 6, Math.round(y / 6) * 6, m.s * m.d, m.s * m.d * 0.7);
+    }
+}
+
+function drawField(t) {
+    const cam = fieldCamera(t);
+    o.fillStyle = dhex('dawnTop'); o.fillRect(0, 0, W, H);
+    soft(0.8, 6, () => layer(cam, 0.2, () => {
+        o.drawImage(SKYC, -MW / 2, 0);
+        o.fillStyle = dhex('dawnTop'); o.fillRect(-MW, -MH, MW * 3, MH);
+        // the sun just up over the hills, on the right
+        const sun = DECOR.sun;
+        o.drawImage(bake(sun), 228 - (sun.w >> 1), HZ - 18);
+    }));
+    soft(0.7, 5, () => layer(cam, 0.55, () => o.drawImage(FAR, -MW / 2, 0)));
+    const toS = layer(cam, 1, () => o.drawImage(drawStage(t), 0, 0));
+    // low warm light from the sun on the right, mist on the horizon
+    const sunP = toS({ x: 250, y: HZ - 10 });
+    const g = o.createRadialGradient(sunP.x, sunP.y, 40, sunP.x, sunP.y, 1700);
+    g.addColorStop(0, 'rgba(255,214,170,0.28)'); g.addColorStop(1, 'rgba(255,200,170,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    // the foreground: weeds, out of focus
+    const k = 4 * (1 + (cam.z - 1) * 1.6);
+    const off = -(cam.cx - 160) * k;
+    soft(null, 7, () => {
+        for (const gr of FG) {
+            const s = Math.round(k * gr.s * 1.3);
+            const x = ((gr.x + off) % 2700 + 2700) % 2700 - 300 + Math.sin(t * 1.7 + gr.ph) * 14;
+            o.drawImage(dawnBake(gr.def), x - gr.def.anchor.x * s, H + 40 - gr.def.anchor.y * s, gr.def.w * s, gr.def.h * s);
+        }
+        o.globalCompositeOperation = 'source-atop'; o.fillStyle = 'rgba(20,12,30,0.55)'; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    });
+    drift(t, cam);
+    const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.34, W / 2, H * 0.5, H * 1.08);
+    v.addColorStop(0, 'rgba(10,6,16,0)'); v.addColorStop(1, 'rgba(10,6,16,0.62)');
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    // the duck's «Кря.»
+    const d = duckAt(t);
+    if (d) {
+        const head = toS({ x: d.x + 8, y: d.y - 14 });
+        bubble(BUBBLES.at(-1), t, head, (bw, bh) => ({ bx: head.x - bw - 40, by: head.y - bh - 170 }));
+    }
+}
+
+// ===============================================================================================================
+const [MIX, mixX] = canvas(W, H);
+function draw(t) {
+    if (t < DISSOLVE[0]) drawBar(t);
+    else if (t >= DISSOLVE[1]) drawField(t);
+    else {
+        drawField(t);
+        o = mixX; drawBar(t); o = OUT;
+        o.save(); o.globalAlpha = 1 - smooth(DISSOLVE[0], DISSOLVE[1], t); o.drawImage(MIX, 0, 0); o.restore();
+    }
+    const black = 1 - smooth(0, 0.7, t)
+        + smooth(DARK[0], DARK[1], t) * (1 - smooth(DARK[2], DARK[3], t))
+        + smooth(FINAL[0], FINAL[1], t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sound cues (sound.mjs): the game's own synth.
+const OWL_PAN = 0.3;
+const owlPanAt = (at) => (at >= LB(1).from + 2 && at < LB(4).from ? 0.65 : OWL_PAN);
+const wind = [];
+for (let at = DISSOLVE[0] + 0.3; at < DURATION - 0.6; at += 0.42) {
+    if (at > DARK[1] - 0.6 && at < DARK[2] + 0.2) continue;
+    const gust = 0.55 + 0.6 * smooth(BLOW[0] - 0.5, BLOW[0] + 0.8, at) * (1 - smooth(BLOW[1], BLOW[1] + 2, at));
+    const fade = smooth(DISSOLVE[0], DISSOLVE[1], at) * (1 - smooth(DARK[0], DARK[1] - 0.3, at)) + smooth(DARK[2], DARK[3], at) * 0.7 * (at > DARK[2] ? 1 : 0);
+    wind.push({ sfx: 'bush.rustle', at, pitch: -15 + hash(at) * 3, vol: 0.5 * gust * clamp(fade) * (1 - smooth(FINAL[0], FINAL[1], at)), pan: Math.sin(at * 0.7) * 0.5, variant: Math.floor(at * 10) % 4 });
+}
+const flaps = (from, to, per, pan) => Array.from({ length: Math.max(0, Math.floor((to - from) / per)) }, (_, k) => ({ sfx: 'bush.rustle', at: from + k * per, pitch: 5, vol: 0.35, pan, variant: k % 4 }));
+window.SOUND = [
+    { music: 'bar', from: 0, to: DISSOLVE[0] + 1.4, intensity: [[0, 0.45], [CLINK1 - 0.5, 0.5], [CLINK1, 1], [CLINK2 + 1.5, 1], [HOOT, 0.35], [LB(2).from, 0.3], [LB(4).from, 0.15]], fadeIn: 1, fadeOut: 3.2 },
+    { sfx: 'bar.pour', at: POUR[0], pan: OWL_PAN + 0.1, vol: 0.8 },
+    { sfx: 'bar.mug', at: POUR[1] + 0.18, pan: OWL_PAN },
+    { sfx: 'bar.take', at: LIFT1, pan: -0.05, vol: 0.7 },
+    { sfx: 'finale.meep', at: MEEP1, variant: 0 },
+    { sfx: 'clink.glass', at: CLINK1, pan: -0.4 },
+    { sfx: 'clink.glass', at: CLINK1 + 0.06, pan: 0.4, variant: 1 },
+    { sfx: 'clink.glass', at: CLINK1 + 0.15, pan: 0, variant: 2 },
+    { sfx: 'clink.cheer', at: CLINK1 + 0.1, vol: 1.1 },
+    { sfx: 'rr.meep', at: MEEP2, variant: 1, vol: 1.2 },
+    { sfx: 'clink.glass', at: CLINK2, pan: 0.3, variant: 3 },
+    { sfx: 'clink.glass', at: CLINK2 + 0.08, pan: -0.3 },
+    { sfx: 'clink.cheer', at: CLINK2 + 0.1, variant: 1, vol: 1.1 },
+    { sfx: 'bar.gulp', at: CLINK2 + 1.0, pan: -0.5, vol: 0.6 },
+    { sfx: 'bar.gulp', at: CLINK2 + 1.3, pan: 0.5, vol: 0.6, variant: 1 },
+    { sfx: 'owl.hoot', at: HOOT, pan: OWL_PAN },
+    ...BUBBLES.filter((b) => b.who === 'owl').map((b) => ({ speak: 'owl', text: textOf(b), at: b.from, pan: owlPanAt(b.from), pitch: b.hop ? 2 : 0 })),
+    { sfx: 'word.ok', at: LB(2).from - 0.05, pan: 0.4, vol: 0.55 },
+    // the field: the wind, the ground giving, the hands, the bolts gone under, the thud
+    ...wind,
+    ...CRACKS.map((c, i) => ({ sfx: 'worm.squelch', at: CRACK[0] + i * 0.4, pitch: -6, vol: 0.6, pan: i ? 0.3 : -0.3, variant: i })),
+    ...HANDS.flatMap((h, i) => [
+        { sfx: 'bush.rustle', at: STIR + i * 0.3, pitch: -8, vol: 0.6, pan: i ? 0.3 : -0.3 },
+        { sfx: 'zombie.die.sink', at: h.rise - 0.4, pitch: 6, vol: 0.5, pan: i ? 0.3 : -0.3, variant: i },
+        { sfx: 'worm.squelch', at: h.rise, pitch: -3, vol: 0.9, pan: i ? 0.3 : -0.3, variant: 2 + i },
+        { sfx: 'zombie.groan', at: h.rise + 0.25, pitch: -4, vol: 0.45, pan: i ? 0.3 : -0.3, variant: i },
+        { sfx: 'bar.take', at: h.grab, pitch: -5, vol: 0.8, pan: i ? 0.2 : -0.2, variant: i },
+        { sfx: 'zombie.die.sink', at: h.sink, pitch: -2, vol: 1.1, pan: i ? 0.3 : -0.3, variant: 2 - i },
+    ]),
+    { sfx: 'bonfire.explode', at: THUD, pitch: -12, vol: 1.3 },
+    { sfx: 'finale.strike', at: THUD, pitch: -14, vol: 0.5 },
+    // the duck
+    ...flaps(DUCK_IN[0], DUCK_IN[1] - 0.2, 0.17, -0.3),
+    { sfx: 'duck.quack', at: DUCK_IN[0] + 0.4, pan: -0.5, vol: 0.5 },
+    { sfx: 'walk.step', at: DUCK_IN[1], pitch: 7, vol: 0.4, pan: -0.1 },
+    { sfx: 'bar.take', at: WEAR, pitch: 4, vol: 0.6, pan: -0.1, variant: 2 },
+    { sfx: 'duck.quack', at: QUACK + 0.02, pan: -0.1, vol: 1.2, variant: 1 },
+    ...flaps(TAKEOFF, TAKEOFF + 1.5, 0.13, 0.3),
+    { sfx: 'word.ok', at: ACCENT, pan: 0.2, vol: 0.8 },
+];
+window.DURATION = DURATION;
+window.draw = (t) => { draw(t); return true; };
+window.T = { MEEP1, CLINK1, MEEP2, CLINK2, LOOK, HOOT, LINES: BUBBLES.map((b) => [b.from.toFixed(2), b.to.toFixed(2), textOf(b)]), FREEZE, DISSOLVE, BLOW, STIR, CRACK, HANDS, CLOSE, THUD, DARK, DUCK_IN, PICK, WEAR, QUACK, TAKEOFF, ACCENT, FINAL, DURATION };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
+document.title = 'ready';
+</script>
+</body>
+</html>
