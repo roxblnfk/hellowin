@@ -10,7 +10,7 @@ import { launch, sleep } from './cdp.mjs';
 import { mix, writeWav } from './sound.mjs';
 
 // Story order: the finished video is named by its place in the evening, so a folder listing reads as the edit.
-const ORDER = ['bar-intro', 'magic-place', 'franken-rise', 'roadrunner-alive'];
+const ORDER = ['bar-intro', 'magic-place', 'candles', 'nightfall', 'green-blast', 'franken-rise', 'roadrunner-alive'];
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '..');

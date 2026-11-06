@@ -19,5 +19,8 @@ Needs Node 22+, Microsoft Edge and ffmpeg in PATH.
 |---|---|---|
 | 01 | `bar-intro` | the owl pours beer and calls everyone to the ritual; a fly on the foam gets shot |
 | 02 | `magic-place` | the owl leads everyone to the pumpkin patch, the elephant tows its banner by, chickens among the untouched pumpkins, a duck from the bush gets shot |
-| 03 | `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
-| 04 | `roadrunner-alive` | «Походу… ошибочка вышла.» — RoadRunner runs in off the horizon alive, «Мип-мип!», the owl explains |
+| 03 | `candles` | the sun sets over the carved pumpkins, the owl lights a candle and sets it down among them, flies up to its branch; candles light up round the spot, everyone takes one, «Берите свечи и зажигайте тыквы — пусть случится магия!» |
+| 04 | `nightfall` | night falls over the burning pumpkins, the owl pulls a stack of spell books from under its wing and remembers the hooded necromancer who slid them over the bar's counter (a sepia flashback); it throws everyone a book, the first spells turn the pumpkins green, «Что может пойти не так?» |
+| 05 | `green-blast` | the green bonfire roars but will not blow, «Достаточно… сейчас рванёт!» — it sinks nearly out; the owl reads the last ingredient out of the book: everyone farts on the count of three, a herd of elephants farts over the hills, the Fart Time clouds spiral into the fire; a farting duck is shot over it and drops in — the blast; the vines burn to ash, the moon turns red, the summoning circle lights and a dark silhouette rises in it |
+| 06 | `franken-rise` | the owl awaits RoadRunner, lightning reveals FrankenPHP, «ЧТО ВЫ НАДЕЛАЛИ?» |
+| 07 | `roadrunner-alive` | «Походу… ошибочка вышла.» — RoadRunner runs in off the horizon alive, «Мип-мип!», the owl explains |
