@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// Nightfall: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+// The way from scene 2 of the game to scene 3: night falls over the burning pumpkins and the bonfire, the owl pulls a
+// stack of spell books from under its wing and remembers, in a sepia flashback to the bar, the hooded necromancer who
+// told it about the ritual and slid the books over the counter; then it throws a book to everyone, the pages light up
+// green, the first spells fly at the pumpkins, and up close the owl wonders aside what could possibly go wrong.
+import { PALETTE } from '/js/pixel/palette.js';
+import { DECOR, bake, pumpkinLayers, pumpkinSprite, seedOf } from '/js/pixel/sprites.js';
+import { characterFrame, randomLook, SHOT_FX } from '/js/pixel/characters.js';
+import { OWL, OWL_BAR, glowing } from '/js/pixel/owl.js';
+import { BUSH, FLYERS } from '/js/pixel/flyers.js';
+import { BONFIRE } from '/js/pixel/bonfire.js';
+import { NIGHT, bakeLit, halo, paintSky, relightCanvas } from '/js/pixel/night.js';
+import { DEFAULT_BAR_LAYOUT as barLayout, BAR_FLICKER_MS, BAR_MUG, barLights, barOwlSpot, barProps, bakeBar, paintBar } from '/js/pixel/bar.js';
+import { speechPlan, beakAt, wingAt } from '/js/owl-speech.js';
+
+const W = 1920, H = 1080;
+const OUT = document.getElementById('out').getContext('2d');
+let o = OUT;
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+const mixHex = (a, b, k) => { const c = [16, 8, 0].map((s) => Math.round(lerp((a >> s) & 255, (b >> s) & 255, k))); return `rgb(${c[0]},${c[1]},${c[2]})`; };
+// scene.js: the same seeded generator, so the patch grows the game's vines.
+function rng(seed) {
+    return () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. PRE and POST are calm handles for the editor's transitions.
+const PRE = 2, POST = 2;
+const GRADE = [2.0, 9.5];            // the sunset's colours go over to the night's
+const MOON = [2.6, 10.5];            // the moon climbs out from behind the hills
+const CUT_B = 12.2;                  // → the owl on its branch, nearer
+const HOOT_B = 12.7;                 // a hoot, then it pulls the books out from under its wing
+const PULL = [13.0, 13.7];
+const FB_IN = [15.3, 16.3];          // the thought cloud swells into the flashback…
+const FB_OUT = [27.0, 27.8];         // …and shrinks back to the owl
+const LIFT = [27.9, 28.5];           // the owl holds the books up: «вот это»
+const CUT_C = 30.6;                  // → the crowd under the tree: the books handed out
+const CUT_D = 39.0;                  // → the owl up close, aside
+const DURATION = 49.4;
+const BUBBLES = [
+    { from: 6.6, to: 11.6, lines: ['Ночь…', 'Самое время для главного.'] },
+    { from: 13.7, to: 22.2, lines: ['Про этот ритуал мне рассказал', 'один некромант.', 'Как его… Дун… Дуг…', 'А, неважно.'], box: true },
+    { from: 22.6, to: 30.4, lines: ['Всё расписал в подробностях:', 'тыквы, свечи, костёр…', 'И оставил вот это.'], box: true },
+    { from: 31.95, to: 38.45, lines: ['Магические книги!', 'Читайте заклинания', 'над тыквами!'] },
+    { from: 40.3, to: 47.3, lines: ['Он клялся, что всё', 'под контролем…', 'Что может пойти не так?'], quiet: true },
+];
+const textOf = (b) => b.lines.join(' ');
+const PLANS = BUBBLES.map((b) => speechPlan(textOf(b)));
+// The moments inside the lines (owl-speech.js word timings of the lines above).
+const GLITCH = [BUBBLES[1].from + 3.15, BUBBLES[1].from + 4.15];       // «Дун… Дуг…»: the memory flickers
+const ICONS = [1.61, 2.07, 2.52].map((d) => BUBBLES[2].from + d);    // «тыквы, свечи, костёр»
+const SLIDE = [BUBBLES[2].from + 2.95, BUBBLES[2].from + 3.95];     // «И оставил…»: the books slide over the counter
+const TAKE = SLIDE[1] + 0.05;
+// The hand-out: a book thrown to each of the crowd, then the first spells at the pumpkins.
+const TOSS = Array.from({ length: 6 }, (_, i) => 32.5 + i * 0.55), TOSS_AIR = 0.65;
+const CAST = [36.0, 36.35, 36.7, 37.05, 37.4, 37.75], CAST_AIR = 0.4;
+// The finale's hint: a crow over the moon, the fire flaring green for a moment.
+const CROW = [43.2, 46.0], FLARE = [44.6, 45.5];
+
+// Characters typed `ms` into a bubble: each word as the speech reaches it (owl-speech.js syllables).
+function typedOf(i, ms) {
+    const text = textOf(BUBBLES[i]), plan = PLANS[i];
+    const words = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+    const counts = words.map((m) => Math.max(1, Math.min(5, (m[0].match(/[аеёиоуыэюяaeiouy]/giu) ?? []).length || Math.ceil(m[0].length / 3))));
+    if (counts.reduce((a, c) => a + c, 0) !== plan.syllables.length) return Math.floor(text.length * clamp(ms / plan.ms));
+    let n = 0, k = 0;
+    for (let w = 0; w < words.length; w++) {
+        const first = plan.syllables[k], last = plan.syllables[k + counts[w] - 1];
+        k += counts[w];
+        const start = first.at, end = last.at + last.len, m = words[w];
+        if (ms < start) return n;
+        const into = clamp((ms - start) / Math.max(1, end - start));
+        n = m.index + Math.ceil(m[0].length * into);
+        if (into < 1) return n;
+        n = words[w + 1]?.index ?? text.length;
+        if (w === words.length - 1) n = text.length;
+    }
+    return n;
+}
+function owlTalk(i, t) {
+    const plan = PLANS[i], ms = (t - BUBBLES[i].from) * 1000;
+    if (ms < 0 || ms > plan.ms + 200) return null;
+    const beak = beakAt(plan, ms);
+    return wingAt(plan, ms) ? OWL.beakWing[beak] : OWL.beak[beak];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Light: the sunset going over to the night. NK is the night's share for the frame being drawn.
+let NK = 0;
+const nightAt = (t) => smooth(GRADE[0], GRADE[1], t);
+
+// ---------------------------------------------------------------------------------------------------------------
+// The patch of scenes 2–3 as scene.js lays it out on a 1920 × 1080 screen: 480 × 270 art px (4 screen px each), the
+// horizon at 37 %, the root of the vines at 50 % × 63 %. Every pumpkin is lit, so the patch has jumped out from the
+// root (layout.js, PUMPKIN_STAND.out) and the bonfire burns in the middle where the root and its leaves were.
+const AW = 480, AH = 270, HZ = 100, S = W / AW;
+const toArt = (p) => ({ x: Math.round((p.x / 100) * AW), y: Math.round((p.y / 100) * AH) });
+const ROOT = toArt({ x: 50, y: 63 });
+const OUTF = 1.18;
+const PUMPKINS = [
+    ['pumpkin-1', 47.8, 51.2, 'm'], ['pumpkin-2', 55.7, 55, 's'], ['pumpkin-3', 66.2, 48.3, 's'], ['pumpkin-4', 62.8, 56, 's'],
+    ['pumpkin-5', 71.2, 58.4, 'm'], ['pumpkin-6', 64.7, 63.7, 's'], ['pumpkin-7', 71, 72.8, 'l'], ['pumpkin-8', 59.6, 71.1, 'm'],
+    ['pumpkin-9', 60.7, 80.8, 'm'], ['pumpkin-10', 50.4, 82.7, 'l'], ['pumpkin-11', 40, 83.7, 'm'], ['pumpkin-12', 43.6, 74.1, 'm'],
+    ['pumpkin-13', 29.3, 78.5, 'l'], ['pumpkin-14', 35.4, 69.6, 's'], ['pumpkin-15', 27.7, 60.2, 'm'], ['pumpkin-16', 40.6, 64, 's'],
+    ['pumpkin-17', 35.8, 51.5, 's'], ['pumpkin-18', 45.2, 58.4, 's'],
+].map(([id, x, y, size], i) => {
+    const p = toArt({ x, y });
+    return { id, size, i, x: Math.round(ROOT.x + (p.x - ROOT.x) * OUTF), y: Math.round(ROOT.y + (p.y - ROOT.y) * OUTF), seed: seedOf(id), phase: hash(i + 40) * 1100, charged: Infinity };
+});
+const BUSHES = [
+    ['bush-1', 4, 86], ['bush-2', 96, 88], ['bush-3', 2, 62], ['bush-4', 98, 66], ['bush-5', 16, 44], ['bush-6', 88, 43],
+].map(([id, x, y]) => ({ id, ...toArt({ x, y }), seed: seedOf(id) }));
+
+const bakes = new WeakMap();
+const baked = (def) => bakes.get(def) ?? bakes.set(def, bake(def)).get(def);
+const blit = (ctx, c, def, x, y, flip = false) => {
+    if (!flip) { ctx.drawImage(c, Math.round(x - def.anchor.x), Math.round(y - def.anchor.y)); return; }
+    ctx.save(); ctx.translate(Math.round(x), 0); ctx.scale(-1, 1); ctx.drawImage(c, -(def.w - def.anchor.x), Math.round(y - def.anchor.y)); ctx.restore();
+};
+const stamp = (ctx, def, x, y, flip = false) => blit(ctx, baked(def), def, x, y, flip);
+const additive = (ctx, def, x, y, a) => { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; stamp(ctx, def, x, y); ctx.restore(); };
+
+const GROUND = [];
+const addGround = (def, x, y, sortY = y) => GROUND.push({ def, x: Math.round(x), y: Math.round(y), sy: sortY });
+const shape = { cx: ROOT.x, cy: ROOT.y, rx: AW * 0.29, ry: Math.min(AH * 0.24, ROOT.y - HZ - 3) };
+// scene.js: the bonfire's warm reach at night; sprites inside 0.75 of it take the firelight.
+const FIRE_LIGHT = { x: Math.round(shape.cx), y: Math.round(shape.cy + shape.ry * 0.35), rx: Math.round(shape.rx * 1.45), ry: Math.round(shape.ry * 1.65), near: 'firelight' };
+const nearFire = (x, y) => Math.hypot((x - FIRE_LIGHT.x) / FIRE_LIGHT.rx, (y - FIRE_LIGHT.y) / FIRE_LIGHT.ry) < 0.75;
+// A sprite in the frame's light: the sunset's bake, the night's (or the firelight's) over it by NK.
+// `at` — where the sprite stands on the stage, when it is drawn through a transform.
+function putLit(ctx, def, x, y, flip = false, nightDef = def, at = { x, y }) {
+    if (NK < 1) blit(ctx, bakeLit(def, 'sunset'), def, x, y, flip);
+    if (NK > 0) { ctx.save(); ctx.globalAlpha *= NK; blit(ctx, bakeLit(nightDef, nearFire(at.x, at.y) ? 'firelight' : 'night'), nightDef, x, y, flip); ctx.restore(); }
+}
+
+const inPatch = (x, y) => ((x - shape.cx) / shape.rx) ** 2 + ((y - shape.cy) / shape.ry) ** 2;
+function inRagged(x, y) {
+    const a = Math.atan2((y - shape.cy) / shape.ry, (x - shape.cx) / shape.rx);
+    const wobble = 1 + 0.05 * Math.sin(5 * a + 1) + 0.035 * Math.sin(11 * a + 2) + 0.02 * Math.sin(23 * a);
+    return inPatch(x, y) / (wobble * wobble);
+}
+const onRim = (deg, r) => { const a = (deg * Math.PI) / 180; return { x: shape.cx + Math.cos(a) * shape.rx * r, y: shape.cy + Math.sin(a) * shape.ry * r }; };
+function rootIn(x, y, halfW, random) {
+    const tufts = [...DECOR.grass, ...DECOR.weed];
+    const front = 3 + Math.floor(random() * 3);
+    for (let i = 0; i < front + 2; i++) {
+        const dy = i < front ? 1 + random() * 2 : -(1 + random() * 2);
+        addGround(tufts[Math.floor(random() * tufts.length)], x + (random() - 0.5) * 2 * halfW, y + dy);
+    }
+}
+const farPlan = Math.max(DECOR.hills.h, ...DECOR.farTree.map((t) => t.h));
+
+// The far plan (hills, far trees) and the lawn with the dug patch: magic-place.html / scene.js drawBase.
+const [FAR, farX] = canvas(AW, HZ + 40);
+const [LAWN, lawnX] = canvas(AW, AH);
+{
+    const random = rng(42);
+    farX.fillStyle = hex(PALETTE.leaf); farX.fillRect(0, HZ - 2, AW, 42);
+    for (let x = 0; x < AW; x += DECOR.hills.w) farX.drawImage(baked(DECOR.hills), x - DECOR.hills.anchor.x, HZ - DECOR.hills.anchor.y);
+    const farTrees = [];
+    for (let x = 4 + random() * 20; x < AW; x += 18 + random() * 40) farTrees.push({ def: DECOR.farTree[Math.floor(random() * DECOR.farTree.length)], x, y: HZ - Math.floor(random() * 2) });
+    farTrees.sort((a, b) => a.y - b.y).forEach((t) => stamp(farX, t.def, t.x, t.y));
+
+    const image = lawnX.createImageData(AW, AH - HZ);
+    const rgb = (k) => [(PALETTE[k] >> 16) & 255, (PALETTE[k] >> 8) & 255, PALETTE[k] & 255];
+    const vp = { x: shape.cx, y: HZ - (shape.cy - HZ) * 0.6 };
+    const fan = (shape.cy + shape.ry - vp.y) / 10;
+    for (let y = HZ; y < AH; y++) {
+        const depth = (y - HZ) / (AH - HZ);
+        for (let x = 0; x < AW; x++) {
+            const d = inRagged(x, y);
+            const checker = (x + y) % 2 === 0;
+            let key;
+            if (d < 0.9 || (d < 1 && checker)) {
+                const lane = (((x - vp.x) / (y - vp.y)) * fan) % 1;
+                const f = lane < 0 ? lane + 1 : lane;
+                key = f < 0.2 ? 'soilDark' : f < 0.3 ? 'soilLight' : random() < 0.03 ? (random() < 0.5 ? 'soilDark' : 'soilLight') : 'soil';
+            } else if (d < 1.1 && random() < (1.1 - d) * 6) key = random() < 0.6 ? 'soilDark' : 'soilLight';
+            else {
+                const mow = (Math.sqrt(y - HZ + 1) * 1.7) % 1 < 0.14;
+                const n = random();
+                const warm = Math.max(0, 1.6 - d) * 0.12;
+                key = n < warm * 0.5 ? 'leafShine' : n < 0.05 * depth + warm ? 'leafLight'
+                    : mow || n < 0.04 + 0.12 * depth || (depth > 0.4 && y % 4 === 0 && checker) ? 'leafDark' : 'leaf';
+            }
+            image.data.set([...rgb(key), 255], ((y - HZ) * AW + x) * 4);
+        }
+    }
+    lawnX.putImageData(image, 0, HZ);
+    for (let i = 0; i < shape.rx * 6; i++) {
+        const p = onRim(random() * 360, 0.9 + random() * 0.08);
+        const tall = 2 + Math.floor(random() * 2);
+        lawnX.fillStyle = hex(PALETTE[random() < 0.5 ? 'leaf' : 'leafDark']);
+        const tuft = random() < 0.4;
+        lawnX.fillRect(Math.round(p.x), Math.round(p.y) - tall + 1, 1, tall);
+        if (tuft) lawnX.fillRect(Math.round(p.x) + 1, Math.round(p.y) - 1, 1, 1);
+    }
+    const smallest = DECOR.grass.reduce((a, b) => (a.w * a.h <= b.w * b.h ? a : b));
+    const tries = Math.round((AW * (AH - HZ)) / 16);
+    for (let i = 0; i < tries; i++) {
+        const x = random() * AW, y = HZ + 2 + random() * (AH - HZ - 2);
+        const depth = (y - HZ) / (AH - HZ), d = inPatch(x, y);
+        const edge = Math.max(1 - x / (AW * 0.18), 1 - (AW - x) / (AW * 0.18), 1 - (AH - y) / (AH * 0.15), 0);
+        const chance = (d < 1 ? 0.012 : Math.min(0.9, 0.05 + (d - 1) * 0.5 + edge * 0.6)) * (0.15 + 0.85 * depth);
+        if (random() >= chance) continue;
+        let def;
+        if (depth < 0.25) def = smallest;
+        else {
+            const list = d < 1 ? DECOR.grass : random() < 0.08 && DECOR.flower?.length ? DECOR.flower : random() < 0.55 ? DECOR.weed : DECOR.grass;
+            def = list[Math.floor(random() * list.length)];
+        }
+        // the middle is the bonfire's: no tufts on its heap
+        if (Math.hypot((x - ROOT.x) / 26, (y - ROOT.y) / 12) < 1) continue;
+        addGround(def, x, y);
+    }
+    const fence = DECOR.fence[0];
+    const arc = [];
+    for (let deg = -150; deg <= -30; deg += 0.5) arc.push(onRim(deg, 1.06));
+    const posts = [arc[0]];
+    let run = 0;
+    for (let i = 1; i < arc.length; i++) {
+        run += Math.hypot(arc[i].x - arc[i - 1].x, arc[i].y - arc[i - 1].y);
+        if (run >= fence.w - 1) { posts.push(arc[i]); run = 0; }
+    }
+    for (let i = 1; i < posts.length; i++) {
+        const a = posts[i - 1], b = posts[i], y = Math.max(a.y, b.y);
+        addGround(DECOR.fence[i % DECOR.fence.length], (a.x + b.x) / 2, y);
+        rootIn(b.x, y, 2, random);
+    }
+    for (const post of [posts[0], posts[posts.length - 1]]) { addGround(DECOR.fenceEnd, post.x, post.y); rootIn(post.x, post.y, 2, random); }
+    const items = [
+        { def: DECOR.hay, at: onRim(18, 1.16) }, { def: DECOR.basket, at: onRim(158, 1.12) }, { def: DECOR.can, at: onRim(52, 1.08) },
+        { def: DECOR.stone[0], at: onRim(104, 1.07) }, { def: DECOR.stone[DECOR.stone.length - 1], at: onRim(206, 1.06) },
+    ];
+    for (const { def, at } of items.sort((a, b) => a.at.y - b.at.y)) { addGround(def, at.x, at.y); rootIn(at.x, at.y, def.w / 2, random); }
+}
+
+// The tree with the owl's branch: scene.js drawTree.
+const TREE = DECOR.tree;
+const TREE_FOOT = { x: Math.round(Math.max(AW * 0.07, AW * 0.32 - (TREE.perch[0] - TREE.anchor.x))), y: HZ + 3 };
+addGround(TREE, TREE_FOOT.x, TREE_FOOT.y);
+rootIn(TREE_FOOT.x, TREE_FOOT.y, 6, rng(5));
+const PERCH = { x: TREE_FOOT.x - TREE.anchor.x + TREE.perch[0], y: TREE_FOOT.y - TREE.anchor.y + TREE.perch[1] };
+
+// The vines from the root to every stem, the leaves along them: scene.js drawPlants.
+function stemColumn(def) {
+    const row = def.rows.find((r) => [...r].some((ch) => def.legend[ch])) ?? '';
+    const xs = [...row].flatMap((ch, x) => (def.legend[ch] ? [x] : []));
+    return xs.length ? Math.round((xs[0] + xs[xs.length - 1]) / 2) : def.anchor.x;
+}
+function wavyCurve(from, c1, c2, to, wave) {
+    const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+    const steps = Math.ceil(length * 3);
+    const raw = [];
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps, u = 1 - t;
+        raw.push({ t, x: u * u * u * from.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * to.x, y: u * u * u * from.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * to.y });
+    }
+    const points = [];
+    let travelled = 0;
+    raw.forEach((p, i) => {
+        const a = raw[Math.max(0, i - 1)], b = raw[Math.min(raw.length - 1, i + 1)];
+        const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const nx = -(b.y - a.y) / tl, ny = (b.x - a.x) / tl;
+        const off = wave.amp * Math.sin(Math.PI * p.t) * Math.sin(2 * Math.PI * wave.turns * p.t + wave.phase);
+        const fx = p.x + nx * off, fy = p.y + ny * off;
+        const last = points[points.length - 1];
+        travelled += last ? Math.hypot(fx - last.fx, fy - last.fy) : 0;
+        points.push({ x: Math.round(fx), y: Math.round(fy), fx, fy, t: p.t, d: travelled, nx, ny });
+    });
+    return points;
+}
+function strokeVine(ctx, points, width) {
+    const pass = (key, grow, dy) => {
+        ctx.fillStyle = hex(PALETTE[key]);
+        for (const p of points) { const w = Math.max(1, Math.round(width(p.t)) + grow); ctx.fillRect(p.x - (w >> 1), p.y - (w >> 1) + dy, w, w); }
+    };
+    pass('leafDark', 0, 1);
+    pass('leafLight', -1, 0);
+    ctx.fillStyle = hex(PALETTE.leafShine);
+    for (const p of points) if (width(p.t) >= 3) ctx.fillRect(p.x - 1, p.y - (Math.round(width(p.t)) >> 1), 1, 1);
+}
+function drawVine(ctx, from, stem, reach, seed, foliage) {
+    const random = rng(seed);
+    const side = random() < 0.5 ? 1 : -1;
+    const toward = Math.sign(from.x - stem.x) || side;
+    const dx = stem.x - from.x, dy = stem.y - from.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const bend = side * length * (0.1 + random() * 0.15);
+    const c1 = { x: from.x + dx * 0.35 - (dy / length) * bend, y: from.y + dy * 0.35 + (dx / length) * bend };
+    const c2 = { x: stem.x + toward * reach, y: stem.y - 12 };
+    const wave = { amp: clamp(length * 0.06, 2, 7), turns: 1.5 + random(), phase: random() * Math.PI * 2 };
+    const points = wavyCurve(from, c1, c2, stem, wave);
+    const travelled = points[points.length - 1].d;
+    const shoots = 1 + Math.floor(random() * 2);
+    for (let i = 0; i < shoots; i++) {
+        const base = points[Math.floor((0.2 + random() * 0.55) * (points.length - 1))];
+        const out = random() < 0.5 ? 1 : -1;
+        const len = 10 + random() * 12;
+        const tip = { x: base.fx + base.nx * out * len, y: base.fy + base.ny * out * len * 0.7 };
+        const mid = { x: (base.fx + tip.x) / 2, y: (base.fy + tip.y) / 2 };
+        strokeVine(ctx, wavyCurve(base, mid, mid, tip, { amp: 1.5, turns: 1, phase: random() * Math.PI }), (t) => 2 - t);
+        const forkLeaf = DECOR.leaf[2];
+        if (random() < 0.5) foliage.push({ def: forkLeaf, x: base.fx - base.nx * out * 4, y: base.fy - base.ny * out * 4 + forkLeaf.anchor.y - (forkLeaf.h >> 1) });
+        const tendril = DECOR.tendril[Math.floor(random() * DECOR.tendril.length)];
+        foliage.push({ def: tendril, x: tip.x + out * 3, y: tip.y + tendril.anchor.y - (tendril.h >> 1) });
+        const leaf = DECOR.leaf[1];
+        foliage.push({ def: leaf, x: tip.x - out * 3, y: tip.y - 1 + leaf.anchor.y - (leaf.h >> 1) });
+    }
+    strokeVine(ctx, points, (t) => 4 - 2 * t);
+    let flip = random() < 0.5 ? 1 : -1;
+    let next = Math.max(22, travelled * 0.45) + 14 * random();
+    for (const p of points) {
+        if (p.d > travelled - 12) break;
+        if (p.d < next) continue;
+        next = p.d + 14 + random() * 6;
+        const sizeAt = 0.3 + p.t * 0.6;
+        const leaf = DECOR.leaf[clamp(Math.floor(sizeAt * DECOR.leaf.length + (random() - 0.5) * 1.5), 0, DECOR.leaf.length - 1)];
+        const off = 6 + random() * 3;
+        foliage.push({ def: leaf, x: p.x + p.nx * flip * off, y: p.y + p.ny * flip * off + leaf.anchor.y - (leaf.h >> 1) });
+        flip = -flip;
+    }
+    let nextTendril = 10 + random() * 10;
+    for (const p of points) {
+        if (p.d > travelled - 10) break;
+        if (p.d < nextTendril) continue;
+        nextTendril = p.d + 22 + random() * 14;
+        const t = DECOR.tendril[Math.floor(random() * DECOR.tendril.length)];
+        foliage.push({ def: t, x: p.x - p.nx * side * 3, y: p.y - p.ny * side * 3 + t.anchor.y - (t.h >> 1) });
+    }
+}
+{
+    for (const p of PUMPKINS) {
+        const def = pumpkinSprite(0, p.size, p.seed);
+        const w = Math.max(4, Math.round(def.w * 0.8));
+        lawnX.fillStyle = hex(PALETTE.soilDark);
+        lawnX.fillRect(p.x - (w >> 1), p.y - 1, w, 2); lawnX.fillRect(p.x - (w >> 1) + 1, p.y + 1, w - 2, 1);
+    }
+    const foliage = [];
+    for (const p of PUMPKINS) {
+        const def = pumpkinSprite(0, p.size, p.seed);
+        drawVine(lawnX, ROOT, { x: p.x - def.anchor.x + stemColumn(def), y: p.y - def.anchor.y + 1 }, (def.w >> 1) + 3, p.seed, foliage);
+    }
+    foliage.forEach((l) => addGround(l.def, l.x, l.y));
+    const br = rng(11);
+    for (const b of BUSHES) { b.def = BUSH.idle[b.seed % BUSH.idle.length]; addGround(b.def, b.x, b.y); rootIn(b.x, b.y, b.def.w / 2 - 2, br); }
+}
+GROUND.sort((a, b) => a.sy - b.sy || a.x - b.x);
+// Nothing on the lawn moves but the pumpkins, the crowd, the fire and the owl: the rest is one picture per light.
+const [STATIC, stX] = canvas(AW, AH);
+stX.drawImage(LAWN, 0, 0);
+for (const g of GROUND) stamp(stX, g.def, g.x, g.y);
+const STATIC_LIT = { sunset: relightCanvas(STATIC, 'sunset'), night: relightCanvas(STATIC, 'night', FIRE_LIGHT) };
+const FAR_LIT = { sunset: relightCanvas(FAR, 'sunset'), night: relightCanvas(FAR, 'night') };
+
+// ---------------------------------------------------------------------------------------------------------------
+// The sky: the sunset's bands darkening into the night's, the stars coming out, the moon climbing over the hills.
+const skyOf = (lighting) => { const [c, x] = canvas(AW, HZ + 1); paintSky(x, AW, HZ + 1, lighting, { seed: 5 }); return c; };
+const SKY_LIT = { sunset: skyOf('sunset'), night: skyOf('night') };
+const SKY_X = Math.round(AW * 0.82);
+const SKY_TOP = HZ - farPlan;
+const MOON_Y = Math.max(NIGHT.moon.h >> 1, Math.round(SKY_TOP * 0.32));
+const TWINKLES = (() => {
+    const random = rng(21), out = [];
+    for (let i = 0; i < Math.max(4, Math.round(AW / 70)) + 3; i++) {
+        const x = Math.round(4 + random() * (AW - 8));
+        const y = Math.round(3 + random() ** 1.4 * Math.max(4, SKY_TOP - 10));
+        if (Math.hypot(x - SKY_X, y - MOON_Y) < NIGHT.moonHalo.w / 2 + 3) continue;
+        out.push({ x, y, phase: Math.floor(random() * 4), at: GRADE[0] + 2 + random() * 5 });
+    }
+    return out;
+})();
+const CLOUDS = (() => { const r = rng(7); return Array.from({ length: 2 }, (_, i) => ({ def: DECOR.cloud[i % DECOR.cloud.length], x: r() * AW, y: 2 + Math.floor(r() * Math.max(1, SKY_TOP - 20)), v: 1.5 + r() * 2.5 })); })();
+function moonAt(t) {
+    const k = smooth(MOON[0], MOON[1], t);
+    return { y: lerp(SKY_TOP + 14, MOON_Y, 1 - (1 - k) ** 2), a: smooth(MOON[0], MOON[0] + 1.2, t) };
+}
+function drawSky(t) {
+    const top = mixHex(PALETTE.sunsetTop, PALETTE.nightTop, NK);
+    o.fillStyle = top; o.fillRect(-AW, -AH, AW * 3, AH + 1);
+    const put = (c) => { o.drawImage(c, -AW, 0, AW * 3, HZ + 1); o.drawImage(c, 0, 0); };
+    if (NK < 1) put(SKY_LIT.sunset);
+    if (NK > 0) { o.save(); o.globalAlpha = NK; put(SKY_LIT.night); o.restore(); }
+    for (const s of TWINKLES) {
+        const a = smooth(s.at, s.at + 1.5, t);
+        if (a <= 0) continue;
+        const def = NIGHT.stars[2 + ((Math.floor(t / 0.4) + s.phase) % 2)];
+        o.save(); o.globalAlpha = a; stamp(o, def, s.x, s.y); o.restore();
+    }
+    const m = moonAt(t);
+    if (m.a > 0) {
+        o.save(); o.globalAlpha = m.a;
+        stamp(o, NIGHT.moonHalo, SKY_X, m.y); stamp(o, NIGHT.moon, SKY_X, m.y);
+        o.restore();
+    }
+    for (const c of CLOUDS) {
+        const x = ((c.x + t * c.v) % (AW + 80) + AW + 80) % (AW + 80) - 40;
+        const def = c.def;
+        if (NK < 1) o.drawImage(bakeLit(def, 'sunset'), Math.round(x), c.y);
+        if (NK > 0) { o.save(); o.globalAlpha = NK; o.drawImage(bakeLit(def, 'night'), Math.round(x), c.y); o.restore(); }
+    }
+}
+function drawFar() {
+    if (NK < 1) o.drawImage(FAR_LIT.sunset, 0, 0);
+    if (NK > 0) { o.save(); o.globalAlpha = NK; o.drawImage(FAR_LIT.night, 0, 0); o.restore(); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The spell books: a stack of six (the necromancer's, then the owl's), and one thrown, tumbling.
+const BOOK_LEGEND = { O: 'outline', V: 'violet', v: 'violetDark', L: 'violetLight', c: 'cream', s: 'seedShade', e: 'eyeGreen', E: 'eerieMid', D: 'crimson', d: 'crimsonDark', K: 'crow', k: 'crowDark', G: 'shieldGreen', g: 'leafDark', a: 'gold' };
+const COVERS = [['V', 'v'], ['D', 'd'], ['K', 'k'], ['G', 'g'], ['V', 'v'], ['D', 'd']];
+const stacks = new Map();
+// n books, 9 px wide, each 2 rows — the cover and the page edges with a glowing glyph on the spine — nudged left and
+// right a little; an outline over the top one and under the bottom one.
+function stackSprite(n) {
+    if (stacks.has(n)) return stacks.get(n);
+    const w = 11, h = n * 2 + 2;
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    for (let b = 0; b < n; b++) {
+        const [C] = COVERS[b];
+        const y = h - 1 - (b + 1) * 2;
+        const x0 = 1 + (b % 3 === 1 ? 1 : b % 3 === 2 ? -1 : 0);
+        const row = (yy, s) => [...s].forEach((ch, i) => { if (ch !== '.') g[yy][x0 + i] = ch; });
+        row(y, 'O' + C.repeat(7) + 'O');
+        row(y + 1, 'O' + 'cccccc' + (b % 2 ? 'a' : 'e') + 'O');
+        if (b === 0) row(y + 2, '.' + 'O'.repeat(7) + '.');
+        if (b === n - 1) row(y - 1, '.' + 'O'.repeat(7) + '.');
+    }
+    const def = { w, h, rows: g.map((r) => r.join('')), legend: { '.': null, ...BOOK_LEGEND }, anchor: { x: 5, y: h - 1 } };
+    stacks.set(n, def);
+    return def;
+}
+const FLYBOOK = [
+    { w: 7, h: 4, rows: ['.OOOOO.', 'OVVVVVO', 'OcccceO', '.OOOOO.'], legend: { '.': null, ...BOOK_LEGEND }, anchor: { x: 3, y: 2 } },
+    { w: 7, h: 5, rows: ['O.....O', 'OcO.OcO', '.OcOcO.', '..OVO..', '...O...'], legend: { '.': null, ...BOOK_LEGEND }, anchor: { x: 3, y: 2 } },
+    { w: 5, h: 6, rows: ['.OOO.', 'OVcVO', 'OVcVO', 'OVeVO', 'OVcVO', '.OOO.'], legend: { '.': null, ...BOOK_LEGEND }, anchor: { x: 2, y: 3 } },
+];
+
+// ---------------------------------------------------------------------------------------------------------------
+// The crowd from the bar (magic-place.html's looks), gathered under the tree with their candles; each catches a book
+// and reads a spell at the nearest pumpkin.
+const looks = Array.from({ length: 6 }, (_, i) => randomLook(((s) => () => ((s = (s * 16807) % 2147483647) / 2147483647))(23 + i * 17)));
+const CROWD = [[46, 134], [78, 142], [108, 130], [30, 168], [56, 186], [86, 192]].map(([x, y], i) => {
+    const target = PUMPKINS.filter((p) => p.claimed === undefined)
+        .map((p) => ({ p, d: Math.hypot(p.x - x, (p.y - y) * 1.6) }))
+        .sort((a, b) => a.d - b.d)[0].p;
+    target.claimed = i;
+    target.charged = CAST[i] + CAST_AIR;
+    return { i, x, y, target, look: looks[i] };
+});
+const facingLeftAt = (w, t) => {
+    if (t >= CAST[w.i] - 0.35) return w.target.x < w.x;
+    return PERCH.x < w.x;
+};
+function walkerAt(w, t) {
+    const caught = t >= TOSS[w.i] + TOSS_AIR;
+    const item = caught ? 'book' : 'candle';
+    const left = facingLeftAt(w, t);
+    // a step forward to catch, a step back to read
+    const step = smooth(TOSS[w.i] - 0.6, TOSS[w.i], t) * (1 - smooth(CAST[w.i] - 0.9, CAST[w.i] - 0.35, t));
+    const x = w.x + (PERCH.x < w.x ? -1 : 1) * 5 * step, y = w.y - 3 * step;
+    const walking = (t > TOSS[w.i] - 0.6 && t < TOSS[w.i]) || (t > CAST[w.i] - 0.9 && t < CAST[w.i] - 0.35);
+    let pose = walking ? 'walk' : 'idle', frame = frameAt(t * 1000 + w.i * 170, walking ? 4 : 2, walking ? 150 : 600);
+    if (t >= CAST[w.i] - 0.2 && t < CAST[w.i] + 0.6) { pose = 'shoot'; frame = t >= CAST[w.i] && t < CAST[w.i] + 0.18 ? 1 : 0; }
+    const f = characterFrame(w.look, { dir: 'side', pose, frame, item });
+    return { x, y, f, left, item, pose };
+}
+// A point of a walker's frame (canvas px) on the stage.
+const framePoint = (c, [px, py]) => ({ x: c.x + (c.left ? -(px - c.f.anchor.x) : px - c.f.anchor.x), y: c.y + py - c.f.anchor.y });
+const relit = new Map();
+function relitOf(canvasIn, lighting) {
+    let m = relit.get(canvasIn);
+    if (!m) relit.set(canvasIn, (m = {}));
+    return m[lighting] ??= relightCanvas(canvasIn, lighting);
+}
+function putCanvas(ctx, img, c) {
+    if (c.left) { ctx.save(); ctx.translate(Math.round(c.x), 0); ctx.scale(-1, 1); ctx.drawImage(img, -c.f.anchor.x, Math.round(c.y - c.f.anchor.y)); ctx.restore(); }
+    else ctx.drawImage(img, Math.round(c.x - c.f.anchor.x), Math.round(c.y - c.f.anchor.y));
+}
+const BOOK_LIGHT = halo(8, 3, 'green');
+function drawWalker(ctx, w, t) {
+    const c = walkerAt(w, t);
+    ctx.fillStyle = 'rgba(20,10,20,0.35)'; ctx.fillRect(Math.round(c.x) - 5, Math.round(c.y), 10, 1);
+    if (c.item === 'candle') additive(ctx, NIGHT.candleLight, c.x, c.y, 0.35 + 0.25 * NK);
+    else additive(ctx, BOOK_LIGHT, c.x, c.y, 0.45 + 0.1 * Math.sin(t * 7 + w.i));
+    if (NK < 1) putCanvas(ctx, relitOf(c.f.canvas, 'sunset'), c);
+    if (NK > 0) { ctx.save(); ctx.globalAlpha = NK; putCanvas(ctx, relitOf(c.f.canvas, nearFire(c.x, c.y) ? 'firelight' : 'night'), c); ctx.restore(); }
+    const glow = c.f.flames ? c.f.flames[frameAt(t * 1000 + w.i * 53, c.f.flames.length, 110)] : c.f.glow;
+    if (glow) putCanvas(ctx, glow, c);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Pumpkins: lit (stage 8 — fire from the top, the cap, flames from the eyes) and springing in place since they jumped
+// out; the ones a spell hits take the green of scene 3's first stage.
+const SPRING = { ms: 1100, air: 0.3, h: 3 };
+function drawPumpkin(ctx, p, t) {
+    const ms = t * 1000;
+    const stage = t >= p.charged ? 9 : 8;
+    const L = pumpkinLayers(stage, p.size, p.seed, 'green');
+    let sx = 1, sy = 1, oy = 0;
+    const since = t - p.charged;
+    if (since >= 0 && since < 0.3) { [sx, sy, oy] = [[0.88, 1.15, -3], [0.95, 1.06, -2], [1, 1, -1], [1.12, 0.9, 0], [1.04, 0.96, 0]][Math.min(4, Math.floor(since / 0.06))]; }
+    else {
+        const u = ((ms + p.phase * 3) % SPRING.ms) / SPRING.ms;
+        if (u < SPRING.air) { oy = -Math.round(Math.sin((Math.PI * u) / SPRING.air) * SPRING.h); [sx, sy] = [0.94, 1.07]; }
+        else if (u < SPRING.air + 0.08) [sx, sy] = [1.1, 0.9];
+    }
+    const size = p.size === 'l' ? 16 : p.size === 'm' ? 13 : 10;
+    additive(ctx, halo(size, Math.round(size / 3), stage >= 9 ? 'green' : 'warm'), p.x, p.y, 0.3 + 0.1 * NK);
+    ctx.save();
+    ctx.translate(p.x, p.y + oy); ctx.scale(sx, sy);
+    const at = (list, per) => list[frameAt(ms + p.i * 97, list.length, per)];
+    if (L.auraFrames) stamp(ctx, at(L.auraFrames, 160), 0, 0);
+    putLit(ctx, L.layers.back, 0, 0, false, L.layers.back, p);
+    if (L.glowFrames) stamp(ctx, at(L.glowFrames, 120), 0, 0);
+    putLit(ctx, L.layers.body, 0, 0, false, L.layers.body, p);
+    putLit(ctx, L.layers.rim, 0, 0, false, L.layers.rim, p);
+    if (L.layers.stem) putLit(ctx, L.layers.stem, 0, 0, false, L.layers.stem, p);
+    if (L.fireFrames) stamp(ctx, at(L.fireFrames, 110), 0, 0);
+    ctx.restore();
+}
+
+// The bonfire at stage 4 (the end of scene 2): its heap in the light, the fire as light; a green flare at FLARE.
+function drawBonfire(ctx, t) {
+    const flare = t >= FLARE[0] && t < FLARE[1];
+    const st = flare ? (t < FLARE[0] + 0.25 || t > FLARE[1] - 0.3 ? 5 : 6) : 4;
+    const fr = BONFIRE.stages[st][frameAt(t * 1000, 4, 110)];
+    putLit(ctx, fr.base, ROOT.x, ROOT.y);
+    if (fr.fire) stamp(ctx, fr.fire, ROOT.x, ROOT.y);
+}
+// Embers rising off the fire, drifting with the warm air.
+function embers(ctx, t) {
+    for (let k = 0; k < 34; k++) {
+        const life = 1.4 + hash(k) * 1.6;
+        const age = (t + hash(k + 3) * life) % life, q = age / life;
+        const born = Math.floor((t + hash(k + 3) * life) / life);
+        const x = ROOT.x + (hash(k * 7 + born) - 0.5) * 22 + Math.sin(age * 3 + k) * 3 + q * 8 * (hash(k + born) - 0.3);
+        const y = ROOT.y - 14 - q * (40 + hash(k + 11) * 40);
+        const green = t >= FLARE[0] && t < FLARE[1] + 0.4;
+        ctx.fillStyle = hex(PALETTE[green ? (q < 0.4 ? 'eerieHot' : 'eerieMid') : q < 0.3 ? 'pumpkinShine' : q < 0.7 ? 'pumpkin' : 'ember']);
+        if (q > 0.8 && Math.floor(t * 20 + k) % 2) continue;
+        ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The owl on its branch in the patch shots, with the stack of books beside it once it has pulled them out.
+function owlPatch(t) {
+    if (t < CUT_C) {
+        for (const i of [0]) { const f = owlTalk(i, t); if (f) return f; }
+        if (t > BUBBLES[0].from - 0.95 && t < BUBBLES[0].from - 0.1) return OWL.hoot;
+        if ((t % 2.9) < 0.13) return OWL.blink;
+        return t > 3.5 && t < 5.4 ? OWL.turnRight[0] : OWL.idle[Math.floor(t / 0.7) % 2];
+    }
+    for (const at of TOSS) if (t >= at - 0.15 && t < at + 0.15) return OWL.beakWing[0];
+    const f = owlTalk(3, t);
+    if (f) return f;
+    if (t > BUBBLES[3].from - 0.95 && t < BUBBLES[3].from - 0.1) return OWL.hoot;
+    if ((t % 2.9) < 0.13) return OWL.blink;
+    return t > CAST[0] - 0.3 ? OWL.turnRight[0] : OWL.idle[Math.floor(t / 0.7) % 2];
+}
+const booksLeft = (t) => (t < CUT_C ? 6 : 6 - TOSS.filter((a) => t >= a).length);
+const STACK_AT = { x: PERCH.x + 13, y: PERCH.y + 1 };
+// A book in the air from the stack to a walker's hands, tumbling; its catch point.
+function catchPoint(w) {
+    const c = walkerAt(w, TOSS[w.i] + TOSS_AIR);
+    return { x: c.x + (c.left ? -4 : 4), y: c.y - 14 };
+}
+function thrown(ctx, t) {
+    CROWD.forEach((w) => {
+        const k = (t - TOSS[w.i]) / TOSS_AIR;
+        if (k < 0 || k >= 1) return;
+        const from = { x: STACK_AT.x, y: STACK_AT.y - booksLeft(TOSS[w.i] - 0.01) * 3 }, to = catchPoint(w);
+        const x = lerp(from.x, to.x, k), y = lerp(from.y, to.y, k) - Math.sin(k * Math.PI) * 28;
+        const def = FLYBOOK[Math.floor(k * 9 + w.i) % 3];
+        putLit(ctx, def, x, y);
+        // a faint green trail
+        for (let s = 1; s < 5; s++) {
+            const kk = k - s * 0.05;
+            if (kk < 0) break;
+            ctx.fillStyle = `rgba(124,240,100,${0.5 - s * 0.1})`;
+            ctx.fillRect(Math.round(lerp(from.x, to.x, kk)), Math.round(lerp(from.y, to.y, kk) - Math.sin(kk * Math.PI) * 28), 1, 1);
+        }
+    });
+}
+// Green sparks: when a book opens in the hands, round the spell's flight, where it hits a pumpkin.
+function burst(ctx, x, y, since, n = 12, reach = 12, seed = 0) {
+    if (since < 0 || since > 0.9) return;
+    const k = since / 0.9;
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + hash(seed + i) * 0.8;
+        const d = reach * (1 - (1 - k) ** 2) * (0.5 + hash(seed + i + 9) * 0.6);
+        if (k > 0.7 && (i + Math.floor(since * 20)) % 2) continue;
+        ctx.fillStyle = hex(PALETTE[k < 0.3 ? 'magicCore' : hash(seed + i + 3) < 0.5 ? 'eerieHot' : 'eyeGreen']);
+        ctx.fillRect(Math.round(x + Math.cos(a) * d), Math.round(y + Math.sin(a) * d * 0.7 - k * 4), 1, 1);
+    }
+}
+function spells(ctx, t) {
+    CROWD.forEach((w) => {
+        const caughtAt = TOSS[w.i] + TOSS_AIR;
+        const cp = catchPoint(w);
+        burst(ctx, cp.x, cp.y - 2, t - caughtAt, 14, 11, w.i * 50);
+        if (t >= caughtAt && t < caughtAt + 0.2) stamp(ctx, SHOT_FX.spark, cp.x, cp.y - 2);
+        const k = (t - CAST[w.i]) / CAST_AIR;
+        const c = walkerAt(w, CAST[w.i]);
+        const from = c.f.muzzle ? framePoint(c, c.f.muzzle) : { x: c.x, y: c.y - 16 };
+        const to = { x: w.target.x, y: w.target.y - 7 };
+        if (k >= -0.05 && k < 0.3) stamp(ctx, SHOT_FX.spark, from.x, from.y);
+        if (k >= 0 && k < 1) {
+            const x = lerp(from.x, to.x, k), y = lerp(from.y, to.y, k) - Math.sin(k * Math.PI) * 6;
+            for (let s = 0; s < 6; s++) {
+                const kk = k - s * 0.04;
+                if (kk < 0) break;
+                ctx.fillStyle = hex(PALETTE[s === 0 ? 'magicCore' : s < 3 ? 'eerieHot' : 'eerieMid']);
+                ctx.fillRect(Math.round(lerp(from.x, to.x, kk)), Math.round(lerp(from.y, to.y, kk) - Math.sin(kk * Math.PI) * 6), s < 2 ? 2 : 1, s < 2 ? 2 : 1);
+            }
+            stamp(ctx, SHOT_FX.spark, x, y);
+        }
+        burst(ctx, to.x, to.y, t - w.target.charged, 16, 14, w.i * 70 + 5);
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The stage at art scale, everything sorted by its feet. `owl` — a frame function for the owl, or none.
+const [STAGE, sx] = canvas(AW, AH);
+function drawStage(t, { owl = null, crowd = true } = {}) {
+    sx.clearRect(0, 0, AW, AH);
+    if (NK < 1) sx.drawImage(STATIC_LIT.sunset, 0, 0);
+    if (NK > 0) { sx.save(); sx.globalAlpha = NK; sx.drawImage(STATIC_LIT.night, 0, 0); sx.restore(); }
+    // the bonfire's ground light, breathing
+    const fl = BONFIRE.light[4];
+    additive(sx, fl, ROOT.x, ROOT.y, (0.35 + 0.3 * NK) * (0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1)));
+    if (t >= FLARE[0] && t < FLARE[1] + 0.3) additive(sx, BONFIRE.light[6], ROOT.x, ROOT.y, 0.6 * (1 - smooth(FLARE[1] - 0.2, FLARE[1] + 0.3, t)));
+    const items = [];
+    for (const p of PUMPKINS) items.push({ y: p.y, x: p.x, draw: () => drawPumpkin(sx, p, t) });
+    items.push({ y: ROOT.y, x: ROOT.x, draw: () => drawBonfire(sx, t) });
+    if (crowd) for (const w of CROWD) items.push({ y: walkerAt(w, t).y, x: w.x, draw: () => drawWalker(sx, w, t) });
+    items.sort((a, b) => a.y - b.y || a.x - b.x).forEach((it) => it.draw());
+    if (owl) {
+        const f = owl(t);
+        putLit(sx, f, PERCH.x, PERCH.y, false, glowing(f));
+        const n = booksLeft(t);
+        if (n && t >= CUT_C - 0.01) putLit(sx, stackSprite(n), STACK_AT.x, STACK_AT.y);
+    }
+    embers(sx, t);
+    if (crowd) { thrown(sx, t); spells(sx, t); }
+    return STAGE;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Camera: world point at the screen centre and magnification; layers at depth f move and zoom by f.
+function layer(cam, f, fn, neutral = { x: AW / 2, y: AH / 2 }) {
+    const z = S * (1 + (cam.z - 1) * f);
+    const cx = neutral.x + (cam.cx - neutral.x) * f, cy = neutral.y + (cam.cy - neutral.y) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-cx, -cy); fn(z); o.restore();
+    return (p) => ({ x: (p.x - cx) * z + W / 2, y: (p.y - cy) * z + H / 2 });
+}
+// Out of focus without canvas filters (slow in the software renderer): paint into a buffer 1/k the size and stretch
+// it back smoothed; `amount` crossfades from the sharp painting (null — soft only).
+const softBufs = new Map();
+function soft(amount, k, paint) {
+    if (amount !== null && amount <= 0.04) { paint(); return; }
+    if (!softBufs.has(k)) softBufs.set(k, canvas(Math.ceil(W / k), Math.ceil(H / k)));
+    const [c, x] = softBufs.get(k);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height); x.setTransform(1 / k, 0, 0, 1 / k, 0, 0);
+    o = x; paint(); o = OUT;
+    if (amount !== null) paint();
+    o.save(); o.globalAlpha = amount === null ? 1 : clamp(amount); o.imageSmoothingEnabled = true;
+    o.drawImage(c, 0, 0, c.width * k, c.height * k);
+    o.restore();
+}
+function paintPatch(cam, t, opts = {}) {
+    const blur = opts.blur ?? clamp((cam.z - 1.15) * 2.5, 0, 4);
+    o.fillStyle = mixHex(PALETTE.sunsetTop, PALETTE.nightTop, NK); o.fillRect(0, 0, W, H);
+    soft(blur / 3, 6, () => layer(cam, 0.22, () => drawSky(t)));
+    soft(blur / 4, 5, () => layer(cam, 0.6, () => drawFar()));
+    return layer(cam, 1, () => o.drawImage(drawStage(t, opts), 0, 0));
+}
+function wash(x, y, r, rgba) {
+    const g = o.createRadialGradient(x, y, 20, x, y, r);
+    g.addColorStop(0, rgba); g.addColorStop(1, 'rgba(0,0,0,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+}
+function vignette(k = 0.6, tint = '8,6,20') {
+    const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.34, W / 2, H * 0.5, H * 1.08);
+    v.addColorStop(0, `rgba(${tint},0)`); v.addColorStop(1, `rgba(${tint},${k})`);
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+}
+// Night air: pale dust motes, and green ones once the books are open; `pan` moves them with the camera.
+const MOTES = Array.from({ length: 70 }, (_, i) => ({ x: hash(i) * W, ph: hash(i + 3), v: 10 + hash(i + 5) * 26, s: hash(i + 9) < 0.25 ? 10 : 6, d: 0.5 + hash(i + 13), green: hash(i + 17) < 0.5 }));
+function motes(t, pan = 0, alpha = 1, green = 0) {
+    for (const e of MOTES) {
+        const y = H - ((t * e.v * e.d + e.ph * H * 1.3) % (H * 1.3));
+        const x = ((e.x + Math.sin(t * 0.7 + e.ph * 9) * 30 - pan * e.d) % W + W) % W;
+        const a = (0.15 + 0.35 * Math.sin(t * 2.4 + e.ph * 20) ** 2) * alpha;
+        o.fillStyle = e.green && green > 0 ? `rgba(160,255,110,${a * green})` : `rgba(255,236,190,${a * (e.green ? 1 - green : 1)})`;
+        const s = e.s * e.d;
+        o.fillRect(Math.round(x / 6) * 6, Math.round(y / 6) * 6, s, s);
+    }
+}
+// Sparks off the bonfire in screen space, for the near shots: point `c`, spread w × h.
+function fireSparks(t, c, w, h, n = 30, px = 8, green = false) {
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+        const life = 1.2 + hash(i + 40) * 1.0;
+        const age = (t + hash(i + 7) * life) % life, k = age / life;
+        const x = c.x + (hash(i + 1) - 0.5) * w + Math.sin(t * 2.3 + i) * 18;
+        const y = c.y - k * h * (0.6 + hash(i + 2) * 0.5);
+        o.fillStyle = green ? `rgba(170,255,120,${0.9 * (1 - k)})` : hash(i + 5) < 0.3 ? `rgba(255,240,170,${0.9 * (1 - k)})` : `rgba(255,140,50,${0.8 * (1 - k)})`;
+        const s = hash(i + 11) < 0.3 ? px * 2 : px;
+        o.fillRect(Math.round(x / px) * px, Math.round(y / px) * px, s, s);
+    }
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bubbles: a speech bubble with a stepped tail to the owl's head, or (box) a dialog box with the owl's portrait for
+// the lines told over the flashback.
+const u = 8, OUTL = hex(PALETTE.outline), CREAM = hex(PALETTE.cream);
+function frameRect(x, y, w, h, fill = CREAM) {
+    o.fillStyle = OUTL; o.fillRect(x + u, y, w - 2 * u, h); o.fillRect(x, y + u, w, h - 2 * u);
+    o.fillStyle = fill; o.fillRect(x + 2 * u, y + u, w - 4 * u, h - 2 * u); o.fillRect(x + u, y + 2 * u, w - 2 * u, h - 4 * u);
+}
+const PORTRAIT = 9;
+function bubble(i, t, head, place, { tail = 'side' } = {}) {
+    const b = BUBBLES[i];
+    const age = t - b.from;
+    if (age < 0 || t > b.to + 0.2) return;
+    const out = t > b.to ? 1 - (t - b.to) / 0.2 : 1;
+    const pop = backOut(age / 0.22) * out;
+    const size = b.quiet ? 50 : 56, LH = b.quiet ? 64 : 70;
+    o.font = `700 ${size}px Consolas, "Cascadia Mono", monospace`;
+    const pad = b.box ? 19 * PORTRAIT + 70 : 44;
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + pad + 44, bh = Math.max(b.lines.length * LH + 52, b.box ? 18 * PORTRAIT + 50 : 0);
+    const { bx, by } = place(bw, bh);
+    const ox = b.box ? bx + 100 : head.x, oy = b.box ? by + bh / 2 : head.y;
+    o.save();
+    o.globalAlpha = clamp(out * 1.5);
+    o.translate(ox, oy); o.scale(pop, pop); o.translate(-ox, -oy);
+    o.globalAlpha *= 0.4; o.fillStyle = '#000'; o.fillRect(bx + 2 * u, by + 3 * u, bw, bh); o.globalAlpha = clamp(out * 1.5);
+    frameRect(bx, by, bw, bh);
+    if (!b.box && tail === 'side') {
+        // out of the bubble's left side toward the head
+        const end = head.x + 40;
+        const steps = clamp(Math.floor((bx - end) / (3 * u)), 2, 16);
+        const y0 = clamp(head.y, by + 6 * u, by + bh - 6 * u);
+        const parts = Array.from({ length: steps }, (_, k) => {
+            const h = Math.max(2, 7 - Math.floor((k * 6) / steps)) * u;
+            const yc = Math.round(lerp(y0, head.y, k / steps) / u) * u;
+            return { x: bx - (k + 1) * 3 * u + 2 * u, y: yc - Math.round(h / 2 / u) * u, h };
+        });
+        o.fillStyle = OUTL;
+        parts.forEach((p, k) => o.fillRect(p.x - (k === steps - 1 ? u : 0), p.y - u, 3 * u + (k === steps - 1 ? u : 0), p.h + 2 * u));
+        o.fillStyle = CREAM;
+        parts.forEach((p, k) => o.fillRect(p.x, p.y, 3 * u + (k ? 0 : 2 * u), p.h));
+    } else if (!b.box) {
+        // down out of the bubble's bottom toward the head
+        const fromRight = head.x > bx + bw / 2;
+        let x = fromRight ? bx + bw - 160 : bx + 60, y = by + bh - 2 * u;
+        const steps = clamp(Math.floor((head.y - 20 - y) / (3 * u)), 2, 16);
+        const dx = (head.x - 30 - x) / steps;
+        for (let k = 0; k < steps; k++) {
+            const w = Math.max(2, 8 - Math.floor((k * 7) / steps)) * u, sxp = Math.round(x / u) * u;
+            o.fillStyle = OUTL; o.fillRect(sxp - u, y + (k ? 0 : 2 * u), w + 2 * u, (k ? 4 : 2) * u);
+            o.fillStyle = CREAM; o.fillRect(sxp, y, w, 3 * u);
+            x += dx; y += 3 * u;
+        }
+    } else {
+        // the owl's portrait in a night-blue frame
+        const px = bx + 34, py = by + (bh - 18 * PORTRAIT) / 2 - 4;
+        o.fillStyle = OUTL; o.fillRect(px - 10, py - 10, 19 * PORTRAIT + 20, 18 * PORTRAIT + 20);
+        o.fillStyle = hex(PALETTE.nightLow); o.fillRect(px - 2, py - 2, 19 * PORTRAIT + 4, 18 * PORTRAIT + 4);
+        o.fillStyle = hex(PALETTE.nightHigh); o.fillRect(px - 2, py + 15 * PORTRAIT, 19 * PORTRAIT + 4, 3 * PORTRAIT + 2);
+        const f = owlTalk(i, t) ?? ((t % 2.9) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2]);
+        o.drawImage(bakeLit(glowing(f), 'night'), px, py + PORTRAIT, f.w * PORTRAIT, f.h * PORTRAIT);
+    }
+    let left = typedOf(i, age * 1000);
+    o.fillStyle = OUTL;
+    b.lines.forEach((s, k) => {
+        const shown = s.slice(0, Math.max(0, left));
+        left -= s.length + 1;
+        o.fillText(shown, bx + pad, by + (bh - b.lines.length * LH) / 2 + (b.quiet ? 48 : 52) + k * LH);
+    });
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot A: the wide patch as the night falls; the camera starts high on the sky and settles down toward the owl.
+function cameraA(t) {
+    const down = smooth(0, 10.5, t);
+    let cx = lerp(244, 214, down), cy = lerp(96, 116, down), z = lerp(1.12, 1.3, down);
+    const go = smooth(9.6, CUT_B, t);
+    cx = lerp(cx, PERCH.x + 60, go * 0.5); cy = lerp(cy, PERCH.y + 50, go * 0.4); z = lerp(z, 1.75, go * 0.5);
+    return { cx: cx + 0.6 * Math.sin(t * 0.37), cy: cy + 0.4 * Math.sin(t * 0.5), z };
+}
+function shotA(t) {
+    const cam = cameraA(t);
+    const toScreen = paintPatch(cam, t, { owl: owlPatch, blur: 0 });
+    const fire = toScreen({ x: ROOT.x, y: ROOT.y - 16 });
+    const k = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1);
+    wash(fire.x, fire.y, 700 + 300 * NK, `rgba(255,150,60,${(0.08 + 0.14 * NK) * k})`);
+    const m = moonAt(t);
+    motes(t, (cam.cx - 200) * 20, 0.5);
+    vignette(0.35 + 0.3 * NK);
+    const f = owlPatch(t);
+    const head = toScreen({ x: PERCH.x + 2, y: PERCH.y - 15 });
+    bubble(0, t, head, (bw, bh) => ({ bx: Math.round(clamp(head.x + 230, 60, W - bw - 60)), by: Math.round(clamp(head.y - bh * 0.45, 40, H - bh - 40)) }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shots B and D: the owl big on its branch over the patch out of focus behind.
+function branch(x0, x1, y, slope, s) {
+    for (let x = x0; x < x1; x += s / 2) {
+        const yy = y + Math.round(((x - (x0 + x1) / 2) * slope) / (s / 2)) * (s / 2);
+        o.fillStyle = '#1a1018'; o.fillRect(x, yy, s / 2, s * 1.6);
+        o.fillStyle = '#3a2a2c'; o.fillRect(x, yy, s / 2, s / 2);
+    }
+}
+function big(c, def, x, y, s, flip = false) {
+    if (!flip) { o.drawImage(c, Math.round(x - def.anchor.x * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s); return; }
+    o.save(); o.translate(Math.round(x), 0); o.scale(-1, 1);
+    o.drawImage(c, Math.round(-def.anchor.x * s), Math.round(y - def.anchor.y * s), def.w * s, def.h * s);
+    o.restore();
+}
+// The patch out of focus: the buffer's pixel must be coarser than an art pixel on screen, or it reads as a mosaic.
+function backdrop(t, cam) {
+    soft(null, Math.max(8, Math.round(S * cam.z * 1.1)), () => paintPatch(cam, t, { owl: null, blur: 0 }));
+}
+// The owl big, in the moonlight, warmed on one side by the fire.
+function bigOwl(f, x, y, s, warm) {
+    big(bakeLit(glowing(f), 'night'), f, x, y, s);
+    o.save(); o.globalAlpha = warm; big(bakeLit(glowing(f), 'firelight'), f, x, y, s); o.restore();
+}
+const OWL_B = 22;
+function owlFrameB(t) {
+    if (t < HOOT_B) return (t % 2.9) < 0.13 ? OWL.blink : OWL.idle[Math.floor(t / 0.7) % 2];
+    if (t < PULL[0]) return OWL.hoot;
+    if (t < PULL[1]) return t < PULL[0] + 0.45 ? OWL.beakWing[0] : OWL.idle[0];
+    for (const i of [1, 2]) { const f = owlTalk(i, t); if (f) return f; }
+    if (t >= LIFT[0] && t < BUBBLES[2].to) return OWL.beakWing[t < LIFT[0] + 0.15 ? 0 : 2];
+    if ((t % 2.9) < 0.13) return OWL.blink;
+    return OWL.idle[Math.floor(t / 0.7) % 2];
+}
+// Where the stack is, relative to the owl's talons in art px: out from under the raised wing to the branch beside it,
+// then held up high on «вот это».
+function stackB(t) {
+    if (t < PULL[0]) return null;
+    const k = smooth(PULL[0], PULL[0] + 0.55, t);
+    let x = lerp(6, 14, k), y = lerp(-5, 0, k);
+    const up = smooth(LIFT[0], LIFT[0] + 0.3, t);
+    x = lerp(x, 12, up); y = lerp(y, -11, up);
+    return { x, y, behind: k < 0.45 };
+}
+function shotB(t) {
+    const k = t - CUT_B;
+    const zoom = 1 + 0.06 * smooth(0, 3.2, k) + 0.05 * smooth(LIFT[0], LIFT[1] + 1.5, t);
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    backdrop(t, { cx: ROOT.x + 10 + k * 0.6, cy: ROOT.y - 30, z: 2.9 * (1 + (zoom - 1) * 0.5) });
+    const flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1);
+    wash(W * 0.38, H * 0.62, 900, `rgba(255,140,60,${0.22 * flick})`);
+    fireSparks(t, { x: W * 0.38, y: H * 0.75 }, 700, 900, 34, 10);
+    motes(t, k * 20, 0.45);
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const perch = { x: 1430 - k * 4, y: 900 };
+    branch(860, W + 300, perch.y, 0.06, OWL_B);
+    const f = owlFrameB(t);
+    const st = stackB(t);
+    const putStack = () => {
+        const d = stackSprite(6), x = perch.x + st.x * OWL_B, y = perch.y + st.y * OWL_B;
+        big(bakeLit(d, 'night'), d, x, y, OWL_B);
+        o.save(); o.globalAlpha = 0.3; big(bakeLit(d, 'firelight'), d, x, y, OWL_B); o.restore();
+    };
+    if (st?.behind) putStack();
+    bigOwl(f, perch.x, perch.y, OWL_B, 0.3);
+    if (st && !st.behind) putStack();
+    o.restore();
+    // green motes round the books once they are out, a sparkle when they are held up
+    if (st) {
+        const c = { x: W / 2 + (perch.x + (st.x) * OWL_B - W / 2) * zoom, y: H / 2 + (perch.y + (st.y - 9) * OWL_B - H / 2) * zoom };
+        const lift = smooth(LIFT[0], LIFT[0] + 0.3, t);
+        wash(c.x, c.y, 260 + 260 * lift, `rgba(110,240,90,${0.08 + 0.12 * lift})`);
+        sparkles(t, c, 160 + 120 * lift, 0.4 + 0.6 * lift);
+    }
+    vignette(0.72);
+    return { head: { x: W / 2 + (perch.x - W / 2) * zoom, y: H / 2 + (perch.y - 15 * OWL_B - H / 2) * zoom } };
+}
+// Green four-point sparkles twinkling round a point.
+function sparkles(t, c, r, a) {
+    const px = 8;
+    for (let i = 0; i < 10; i++) {
+        const life = 0.9 + hash(i) * 0.8;
+        const age = (t + hash(i + 3) * life) % life, k = age / life;
+        const born = Math.floor((t + hash(i + 3) * life) / life);
+        const x = c.x + (hash(i * 13 + born) - 0.5) * 2 * r, y = c.y + (hash(i * 17 + born) - 0.5) * 1.4 * r - k * 30;
+        const b = Math.sin(k * Math.PI) * a;
+        const s = k > 0.3 && k < 0.7 ? 2 : 1;
+        o.fillStyle = `rgba(160,255,110,${b})`;
+        o.fillRect(Math.round(x / px) * px - px / 2, Math.round(y / px) * px - px / 2 - s * px, px, (2 * s + 1) * px);
+        o.fillRect(Math.round(x / px) * px - px / 2 - s * px, Math.round(y / px) * px - px / 2, (2 * s + 1) * px, px);
+        o.fillStyle = `rgba(240,255,220,${b})`; o.fillRect(Math.round(x / px) * px - px / 2, Math.round(y / px) * px - px / 2, px, px);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The flashback: the bar of bar-intro.html in warm firelight, the owl behind the counter, the hooded necromancer on a
+// stool at the counter's left end; painted whole into FB, then toned sepia with the eyes left green.
+const lit = 'firelight';
+const M = 14, MG = 12;
+const aw = Math.ceil(W / M) + 2 * MG, ah = Math.ceil(H / M) + 2 * MG;
+const top = MG + Math.round((H / M) * 0.6);
+const owlA = { x: MG + Math.round((W / M) * 0.68), y: top + 3 };
+const tap = { x: owlA.x + OWL_BAR.tap.x, y: owlA.y + OWL_BAR.tap.y };
+const [barBase, bbx] = canvas(aw, ah);
+{
+    const P = (x, y, k) => { bbx.fillStyle = hex(PALETTE[k]); bbx.fillRect(x, y, 1, 1); };
+    for (let y = top + 3; y < ah; y++) for (let x = 0; x < aw; x++) {
+        const plank = x % 7;
+        let k = plank === 0 ? 'timberDeep' : plank === 6 ? 'timberDark' : (x * 3 + y * 7) % 23 === 0 ? 'timberDark' : 'timber';
+        if (y === top + 3) k = 'outline';
+        if (y === top + 4) k = 'timberDark';
+        if (y === top + 9) k = 'ironLight';
+        if (y === top + 10) k = 'iron';
+        P(x, y, k);
+    }
+    for (let x = 0; x < aw; x++) { P(x, top, 'outline'); P(x, top + 1, x % 9 === 4 ? 'timberShine' : 'timberLight'); P(x, top + 2, 'timberLight'); }
+    const keg = { x1: tap.x + 3, x2: tap.x + 15, y2: top, y1: top - 13 };
+    for (let y = keg.y1; y < keg.y2; y++) for (let x = keg.x1; x <= keg.x2; x++) {
+        const edge = x === keg.x1 || x === keg.x2 || y === keg.y1;
+        const band = y === keg.y1 + 2 || y === keg.y2 - 3;
+        const b = (x - keg.x1) / (keg.x2 - keg.x1);
+        P(x, y, edge ? 'outline' : band ? (x % 3 ? 'iron' : 'ironLight') : b < 0.3 ? 'plankLight' : b > 0.8 ? 'plankDark' : 'plank');
+    }
+    for (let x = tap.x; x < keg.x1; x++) { P(x, tap.y - 1, 'outline'); P(x, tap.y, 'ironLight'); P(x, tap.y + 1, 'outline'); }
+    P(tap.x + 1, tap.y - 2, 'ironLight'); P(tap.x + 1, tap.y - 3, 'ironLight'); P(tap.x + 1, tap.y - 4, 'outline');
+}
+const litBarBase = relightCanvas(barBase, lit);
+const [counterEdge, cex] = canvas(aw, 3);
+cex.drawImage(litBarBase, 0, top, aw, 3, 0, 0, aw, 3);
+const owlBarBakes = new Map();
+const owlBar = (f) => { if (!owlBarBakes.has(f)) owlBarBakes.set(f, bakeBar(f, lit)); return owlBarBakes.get(f); };
+const mugBar = bakeBar(BAR_MUG, lit);
+const MUGS = [owlA.x + 12, owlA.x + 22, owlA.x - 30].map((x, i) => ({ x, y: top + 2 + (i % 2) }));
+// the hall behind: the game's bar, softened and dimmed once, wider than the screen
+const BAR_BACK = (() => {
+    const hw = 320, hh = 180;
+    const [hall, hx] = canvas(hw, hh);
+    paintBar(hx, hw, hh, barLayout, { lighting: lit });
+    for (const l of barLights(barLayout, hw, hh)) {
+        if (l.halo) { hx.save(); hx.globalCompositeOperation = 'lighter'; hx.globalAlpha = 0.35; hx.drawImage(bake(halo(l.halo.rx, l.halo.ry, 'warm')), l.halo.x - l.halo.rx, l.halo.y - l.halo.ry); hx.restore(); }
+        hx.drawImage(l.frames[Math.floor(900 / BAR_FLICKER_MS + l.phase) % l.frames.length], l.x - l.anchor.x, l.y - l.anchor.y);
+    }
+    for (const p of barProps(barLayout, hw, hh, { lighting: lit })) if (p.y < hh * 0.42) hx.drawImage(p.canvas, p.x - p.anchor.x, p.y - p.anchor.y);
+    const spot = barOwlSpot(barLayout, hw, hh);
+    const Zb = M * 0.75, cw = (W * 1.3) / Zb, ch = (H * 1.3) / Zb;
+    const sxx = Math.max(0, Math.min(hw - cw, spot.x - cw * 0.55)), syy = Math.max(0, spot.y - ch * 0.95);
+    const [c, x] = canvas(Math.round(W * 1.3), Math.round(H * 1.3));
+    x.filter = 'blur(4px) brightness(0.6) saturate(0.9)';
+    x.drawImage(hall, sxx, syy, cw, ch, 0, 0, c.width, c.height);
+    return c;
+})();
+
+// The necromancer, drawn here (the game has none): a hunched figure in a dark hooded robe, seen from behind on the
+// left, turned to the owl on the right; the hood's opening is black but for two burning green eyes. Art px of the bar
+// (M), anchor at the bottom of the robe; the hand and the sleeve are drawn apart, reaching along the counter.
+const NECRO_LEGEND = { O: 'outline', K: 'crowDark', k: 'crow', h: 'crowLight', L: 'paleShade', v: 'violetDark', X: 'eyeBlack', G: 'eyeGreen', g: 'eerieMid' };
+const NECRO = (() => {
+    const w = 34, h = 62;
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    const hood = { cx: 15, cy: 13, rx: 10, ry: 11 };
+    const inHood = (x, y) => (((x - hood.cx) / hood.rx) ** 2 + ((y - hood.cy) / hood.ry) ** 2 <= 1)
+        // the peak falls back and up to the left
+        || (y >= 0 && y < 9 && x >= 4 + y * 0.2 && x <= 13 - (8 - y) * 0.15 && (x - 4) > (8 - y) * 0.9);
+    const robe = (x, y) => {
+        if (y < 18) return false;
+        const k = (y - 18) / (h - 18);
+        const left = lerp(6, 0, Math.min(1, k * 1.6)), right = lerp(27, 33, Math.min(1, k * 1.4));
+        return x >= left && x <= right;
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inHood(x, y) || robe(x, y)) g[y][x] = 'k';
+    // the lamps are on the right (the owl's side): shade on the left of each row, a lit band and a bright rim on the
+    // right, folds down the robe
+    for (let y = 0; y < h; y++) {
+        const xs = g[y].flatMap((ch, x) => (ch !== '.' ? [x] : []));
+        if (!xs.length) continue;
+        const l = xs[0], r = xs[xs.length - 1];
+        for (const x of xs) {
+            const f = (x - l) / Math.max(1, r - l);
+            g[y][x] = x === r ? 'L' : f > 0.8 ? 'h' : f < 0.3 ? 'K' : 'k';
+            if (y > 22 && (x === 11 || x === 18 || x === 24) && (y + x) % 5 !== 0 && f <= 0.8) g[y][x] = f < 0.5 ? 'v' : 'K';
+        }
+    }
+    // the opening of the hood, facing right: black, with the eyes
+    const op = { cx: 21, cy: 15, rx: 4.6, ry: 6.5 };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (((x - op.cx) / op.rx) ** 2 + ((y - op.cy) / op.ry) ** 2 <= 1 && g[y][x] !== '.') g[y][x] = 'X';
+    }
+    // the hood's lit rim round the opening
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== 'X') continue;
+        if (g[y][x + 1] === '.' ) g[y][x] = 'X';
+        if (g[y - 1]?.[x] !== 'X' && g[y - 1]?.[x] !== undefined && g[y - 1][x] !== '.') g[y - 1][x] = 'h';
+    }
+    g[14][21] = 'G'; g[14][22] = 'G'; g[14][24] = 'G'; g[13][21] = 'g'; g[13][24] = 'g';
+    // outline round the whole silhouette
+    const out = g.map((r) => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== '.') continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
+    }
+    return { w, h, rows: out.map((r) => r.join('')), legend: { '.': null, ...NECRO_LEGEND }, anchor: { x: 16, y: h - 1 }, eyes: [[21.5, 14], [24, 14]] };
+})();
+const NECRO_AT = { x: MG + Math.round((W / M) * 0.24), y: ah + 4 };
+const NECRO_HAND = { O: 'outline', P: 'pale', p: 'paleShade', K: 'crowDark', k: 'crow', h: 'crowLight' };
+// The bony hand, flat on the counter, fingers toward the owl; the cuff of the sleeve behind it.
+const HAND = { w: 9, h: 5, rows: ['OOO..OOO.', 'KkhOPPPPO', 'KkhOpPpPO', 'OOOOPpPpO', '...OOOOO.'], legend: { '.': null, ...NECRO_HAND }, anchor: { x: 8, y: 4 } };
+const SHOULDER = { x: NECRO_AT.x - NECRO.anchor.x + 27, y: NECRO_AT.y - NECRO.anchor.y + 22 };
+// The books on the counter: by the necromancer's hand, then slid over to the owl.
+const SLIDE_FROM = SHOULDER.x + 10, SLIDE_TO = owlA.x - 13;
+const stackX = (t) => lerp(SLIDE_FROM, SLIDE_TO, smooth(SLIDE[0], SLIDE[1], t));
+const bookBakes = new Map();
+const barBake = (def) => bookBakes.get(def) ?? bookBakes.set(def, bakeBar(def, lit)).get(def);
+const [MID, midX] = canvas(aw, ah);
+function owlFrameFB(t) {
+    if (t >= TAKE && t < TAKE + 0.5) return OWL_BAR.talk[2];
+    if (t >= GLITCH[0] && t < GLITCH[1]) return OWL_BAR.blink;
+    if ((t % 3.1) < 0.13) return OWL_BAR.blink;
+    return OWL_BAR.idle[Math.floor(t / 0.7) % 2];
+}
+function drawBarMid(t) {
+    midX.clearRect(0, 0, aw, ah);
+    midX.drawImage(litBarBase, 0, 0);
+    const f = owlFrameFB(t);
+    midX.drawImage(owlBar(f), owlA.x - f.anchor.x, owlA.y - f.anchor.y);
+    midX.drawImage(counterEdge, 0, top);
+    for (const m of MUGS) midX.drawImage(mugBar, m.x - BAR_MUG.anchor.x, m.y - BAR_MUG.anchor.y);
+    // the books: at the necromancer's hand, slid to the owl; gone under its wing once taken
+    const sx0 = stackX(t);
+    if (t < TAKE + 0.25) { const d = stackSprite(6); midX.drawImage(barBake(d), Math.round(sx0 - d.anchor.x), top + 1 - d.anchor.y); }
+    // the necromancer, the sleeve along the counter and the hand pushing the books
+    const handX = Math.round(Math.min(sx0, SLIDE_TO) - 7 + (t < SLIDE[0] ? Math.sin(t * 1.3) * 0.6 : 0));
+    const jit = t >= GLITCH[0] && t < GLITCH[1] ? Math.round((hash(Math.floor(t * 24)) - 0.5) * 3) : 0;
+    const handOn = t < SLIDE[1] + 0.35;
+    const reach = handOn ? handX : lerp(SLIDE_TO - 7, SHOULDER.x + 4, smooth(SLIDE[1] + 0.35, SLIDE[1] + 0.9, t));
+    // the sleeve: a thick band from the shoulder down to the counter
+    const sy = SHOULDER.y, ey = top - 1;
+    for (let x = SHOULDER.x; x <= reach - 6; x++) {
+        const k = clamp((x - SHOULDER.x) / Math.max(1, reach - 6 - SHOULDER.x));
+        const yc = Math.round(lerp(sy, ey, Math.min(1, k * 1.6)));
+        midX.fillStyle = hex(PALETTE.outline); midX.fillRect(x + jit, yc - 3, 1, 6);
+        midX.fillStyle = hex(LIT(PALETTE.crowDark)); midX.fillRect(x + jit, yc - 2, 1, 4);
+        midX.fillStyle = hex(LIT(PALETTE.crow)); midX.fillRect(x + jit, yc - 2, 1, 1);
+    }
+    midX.drawImage(barBake(HAND), reach - HAND.anchor.x + jit + 2, top + 1 - HAND.anchor.y);
+    midX.drawImage(barBake(NECRO), NECRO_AT.x - NECRO.anchor.x + jit, NECRO_AT.y - NECRO.anchor.y);
+    return MID;
+}
+const litColors = new Map();
+const [px1, px1x] = canvas(1, 1);
+function LIT(c) {
+    if (litColors.has(c)) return litColors.get(c);
+    const d = { w: 1, h: 1, rows: ['a'], legend: { a: Object.keys(PALETTE).find((k) => PALETTE[k] === c) }, anchor: { x: 0, y: 0 } };
+    px1x.clearRect(0, 0, 1, 1); px1x.drawImage(bakeBar(d, lit), 0, 0);
+    const v = px1x.getImageData(0, 0, 1, 1).data;
+    const r = (v[0] << 16) | (v[1] << 8) | v[2];
+    litColors.set(c, r);
+    return r;
+}
+// The things the necromancer listed, popping up over the counter: a lit pumpkin, a candle, the bonfire.
+const CANDLE = { w: 5, h: 11, rows: ['..y..', '.yYy.', '.yWy.', '..O..', '.ccc.', '.wcc.', '.ccc.', '.ccc.', '.ccc.', 'ggggg', '.aaa.'], legend: { '.': null, y: 'pumpkinShine', Y: 'flameCore', W: 'flameCore', O: 'outline', c: 'cream', w: 'white', g: 'grayLight', a: 'gray' }, anchor: { x: 2, y: 10 } };
+const ICON_DEFS = [
+    (t) => { const L = pumpkinLayers(8, 'm', seedOf('pumpkin-1')); return [L.layers.back, L.layers.body, L.layers.rim, L.layers.stem, L.fireFrames[frameAt(t * 1000, 4, 110)]].filter(Boolean); },
+    () => [CANDLE],
+    (t) => { const fr = BONFIRE.stages[4][frameAt(t * 1000, 4, 110)]; return [fr.base, fr.fire]; },
+];
+function icons(t, cam) {
+    const out = SLIDE[0] + 0.6;
+    ICON_DEFS.forEach((defs, i) => {
+        const age = t - ICONS[i];
+        if (age < 0) return;
+        const pop = backOut(age / 0.25) * (1 - smooth(out, out + 0.4, t));
+        if (pop <= 0) return;
+        const s = (i === 2 ? 3 : i === 1 ? 6 : 5) * pop;
+        const p = toScreenFB(cam, { x: MG + (W / M) * (0.4 + i * 0.1), y: top - 15 + Math.sin(t * 2 + i) * 0.6 });
+        // a puff of a thought round each
+        o.fillStyle = 'rgba(255,241,196,0.16)';
+        o.beginPath(); o.arc(p.x, p.y - 45 * pop, 95 * pop, 0, Math.PI * 2); o.fill();
+        for (const d of defs(t)) { const c = baked(d); o.drawImage(c, Math.round(p.x - d.anchor.x * s), Math.round(p.y - d.anchor.y * s), d.w * s, d.h * s); }
+    });
+}
+function cameraFB(t) {
+    const k = smooth(FB_IN[0], FB_OUT[1], t);
+    const toBooks = smooth(SLIDE[0] - 0.4, TAKE, t);
+    return { x: lerp(-60, 40, k) + toBooks * 60, y: lerp(10, -10, k), zoom: 1.04 + 0.08 * k };
+}
+function withLayerFB(cam, f, fn) {
+    const z = 1 + (cam.zoom - 1) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-W / 2 - cam.x * f, -H / 2 - cam.y * f); fn(); o.restore();
+}
+const toScreenFB = (cam, p, f = 1) => { const z = 1 + (cam.zoom - 1) * f; const q = { x: (p.x - MG) * M, y: (p.y - MG) * M }; return { x: (q.x - W / 2 - cam.x * f) * z + W / 2, y: (q.y - H / 2 - cam.y * f) * z + H / 2 }; };
+const [FB, fbX] = canvas(W, H);
+const barMotes = Array.from({ length: 50 }, (_, i) => ({ x: hash(i) * W * 1.2 - W * 0.1, y: hash(i + 99) * H, v: 8 + hash(i + 3) * 18, ph: hash(i + 5) * 6, f: 0.6 + hash(i + 11) * 1.2 }));
+function paintFlashback(t) {
+    o = fbX;
+    const cam = cameraFB(t);
+    o.fillStyle = '#100810'; o.fillRect(0, 0, W, H);
+    withLayerFB(cam, 0.35, () => o.drawImage(BAR_BACK, -W * 0.15, -H * 0.15));
+    const flick = 0.9 + 0.1 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1);
+    withLayerFB(cam, 1, () => {
+        o.drawImage(drawBarMid(t), -MG * M, -MG * M, aw * M, ah * M);
+        const oc = { x: (owlA.x - MG - 2) * M, y: (owlA.y - MG - 14) * M };
+        const g = o.createRadialGradient(oc.x, oc.y, 30, oc.x, oc.y, 700);
+        g.addColorStop(0, `rgba(255,190,100,${0.3 * flick})`); g.addColorStop(1, 'rgba(255,150,60,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(-W, -H, 3 * W, 3 * H); o.globalCompositeOperation = 'source-over';
+    });
+    for (const m of barMotes) {
+        const x = m.x + Math.sin(t * 0.5 + m.ph) * 30 - cam.x * m.f, y = ((m.y - t * m.v) % H + H) % H;
+        o.fillStyle = `rgba(255,232,170,${(0.15 + 0.3 * hash(m.ph)) * (0.6 + 0.4 * Math.sin(t * 2 + m.ph))})`;
+        o.fillRect(Math.round(x / 14) * 14, Math.round(y / 14) * 14, 14, 14);
+    }
+    icons(t, cam);
+    // the memory's tone: sepia over everything, a warm lift, a strong vignette, a faint flicker
+    o.save();
+    o.globalCompositeOperation = 'color'; o.fillStyle = 'rgba(150,108,62,0.82)'; o.fillRect(0, 0, W, H);
+    o.globalCompositeOperation = 'soft-light'; o.fillStyle = 'rgba(255,214,150,0.35)'; o.fillRect(0, 0, W, H);
+    o.restore();
+    const fl = (hash(Math.floor(t * 12)) - 0.5) * 0.06;
+    o.fillStyle = fl > 0 ? `rgba(255,240,210,${fl})` : `rgba(20,10,0,${-fl})`; o.fillRect(0, 0, W, H);
+    const v = o.createRadialGradient(W / 2, H * 0.5, H * 0.25, W / 2, H * 0.5, H * 0.95);
+    v.addColorStop(0, 'rgba(30,16,6,0)'); v.addColorStop(1, 'rgba(30,16,6,0.9)');
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    // the eyes keep their green: the one colour the memory did not wash out
+    const jit = t >= GLITCH[0] && t < GLITCH[1] ? Math.round((hash(Math.floor(t * 24)) - 0.5) * 3) : 0;
+    const blink = (t % 4.3) < 0.12;
+    for (const [ex, ey] of NECRO.eyes) {
+        const p = toScreenFB(cam, { x: NECRO_AT.x - NECRO.anchor.x + ex + jit, y: NECRO_AT.y - NECRO.anchor.y + ey });
+        const g = o.createRadialGradient(p.x, p.y, 4, p.x, p.y, 90);
+        g.addColorStop(0, `rgba(124,240,100,${0.55 * flick})`); g.addColorStop(1, 'rgba(124,240,100,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(p.x - 100, p.y - 100, 200, 200); o.globalCompositeOperation = 'source-over';
+        if (!blink) { o.fillStyle = hex(PALETTE.eyeGreen); o.fillRect(Math.round(p.x - M * cam.zoom * 0.5), Math.round(p.y - M * cam.zoom * 0.5), Math.round(M * cam.zoom * (ex > 22 ? 0.9 : 1.6)), Math.round(M * cam.zoom)); }
+    }
+    // film dust
+    for (let i = 0; i < 6; i++) {
+        const q = Math.floor(t * 12) * 7 + i;
+        if (hash(q) < 0.5) continue;
+        o.fillStyle = `rgba(255,236,200,${0.25 + hash(q + 1) * 0.3})`;
+        o.fillRect(Math.round(hash(q + 2) * W / 8) * 8, Math.round(hash(q + 3) * H / 8) * 8, 8, hash(q + 4) < 0.3 ? 40 : 8);
+    }
+    o = OUT;
+    return FB;
+}
+
+// The thought cloud: a bumpy blob of circles in a coarse grid (pixel edges), from the owl's head out to past the
+// screen's corners; trailing puffs between the head and the cloud while it is small.
+const CK = 8;
+const [MASK, maskX] = canvas(W / CK, H / CK);
+const [RING, ringX] = canvas(W / CK, H / CK);
+const [EDGE, edgeX] = canvas(W / CK, H / CK);
+const [TMP, tmpX] = canvas(W, H);
+function cloudShape(ctx, k, head, grow, fill) {
+    ctx.fillStyle = fill;
+    const r = (60 + 1400 * k ** 1.6) / CK + grow;
+    const c = { x: lerp(head.x - 380, W / 2, smooth(0, 0.8, k)) / CK, y: lerp(head.y - 300, H / 2, smooth(0, 0.8, k)) / CK };
+    const lobes = 9;
+    ctx.beginPath(); ctx.arc(c.x, c.y, r * 0.8, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < lobes; i++) {
+        const a = (i / lobes) * Math.PI * 2 + 0.3;
+        ctx.beginPath(); ctx.arc(c.x + Math.cos(a) * r * 0.62, c.y + Math.sin(a) * r * 0.42, r * (0.42 + 0.08 * (i % 3)) + grow * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+    if (k < 0.6) {
+        const tail = 1 - smooth(0.35, 0.6, k);
+        [[0.25, 14], [0.5, 22]].forEach(([q, rr]) => {
+            ctx.beginPath();
+            ctx.arc(lerp(head.x - 60, c.x * CK, q) / CK, lerp(head.y - 40, c.y * CK, q) / CK, (rr * tail) / CK * 3 + grow, 0, Math.PI * 2); ctx.fill();
+        });
+    }
+}
+function drawCloud(k, head, fb) {
+    if (k >= 0.999) { o.drawImage(fb, 0, 0); return; }
+    for (const [x, g, col] of [[edgeX, 2, OUTL], [ringX, 1, CREAM], [maskX, 0, '#fff']]) {
+        x.clearRect(0, 0, W / CK, H / CK);
+        cloudShape(x, k, head, g, col);
+    }
+    o.save(); o.imageSmoothingEnabled = false;
+    o.drawImage(EDGE, 0, 0, W, H);
+    o.drawImage(RING, 0, 0, W, H);
+    tmpX.globalCompositeOperation = 'source-over'; tmpX.clearRect(0, 0, W, H); tmpX.drawImage(fb, 0, 0);
+    tmpX.globalCompositeOperation = 'destination-in'; tmpX.imageSmoothingEnabled = false; tmpX.drawImage(MASK, 0, 0, W, H);
+    tmpX.globalCompositeOperation = 'source-over';
+    o.drawImage(TMP, 0, 0);
+    o.restore();
+}
+// The memory flickers on «Дун… Дуг…»: strips of the picture slip sideways.
+function glitched(fb, t) {
+    const g = t >= GLITCH[0] && t < GLITCH[1] ? Math.sin(((t - GLITCH[0]) / (GLITCH[1] - GLITCH[0])) * Math.PI) : 0;
+    if (g <= 0.02) return fb;
+    tmpX.globalCompositeOperation = 'source-over';
+    tmpX.fillStyle = '#1e1006'; tmpX.fillRect(0, 0, W, H);
+    const q = Math.floor(t * 20);
+    for (let y = 0; y < H; y += 24) {
+        const off = Math.round((hash(q * 31 + y) - 0.5) * 60 * g * (hash(q + y * 3) < 0.4 ? 1 : 0.2) / 8) * 8;
+        tmpX.drawImage(fb, 0, y, W, 24, off, y, W, 24);
+    }
+    fbX.drawImage(TMP, 0, 0);
+    return fb;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot C: the crowd under the tree catching the books, then the first spells at the pumpkins.
+function cameraC(t) {
+    const k = t - CUT_C;
+    const back = smooth(CAST[0] - 1.2, CUT_D, t);
+    let cx = 150 + k * 0.6, cy = 120, z = 1.66;
+    cx = lerp(cx, 170, back); cy = lerp(cy, 122, back); z = lerp(z, 1.52, back);
+    return { cx: cx + 0.6 * Math.sin(t * 0.37), cy: cy + 0.4 * Math.sin(t * 0.5), z };
+}
+function shotC(t) {
+    const cam = cameraC(t);
+    const toScreen = paintPatch(cam, t, { owl: owlPatch, blur: 1.2 });
+    const fire = toScreen({ x: ROOT.x, y: ROOT.y - 16 });
+    const k = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1);
+    wash(fire.x, fire.y, 1000, `rgba(255,150,60,${0.2 * k})`);
+    const green = smooth(TOSS[0] + 0.6, CAST[5] + 0.5, t);
+    if (green > 0) wash(W * 0.45, H * 0.6, 1200, `rgba(110,240,90,${0.1 * green})`);
+    motes(t, (cam.cx - 170) * 20, 0.5, green);
+    vignette(0.62);
+    const head = toScreen({ x: PERCH.x + 2, y: PERCH.y - 15 });
+    bubble(3, t, head, (bw, bh) => ({ bx: Math.round(clamp(head.x + 260, 60, W - bw - 60)), by: Math.round(clamp(head.y - bh * 0.6, 40, H - bh - 40)) }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shot D: the owl up close, turned aside, the patch blurred behind with the moon over it; a crow crosses the moon, the
+// fire flares green and dies back.
+const OWL_D = 30;
+function owlFrameD(t) {
+    const f = owlTalk(4, t);
+    if (f) {
+        // it says it to the side: the half-turned head between the syllables
+        return f === OWL.beak[0] ? OWL.turnLeft[0] : f;
+    }
+    if (t < BUBBLES[4].from) return t < CUT_D + 0.5 ? OWL.idle[0] : OWL.turnLeft[0];
+    if (t >= CROW[0] + 0.6 && t < CROW[0] + 2.0) return OWL.turnRight[1];
+    if (t >= FLARE[0] && t < FLARE[0] + 0.4) return OWL.blink;
+    if ((t % 3.3) < 0.13) return OWL.blink;
+    return t > FLARE[1] + 0.6 ? OWL.idle[Math.floor(t / 0.7) % 2] : OWL.turnLeft[0];
+}
+const CROW_DEF = FLYERS.crow[FLYERS.crow.length - 1];
+function shotD(t) {
+    const k = t - CUT_D;
+    const zoom = 1 + 0.1 * smooth(0, DURATION - CUT_D, k);
+    const sh = t >= FLARE[0] && t < FLARE[0] + 0.3 ? 6 * (1 - (t - FLARE[0]) / 0.3) : 0;
+    const q = Math.floor(t * 30);
+    const shake = { x: (hash(q) - 0.5) * sh, y: (hash(q + 5) - 0.5) * sh };
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    o.save(); o.translate(shake.x, shake.y);
+    backdrop(t, { cx: ROOT.x + 70 + k * 0.8, cy: ROOT.y - 72, z: 3.2 * (1 + (zoom - 1) * 0.4) });
+    // the moon, big and a little soft over the hills (the sky layer barely moves, so it is placed on screen)
+    const moon = { x: 1480 - k * 2, y: 190 };
+    soft(null, 4, () => {
+        o.save(); o.globalAlpha = 0.9;
+        big(baked(NIGHT.moonHalo), NIGHT.moonHalo, moon.x, moon.y, 9);
+        big(baked(NIGHT.moon), NIGHT.moon, moon.x, moon.y, 9);
+        o.restore();
+    });
+    wash(moon.x, moon.y, 520, 'rgba(200,210,255,0.08)');
+    // the crow across the moon, from the right
+    if (t >= CROW[0] && t < CROW[1]) {
+        const c = (t - CROW[0]) / (CROW[1] - CROW[0]);
+        const def = CROW_DEF.fly[frameAt((t - CROW[0]) * 1000, 4, 95)];
+        big(bakeLit(def, 'night'), def, lerp(W + 140, -200, c), lerp(250, 120, c) + Math.sin(c * 9) * 12, 7, true);
+    }
+    const flare = t >= FLARE[0] && t < FLARE[1] + 0.4 ? Math.sin(clamp((t - FLARE[0]) / (FLARE[1] + 0.4 - FLARE[0])) * Math.PI) : 0;
+    const flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 4.3 + 1);
+    wash(W * 0.66, H * 0.95, 1000, `rgba(255,140,60,${0.2 * flick * (1 - flare)})`);
+    if (flare > 0) wash(W * 0.66, H * 0.9, 1300, `rgba(120,255,90,${0.4 * flare})`);
+    fireSparks(t, { x: W * 0.66, y: H * 1.02 }, 600, 900, 30, 10, flare > 0.2);
+    motes(t, k * 14, 0.5, 1);
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const perch = { x: 600 - k * 3, y: 1040 };
+    branch(-200, 1180, perch.y, -0.05, OWL_D);
+    const f = owlFrameD(t);
+    bigOwl(f, perch.x, perch.y, OWL_D, 0.25 * (1 - flare));
+    // the fire's light from below right, green for a moment
+    o.globalCompositeOperation = 'lighter';
+    const g = o.createRadialGradient(perch.x + 300, perch.y, 50, perch.x + 300, perch.y, 700);
+    g.addColorStop(0, flare > 0 ? `rgba(110,255,90,${0.35 * flare})` : `rgba(255,140,60,${0.12 * flick})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = g; o.fillRect(0, 0, W, H);
+    o.globalCompositeOperation = 'source-over';
+    o.restore();
+    o.restore();
+    vignette(0.78);
+    const head = { x: W / 2 + (perch.x - W / 2) * zoom, y: H / 2 + (perch.y - 15 * OWL_D - H / 2) * zoom };
+    bubble(4, t, head, (bw, bh) => ({ bx: Math.round(head.x + 330), by: Math.round(clamp(head.y - bh - 40, 40, H - bh - 40)) }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+function draw(t) {
+    NK = nightAt(t);
+    if (t < CUT_B) shotA(t);
+    else if (t < CUT_C) {
+        const b = shotB(t);
+        const inK = smooth(FB_IN[0], FB_IN[1], t) * (1 - smooth(FB_OUT[0], FB_OUT[1], t));
+        if (inK > 0) {
+            const fb = glitched(paintFlashback(t), t);
+            drawCloud(inK, b.head, fb);
+        }
+        bubble(1, t, b.head, (bw) => ({ bx: 70, by: 60 }));
+        bubble(2, t, b.head, (bw) => ({ bx: 70, by: 60 }));
+    } else if (t < CUT_D) shotC(t);
+    else shotD(t);
+    const black = 1 - smooth(0, 0.8, t) + smooth(DURATION - 0.8, DURATION, t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// Sound cues (sound.mjs): the game's own synth. Scene 2's track `dusk` gives way to scene 3's `night`; the flashback
+// plays the bar's track quietly with the night track out.
+const PAN_OWL_A = -0.35, PAN_OWL_B = 0.4;
+const crackle = [];
+for (let at = 0.3, i = 0; at < DURATION - 0.5; at += 0.55 + hash(i) * 0.7, i++) {
+    if (at > FB_IN[0] + 0.5 && at < FB_OUT[0]) continue;
+    const near = at >= CUT_B && at < CUT_C ? 0.6 : at >= CUT_D ? 0.5 : 1;
+    crackle.push({ sfx: 'bonfire.click', at, pan: (hash(i + 7) - 0.5) * 0.4 + (at >= CUT_D ? 0.35 : 0), vol: 0.32 * near, pitch: -2 + hash(i + 3) * 2 });
+}
+window.SOUND = [
+    { music: 'dusk', from: 0, to: 11.0, intensity: 0.45, fadeIn: 1.2, fadeOut: 4.0 },
+    { music: 'night', from: 7.0, to: FB_IN[0] + 0.7, intensity: [[7, 0.15], [12, 0.3]], fadeIn: 3.5, fadeOut: 1.0 },
+    { music: 'bar', from: FB_IN[0] + 0.2, to: FB_OUT[1], intensity: 0.2, vol: 0.4, fadeIn: 1.0, fadeOut: 0.9 },
+    { music: 'night', from: FB_OUT[0] + 0.2, to: DURATION, intensity: [[FB_OUT[0], 0.3], [CUT_C, 0.4], [TOSS[0], 0.7], [CUT_D, 0.75], [CUT_D + 0.6, 0.2], [DURATION, 0.12]], fadeIn: 1.2, fadeOut: 1.4 },
+    ...crackle,
+    { sfx: 'bonfire.stage', at: 0.4, vol: 0.35, pan: 0.1 },
+    // the lines
+    { sfx: 'owl.hoot', at: BUBBLES[0].from - 0.95, pan: PAN_OWL_A },
+    { speak: 'owl', text: textOf(BUBBLES[0]), at: BUBBLES[0].from, pan: PAN_OWL_A },
+    { sfx: 'owl.hoot', at: HOOT_B, pan: PAN_OWL_B, vol: 0.85 },
+    { speak: 'owl', text: textOf(BUBBLES[1]), at: BUBBLES[1].from, pan: PAN_OWL_B * 0.5 },
+    { speak: 'owl', text: textOf(BUBBLES[2]), at: BUBBLES[2].from, pan: PAN_OWL_B * 0.5 },
+    { sfx: 'owl.hoot', at: BUBBLES[3].from - 0.95, pan: -0.3 },
+    { speak: 'owl', text: textOf(BUBBLES[3]), at: BUBBLES[3].from, pan: -0.3 },
+    { sfx: 'owl.hoot', at: BUBBLES[4].from - 0.95, pan: -0.4, vol: 0.4, pitch: -2 },
+    { speak: 'owl', text: textOf(BUBBLES[4]), at: BUBBLES[4].from, pan: -0.4, vol: 0.7, pitch: -1 },
+    // the books out from under the wing
+    { sfx: 'bush.rustle', at: PULL[0], pan: PAN_OWL_B, pitch: 4, vol: 0.7 },
+    { sfx: 'bar.take', at: PULL[0] + 0.45, pan: PAN_OWL_B, vol: 0.8 },
+    // into the memory and out
+    { sfx: 'pumpkin.charged', at: FB_IN[0] - 0.1, vol: 0.55, pitch: -3 },
+    { sfx: 'shot.book', at: GLITCH[0], vol: 0.3, pitch: -7, pan: -0.3 },
+    { sfx: 'shot.book', at: GLITCH[0] + 0.45, vol: 0.25, pitch: -9, pan: -0.3, variant: 1 },
+    ...[17.2, 19.6, 21.0, 23.4].map((at, k) => ({ sfx: 'clink.glass', at, vol: 0.18, pan: k % 2 ? 0.6 : -0.6, variant: k })),
+    ...ICONS.map((at, k) => ({ sfx: 'pumpkin.stage', at, vol: 0.45, variant: k, pan: (k - 1) * 0.3 })),
+    { sfx: 'bar.take', at: SLIDE[0], pan: -0.3, vol: 0.9, pitch: -3 },
+    { sfx: 'bar.take', at: SLIDE[0] + 0.4, pan: 0, vol: 0.7, pitch: -4, variant: 1 },
+    { sfx: 'bar.mug', at: SLIDE[1], pan: 0.2 },
+    { sfx: 'bush.rustle', at: TAKE + 0.05, pan: 0.25, pitch: 4, vol: 0.5 },
+    { sfx: 'pumpkin.enchant', at: FB_OUT[0], vol: 0.6 },
+    { sfx: 'pumpkin.charged', at: LIFT[0], pan: PAN_OWL_B, vol: 0.7 },
+    // the hand-out
+    ...CROWD.flatMap((w) => [
+        { sfx: 'bush.rustle', at: TOSS[w.i], pan: -0.3, pitch: 7, vol: 0.4 },
+        { sfx: 'walk.step', at: TOSS[w.i] - 0.45, pan: (w.x - 170) / 200, vol: 0.5 },
+        { sfx: 'walk.step', at: TOSS[w.i] - 0.15, pan: (w.x - 170) / 200, vol: 0.5 },
+        { sfx: 'bar.take', at: TOSS[w.i] + TOSS_AIR, pan: (w.x - 170) / 200, vol: 0.5, pitch: 3 },
+        { sfx: 'shot.book', at: TOSS[w.i] + TOSS_AIR + 0.03, pan: (w.x - 170) / 200, vol: 0.45 },
+        { sfx: 'shot.book', at: CAST[w.i], pan: (w.x - 190) / 200, vol: 0.75 },
+        { sfx: 'pumpkin.enchant', at: w.target.charged, pan: (w.target.x - 190) / 200, vol: 0.8 },
+    ]),
+    // the hint
+    { sfx: 'crow.caw', at: CROW[0] + 0.7, pan: 0.3, vol: 1 },
+    { sfx: 'crow.caw', at: CROW[0] + 1.7, pan: -0.2, vol: 0.7, variant: 2 },
+    { sfx: 'bonfire.stage', at: FLARE[0] - 0.05, pan: 0.35, vol: 0.9 },
+    { sfx: 'pumpkin.enchant', at: FLARE[0] + 0.1, pan: 0.35, vol: 0.5, pitch: -5 },
+];
+window.DURATION = DURATION;
+window.draw = (t) => { draw(t); return true; };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
+document.title = 'ready';
+</script>
+</body>
+</html>
