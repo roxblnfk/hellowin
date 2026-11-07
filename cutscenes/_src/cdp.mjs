@@ -11,12 +11,16 @@ const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function launch(name, port, { w = 1280, h = 800, local = false, fresh = false } = {}) {
+// gpu: draw on the discrete GPU through Direct3D instead of SwiftShader on the CPU.
+const GPU = ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--force_high_performance_gpu'];
+const SOFT = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+
+export async function launch(name, port, { w = 1280, h = 800, local = false, fresh = false, gpu = false } = {}) {
     const dir = `${SCRATCH}/edge-${name}`;
     if (fresh) try { rmSync(dir, { recursive: true, force: true }); } catch {}
     mkdirSync(dir, { recursive: true });
     const proc = spawn(EDGE, [
-        '--headless=new', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-first-run',
+        '--headless=new', ...(gpu ? GPU : SOFT), '--no-first-run',
         '--no-default-browser-check', '--disable-extensions', '--autoplay-policy=no-user-gesture-required',
         `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, `--window-size=${w},${h}`, 'about:blank',
     ], { stdio: 'ignore' });

@@ -13,6 +13,7 @@ import { mix, writeWav } from './sound.mjs';
 // The finished video is named by its place in the evening. Numbers already used in the edit never change: a scene
 // added between two others takes a sub-number (05.1, 05.2), one added at the end takes the next number.
 const NUMBER = {
+    'prologue': '00',
     'bar-intro': '01',
     'magic-place': '02',
     'candles': '03',
