@@ -36,31 +36,36 @@ const canvas = (w, h) => { const c = document.createElement('canvas'); c.width =
 const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
 
 // ---------------------------------------------------------------------------------------------------------------
-// Timeline, seconds. Thoughts type slower than spoken lines, wait on every «…», and stay up 2.6 s after the last
-// letter.
+// Timeline, seconds. The thoughts follow the owl's recorded voice (cutscenes/audio/0.1.mp3 from VOICE1, 0.2.mp3 from
+// VOICE2, laid over in the edit; the times below are the phrases in those files): a cloud pops as its phrase starts,
+// types to the phrase's end, waiting through its pauses, and stays up 1.8 s or until the next one.
 const PRE = 2, POST = 2;
-const CPS = 13, ELL = 0.55, HOLD = 2.6;
-function typing(lines, ell) {
-    const text = lines.join(' ');
-    const at = [];
-    let s = 0;
-    for (const ch of text) { at.push(s); s += 1 / CPS + (ch === '…' ? ell : 0); }
-    return { text, at, dur: s };
-}
 const THOUGHTS = [];
-let cursor = PRE + 4.0;
-function think(lines, gap, ell = ELL) {
-    const b = { lines, from: cursor, ...typing(lines, ell) };
-    b.to = b.from + b.dur + HOLD;
-    THOUGHTS.push(b);
-    cursor = b.to + gap;
-    return b;
+function voiced(V, lines, segs) {
+    const text = lines.join(' ');
+    const at = new Array(text.length).fill(Infinity);
+    let from = 0;
+    for (const [a, b, mark] of segs) {
+        const upto = mark ? text.indexOf(mark) + mark.length : text.length;
+        for (let k = from; k < upto; k++) at[k] = V + a + ((k - from) / (upto - from)) * Math.max(0.3, b - a - 0.15);
+        from = upto;
+    }
+    const th = { lines, text, at, from: V + segs[0][0] - 0.05, end: V + segs.at(-1)[1] };
+    THOUGHTS.push(th);
+    return th;
 }
-const T0 = think(['Ходит молва…', 'будто RoadRunner мёртв.'], 1.4);
-const T1 = think(['Может, и правда мёртв…', 'Давно его не было в баре…'], 0.5);
-const T2 = think(['Печально, конечно…'], 0);
-const WIPE_END = T0.to + 0.2;                 // the owl stops wiping and lowers its eyes
-const DOOR = T2.to + 0.3;                     // the creak
+const closeBlock = (list) => list.forEach((b, i) => { b.to = Math.min(b.end + 1.8, list[i + 1] ? list[i + 1].from - 0.35 : Infinity); });
+const VOICE1 = PRE + 4.0;
+const B1 = [
+    voiced(VOICE1, ['Что ж делается-то…'], [[0.0, 3.06]]),
+    voiced(VOICE1, ['Хоть этот некромант и стрёмный,', 'но он не первый, кто говорит,', 'что RoadRunner мёртв.'], [[3.55, 10.36]]),
+    voiced(VOICE1, ['Может, и правда…', 'Давно его не было в баре…'], [[11.04, 12.46, 'правда…'], [13.05, 14.91]]),
+    voiced(VOICE1, ['Печально, конечно…'], [[15.69, 18.81]]),
+];
+closeBlock(B1);
+const GLANCE = [B1[1].from + 1.3, B1[1].end - 0.4];   // the owl looks askance at the necromancer
+const WIPE_END = GLANCE[0];
+const DOOR = B1[3].to + 0.2;                  // the creak
 // The necromancer gets up and slips away to the right into the dark while the door creaks; his eyes go out last.
 const LEAVE = [DOOR + 0.25, DOOR + 2.0];
 const HALL = DOOR + 2.9;                      // → the hall: the door already open, the heroes coming in
@@ -68,14 +73,24 @@ const OPEN = DOOR + 0.05;
 const ENTER = Array.from({ length: 6 }, (_, i) => HALL + 0.3 + i * 0.8);
 const SPOT = ENTER[5] + 1.7;                  // → the necromancer's place, empty
 const PERK = SPOT + 2.4;                      // the owl perks up
-cursor = PERK + 0.7;
-const T3 = think(['Но сегодня Хэллоуин,', 'и в баре полно авантюристов…'], 0.4);
-const T4 = think(['Так почему бы не попробовать', 'его воскресить?'], 0);
-const POUR = [T4.to - 0.5, T4.to + 1.7];
+const VOICE2 = PERK + 0.7;
+const B2 = [
+    voiced(VOICE2, ['Но сегодня Хэллоуин,', 'и в баре полно авантюристов…'], [[0.0, 5.67]]),
+    voiced(VOICE2, ['Так почему бы не попробовать…', 'Что он там говорил', 'про воскрешение?'], [[6.11, 8.65, 'попробовать…'], [9.12, 11.51]]),
+    voiced(VOICE2, ['Подожду, пока все нажрутся.', 'Ух-ху.'], [[12.18, 13.9, 'нажрутся.'], [14.1, 15.0]]),
+];
+closeBlock(B2);
+// The voice runs on without a break, so the round goes under it: the owl pours while it thinks of the adventurers,
+// the clink falls in the pause after «попробовать…», then the look at the empty place, and they drink on «нажрутся».
+const POUR = [VOICE2 + 0.5, VOICE2 + 2.7];
 const SLIDE0 = POUR[1] + 0.36, SLIDE_GAP = 0.3;
-const SQUINT_GAP = 0.2;
-// filled below, once the mug slots are known
-let TOAST, CLINK, DRINK, SQUINT, T5, HOOT, PULL, DURATION;
+const TOAST = VOICE2 + 7.6, CLINK = VOICE2 + 8.75;
+const LOOK = [VOICE2 + 9.1, VOICE2 + 11.7];
+const SQUINT = VOICE2 + 12.0;
+const DRINK = [VOICE2 + 12.4, VOICE2 + 13.9];
+const HOOT = VOICE2 + 14.1;
+const PULL = [B2[2].to - 0.6, B2[2].to + 1.4];
+const DURATION = PULL[1] + POST;
 
 // ---------------------------------------------------------------------------------------------------------------
 // The counter plane (bar-intro.html): art scale M, margins MG for the camera.
@@ -98,15 +113,6 @@ const SLIDERS = SLOTS.filter((s) => s !== RR_MUG).sort((a, b) => a.x - b.x).map(
     const dur = 0.3 + (setMug.x - s.x) / 110;
     return { ...s, at, dur, arrive: at + dur };
 });
-TOAST = SLIDERS.at(-1).arrive + 0.25;
-CLINK = TOAST + 0.55;
-DRINK = [CLINK + 0.35, CLINK + 1.6];
-SQUINT = DRINK[1] + SQUINT_GAP;
-cursor = SQUINT + 0.5;
-T5 = think(['Подожду, пока все', 'наберутся… маны.', 'Ух-ху.'], 0, 1.0);
-HOOT = T5.from + T5.at[T5.text.indexOf('Ух')];
-PULL = [T5.to - 0.6, T5.to + 1.4];
-DURATION = PULL[1] + POST;
 
 // The counter, the keg and its tap (bar-intro.html).
 const [base, bx] = canvas(aw, ah);
@@ -190,6 +196,7 @@ const OWLS = {
     wideMug: () => owlOf('wd', () => owlWith(OWL.beak[2])),
     squint: (k) => owlOf(`q${k}`, () => owlWith(withEyes(OWL.idle[k], EYE_ROWS.squint), { mug: false })),
     hoot: () => owlOf('ho', () => owlWith(OWL.hoot, { mug: false })),
+    look: (k) => owlOf(`l${k}`, () => owlWith(OWL.turnLeft[k], { mug: false })),
 };
 const blinkAt = (t, per = 3.3) => (t % per) < 0.13;
 function owlFrame(t) {
@@ -198,6 +205,7 @@ function owlFrame(t) {
         if (blinkAt(t)) return OWLS.blinkMug();
         return OWLS.wipe(k, Math.floor(t / 0.42) % RAG.length);
     }
+    if (t >= GLANCE[0] && t < GLANCE[1]) return OWLS.turnMug(t < GLANCE[0] + 0.2 || t > GLANCE[1] - 0.2 ? 0 : 1);
     if (t < DOOR + 0.15) return blinkAt(t, 4.1) ? OWLS.blinkMug() : OWLS.sadMug(k);
     if (t < SPOT) return t < DOOR + 0.3 ? OWLS.turnMug(0) : OWLS.turnMug(1);
     if (t < PERK) return blinkAt(t) ? OWLS.blinkMug() : OWLS.sadMug(k);
@@ -209,7 +217,8 @@ function owlFrame(t) {
     if (t < SLIDE0) return OWL_BAR.set[1];
     for (const s of SLIDERS.slice(1)) if (t >= s.at - 0.2 && t < s.at + 0.06) return OWL_BAR.talk[2];
     if (t < SLIDERS.at(-1).at + 0.3) return OWL_BAR.idle[k];
-    if (t >= CLINK - 0.2 && t < CLINK + 0.8) return OWL_BAR.talk[2];
+    if (t >= CLINK - 0.2 && t < CLINK + 0.35) return OWL_BAR.talk[2];
+    if (t >= LOOK[0] && t < LOOK[1]) return OWLS.look(t < LOOK[0] + 0.2 || t > LOOK[1] - 0.2 ? 0 : 1);
     if (t >= SQUINT && t < PULL[1] - 0.3) {
         if (t >= HOOT - 0.05 && t < HOOT + 0.5) return OWLS.hoot();
         return OWLS.squint(k);
@@ -476,16 +485,18 @@ const KEYS = {
     rr: { x: toWorld(RR_MUG).x + 40, y: 575, z: 1.75 },
     necro: { x: 700, y: 585, z: 1.15 },
     leave: { x: 700, y: 570, z: 1.12 },
+    necroSit: { x: 560, y: 590, z: 1.35 },
+    lookBack: { x: 585, y: 500, z: 1.3 },
     owlMid: { x: owlW.x - 283, y: owlW.y + 92, z: 1.2 },
     owlClose: { x: owlW.x - 200, y: owlW.y + 35, z: 1.7 },
     pour: { x: owlW.x - 214, y: owlW.y + 80, z: 1.12 },
     end: { x: W / 2, y: H / 2 + 10, z: 1 },
 };
 const PATH = [
-    [0, 'wide'], [PRE + 0.4, 'wide'], [T0.from - 0.3, 'owl'], [T1.from + 1.7, 'owl'], [T1.from + 3.0, 'rr'], [T1.from + 5.1, 'rr'],
-    [T1.to - 0.4, 'owl'], [DOOR - 0.5, 'owl'], [DOOR + 0.6, 'leave'], [HALL, 'leave'], [SPOT - 0.001, 'necro'], [SPOT + 1.5, 'necro'], [PERK + 0.4, 'owlMid'],
-    [T4.from + 0.3, 'owlMid'], [T4.from + 2.4, 'owlClose'], [T4.to - 0.6, 'owlClose'], [POUR[0] + 1.0, 'pour'], [DRINK[1], 'pour'],
-    [T5.from + 0.6, 'owlClose'], [PULL[0], 'owlClose'], [PULL[1], 'end'],
+    [0, 'wide'], [PRE + 0.4, 'wide'], [VOICE1 - 0.3, 'owl'], [GLANCE[0], 'owl'], [GLANCE[0] + 1.1, 'necroSit'], [B1[1].end - 0.6, 'necroSit'],
+    [B1[2].from + 1.4, 'rr'], [B1[2].to, 'rr'], [B1[3].from + 0.8, 'owl'], [DOOR - 0.5, 'owl'], [DOOR + 0.6, 'leave'], [HALL, 'leave'],
+    [SPOT - 0.001, 'necro'], [SPOT + 1.5, 'necro'], [PERK + 0.4, 'owlMid'], [POUR[0] + 0.4, 'owlMid'], [POUR[0] + 1.6, 'pour'],
+    [LOOK[0] - 0.2, 'pour'], [LOOK[0] + 0.8, 'lookBack'], [LOOK[1] - 0.3, 'lookBack'], [SQUINT + 0.6, 'owlClose'], [PULL[0], 'owlClose'], [PULL[1], 'end'],
 ];
 function camera(t) {
     let i = 0;
@@ -601,7 +612,7 @@ function thought(b, t, head) {
     // the text, once the cloud has opened
     if (pop > 0.9) {
         let left = 0;
-        while (left < b.at.length && b.at[left] <= age - 0.25) left++;
+        while (left < b.at.length && b.at[left] <= t) left++;
         o.fillStyle = '#3a2434';
         const ty = by + (bh - b.lines.length * LH) / 2 + 48;
         b.lines.forEach((line, i) => {
@@ -859,10 +870,9 @@ function draw(t) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Sound cues (sound.mjs). The empty bar: the hearth's crackle, a fly, the owl's thoughts as a murmur under its breath,
-// word by word as they type. The bar's track comes in with the first guest and grows to bar-intro's opening level.
+// Sound cues (sound.mjs). The empty bar: the hearth's crackle, a fly, and the owl's thoughts
+// silent here: its voice is laid over in the edit. The bar's track comes in with the first guest and grows to bar-intro's opening level.
 const owlPan = 0.25;
-const murmur = (b) => [...b.text.matchAll(/[\p{L}-]+/gu)].filter((m) => m[0] !== 'Ух-ху').map((m) => ({ speak: 'owl', text: m[0], at: b.from + 0.25 + b.at[m.index], pan: owlPan, vol: 0.22, pitch: -2 }));
 const crackle = [];
 for (let at = 0.3, i = 0; at < DURATION - 1; at += 0.6 + hash(i) * 0.9, i++) crackle.push({ sfx: 'bonfire.click', at, pan: -0.5 + (hash(i + 7) - 0.5) * 0.3, vol: 0.16 * (at < HALL ? 1 : 0.6), pitch: -3 + hash(i + 3) * 2 });
 const steps = WALKERS.flatMap((w) => {
@@ -871,11 +881,10 @@ const steps = WALKERS.flatMap((w) => {
     return out;
 });
 window.SOUND = [
-    { music: 'bar', from: HALL - 0.3, to: DURATION, intensity: [[HALL, 0], [SPOT, 0.15], [PERK, 0.3], [T4.from, 0.42], [POUR[0], 0.5], [CLINK, 0.85], [SQUINT + 1, 0.55], [DURATION, 0.45]], fadeIn: 4.0, fadeOut: 0.9 },
+    { music: 'bar', from: HALL - 0.3, to: DURATION, intensity: [[HALL, 0], [SPOT, 0.15], [PERK, 0.3], [VOICE2, 0.42], [POUR[0], 0.5], [CLINK, 0.85], [SQUINT + 1, 0.55], [DURATION, 0.45]], fadeIn: 4.0, fadeOut: 0.9 },
     ...crackle,
     // one fly, now and then, drifting slowly from side to side
     ...[0.8, 6.0, 11.3, 16.2, 21.6].map((at, i) => ({ sfx: 'fly.buzz', at, pan: Math.sin(at * 0.33 + 0.4) * 0.6, vol: 0.16, pitch: (hash(i + 21) - 0.5) * 1.5, variant: i })),
-    ...THOUGHTS.flatMap(murmur),
     { sfx: 'bar.door', at: DOOR, pan: -0.6 },
     ...steps,
     { sfx: 'bar.door', at: CLOSE, pan: -0.5, vol: 0.45, pitch: -2 },
