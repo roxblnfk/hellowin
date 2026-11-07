@@ -1,0 +1,1366 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// FrankenPHP goes down: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+// The end of the boss fight (scenario.md, step 6 → 7): the boss in black glasses with a blinking sliver of health
+// snaps at the crowd, a zombie burns and heals him; the heroes ring him, Ivan steps forward, everyone strikes at once
+// in slow motion; the freeze, the glasses slide down, he crumbles to ash; the owl names Ivan, the dawn comes, the
+// heroes cheer, ducks and chickens fly in, the first duck is shot — the duck shoot of the recording starts from here.
+import { PALETTE } from '/js/pixel/palette.js';
+import { DECOR, bake, pumpkinLayers, seedOf } from '/js/pixel/sprites.js';
+import { ASH } from '/js/pixel/bonfire.js';
+import { EMISSIVE, NIGHT, LIT_PALETTE, halo, paintSky, relightCanvas } from '/js/pixel/night.js';
+import { characterFrame, randomLook } from '/js/pixel/characters.js';
+import { OWL, armed, glowing } from '/js/pixel/owl.js';
+import { BOSS, FRANKEN, FX, FINALE_EMISSIVE, bossBurn, breathOf, frankenHalo } from '/js/pixel/finale.js';
+import { frankenBake } from '/js/pixel/finale-stage.js';
+import { FLYERS, digitsSprite, feathersOf } from '/js/pixel/flyers.js';
+import { zombieBurnArt, smoulderOf, healDigitsOf, wanderArt } from '/js/pixel/deaths.js';
+import { ZBURN } from '/js/pixel/zombie-burn.js';
+import { BURN, burnFrameOf, burnFlame, burnLight, burnSparksAt } from '/js/pixel/finale-timeline.js';
+import { RISE_MS } from '/js/pixel/wander.js';
+import { speechPlan, beakAt } from '/js/owl-speech.js';
+
+const W = 1920, H = 1080;
+const OUT = document.getElementById('out').getContext('2d');
+let o = OUT;
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. A line hangs while it types, then long enough to read it and 2–3 s more.
+const fline = (from, lines, cps, extra = {}) => {
+    const n = lines.join('').length;
+    return { from, lines, cps, to: from + n / cps + 2.3 + n / 30, ...extra };
+};
+const F1 = fline(2.0, ['Вы не в силах', 'меня остановить!'], 18);
+const F2 = fline(F1.to + 0.3, ['Рапира? Серьёзно?', 'Против бинарника на Go?'], 18);
+const ZB = F2.to - 0.9;                 // every zombie on the field catches FrankenPHP's fire (smouldering a second before)
+const HEAL = ZB + 0.26 + (ZBURN.wispAt + ZBURN.wispMs) / 1000;  // the last wisp reaches him: the bar has grown
+const RISE0 = HEAL + 0.3;               // new zombies claw out of the ground
+const F3 = fline(HEAL + 0.45, ['Я перезапускаюсь быстрее,', 'чем вы кликаете!'], 18, { glad: true });
+const RING = [F3.to - 1.4, F3.to + 1.8];  // the heroes walk in and ring him
+const IVAN = RING[1] + 0.2;             // cut: Ivan steps forward
+const STRIKE = IVAN + 3.6;              // cut: everyone strikes, slow motion
+const FIRE = STRIKE + 0.45;             // the bolts leave the rapiers
+const DRAIN = [FIRE + 0.3, FIRE + 2.4]; // the health runs out
+const CRACK = DRAIN[1] + 0.25;          // …and the bar cracks
+const FREEZE = STRIKE + 4.1;            // the stop frame: silence
+const SLIDE = [FREEZE + 0.8, FREEZE + 3.4];  // the glasses slide down his nose
+const F4 = fline(FREEZE + 2.2, ['Caddy…', 'прикрой… меня…'], 7, { whisper: true });
+const CRUMBLE = F4.to + 0.3;            // cut back: glowing cracks run over him
+const F5 = fline(CRUMBLE + 0.6, ['Это не падение…', 'это… graceful shutdown…'], 12, { crumble: true });
+// He burns as in the game (finale.js bossBurn, finale-timeline.js BURN), a little slowed: BURN_RATE game ms a ms.
+const BURN_RATE = 0.8;
+const BURN0 = F5.from + 3.4;            // the fire catches at his feet
+const gameS = (ms) => ms / 1000 / BURN_RATE;
+const FALL = [BURN0, BURN0 + gameS(BURN.frames * BURN.frameMs)];  // the burning body, until he is a heap
+const BUB_FALL = [BURN0 + gameS(BURN.crumble), BURN0 + gameS(BURN.crumble + BURN.crumbleMs)]; // the bubble crumbles with him
+F5.to = BUB_FALL[0] + 2.6;
+const BOLTS = FALL[1] + 0.3;            // the two bolts drop last
+const GLASSES_LAND = BOLTS + 1.35;      // the glasses settle on top of the heap
+const OWL_CUT = GLASSES_LAND + 0.9;
+const O1 = { from: OWL_CUT + 0.9, lines: ['Ivan нанёс последний удар!'] };
+const DAWN = O1.from + 5.3;             // cut back wide: the shock wave of light
+const DAWN_FADE = [DAWN + 0.3, DAWN + 5.5];
+const SUN = [DAWN + 1.0, DAWN + 8];
+const CHEER = DAWN + 5.6;               // the heroes cheer
+const FLOCK = DAWN + 7.2;               // the ducks and chickens fly in
+const O3 = { from: 0, lines: ['Настреляйте дичи к пиву —', 'и все в бар!'] };
+const OWL_LINES = [O1, O3];
+const textOf = (b) => b.lines.join(' ');
+for (const b of OWL_LINES) b.plan = speechPlan(textOf(b));
+const owlTo = (b) => b.from + b.plan.ms / 1000 + 2.4 + textOf(b).length / 30;
+O1.to = owlTo(O1);
+O3.from = FLOCK + 1.2;
+O3.to = owlTo(O3);
+const AIM = O3.to - 1.4;                // the heroes turn to the sky and aim
+const DURATION = AIM + 2.6 + 2.0;       // 2 s of calm at the end, the fade only in them
+const F_LINES = [F1, F2, F3, F4, F5];
+
+// ---------------------------------------------------------------------------------------------------------------
+// The stage (as franken-rise.html stages the finale): 320 × 180 art px.
+const UNLIT = new Set([...EMISSIVE, ...FINALE_EMISSIVE]);
+const baked = new WeakMap();
+function bakeF(sprite, lighting = 'day') {
+    if (!baked.has(sprite)) baked.set(sprite, new Map());
+    const per = baked.get(sprite);
+    if (per.has(lighting)) return per.get(lighting);
+    const [c, ctx] = canvas(sprite.w, sprite.h);
+    const img = ctx.createImageData(sprite.w, sprite.h);
+    for (let y = 0; y < sprite.h; y++) for (let x = 0; x < sprite.w; x++) {
+        const k = sprite.legend[sprite.rows[y][x]];
+        if (!k) continue;
+        const color = UNLIT.has(k) || lighting === 'day' ? PALETTE[k] : LIT_PALETTE[lighting][k];
+        if (color === undefined) continue;
+        const i = (y * sprite.w + x) * 4;
+        img.data[i] = (color >> 16) & 255; img.data[i + 1] = (color >> 8) & 255; img.data[i + 2] = color & 255; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    per.set(lighting, c);
+    return c;
+}
+const light = (s) => bakeF(s, 'day');
+const anchorOf = (def) => def.anchor ?? { x: def.w >> 1, y: def.h >> 1 };
+const stamp = (ctx, c, def, x, y, flip = false) => {
+    const a = anchorOf(def);
+    if (!flip) { ctx.drawImage(c, Math.round(x - a.x), Math.round(y - a.y)); return; }
+    ctx.save(); ctx.translate(Math.round(x), 0); ctx.scale(-1, 1); ctx.drawImage(c, -(def.w - a.x), Math.round(y - a.y)); ctx.restore();
+};
+const additive = (ctx, c, def, x, y, a) => { if (a <= 0) return; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(a); stamp(ctx, c, def, x, y); ctx.restore(); };
+const glowCache = new WeakMap();
+const glow = (s) => glowCache.get(s) ?? glowCache.set(s, glowing(s)).get(s);
+const relit = new Map();
+function relitOf(c, lighting) {
+    if (!relit.has(c)) relit.set(c, new Map());
+    const per = relit.get(c);
+    if (!per.has(lighting)) per.set(lighting, relightCanvas(c, lighting));
+    return per.get(lighting);
+}
+
+const MW = 320, MH = 180, HORIZON = 62;
+const CENTRE = { x: 166, y: 124 };
+const TREE_AT = { x: 34, y: 118 };
+const PERCH = { x: TREE_AT.x - DECOR.tree.anchor.x + DECOR.tree.perch[0], y: TREE_AT.y - DECOR.tree.anchor.y + DECOR.tree.perch[1] };
+const PUMPKINS = [
+    [-108, -10, 'm', 'pumpkin-1'], [-84, -32, 's', 'pumpkin-2'], [-44, -44, 's', 'pumpkin-3'], [2, -48, 's', 'pumpkin-5'],
+    [46, -44, 'm', 'pumpkin-6'], [86, -32, 's', 'pumpkin-7'], [112, -8, 'l', 'pumpkin-8'], [104, 26, 'm', 'pumpkin-10'],
+    [66, 44, 'l', 'pumpkin-11'], [-8, 50, 'm', 'pumpkin-13'], [-70, 42, 'l', 'pumpkin-14'], [-112, 22, 's', 'pumpkin-15'],
+];
+
+const LAWN = (() => {
+    const [c, ctx] = canvas(MW, MH);
+    let seed = 9;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let x = 0; x < MW; x += DECOR.hills.w) ctx.drawImage(bake(DECOR.hills), x, HORIZON - DECOR.hills.h);
+    for (let y = HORIZON; y < MH; y++) for (let x = 0; x < MW; x++) {
+        const d = Math.hypot((x - CENTRE.x) / 140, (y - CENTRE.y + 4) / 56);
+        let k;
+        if (d < 0.9 || (d < 1 && (x + y) % 2 === 0)) {
+            const lane = ((((x - CENTRE.x) / (y - HORIZON + 30)) * 9) % 1 + 1) % 1;
+            k = lane < 0.2 ? 'soilDark' : lane < 0.3 ? 'soilLight' : 'soil';
+        } else { const n = r(); k = n < 0.06 ? 'leafLight' : n < 0.18 ? 'leafDark' : 'leaf'; }
+        ctx.fillStyle = hex(PALETTE[k]); ctx.fillRect(x, y, 1, 1);
+    }
+    return c;
+})();
+const GROUND = { night: relightCanvas(LAWN, 'night'), dawn: relightCanvas(LAWN, 'dawn') };
+const SKYC = Object.fromEntries([['blood', true], ['dawn', false]].map(([l, stars]) => {
+    const [c, ctx] = canvas(MW + 120, HORIZON + 41);
+    paintSky(ctx, MW + 120, HORIZON + 41, l, { seed: 5, stars });
+    return [l, c];
+}));
+// A far ridge behind the hills for the blurred back layer: two rolling lines, dark against the sky.
+const RIDGE = (() => {
+    const [c, ctx] = canvas(MW + 160, 40);
+    for (let x = 0; x < c.width; x++) {
+        const h1 = 18 + 6 * Math.sin(x * 0.031) + 4 * Math.sin(x * 0.083 + 1) + 2 * Math.sin(x * 0.21);
+        const h2 = 10 + 5 * Math.sin(x * 0.05 + 2) + 3 * Math.sin(x * 0.13);
+        ctx.fillStyle = hex(PALETTE.leafDark); ctx.fillRect(x, 40 - h1, 1, h1);
+        ctx.fillStyle = hex(PALETTE.leaf); ctx.fillRect(x, 40 - h2, 1, h2);
+    }
+    return c;
+})();
+const RIDGE_LIT = { night: relightCanvas(RIDGE, 'night'), dawn: relightCanvas(RIDGE, 'dawn') };
+
+// How far the dawn has come, 0–1: the two lightings of the stage cross-fade over it.
+const dawnK = (t) => smooth(DAWN_FADE[0], DAWN_FADE[1], t);
+
+// ---------------------------------------------------------------------------------------------------------------
+// The cast. Ivan: a vampire with a pink mohawk (violet tips), a smile and the red cape.
+const IVAN_LOOK = { body: 'vampire', cloak: 'cape', face: 'smile', eyes: 'violet', hat: 'mohawk' };
+const rnd = (s) => () => ((s = (s * 16807) % 2147483647) / 2147483647);
+const LOOKS = Array.from({ length: 8 }, (_, i) => randomLook(rnd(77 + i * 31)));
+// home — where each stands while he talks; ring — round him, art px from his foot; Ivan last.
+const HEROES = [
+    { home: [34, 150], ring: [-70, -2] }, { home: [70, 104], ring: [-56, -20] }, { home: [108, 92], ring: [-36, -30] },
+    { home: [232, 96], ring: [36, -30] }, { home: [284, 112], ring: [56, -20] }, { home: [298, 152], ring: [70, -2] },
+    { home: [248, 162], ring: [56, 18] }, { home: [82, 164], ring: [-56, 18] },
+    { home: [138, 166], ring: [-30, 26], ivan: true },
+].map((h, i) => ({ ...h, i, look: h.ivan ? IVAN_LOOK : LOOKS[i], walk: [RING[0] + hash(i + 3) * 0.6, RING[1] - 0.2 - hash(i + 9) * 0.5] }));
+const IVAN_H = HEROES.at(-1);
+// Ivan steps forward out of the ring before the strike.
+const IVAN_FWD = [-28, 36];
+
+function heroPos(h, t) {
+    const ring = { x: CENTRE.x + h.ring[0], y: CENTRE.y + h.ring[1] };
+    const home = { x: h.home[0], y: h.home[1] };
+    const k = smooth(h.walk[0], h.walk[1], t);
+    let p = { x: lerp(home.x, ring.x, k), y: lerp(home.y, ring.y, k) };
+    if (h.ivan) {
+        const f = smooth(IVAN - 0.1, IVAN + 1.4, t);
+        p = { x: lerp(p.x, CENTRE.x + IVAN_FWD[0], f), y: lerp(p.y, CENTRE.y + IVAN_FWD[1], f) };
+    }
+    return { ...p, walking: t > h.walk[0] && t < h.walk[1] };
+}
+// Pose of a hero at t: the whole choreography.
+function heroPose(h, t) {
+    const p = heroPos(h, t);
+    const dx = CENTRE.x - p.x;
+    let face = dx >= 0 ? 1 : -1;   // 1: faces right
+    let dir = 'side', pose = 'idle', frame = Math.floor((t + h.i * 0.37) / 0.6), hop = 0, spin = false;
+    if (p.walking) { pose = 'walk'; frame = Math.floor((t + h.i * 0.1) / 0.15); face = Math.sign((CENTRE.x + h.ring[0]) - h.home[0]) || face; }
+    else if (t >= RING[1] - 0.3 && t < FIRE - 0.15) { pose = 'toast'; frame = Math.floor((t + h.i * 0.2) / 0.45); }
+    else if (t >= FIRE - 0.15 && t < CRUMBLE + 1) { pose = 'shoot'; frame = 0; }
+    if (t >= CHEER && t < AIM) {
+        // the cheer: hops, the rapiers up and spun, the neighbours clink their blades
+        const s = t - CHEER - hash(h.i + 40) * 0.6;
+        const clinkPair = CLINKS.find((c) => c.pair.includes(h.i));
+        dir = 'side';
+        if (clinkPair && clinkAt(clinkPair, t)) {
+            pose = 'clink'; frame = Math.floor(t / 0.35);
+            face = clinkPair.pair[0] === h.i ? 1 : -1;
+        } else {
+            pose = 'toast'; frame = Math.floor((t + h.i * 0.3) / 0.45);
+            hop = s > 0 ? Math.round(Math.abs(Math.sin((s / (0.55 + hash(h.i) * 0.2)) * Math.PI)) * 7) : 0;
+            spin = h.i % 2 === 0;
+            face = Math.floor(s / 1.7 + h.i) % 2 ? 1 : -1;
+        }
+    }
+    if (t >= AIM) {
+        // turn to the sky and aim at the flock coming over, from the right
+        const turn = t - AIM - hash(h.i + 60) * 0.5;
+        if (turn > 0) { pose = turn < 0.3 ? 'idle' : 'shoot'; frame = 0; face = 1; hop = 0; spin = false; }
+    }
+    return { ...p, dir, pose, frame, flip: face < 0, hop, spin };
+}
+// Pairs that clink rapiers on the cheer, each at its own moments.
+const CLINKS = [
+    { pair: [0, 7], at: [CHEER + 1.2, CHEER + 4.6] },
+    { pair: [3, 4], at: [CHEER + 2.1, CHEER + 5.8] },
+    { pair: [1, 2], at: [CHEER + 3.3, CHEER + 7.4] },
+];
+const clinkAt = (c, t) => c.at.some((a) => t >= a && t < a + 0.7);
+const clinkHit = (c, t) => c.at.find((a) => t >= a + 0.35 && t < a + 0.75);
+
+function drawHero(ctx, h, t, lighting) {
+    const s = heroPose(h, t);
+    const f = characterFrame(h.look, { dir: s.dir, pose: s.pose, frame: s.frame, item: 'rapier' });
+    const x = Math.round(s.x), y = Math.round(s.y - s.hop);
+    const put = (c) => {
+        if (s.flip) { ctx.save(); ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(c, -f.anchor.x, y - f.anchor.y); ctx.restore(); }
+        else ctx.drawImage(c, x - f.anchor.x, y - f.anchor.y);
+    };
+    if (s.hop) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#000'; ctx.fillRect(x - 5, Math.round(s.y), 11, 1); ctx.globalAlpha = 1; }
+    // a gold light on the ground round a rapier at night
+    if (lighting === 'night') { const g = halo(12, 5, 'gold'); additive(ctx, light(g), g, x, Math.round(s.y), 0.35); }
+    put(relitOf(f.canvas, lighting));
+    const shimmer = f.flames ? f.flames[frameAt(t * 1000 + h.i * 57, f.flames.length, 110)] : f.glow;
+    if (shimmer) put(shimmer);
+    const m = f.muzzle ?? f.flame;
+    const tip = m ? { x: x + (s.flip ? -1 : 1) * (m[0] - f.anchor.x), y: y + m[1] - f.anchor.y } : { x, y: y - 30 };
+    // a spun rapier leaves a gold arc over the head
+    if (s.spin) {
+        const a0 = t * 9 + h.i;
+        for (let k = 0; k < 7; k++) {
+            const a = a0 - k * 0.32;
+            ctx.fillStyle = hex(PALETTE[['goldCore', 'goldHot', 'goldHot', 'goldGlow', 'goldGlow', 'goldDeep', 'goldDeep'][k]]);
+            ctx.fillRect(Math.round(tip.x + Math.cos(a) * 7), Math.round(tip.y + 2 + Math.sin(a) * 3), 1, 1);
+        }
+    }
+    return { tip, x, y, f };
+}
+
+// Zombie workers: wandering at the back, lime-lit. FrankenPHP devours them all at once: each smoulders, burns in his
+// lime fire and sends him a wisp; then new ones claw their way out of the ground (wanderArt().rise, RISE_MS) and
+// wander on. At the dawn the curse leaves them: the lime goes, the skin turns back to a worker's.
+const ZOMBIE = FLYERS.zombie[1];
+const cured = new WeakMap();
+const cure = (def) => cured.get(def) ?? cured.set(def, { ...def, legend: { ...def.legend, z: 'skin', Z: 'skinShade' } }).get(def);
+// The first wave, all burnt; `burn` — when each catches fire.
+const OLD = [
+    { x: 52, y: 88, range: 16, v: 4, ph: 0 }, { x: 278, y: 94, range: 12, v: 3.5, ph: 2 }, { x: 118, y: 80, range: 10, v: 3, ph: 4 },
+    { x: 246, y: 76, range: 14, v: 3.2, ph: 1 }, { x: 302, y: 128, range: 8, v: 2.6, ph: 3 }, { x: 202, y: 88, range: 0, v: 0, ph: 0 },
+    { x: 96, y: 140, range: 6, v: 2.2, ph: 5 },
+].map((z, k) => ({ ...z, burn: ZB + [0, 0.18, 0.08, 0.26, 0.12, 0.04, 0.22][k] }));
+// The second wave, out of the ground once the first has fed him.
+const NEW = [
+    { x: 146, y: 90, range: 8, v: 3.4, ph: 1 }, { x: 262, y: 88, range: 10, v: 3, ph: 3 }, { x: 132, y: 78, range: 8, v: 2.8, ph: 0 },
+    { x: 222, y: 74, range: 12, v: 3, ph: 2 }, { x: 296, y: 120, range: 6, v: 2.4, ph: 4 }, { x: 84, y: 136, range: 8, v: 2.6, ph: 5 },
+].map((z, k) => ({ ...z, rise: RISE0 + [0, 0.35, 0.15, 0.5, 0.25, 0.42][k] }));
+const RISE_S = RISE_MS / 1000;
+const rimCache = new WeakMap();
+function limeRim(c) {
+    if (rimCache.has(c)) return rimCache.get(c);
+    const w = c.width, h = c.height;
+    const d = c.getContext('2d').getImageData(0, 0, w, h).data;
+    const [r, rx] = canvas(w + 2, h + 2);
+    rx.fillStyle = hex(PALETTE.frankenGlow);
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
+    for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) if (!on(x, y) && (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1))) rx.fillRect(x + 1, y + 1, 1, 1);
+    rimCache.set(c, r);
+    return r;
+}
+// Where a zombie stands at t (an old one stops dead as it starts to smoulder).
+function zombiePos(z, t) {
+    const tt = z.burn !== undefined ? Math.min(t, z.burn - ZBURN.warnMs / 1000) : z.rise !== undefined ? Math.max(0, t - z.rise - RISE_S) : t;
+    const ph = z.range ? (tt * z.v) / z.range + z.ph : 0;
+    return { x: z.x + Math.sin(ph) * z.range, left: Math.cos(ph) < 0, still: z.burn !== undefined && t >= z.burn - ZBURN.warnMs / 1000 };
+}
+function zombieBody(ctx, def, x, y, left, t, k, lighting, glowA = 1) {
+    const night = lighting === 'night';
+    if (!night) def = cure(def);
+    if (night) { const g = frankenHalo(9, 4); additive(ctx, light(g), g, x, y, 0.45 * glowA); }
+    const c = bakeF(def, lighting);
+    stamp(ctx, c, def, x, y, left);
+    if (night) {
+        const a = anchorOf(def);
+        ctx.globalAlpha = (0.55 + 0.25 * Math.sin(t * 5 + k)) * glowA;
+        const r = limeRim(c);
+        if (left) { ctx.save(); ctx.translate(Math.round(x), 0); ctx.scale(-1, 1); ctx.drawImage(r, -(def.w - anchorOf(def).x) - 1, Math.round(y - a.y) - 1); ctx.restore(); }
+        else ctx.drawImage(r, Math.round(x - a.x) - 1, Math.round(y - a.y) - 1);
+        ctx.globalAlpha = 1;
+    }
+}
+function zombieAt(ctx, z, k, t, lighting) {
+    if (z.rise !== undefined && t < z.rise) return;
+    if (z.burn !== undefined && t >= z.burn) { burner(ctx, z, k, t, lighting); return; }
+    const p = zombiePos(z, t);
+    if (z.rise !== undefined && t < z.rise + RISE_S) {
+        const def = wanderArt().rise[Math.min(4, Math.floor(((t - z.rise) / RISE_S) * 5))];
+        zombieBody(ctx, def, p.x, z.y, p.left, t, k, lighting, 0.6);
+        return;
+    }
+    const walking = t < DAWN && !p.still;
+    const def = walking ? ZOMBIE.fly[frameAt(t * 1000 + k * 130, 4, 170)] : ZOMBIE.idle[frameAt(t * 1000 + k * 300, 2, 700)];
+    zombieBody(ctx, def, p.x, z.y, p.left, t, k, lighting);
+    if (z.burn !== undefined && p.still && lighting === 'night') {
+        const left = (z.burn - t) * 1000;
+        const lv = left > 600 ? 0 : left > 250 ? 1 : 2;
+        const sm = smoulderOf(def)[lv][frameAt(t * 1000 + k * 40, 2, 90)];
+        stamp(ctx, light(sm), sm, p.x, z.y, p.left);
+    }
+}
+// A zombie burning out in his fire (zombie-burn.js timing, deaths.js zombieBurnArt).
+function burner(ctx, z, k, t, lighting) {
+    const s = (t - z.burn) * 1000;
+    if (s >= BURN_END_Z) return;
+    const art = zombieBurnArt();
+    const { x } = zombiePos(z, t), y = z.y;
+    let fr = -1;
+    ZBURN.bodyAt.forEach((at, i) => { if (s >= at) fr = i; });
+    if (s < ZBURN.bodyEnd && !(s >= ZBURN.blink && frameAt(s, 2, 60))) {
+        const b = art.body[fr];
+        stamp(ctx, bakeF(b, lighting), b, x, y);
+    }
+    if (s < ZBURN.flameEnd) {
+        const fl = s < ZBURN.heapAt ? art.flames[s < 150 ? 0 : s < 400 ? 2 : 1] : art.heapFlames[s < 1100 ? 0 : 1];
+        const f = fl[frameAt(s + k * 30, 4, ZBURN.flickerMs)];
+        stamp(ctx, light(f), f, x, y);
+        const g = frankenHalo(14, 6);
+        additive(ctx, light(g), g, x, y, 0.6 * (1 - s / ZBURN.flameEnd));
+    }
+    for (let i = 0; i < 14; i++) {
+        const born = i * 70, a = s - born;
+        if (a < 0 || a > 700) continue;
+        const sp = (hash(i + 5 + k * 17) < 0.4 ? art.sparks.big : art.sparks.small)[Math.min(2, Math.floor(a / 260))];
+        stamp(ctx, light(sp), sp, x + (hash(i + k * 9) - 0.5) * 14 + Math.sin(a / 90 + i) * 2, y - 6 - hash(i + 2 + k) * 16 - a * 0.03);
+    }
+}
+const BURN_END_Z = ZBURN.bodyEnd + 50;
+// The wisps: from every fire, arcing in to his chest from all sides; each heal's «+4» over him as it lands.
+const healAt = (z) => z.burn + (ZBURN.wispAt + ZBURN.wispMs) / 1000;
+function wispAndHeal(ctx, t) {
+    const art = zombieBurnArt();
+    OLD.forEach((z, k) => {
+        const s = (t - z.burn) * 1000 - ZBURN.wispAt;
+        if (s < 0 || s >= ZBURN.wispMs) return;
+        const q = s / ZBURN.wispMs;
+        const from = { x: zombiePos(z, t).x, y: z.y - 16 }, to = { x: CENTRE.x + 6 + (k - 3), y: CENTRE.y - 50 + (k % 3) * 3 };
+        const arc = 14 + (k % 3) * 8;
+        const at = (kk) => ({ x: lerp(from.x, to.x, kk), y: lerp(from.y, to.y, kk) - Math.sin(kk * Math.PI) * arc });
+        for (let j = 5; j >= 1; j--) {
+            const p = at(Math.max(0, q - j * 0.05));
+            ctx.globalAlpha = 0.6 - j * 0.1; ctx.fillStyle = hex(PALETTE.frankenGlow);
+            ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        const w = art.wisp[frameAt(s, 2, 80)];
+        const p = at(q);
+        stamp(ctx, light(w), w, p.x, p.y);
+    });
+    OLD.forEach((z, k) => {
+        const h = (t - healAt(z)) * 1000;
+        if (h < 0 || h >= ZBURN.healMs + 300) return;
+        const d = healDigitsOf('+4', digitsSprite);
+        const up = Math.min(1, h / ZBURN.riseMs) * ZBURN.risePx;
+        if (!(h > ZBURN.healMs && frameAt(h, 2, 60))) stamp(ctx, light(d), d, CENTRE.x + [-30, 24, -18, 30, -6, 12, -36][k], CENTRE.y - 72 - up - (k % 3) * 6);
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// FrankenPHP. Alive: idle / talking / flinching, in the glasses. Then the crumble: glowing cracks, the body falling
+// apart from the top into ash, the two bolts, the glasses settling on the heap.
+const FX0 = FRANKEN.anchor.x, FY0 = FRANKEN.anchor.y;
+const typingOf = (b, t) => t >= b.from && t < b.from + b.lines.join('').length / b.cps;
+function frankenFig(t) {
+    const ms = t * 1000;
+    if (t >= STRIKE && t < FREEZE) {
+        // the strikes: he flinches over and over in the slow motion
+        return t >= FIRE && frameAt(ms, 3, 260) !== 2 ? BOSS.hit : FRANKEN.talk[2];
+    }
+    if (t >= FREEZE) return typingOf(F4, t) ? FRANKEN.talk[frameAt(ms, 2, 320)] : FRANKEN.talk[0];
+    for (const b of [F1, F2, F3]) {
+        if (typingOf(b, t)) return t - b.from < 0.35 ? FRANKEN.talk[2] : FRANKEN.talk[frameAt(ms, 2, 180)];
+    }
+    if (t >= HEAL && t < HEAL + 0.3) return FRANKEN.spark[Math.min(2, Math.floor((t - HEAL) / 0.1))];
+    const s = ms % 2400;
+    if (s > 2000 && s < 2270) return FRANKEN.spark[Math.floor((s - 2000) / 90)];
+    return FRANKEN.idle[frameAt(ms, 2, 700)];
+}
+// The glasses' slide down his nose, art px, in whole steps.
+const slideOf = (t) => Math.floor(smooth(SLIDE[0], SLIDE[1], t) * 4.99);
+
+// Cracks: ragged lines branching from his chest out to the outline, each pixel with its distance along the crack.
+const CRACK_PX = (() => {
+    const out = [];
+    const r = rnd(4242);
+    const start = { x: FX0 + 2, y: FY0 - 48 };
+    const walk = (x, y, a, len, d0, depth) => {
+        for (let n = 0; n < len; n++) {
+            out.push({ x: Math.round(x), y: Math.round(y), d: d0 + n });
+            a += (r() - 0.5) * 0.9;
+            x += Math.cos(a); y += Math.sin(a);
+            if (depth < 2 && r() < 0.07) walk(x, y, a + (r() < 0.5 ? -0.9 : 0.9), Math.round(len * 0.5), d0 + n, depth + 1);
+        }
+    };
+    for (let k = 0; k < 9; k++) walk(start.x, start.y, (k / 9) * Math.PI * 2 + r() * 0.4, 26 + Math.round(r() * 22), 0, 0);
+    return out;
+})();
+const CRACK_MAX = Math.max(...CRACK_PX.map((p) => p.d));
+const pxData = new WeakMap();
+function pixelsOf(c) {
+    if (!pxData.has(c)) pxData.set(c, c.getContext('2d').getImageData(0, 0, c.width, c.height).data);
+    return pxData.get(c);
+}
+// Which pixels of the sprite are the bolts: [left, right] lists of {x, y, key}.
+const BOLT_KEYS = new Set(['frankenBoltShine', 'frankenBolt', 'frankenBoltDark']);
+const BOLTS_OF = (() => {
+    const def = FRANKEN.talk[1];
+    const sides = [[], []];
+    for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) {
+        const key = def.legend[def.rows[y][x]];
+        if (BOLT_KEYS.has(key)) sides[x < FX0 ? 0 : 1].push({ x, y, key });
+    }
+    return sides;
+})();
+const boltSet = new Set(BOLTS_OF.flat().map((p) => p.y * 1000 + p.x));
+const fallK = (t) => clamp((t - FALL[0]) / (FALL[1] - FALL[0]));
+const [bodyC, bodyX] = canvas(FRANKEN.w, FRANKEN.h);
+// ms into the game's burning (BURN) at t, or -1 before it.
+const downOf = (t) => (t < BURN0 ? -1 : (t - BURN0) * 1000 * BURN_RATE);
+// Firelight on him and the heap at night; the dawn's light after.
+const fireLit = (lighting) => (lighting === 'night' ? 'firelight' : lighting);
+const FIRE_GLOW = halo(30, 38, 'warm');
+const FIRE_POOL = halo(46, 11, 'warm');
+
+// Before the fire: he stands talking, glowing cracks running over him from the chest, his colours draining.
+function cracked(ctx, t) {
+    const fig = FRANKEN.talk[typingOf(F5, t) ? frameAt(t * 1000, 2, 240) : 0];
+    const src = frankenBake(fig, 'night');
+    const d = pixelsOf(src);
+    const crack = smooth(CRUMBLE + 0.1, BURN0, t);
+    const img = bodyX.createImageData(FRANKEN.w, FRANKEN.h);
+    const glowP = 0.75 + 0.25 * Math.sin(t * 11);
+    const lines = new Map();
+    for (const p of CRACK_PX) if (p.d <= crack * CRACK_MAX) lines.set(p.y * 1000 + p.x, p.d);
+    for (let y = 0; y < FRANKEN.h; y++) for (let x = 0; x < FRANKEN.w; x++) {
+        const i = (y * FRANKEN.w + x) * 4;
+        if (!d[i + 3] || boltSet.has(y * 1000 + x)) continue;
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        const grey = 0.45 * crack;
+        const l = (r * 0.3 + g * 0.55 + b * 0.15);
+        r = lerp(r, l * 0.8, grey); g = lerp(g, l * 0.8, grey); b = lerp(b, l * 0.85, grey);
+        const c = lines.get(y * 1000 + x);
+        if (c !== undefined) [r, g, b] = (crack * CRACK_MAX - c) < 4 ? [255, 255, 236] : [255, 214 * glowP + 30, 90 * glowP];
+        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+    }
+    bodyX.putImageData(img, 0, 0);
+    const gh = halo(34, 40, 'gold');
+    additive(ctx, light(gh), gh, CENTRE.x, CENTRE.y - 40, 0.28 * crack);
+    ctx.drawImage(bodyC, CENTRE.x - FX0, CENTRE.y - FY0);
+}
+// The game's burning (finale-stage.js fallen): fire from his feet up, the body charring and crumbling from the top
+// into a heap, sparks and cinders rising, the fire lighting the ground; then the heap with its embers.
+function burning(ctx, t, lighting) {
+    const down = downOf(t);
+    const k = burnFrameOf(down);
+    const def = k !== null ? bossBurn().body[k] : BOSS.ash[frameAt(t * 1000, 3, 300)];
+    const lit = fireLit(lighting);
+    const glow = burnLight(down) * (0.85 + 0.15 * hash(Math.floor(down / BURN.flickerMs)));
+    if (glow > 0 && lighting === 'night') {
+        additive(ctx, light(FIRE_POOL), FIRE_POOL, CENTRE.x, CENTRE.y, 0.6 * glow);
+        additive(ctx, light(FIRE_GLOW), FIRE_GLOW, CENTRE.x, CENTRE.y - 30, 0.3 * glow);
+    }
+    stamp(ctx, frankenBake(def, lit), def, CENTRE.x, CENTRE.y);
+    const flame = burnFlame(down);
+    if (flame > 0) {
+        const phase = Math.floor(down / BURN.flickerMs) % 4;
+        const fire = k !== null ? bossBurn().flames[k][phase] : bossBurn().heap[flame > 0.3 ? 0 : 1][phase];
+        stamp(ctx, light(fire), fire, CENTRE.x, CENTRE.y);
+    }
+    burnSparksAt(down).forEach((p, i) => {
+        const sp = FX.sparks[p.kind][p.fade];
+        if (p.fade === 2 && (Math.floor(down / 60) + i) % 2) return;
+        stamp(ctx, p.kind === 'cinder' ? bakeF(sp, lit) : light(sp), sp, CENTRE.x + p.x, CENTRE.y + p.y);
+    });
+    // a wisp of smoke off the cooling heap
+    if (k === null && down >= BURN.out) {
+        const into = (t * 1000) % 2400;
+        const w = FX.smoke.puff[0][Math.min(3, Math.floor((into / 2400) * 4))];
+        stamp(ctx, bakeF(w, lit), w, CENTRE.x + 6 + Math.round(into / 600), CENTRE.y - 12 - Math.round(into / 140));
+    }
+}
+function pile(ctx, t, lighting) {
+    const def = BOSS.ash[frameAt(t * 1000, 3, 300)];
+    stamp(ctx, frankenBake(def, fireLit(lighting)), def, CENTRE.x, CENTRE.y);
+}
+// The two bolts: they stay up as he burns away under them, then drop last onto the heap with a clink and a bounce.
+const BOLT_REST = [{ x: -9, y: -8 }, { x: 11, y: -6 }];
+function boltsDraw(ctx, t, lighting) {
+    BOLTS_OF.forEach((pxs, k) => {
+        const minY = Math.min(...pxs.map((p) => p.y));
+        const cx = pxs.reduce((s, p) => s + p.x, 0) / pxs.length;
+        const at = BOLTS + k * 0.28;
+        let dx = 0, dy = 0;
+        if (t >= BURN0 + gameS(BURN.crumble) && t < at) dx = Math.round(Math.sin(t * 40 + k) * 0.6);
+        if (t >= at) {
+            const fallH = (FY0 + BOLT_REST[k].y) - minY;
+            const a = t - at;
+            const tl = Math.sqrt((2 * fallH) / 160);
+            if (a < tl) dy = 0.5 * 160 * a * a;
+            else { const b = a - tl; dy = fallH - Math.max(0, Math.sin(Math.min(1, b / 0.25) * Math.PI) * 3); }
+            dx = (BOLT_REST[k].x + FX0 - cx) * clamp(a / Math.max(tl, 0.01));
+        }
+        for (const p of pxs) {
+            ctx.fillStyle = hex(LIT_PALETTE[fireLit(lighting)][p.key]);
+            ctx.fillRect(Math.round(CENTRE.x - FX0 + p.x + dx), Math.round(CENTRE.y - FY0 + p.y + dy), 1, 1);
+        }
+    });
+}
+// The glasses: on his face until the crumbling reaches the eyes (BURN.glassesAt), then they drift down, rocking, and
+// settle on top of the heap after the bolts.
+function glassesDraw(ctx, t, lighting) {
+    const startFall = BURN0 + gameS(BURN.glassesAt);
+    const slide = 4;
+    const g = BOSS.glasses[0][0];
+    if (t < startFall) { stamp(ctx, frankenBake(g, 'night'), g, CENTRE.x, CENTRE.y + slide); return; }
+    const k = smooth(startFall, GLASSES_LAND, t);
+    const topY = CENTRE.y - 12;
+    if (k >= 1) { const f = BOSS.glassesFallen; stamp(ctx, frankenBake(f, fireLit(lighting)), f, CENTRE.x - 1, topY + 1); return; }
+    const y = lerp(CENTRE.y - 62 + slide, topY, k);
+    const x = CENTRE.x + Math.sin(k * Math.PI * 3) * 5 * (1 - k);
+    // the face glasses drawn round their own middle (they sit at y -62 of his canvas)
+    stamp(ctx, frankenBake(g, 'night'), g, x, y + 62);
+}
+
+function frankenItem(ctx, t, lighting) {
+    if (t < CRUMBLE) {
+        const fig = frankenFig(t);
+        const hit = fig === BOSS.hit;
+        const jx = t >= FIRE && t < FREEZE ? Math.round((hash(Math.floor(t * 12)) - 0.5) * 2) : 0;
+        const h = frankenHalo(36, 11);
+        additive(ctx, light(h), h, CENTRE.x, CENTRE.y - 2, 0.3 + (t >= HEAL && t < HEAL + 0.45 ? 0.5 * (1 - (t - HEAL) / 0.45) : 0));
+        stamp(ctx, frankenBake(fig, 'night'), fig, CENTRE.x + (hit ? 1 : 0) + jx, CENTRE.y);
+        // his green flash on the heal
+        if (t >= HEAL && t < HEAL + ZBURN.flashMs / 1000) {
+            const g = frankenHalo(30, 44);
+            additive(ctx, light(g), g, CENTRE.x, CENTRE.y - 44, 0.5 * (1 - (t - HEAL) / (ZBURN.flashMs / 1000)));
+        }
+        const s = (t * 1000) % 3000;
+        const glint = t >= FREEZE ? 0 : s < 80 ? 1 : s < 160 ? 2 : 0;
+        const g = BOSS.glasses[breathOf(fig)][glint];
+        stamp(ctx, frankenBake(g, 'night'), g, CENTRE.x + (hit ? 1 : 0) + jx, CENTRE.y + (t >= FREEZE ? slideOf(t) : 0));
+        return;
+    }
+    if (t < BURN0) cracked(ctx, t);
+    else if (downOf(t) < BURN.cool) burning(ctx, t, lighting);
+    else pile(ctx, t, lighting);
+    boltsDraw(ctx, t, lighting);
+    glassesDraw(ctx, t, lighting);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Ducks and chickens of the dawn: many, from both sides, at three depths.
+const FLYER_LIST = Array.from({ length: 34 }, (_, k) => {
+    const kind = k % 3 === 2 ? 'chicken' : 'duck';
+    const dir = hash(k + 300) < 0.5 ? 1 : -1;
+    return { k, kind, dir, at: FLOCK + k * 0.42 + hash(k + 310) * 0.5, y: 10 + hash(k + 320) * 44, v: 26 + hash(k + 330) * 22, depth: k % 7 === 3 ? 2 : hash(k + 340) < 0.35 ? 0 : 1, bob: 1 + hash(k + 350) * 3 };
+});
+function flyerDef(kind, depth, ms) { return FLYERS[kind][depth].fly[frameAt(ms, 4, kind === 'chicken' ? 70 : 85)]; }
+function flyers(ctx, t, lighting) {
+    for (const f of FLYER_LIST) {
+        const a = t - f.at;
+        if (a < 0) continue;
+        const x = f.dir > 0 ? -16 + a * f.v : MW + 16 - a * f.v;
+        if (x < -30 || x > MW + 30) continue;
+        const y = f.y + Math.sin(a * 4 + f.k) * f.bob;
+        const def = flyerDef(f.kind, f.depth, a * 1000 + f.k * 37);
+        stamp(ctx, bakeF(def, lighting), def, x, y, f.dir < 0);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The whole stage in one lighting.
+const STAGES = { night: canvas(MW, MH), dawn: canvas(MW, MH) };
+const heroTips = new Map();
+function drawStage(t, lighting, { owl = true } = {}) {
+    const [st, sx] = STAGES[lighting];
+    const ms = t * 1000;
+    const night = lighting === 'night';
+    sx.clearRect(0, 0, MW, MH);
+    sx.drawImage(GROUND[lighting], 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h, 0, HORIZON - DECOR.hills.h, MW, MH - HORIZON + DECOR.hills.h);
+    stamp(sx, bakeF(ASH.pit, lighting), ASH.pit, CENTRE.x, CENTRE.y);
+    stamp(sx, night ? light(ASH.circle[7]) : bakeF(ASH.circle[7], 'dawn'), ASH.circle[7], CENTRE.x, CENTRE.y);
+    if (t >= DAWN - 0.5) flyers(sx, t, lighting);
+    const items = [];
+    PUMPKINS.forEach(([dx, dy, size, id], i) => {
+        const x = CENTRE.x + dx, y = CENTRE.y + dy;
+        items.push({ y, draw: () => {
+            const L = pumpkinLayers(11, size, seedOf(id), 'franken');
+            const at = (list, per) => list[frameAt(ms + i * 97, list.length, per)];
+            if (night) { const h = halo(size === 'l' ? 16 : 13, 5, 'franken'); additive(sx, light(h), h, x, y, 0.35); }
+            if (night && L.auraFrames) stamp(sx, light(at(L.auraFrames, 160)), L, x, y);
+            stamp(sx, bakeF(L.layers.back, lighting), L, x, y);
+            if (night && L.glowFrames) stamp(sx, light(at(L.glowFrames, 120)), L, x, y);
+            stamp(sx, bakeF(L.layers.body, lighting), L, x, y);
+            stamp(sx, bakeF(L.layers.rim, lighting), L, x, y);
+            if (L.layers.stem) stamp(sx, bakeF(L.layers.stem, lighting), L, x, y);
+            if (night && L.fireFrames) stamp(sx, light(at(L.fireFrames, 110)), L, x, y);
+        } });
+    });
+    OLD.forEach((z, k) => t < z.burn + BURN_END_Z / 1000 && items.push({ y: z.y, draw: () => zombieAt(sx, z, k, t, lighting) }));
+    NEW.forEach((z, k) => t >= z.rise && items.push({ y: z.y, draw: () => zombieAt(sx, z, k + 10, t, lighting) }));
+    HEROES.forEach((h) => { const p = heroPos(h, t); items.push({ y: p.y, draw: () => heroTips.set(h.i, drawHero(sx, h, t, lighting)) }); });
+    items.push({ y: CENTRE.y, draw: () => frankenItem(sx, t, lighting) });
+    items.push({ y: TREE_AT.y, draw: () => stamp(sx, bakeF(DECOR.tree, lighting), DECOR.tree, TREE_AT.x, TREE_AT.y) });
+    if (owl) items.push({ y: TREE_AT.y + 0.1, draw: () => { const s = owlFrame(t, false); stamp(sx, bakeF(night ? glow(s) : s, lighting), s, PERCH.x, PERCH.y); } });
+    items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+    wispAndHeal(sx, t);
+    if (t >= FIRE && t < FREEZE) bolts(sx, t);
+    return st;
+}
+
+// The strike: from every rapier's tip a golden chain lightning to him; slow motion — the shapes change slowly.
+function chainPx(ctx, from, to, seed, k, fade = 0) {
+    const { core, edge } = FX.chain(from, to, seed);
+    const keep = (i) => fade === 0 || i % (fade + 1) === 0;
+    if (fade === 0) { ctx.fillStyle = hex(PALETTE.goldGlow); for (const [x, y] of edge) ctx.fillRect(x, y, 1, 1); }
+    ctx.fillStyle = hex(PALETTE[k ? 'goldCore' : 'goldHot']);
+    core.forEach(([x, y], i) => keep(i) && ctx.fillRect(x, y, 1, 1));
+}
+function bolts(ctx, t) {
+    const slow = Math.floor((t - FIRE) / 0.16);
+    const end = FREEZE - 0.05;
+    HEROES.forEach((h, i) => {
+        const from = heroTips.get(i)?.tip;
+        if (!from || t < FIRE + i * 0.05) return;
+        const to = { x: CENTRE.x + (i - 4) * 2, y: CENTRE.y - 46 + ((i * 7) % 9) - 4 };
+        const fade = t > end - 0.4 ? 1 : 0;
+        chainPx(ctx, { x: Math.round(from.x), y: Math.round(from.y) }, to, i * 31 + slow * 7, (slow + i) % 2, fade);
+    });
+    // gold sparks where they strike, drifting slowly out
+    for (let i = 0; i < 40; i++) {
+        const born = FIRE + hash(i + 70) * 3, a = t - born;
+        if (a < 0 || a > 1.4) continue;
+        const ang = hash(i + 80) * Math.PI * 2, v = 6 + hash(i + 90) * 14;
+        ctx.fillStyle = hex(PALETTE[['goldCore', 'goldHot', 'goldGlow', 'goldDeep'][Math.min(3, Math.floor(a / 0.35))]]);
+        ctx.fillRect(Math.round(CENTRE.x + Math.cos(ang) * v * a), Math.round(CENTRE.y - 46 + Math.sin(ang) * v * a + 6 * a * a), 1, 1);
+    }
+}
+
+// The owl on its branch holds the rapier up (steps 6–7); its beak follows the speech.
+function owlFrame(t, close) {
+    for (const b of OWL_LINES) {
+        const ms = (t - b.from) * 1000;
+        if (ms >= 0 && ms < b.plan.ms) return armed(OWL.beak[beakAt(b.plan, ms)], frameAt(t * 1000, 3, 160));
+    }
+    for (const b of OWL_LINES) if (t >= b.from - 0.95 && t < b.from) return armed(OWL.hoot, 0);
+    const blink = (t % 3.3) < 0.13;
+    return armed(blink ? OWL.blink : OWL.idle[frameAt(t * 1000, 2, 700)], frameAt(t * 1000 + 300, 3, 1100) === 1 ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Camera over the stage: [t, cx, cy, z], eased between keys.
+const S = W / MW;
+const CAM = [
+    [0, 166, 92, 1.08], [2.0, 166, 91, 1.1], [3.6, 166, 84, 1.3], [ZB - 1.8, 166, 84, 1.32], [ZB - 0.6, 166, 92, 1.04],
+    [RISE0 + 1.2, 166, 92, 1.06], [F3.to - 1.6, 166, 88, 1.16], [RING[1], 166, 94, 1.05], [IVAN, 166, 94, 1.06],
+    [STRIKE, 166, 94, 1.08], [FREEZE, 166, 88, 1.26],
+    [CRUMBLE, 166, 84, 1.34], [FALL[1], 166, 90, 1.3], [OWL_CUT, 166, 92, 1.28],
+    [DAWN, 160, 91, 1.02], [CHEER, 160, 92, 1.05], [CHEER + 2.5, 166, 94, 1.1], [AIM - 0.3, 166, 95, 1.1],
+    [AIM + 2.0, 170, 78, 1.1], [DURATION, 172, 74, 1.12],
+];
+function camera(t) {
+    let k = 0;
+    while (k < CAM.length - 2 && t >= CAM[k + 1][0]) k++;
+    const [t0, ...a] = CAM[k], [t1, ...b] = CAM[k + 1];
+    const e = smooth(t0, t1, t);
+    let cx = lerp(a[0], b[0], e), cy = lerp(a[1], b[1], e), z = lerp(a[2], b[2], e);
+    cx += 0.6 * Math.sin(t * 0.37); cy += 0.4 * Math.sin(t * 0.5);
+    const sh = shakeAt(t);
+    return { cx: cx + sh.x, cy: cy + sh.y, z };
+}
+function shakeAt(t) {
+    let a = 0;
+    if (t >= FIRE && t < FREEZE) a += 0.5;
+    if (t >= CRACK && t < CRACK + 0.3) a += 1.5 * (1 - (t - CRACK) / 0.3);
+    if (t >= FALL[0] && t < FALL[1]) a += 0.25;
+    if (t >= DAWN && t < DAWN + 0.6) a += 2 * (1 - (t - DAWN) / 0.6);
+    const q = Math.floor(t * 30);
+    return { x: (hash(q) - 0.5) * 2 * a, y: (hash(q + 77) - 0.5) * 2 * a };
+}
+const toScreenOf = (cam) => (p) => { const z = S * cam.z; return { x: (p.x - cam.cx) * z + W / 2, y: (p.y - cam.cy) * z + H / 2 }; };
+
+// Blur through a small buffer: drawn small, stretched back up smooth (filter: blur is too slow in Edge's software
+// renderer).
+const BLUR = 1 / 4;
+const [blurC, blurX] = canvas(W * BLUR, H * BLUR);
+function blurred(fn, scale = BLUR, alpha = 1) {
+    blurX.setTransform(1, 0, 0, 1, 0, 0);
+    blurX.imageSmoothingEnabled = false;
+    blurX.clearRect(0, 0, blurC.width, blurC.height);
+    blurX.save(); blurX.scale(scale, scale); fn(blurX); blurX.restore();
+    o.save(); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'high'; o.globalAlpha = alpha;
+    o.drawImage(blurC, 0, 0, W * scale, H * scale, 0, 0, W, H);
+    o.restore();
+}
+
+// The back: sky, the blood moon going pale and down, the dawn sun climbing, a far ridge — out of focus.
+function backLayer(c, t, cam, f, fr) {
+    const k = dawnK(t);
+    const z = S * (1 + (cam.z - 1) * f);
+    const cx = MW / 2 + (cam.cx - MW / 2) * f, cy = MH / 2 + (cam.cy - MH / 2) * f;
+    c.save(); c.translate(W / 2, H / 2); c.scale(z, z); c.translate(-cx, -cy);
+    c.drawImage(SKYC.blood, -60, -40);
+    if (k > 0) { c.globalAlpha = k; c.drawImage(SKYC.dawn, -60, -40); c.globalAlpha = 1; }
+    // the moon: pales into a white ghost and sinks
+    const moonA = 1 - smooth(DAWN + 0.4, DAWN + 5.2, t);
+    if (moonA > 0) {
+        const my = 22 + 26 * smooth(DAWN + 0.6, DAWN + 7, t);
+        c.globalAlpha = moonA; stamp(c, bake(NIGHT.bloodMoonHalo), NIGHT.bloodMoonHalo, 250, my); stamp(c, bake(NIGHT.bloodMoon), NIGHT.bloodMoon, 250, my);
+        const pale = smooth(DAWN + 0.2, DAWN + 2.5, t);
+        c.globalAlpha = moonA * pale; stamp(c, bake(NIGHT.moon), NIGHT.moon, 250, my); c.globalAlpha = 1;
+    }
+    // the sun climbs out from behind the hills
+    const sun = smooth(SUN[0], SUN[1], t);
+    if (sun > 0) { const d = NIGHT.dawnSun; stamp(c, light(d), d, 104, lerp(HORIZON + 12, 26, sun)); }
+    c.restore();
+    // the far ridge, its own parallax
+    const zr = S * (1 + (cam.z - 1) * fr);
+    const rx = MW / 2 + (cam.cx - MW / 2) * fr, ry = MH / 2 + (cam.cy - MH / 2) * fr;
+    c.save(); c.translate(W / 2, H / 2); c.scale(zr, zr); c.translate(-rx, -ry);
+    c.drawImage(RIDGE_LIT.night, -80, HORIZON - DECOR.hills.h - 22);
+    if (k > 0) { c.globalAlpha = k; c.drawImage(RIDGE_LIT.dawn, -80, HORIZON - DECOR.hills.h - 22); c.globalAlpha = 1; }
+    c.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bubbles. The owl's: cream, a stepped frame and tail. FrankenPHP's: a spiky burst that throbs.
+const u = 8, OUTL = hex(PALETTE.outline), CREAM = hex(PALETTE.cream);
+function frameRect(x, y, w, h, fill = CREAM) {
+    o.fillStyle = OUTL; o.fillRect(x + u, y, w - 2 * u, h); o.fillRect(x, y + u, w, h - 2 * u);
+    o.fillStyle = fill; o.fillRect(x + 2 * u, y + u, w - 4 * u, h - 2 * u); o.fillRect(x + u, y + 2 * u, w - 2 * u, h - 4 * u);
+}
+const burstCache = new Map();
+function burst(bw, bh, variant) {
+    const key = `${bw}|${bh}|${variant}`;
+    if (burstCache.has(key)) return burstCache.get(key);
+    const padX = 110, padY = 90;
+    const gw = Math.ceil((bw + 2 * padX) / u), gh = Math.ceil((bh + 2 * padY) / u);
+    const cx = gw / 2, cy = gh / 2;
+    const rx = (bw / 2 + 30) / u, ry = (bh / 2 + 26) / u;
+    const N = 22;
+    const spike = Array.from({ length: N }, (_, k) => 0.16 + 0.2 * hash(k * 3 + variant * 50 + 1));
+    const inside = (gx, gy) => {
+        const dx = (gx + 0.5 - cx) / rx, dy = (gy + 0.5 - cy) / ry;
+        const d = Math.hypot(dx, dy);
+        const a = (Math.atan2(dy, dx) / (Math.PI * 2) + 1 + variant * 0.01) % 1;
+        const p = a * N, k = Math.floor(p), f = p - k;
+        const tri = 1 - Math.abs(f - 0.5) * 2;
+        return d <= 1 + spike[k] * tri ** 2.2;
+    };
+    const m = Array.from({ length: gh }, (_, y) => Array.from({ length: gw }, (_, x) => inside(x, y)));
+    const at = (x, y) => y >= 0 && x >= 0 && y < gh && x < gw && m[y][x];
+    const [c, ctx] = canvas(gw * u, gh * u);
+    const [sh, shx] = canvas(gw * u, gh * u);
+    shx.fillStyle = '#000';
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        if (!m[y][x]) continue;
+        let rim = false;
+        for (let oy = -1; oy <= 1 && !rim; oy++) for (let ox = -1; ox <= 1; ox++) if (!at(x + ox, y + oy)) { rim = true; break; }
+        ctx.fillStyle = rim ? OUTL : CREAM;
+        ctx.fillRect(x * u, y * u, u, u);
+        shx.fillRect(x * u, y * u, u, u);
+    }
+    const out = { c, sh, ox: padX, oy: padY };
+    burstCache.set(key, out);
+    return out;
+}
+// b: { lines }, shown — characters typed, head — the speaker's mouth on screen, place(bw, bh) → { bx, by }.
+// Returns the bubble's bounds on screen.
+function bubble(b, t, shown, head, place, { spiky = false, tremble = 0, size = 54, out = 1, pop = 1 } = {}) {
+    const LH = Math.round(size * 1.25);
+    o.font = `700 ${size}px Consolas, "Cascadia Mono", monospace`;
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + 88, bh = b.lines.length * LH + 52;
+    let { bx, by } = place(bw, bh);
+    const q = Math.floor(t * 24);
+    const jx = tremble ? Math.round((hash(q) - 0.5) * 2 * tremble) : 0, jy = tremble ? Math.round((hash(q + 9) - 0.5) * 2 * tremble) : 0;
+    bx = Math.round(bx + jx); by = Math.round(by + jy);
+    o.save();
+    o.globalAlpha = clamp(out);
+    const ox = head.x, oy = head.y;
+    o.translate(ox, oy); o.scale(pop, pop); o.translate(-ox, -oy);
+    let bounds;
+    if (spiky) {
+        const r = burst(Math.round(bw), Math.round(bh), Math.floor(t / (tremble ? 0.09 : 0.14)) % 2);
+        // the tail: three spikes stepping down to his mouth
+        const cxb = bx + bw / 2, cyb = by + bh / 2;
+        const dx = head.x - cxb, dy = head.y - cyb, len = Math.hypot(dx, dy) || 1;
+        const ex = cxb + (dx / len) * (bw / 2 + 10) * Math.min(1, Math.abs(dx) / (bw / 2) + 0.2), ey = by + (dy > 0 ? bh + 20 : -20);
+        const steps = 4;
+        for (let i = 0; i < steps; i++) {
+            const k = ((i + 1) / (steps + 1)) * 0.5;
+            const x = lerp(ex, head.x, k), y = lerp(ey, head.y, k);
+            const s = Math.max(2, 6 - i) * u;
+            o.fillStyle = OUTL; o.fillRect(Math.round((x - s / 2) / u) * u - u, Math.round((y - s / 2) / u) * u - u, s + 2 * u, s + 2 * u);
+            o.fillStyle = CREAM; o.fillRect(Math.round((x - s / 2) / u) * u, Math.round((y - s / 2) / u) * u, s, s);
+        }
+        o.globalAlpha *= 0.4; o.drawImage(r.sh, Math.round(bx - r.ox + 2 * u), Math.round(by - r.oy + 3 * u)); o.globalAlpha = clamp(out);
+        o.drawImage(r.c, Math.round(bx - r.ox), Math.round(by - r.oy));
+        bounds = { x0: bx - r.ox, y0: by - r.oy, x1: bx - r.ox + r.c.width, y1: by - r.oy + r.c.height };
+    } else {
+        o.globalAlpha *= 0.4; o.fillStyle = '#000'; o.fillRect(bx + 2 * u, by + 3 * u, bw, bh); o.globalAlpha = clamp(out);
+        frameRect(bx, by, bw, bh);
+        const fromRight = head.x > bx + bw / 2;
+        let x = fromRight ? bx + bw - 160 : bx + 60, y = by + bh - 2 * u;
+        const steps = clamp(Math.floor((head.y - 20 - y) / (3 * u)), 2, 16);
+        const dxs = (head.x - 30 - x) / steps;
+        for (let i = 0; i < steps; i++) {
+            const w = Math.max(2, 8 - Math.floor((i * 7) / steps)) * u, sxp = Math.round(x / u) * u;
+            o.fillStyle = OUTL; o.fillRect(sxp - u, y + (i ? 0 : 2 * u), w + 2 * u, (i ? 4 : 2) * u);
+            o.fillStyle = CREAM; o.fillRect(sxp, y, w, 3 * u);
+            x += dxs; y += 3 * u;
+        }
+        bounds = { x0: bx - u, y0: by - u, x1: bx + bw + 3 * u, y1: Math.max(by + bh + 3 * u, y + 4 * u) };
+    }
+    let left = shown;
+    o.fillStyle = OUTL;
+    b.lines.forEach((s, i) => {
+        const part = s.slice(0, Math.max(0, left));
+        left -= s.length;
+        const tx = bx + 44, ty = by + 26 + Math.round(size * 0.9) + i * LH;
+        if (tremble) {
+            let x = tx;
+            [...part].forEach((ch, k) => {
+                const j = q * 31 + k * 7 + i * 101;
+                o.fillText(ch, x + (hash(j) - 0.5) * tremble * 1.4, ty + (hash(j + 5) - 0.5) * tremble * 1.4);
+                x += o.measureText(ch).width;
+            });
+        } else o.fillText(part, tx, ty);
+    });
+    o.restore();
+    return bounds;
+}
+// A FrankenPHP line at t over his mouth; F5 crumbles off the top down with him.
+const [crumC, crumX] = canvas(W, H);
+function frankenLine(b, t, mouth, place) {
+    if (t < b.from || t > b.to + 0.25) return;
+    const age = t - b.from;
+    const shown = Math.floor(age * b.cps);
+    const out = t > b.to ? 1 - (t - b.to) / 0.25 : 1;
+    const opts = { spiky: true, tremble: b.whisper ? 4 : 1, size: 54, pop: backOut(age / 0.2), out: b.crumble ? 1 : out };
+    if (!b.crumble || t < BUB_FALL[0]) { bubble(b, t, shown, mouth, place, opts); return; }
+    // render it aside, then let it fall apart in cells, the top first
+    crumX.clearRect(0, 0, W, H);
+    const keep = o; o = crumX;
+    const bd = bubble(b, BUB_FALL[0], shown, mouth, place, { ...opts, tremble: 0 });
+    o = keep;
+    const cell = 24;
+    const span = BUB_FALL[1] - BUB_FALL[0];
+    for (let y = Math.floor(bd.y0 / cell) * cell; y < bd.y1; y += cell) for (let x = Math.floor(bd.x0 / cell) * cell; x < bd.x1; x += cell) {
+        const hh = hash(x * 0.13 + y * 0.71);
+        const rel = BUB_FALL[0] + clamp((y - bd.y0) / (bd.y1 - bd.y0)) * span * 0.75 + hh * 0.15;
+        const a = t - rel;
+        if (a > 1.2) continue;
+        if (a <= 0) { o.drawImage(crumC, x, y, cell, cell, x, y, cell, cell); continue; }
+        const dy = 0.5 * 1500 * a * a, dx = (hh - 0.5) * 120 * a;
+        o.globalAlpha = clamp(1 - a / 1.2);
+        o.drawImage(crumC, x, y, cell, cell, Math.round((x + dx) / u) * u, Math.round((y + dy) / u) * u, cell, cell);
+        o.globalAlpha = 1;
+    }
+}
+// The owl's line: typed by its speech (owl-speech.js syllables).
+function typedOf(b, ms) {
+    const text = textOf(b), plan = b.plan;
+    const words = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+    const counts = words.map((m) => Math.max(1, Math.min(5, (m[0].match(/[аеёиоуыэюяaeiouy]/giu) ?? []).length || Math.ceil(m[0].length / 3))));
+    if (counts.reduce((a, c) => a + c, 0) !== plan.syllables.length) return Math.floor(text.length * clamp(ms / plan.ms));
+    let n = 0, k = 0;
+    for (let w = 0; w < words.length; w++) {
+        const first = plan.syllables[k], last = plan.syllables[k + counts[w] - 1];
+        k += counts[w];
+        const start = first.at, end = last.at + last.len, m = words[w];
+        if (ms < start) return n;
+        const into = clamp((ms - start) / Math.max(1, end - start));
+        n = m.index + Math.ceil(m[0].length * into);
+        if (into < 1) return n;
+        n = words[w + 1]?.index ?? text.length;
+        if (w === words.length - 1) n = text.length;
+    }
+    return n;
+}
+// Line breaks count as spaces in the joined text: map the typed count onto the lines.
+function owlLine(b, t, head, place) {
+    if (t < b.from || t > b.to + 0.2) return;
+    const age = t - b.from;
+    const n = typedOf(b, age * 1000);
+    // the joined text has a space per break, which the lines do not
+    const shown = Math.max(0, n - b.lines.reduce((s, l, i) => s + (n > b.lines.slice(0, i + 1).join(' ').length ? 1 : 0), 0));
+    const out = t > b.to ? 1 - (t - b.to) / 0.2 : 1;
+    bubble(b, t, shown, head, place, { pop: backOut(age / 0.22) * out, out: out * 1.5, size: 54 });
+}
+
+// The health bar over his head (app.css .boss-hp): a pixel frame, lime going red as it drains. Blinks when nearly gone,
+// cracks in two at zero.
+function hpAt(t) {
+    let hp = 0.06;
+    for (const z of OLD) hp += 0.04 * smooth(healAt(z), healAt(z) + 0.25, t);
+    if (t >= DRAIN[0]) hp *= 1 - smooth(DRAIN[0], DRAIN[1], t);
+    // each pulse of the strike takes a chunk
+    return Math.max(0, hp);
+}
+function hpBar(head, t, sc = 1) {
+    if (t >= FALL[0] + 1.2) return;
+    const hp = hpAt(t);
+    const w = Math.round(300 * sc / 4) * 4, h = Math.round(20 * sc / 4) * 4, b = Math.max(4, Math.round(4 * sc / 4) * 4);
+    const x = Math.round(head.x - w / 2), y = Math.round(head.y - h);
+    const cracked = t >= CRACK;
+    const fall = cracked && t >= FALL[0] ? t - FALL[0] : 0;
+    const blink = !cracked && hp < 0.08 && frameAt(t * 1000, 3, 220) === 2;
+    const halves = cracked ? [[0, w / 2 + 4, -1], [w / 2 - 4, w, 1]] : [[0, w, 0]];
+    for (const [a, z, side] of halves) {
+        o.save();
+        if (side) {
+            const cx = x + (side < 0 ? a : z);
+            o.translate(cx, y + h / 2 + fall * fall * 900); o.rotate(side * (0.04 + fall * 1.2)); o.translate(-cx, -(y + h / 2));
+            o.globalAlpha = clamp(1 - fall / 1.1);
+            o.beginPath();
+            // a zigzag split down the middle
+            const mid = x + w / 2;
+            const zig = [[0, 0], [6, h * 0.3], [-6, h * 0.55], [5, h * 0.8], [0, h]].map(([dx, dy]) => [mid + dx, y + dy]);
+            if (side < 0) { o.moveTo(x - 2 * b, y - 2 * b); o.lineTo(mid, y - 2 * b); zig.forEach(([px, py]) => o.lineTo(px, py)); o.lineTo(mid, y + h + 2 * b); o.lineTo(x - 2 * b, y + h + 2 * b); }
+            else { o.moveTo(x + w + 2 * b, y - 2 * b); o.lineTo(mid, y - 2 * b); zig.forEach(([px, py]) => o.lineTo(px, py)); o.lineTo(mid, y + h + 2 * b); o.lineTo(x + w + 2 * b, y + h + 2 * b); }
+            o.clip();
+        }
+        o.fillStyle = OUTL; o.fillRect(x - 2 * b, y - 2 * b, w + 4 * b, h + 4 * b);
+        o.fillStyle = CREAM; o.fillRect(x - b, y - b, w + 2 * b, h + 2 * b);
+        o.fillStyle = OUTL; o.fillRect(x, y, w, h);
+        const k = clamp(hp / 0.3);
+        const col = `rgb(${Math.round(lerp(0xe8, 0xa6, k))},${Math.round(lerp(0x3a, 0xe2, k))},${Math.round(lerp(0x3a, 0x2e, k))})`;
+        const fw = Math.max(hp > 0 ? b : 0, Math.round((w * hp) / 4) * 4);
+        if (!blink && fw > 0) {
+            o.fillStyle = col; o.fillRect(x, y, fw, h);
+            o.fillStyle = 'rgba(255,255,255,0.35)'; o.fillRect(x, y, fw, b);
+        }
+        // the heal: the new part flashes lime
+        if (t >= HEAL - 0.3 && t < HEAL + 0.6) { o.fillStyle = `rgba(220,255,140,${0.8 * (1 - (t - HEAL) / 0.6)})`; o.fillRect(x, y, fw, h); }
+        o.restore();
+    }
+    if (cracked && t < CRACK + 0.35) {
+        // a white flash and splinters on the crack
+        const a = t - CRACK;
+        o.fillStyle = `rgba(255,255,255,${1 - a / 0.35})`;
+        o.fillRect(x + w / 2 - 6 * b, y - 4 * b, 12 * b, h + 8 * b);
+        for (let i = 0; i < 10; i++) {
+            const ang = (i / 10) * Math.PI * 2;
+            o.fillStyle = i % 2 ? CREAM : hex(PALETTE.goldHot);
+            o.fillRect(Math.round((x + w / 2 + Math.cos(ang) * 260 * a) / 4) * 4, Math.round((y + h / 2 + Math.sin(ang) * 160 * a + 300 * a * a) / 4) * 4, b * 2, b * 2);
+        }
+    }
+}
+
+// «Ivan» over his head, as the game writes a name: cream, a dark rim.
+function nameTag(x, y, size = 40) {
+    o.font = `700 ${size}px Consolas, "Cascadia Mono", monospace`;
+    o.textAlign = 'center'; o.lineJoin = 'round';
+    o.lineWidth = Math.round(size / 4); o.strokeStyle = OUTL; o.strokeText('Ivan', x, y);
+    o.fillStyle = CREAM; o.fillText('Ivan', x, y);
+    o.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Screen-space particles: lime motes at night, warm dawn dust, gold sparks on the cheer.
+const MOTES = Array.from({ length: 90 }, (_, i) => ({ x: hash(i) * W, ph: hash(i + 3), v: 30 + hash(i + 5) * 90, s: hash(i + 9) < 0.3 ? 12 : 6, d: 0.5 + hash(i + 13) }));
+function motes(t, cam) {
+    const k = dawnK(t);
+    for (const e of MOTES) {
+        const y = H - ((t * e.v * e.d + e.ph * H * 1.3) % (H * 1.3));
+        const x = e.x + Math.sin(t * 1.1 + e.ph * 9) * 40 - (cam.cx - 166) * e.d * 5;
+        const a = (0.3 + 0.45 * Math.sin(t * 4 + e.ph * 20) ** 2);
+        const s = e.s * e.d;
+        const xx = ((Math.round(x / 6) * 6) % W + W) % W, yy = Math.round(y / 6) * 6;
+        if (k < 1) { o.fillStyle = `rgba(190,255,90,${a * (1 - k)})`; o.fillRect(xx, yy, s, s); }
+        if (k > 0) {
+            // the dust drifts slowly in the low sun
+            const dy = Math.round((H * 0.2 + ((e.ph * H + t * 14 * e.d) % (H * 0.8))) / 6) * 6;
+            o.fillStyle = `rgba(255,${210 + 30 * e.ph | 0},150,${a * 0.6 * k})`; o.fillRect(xx, dy, s * 0.8, s * 0.8);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Foreground: tall grass and ash tufts at the bottom corners, closer than the stage (parallax 1.6), out of focus.
+const TUFTS = Array.from({ length: 46 }, (_, i) => {
+    const side = i % 2 ? 1 : -1;
+    return { x: MW / 2 + side * (95 + hash(i + 900) * 95), h: 10 + hash(i + 910) * 22, lean: (hash(i + 920) - 0.5) * 0.6, w: 1 + Math.floor(hash(i + 930) * 2) };
+});
+function frontGrass(c, t, cam) {
+    const f = 1.6;
+    const z = S * (1 + (cam.z - 1) * f);
+    const cx = MW / 2 + (cam.cx - MW / 2) * f, cy = MH / 2 + (cam.cy - MH / 2) * f;
+    const k = dawnK(t);
+    c.save(); c.translate(W / 2, H / 2); c.scale(z, z); c.translate(-cx, -cy);
+    const base = cy + (H / 2) / z + 2;
+    TUFTS.forEach((g, i) => {
+        const sway = Math.sin(t * 1.3 + i) * 1.2;
+        for (let y = 0; y < g.h; y++) {
+            const q = y / g.h;
+            const col = q > 0.85 ? (k > 0.5 ? '#6a8a3a' : '#3a2a3a') : (k > 0.5 ? '#2c4020' : '#140c16');
+            c.fillStyle = col;
+            c.fillRect(Math.round(g.x + (g.lean * y + sway * q * q)), Math.round(base - y), g.w, 1);
+        }
+    });
+    c.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The stage shot: the back out of focus, the stage, light, particles, foreground, bubbles, the bar.
+function shotStage(t) {
+    const cam = camera(t);
+    const k = dawnK(t);
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    blurred((c) => backLayer(c, t, cam, 0.3, 0.6));
+    const night = drawStage(t, 'night');
+    const day = k > 0 ? drawStage(t, 'dawn') : null;
+    const z = S * cam.z;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-cam.cx, -cam.cy);
+    if (k < 1) o.drawImage(night, 0, 0);
+    if (day) { o.globalAlpha = k; o.drawImage(day, 0, 0); o.globalAlpha = 1; }
+    o.restore();
+    const toScreen = toScreenOf(cam);
+    // the blood moon's red over the night, his lime round him
+    if (k < 1) {
+        o.fillStyle = `rgba(120,10,30,${0.14 * (1 - k)})`; o.fillRect(0, 0, W, H);
+        const c = toScreen({ x: CENTRE.x, y: CENTRE.y - 40 });
+        const g = o.createRadialGradient(c.x, c.y, 30, c.x, c.y, 900);
+        g.addColorStop(0, `rgba(170,255,80,${0.14 * (1 - k) * (t < CRUMBLE ? 1 : 1 - fallK(t))})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    }
+    // the strike: gold over everything, long gold lines running in to him
+    if (t >= FIRE && t < FREEZE) strikeOverlay(t, toScreen);
+    motes(t, cam);
+    if (t >= DAWN && t < DAWN + 2.4) wave(t, toScreen);
+    if (k > 0) {
+        const s = toScreen({ x: 104, y: 30 });
+        const g = o.createRadialGradient(s.x, s.y, 40, s.x, s.y, 1500);
+        g.addColorStop(0, `rgba(255,200,140,${0.22 * k})`); g.addColorStop(1, 'rgba(255,170,120,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    }
+    // the cheer's sparks where the blades meet
+    if (t >= CHEER) clinkSparks(t, toScreen);
+    blurred((c) => frontGrass(c, t, cam));
+    const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.32, W / 2, H * 0.5, H * 1.1);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${0.65 - 0.3 * k})`);
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    // the bar, the lines
+    const head = toScreen({ x: CENTRE.x + 2, y: CENTRE.y - 90 });
+    hpBar(head, t, cam.z / 1.6);
+    const mouth = toScreen({ x: CENTRE.x + 4, y: CENTRE.y - 50 });
+    // beside him, low enough to leave the health bar over his head clear
+    const placeL = (bw, bh) => ({ bx: Math.max(40, mouth.x - bw - 260), by: Math.max(head.y + 60, mouth.y - bh - 40) });
+    const placeR = (bw, bh) => ({ bx: Math.min(W - bw - 60, mouth.x + 240), by: Math.max(head.y + 60, mouth.y - bh - 40) });
+    frankenLine(F1, t, mouth, placeL);
+    frankenLine(F2, t, mouth, placeR);
+    frankenLine(F3, t, mouth, placeL);
+    frankenLine(F5, t, mouth, placeL);
+    const owlHead = toScreen({ x: PERCH.x, y: PERCH.y - 14 });
+    for (const b of [O3]) owlLine(b, t, owlHead, (bw) => ({ bx: Math.min(owlHead.x + 60, W - bw - 40), by: 40 }));
+}
+function strikeOverlay(t, toScreen) {
+    const a = t - FIRE;
+    const c = toScreen({ x: CENTRE.x, y: CENTRE.y - 46 });
+    const pulse = 0.5 + 0.5 * Math.sin(a * 7);
+    const g = o.createRadialGradient(c.x, c.y, 20, c.x, c.y, 1100);
+    g.addColorStop(0, `rgba(255,230,140,${0.22 + 0.14 * pulse})`); g.addColorStop(1, 'rgba(255,190,60,0.04)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H);
+    // gold streaks from the frame's edge in to him, pixel-stepped
+    for (let i = 0; i < 26; i++) {
+        const ang = (i / 26) * Math.PI * 2 + hash(i + 7) * 0.2;
+        const r0 = 1300 - ((a * (180 + hash(i) * 160) + hash(i + 1) * 1300) % 1100);
+        const len = 120 + hash(i + 2) * 260;
+        o.fillStyle = `rgba(255,${200 + 40 * hash(i + 3) | 0},90,${0.35 + 0.3 * hash(i + 4)})`;
+        for (let s = 0; s < len; s += 12) {
+            const r = r0 + s;
+            o.fillRect(Math.round((c.x + Math.cos(ang) * r) / 6) * 6, Math.round((c.y + Math.sin(ang) * r * 0.62) / 6) * 6, 6, 6);
+        }
+    }
+    o.globalCompositeOperation = 'source-over';
+    if (a < 0.18) { o.fillStyle = `rgba(255,245,200,${0.85 * (1 - a / 0.18)})`; o.fillRect(0, 0, W, H); }
+    // letterbox bars for the slow motion
+    const lb = Math.round(70 * smooth(FIRE - 0.3, FIRE + 0.4, t));
+    o.fillStyle = '#000'; o.fillRect(0, 0, W, lb); o.fillRect(0, H - lb, W, lb);
+}
+function wave(t, toScreen) {
+    const a = t - DAWN;
+    const c = toScreen({ x: CENTRE.x, y: CENTRE.y - 6 });
+    if (a < 0.25) { o.fillStyle = `rgba(255,250,230,${0.9 * (1 - a / 0.25)})`; o.fillRect(0, 0, W, H); }
+    const r = 60 + a * 1500;
+    o.globalCompositeOperation = 'lighter';
+    for (const [dr, col] of [[0, `rgba(255,250,220,${0.8 * (1 - a / 2.4)})`], [-36, `rgba(255,200,110,${0.55 * (1 - a / 2.4)})`], [-72, `rgba(255,160,90,${0.3 * (1 - a / 2.4)})`]]) {
+        o.fillStyle = col;
+        const rr = Math.max(0, r + dr);
+        const n = Math.max(24, Math.round(rr / 6));
+        for (let i = 0; i < n; i++) {
+            const ang = (i / n) * Math.PI * 2;
+            o.fillRect(Math.round((c.x + Math.cos(ang) * rr) / 12) * 12, Math.round((c.y + Math.sin(ang) * rr * 0.42) / 12) * 12, 24, 12);
+        }
+    }
+    o.globalCompositeOperation = 'source-over';
+}
+function clinkSparks(t, toScreen) {
+    for (const c of CLINKS) {
+        const at = clinkHit(c, t);
+        if (at === undefined) continue;
+        const a = t - (at + 0.35);
+        const p0 = heroPos(HEROES[c.pair[0]], t), p1 = heroPos(HEROES[c.pair[1]], t);
+        const m = toScreen({ x: (p0.x + p1.x) / 2, y: Math.min(p0.y, p1.y) - 30 });
+        for (let i = 0; i < 12; i++) {
+            const ang = -Math.PI / 2 + (hash(i + at) - 0.5) * 2.6, v = 300 + hash(i + 3 + at) * 500;
+            o.fillStyle = hex(PALETTE[['goldCore', 'goldHot', 'goldGlow', 'white'][i % 4]]);
+            o.fillRect(Math.round((m.x + Math.cos(ang) * v * a) / 6) * 6, Math.round((m.y + Math.sin(ang) * v * a + 900 * a * a) / 6) * 6, 12, 12);
+        }
+        if (a < 0.08) { const g = o.createRadialGradient(m.x, m.y, 4, m.x, m.y, 160); g.addColorStop(0, 'rgba(255,255,230,0.9)'); g.addColorStop(1, 'rgba(255,220,120,0)'); o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(m.x - 160, m.y - 160, 320, 320); o.globalCompositeOperation = 'source-over'; }
+    }
+}
+
+// The stage behind a close-up: magnified round the focal point, out of focus.
+function stageBehind(t, focal, z) {
+    const st = drawStage(t, 'night', { owl: false });
+    blurred((c) => {
+        c.translate(W / 2, H / 2); c.scale(z * S, z * S); c.translate(-focal.x, -focal.y);
+        c.drawImage(SKYC.blood, -60, -40);
+        stamp(c, bake(NIGHT.bloodMoonHalo), NIGHT.bloodMoonHalo, 250, 22); stamp(c, bake(NIGHT.bloodMoon), NIGHT.bloodMoon, 250, 22);
+        c.drawImage(st, 0, 0);
+    }, 1 / 6);
+}
+
+// Close-up: Ivan steps out of the ring, raises the rapier; his name over him; the slow push in.
+const IVAN_S = 16;
+function shotIvan(t) {
+    const s = t - IVAN;
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    stageBehind(t, { x: CENTRE.x - 4, y: CENTRE.y - 40 }, 2.0 + 0.04 * s);
+    o.fillStyle = 'rgba(8,4,14,0.35)'; o.fillRect(0, 0, W, H);
+    // lime light from FrankenPHP on the right
+    const g = o.createRadialGradient(W * 0.9, H * 0.35, 40, W * 0.9, H * 0.35, 1100);
+    g.addColorStop(0, 'rgba(170,255,80,0.25)'); g.addColorStop(1, 'rgba(170,255,80,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    const zoom = 1 + 0.08 * smooth(0, STRIKE - IVAN, s);
+    o.save(); o.translate(W * 0.42, H * 0.7); o.scale(zoom, zoom); o.translate(-W * 0.42, -H * 0.7);
+    const step = s < 1.0;
+    const pose = step ? 'walk' : 'toast';
+    const fr = step ? Math.floor(s / 0.15) : Math.floor(s / 0.45);
+    const f = characterFrame(IVAN_LOOK, { dir: 'front', pose, frame: fr, item: 'rapier' });
+    const hx = W * 0.42, feet = H + 150 - 110 * smooth(0, 1.0, s);
+    const c = relitOf(f.canvas, 'night');
+    // the gold light of his rapier on the ground
+    o.fillStyle = 'rgba(0,0,0,0.4)'; o.fillRect(hx - 13 * IVAN_S, feet - IVAN_S, 26 * IVAN_S, 2 * IVAN_S);
+    o.drawImage(c, Math.round(hx - f.anchor.x * IVAN_S), Math.round(feet - f.anchor.y * IVAN_S), c.width * IVAN_S, c.height * IVAN_S);
+    const sh = f.flames ? f.flames[frameAt(t * 1000, f.flames.length, 110)] : f.glow;
+    if (sh) o.drawImage(sh, Math.round(hx - f.anchor.x * IVAN_S), Math.round(feet - f.anchor.y * IVAN_S), c.width * IVAN_S, c.height * IVAN_S);
+    // a glint running up the blade once it is up
+    if (!step && f.muzzle) {
+        const tip = { x: hx + (f.muzzle[0] - f.anchor.x) * IVAN_S, y: feet + (f.muzzle[1] - f.anchor.y) * IVAN_S };
+        const gl = o.createRadialGradient(tip.x, tip.y, 4, tip.x, tip.y, 260);
+        gl.addColorStop(0, `rgba(255,240,170,${0.5 + 0.3 * Math.sin(t * 8)})`); gl.addColorStop(1, 'rgba(255,200,80,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = gl; o.fillRect(tip.x - 260, tip.y - 260, 520, 520); o.globalCompositeOperation = 'source-over';
+        const q = (s - 1.2) % 1.4;
+        if (q > 0 && q < 0.25) {
+            o.fillStyle = '#fffbe8';
+            const x = Math.round(tip.x / 6) * 6, y = Math.round(tip.y / 6) * 6;
+            o.fillRect(x - 36, y - 6, 72, 12); o.fillRect(x - 6, y - 36, 12, 72);
+        }
+    }
+    // the top of his head for the name
+    const d = f.canvas.getContext('2d').getImageData(0, 0, f.canvas.width, f.canvas.height).data;
+    let top = 0;
+    outer: for (let y = 0; y < f.canvas.height; y++) for (let x = 0; x < f.canvas.width; x++) if (d[(y * f.canvas.width + x) * 4 + 3]) { top = y; break outer; }
+    o.restore();
+    const ny = H * 0.7 + (feet - (f.anchor.y - top) * IVAN_S - 40 - H * 0.7) * zoom;
+    nameTag(W * 0.42 + (hx - W * 0.42) * zoom, Math.max(120, ny), 64);
+    const v = o.createRadialGradient(W / 2, H * 0.5, H * 0.3, W / 2, H * 0.5, H * 1.0);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.7)');
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    // slow motion sets in: the letterbox closes in
+    const lb = Math.round(70 * smooth(STRIKE - 0.8, STRIKE, t));
+    o.fillStyle = '#000'; o.fillRect(0, 0, W, lb); o.fillRect(0, H - lb, W, lb);
+}
+
+// The freeze: his face up close, everything still; the glasses slide down his nose; he whispers.
+const FACE_S = 15;
+function shotFreeze(t) {
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    const frozen = FREEZE - 0.02;
+    stageBehind(frozen, { x: CENTRE.x + 30, y: CENTRE.y - 50 }, 2.6);
+    // drained of colour: a cold grey veil
+    o.fillStyle = 'rgba(20,18,24,0.55)'; o.fillRect(0, 0, W, H);
+    const fig = frankenFig(t);
+    const c = frankenBake(fig, 'night');
+    const fx = W * 0.4, fy = H * 0.5 + 62 * FACE_S + 30;
+    const zoom = 1 + 0.04 * smooth(FREEZE, CRUMBLE, t);
+    o.save(); o.translate(fx, H * 0.45); o.scale(zoom, zoom); o.translate(-fx, -H * 0.45);
+    o.drawImage(c, Math.round(fx - FX0 * FACE_S), Math.round(fy - FY0 * FACE_S), c.width * FACE_S, c.height * FACE_S);
+    const g = BOSS.glasses[breathOf(fig)][0];
+    const gc = frankenBake(g, 'night');
+    o.drawImage(gc, Math.round(fx - FX0 * FACE_S), Math.round(fy - FY0 * FACE_S + slideOf(t) * FACE_S), gc.width * FACE_S, gc.height * FACE_S);
+    o.restore();
+    const v = o.createRadialGradient(W * 0.42, H * 0.45, H * 0.25, W / 2, H * 0.5, H * 0.95);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.8)');
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    hpBar({ x: fx, y: 120 }, t, 1.5);
+    const mouth = { x: fx + 60, y: fy - 48 * FACE_S };
+    frankenLine(F4, t, mouth, (bw, bh) => ({ bx: W - bw - 120, by: 180 }));
+    // the letterbox stays for the freeze
+    o.fillStyle = '#000'; o.fillRect(0, 0, W, 70); o.fillRect(0, H - 70, W, 70);
+}
+
+// The owl up close on its branch, rapier raised: «Ivan нанёс последний удар!»; the heap smoking behind, out of focus.
+const OWL_S = 32;
+function shotOwl(t) {
+    o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);
+    const k = t - OWL_CUT;
+    const zoom = 1 + 0.05 * smooth(0, DAWN - OWL_CUT, k);
+    const st = drawStage(t, 'night', { owl: false });
+    blurred((c) => {
+        c.translate(W * 0.36 - k * 8, H * 0.55); c.scale(8.5, 8.5); c.translate(-CENTRE.x, -(CENTRE.y - 30));
+        c.drawImage(SKYC.blood, -60, -40);
+        stamp(c, bake(NIGHT.bloodMoonHalo), NIGHT.bloodMoonHalo, 250, 22); stamp(c, bake(NIGHT.bloodMoon), NIGHT.bloodMoon, 250, 22);
+        c.drawImage(st, 0, 0);
+    }, 1 / 6);
+    o.fillStyle = 'rgba(0,0,0,0.25)'; o.fillRect(0, 0, W, H);
+    o.save();
+    o.translate(W / 2, H / 2); o.scale(zoom, zoom); o.translate(-W / 2, -H / 2);
+    const perch = { x: 1400 + k * 5, y: 930 };
+    for (let x = 880; x < W + 300; x += OWL_S / 2) {
+        const yy = perch.y + Math.round(((x - perch.x) * 0.08) / (OWL_S / 2)) * (OWL_S / 2);
+        o.fillStyle = '#1a1018'; o.fillRect(x, yy, OWL_S / 2, OWL_S * 1.6);
+        o.fillStyle = '#3a2a2c'; o.fillRect(x, yy, OWL_S / 2, OWL_S / 2);
+    }
+    const f = owlFrame(t, true);
+    const oc = bakeF(glow(f), 'night');
+    const a = anchorOf(f);
+    // the blade's gold light round the owl
+    const bl = o.createRadialGradient(perch.x + 200, perch.y - 520, 20, perch.x + 200, perch.y - 520, 700);
+    bl.addColorStop(0, 'rgba(255,215,110,0.3)'); bl.addColorStop(1, 'rgba(255,200,80,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = bl; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over';
+    o.drawImage(oc, perch.x - a.x * OWL_S, perch.y - a.y * OWL_S, f.w * OWL_S, f.h * OWL_S);
+    o.restore();
+    const v = o.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 1.05);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.72)');
+    o.fillStyle = v; o.fillRect(0, 0, W, H);
+    const head = { x: W / 2 + (perch.x - W / 2) * zoom - 60, y: H / 2 + (perch.y - 15 * OWL_S - H / 2) * zoom };
+    owlLine(O1, t, head, (bw) => ({ bx: head.x - bw - 140, by: 150 }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+function draw(t) {
+    if (t >= IVAN && t < STRIKE) shotIvan(t);
+    else if (t >= FREEZE && t < CRUMBLE) shotFreeze(t);
+    else if (t >= OWL_CUT && t < DAWN) shotOwl(t);
+    else shotStage(t);
+    // a white frame on the cuts into the strike and out of the freeze
+    for (const c of [STRIKE, CRUMBLE]) if (t >= c && t < c + 0.1) { o.fillStyle = `rgba(255,250,235,${0.8 * (1 - (t - c) / 0.1)})`; o.fillRect(0, 0, W, H); }
+    const black = smooth(DURATION - 2, DURATION, t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sound cues (sound.mjs): the game's own synth.
+const flockCues = FLYER_LIST.filter((f, k) => k % 2 === 0 && f.at < DURATION - 1).map((f, k) => ({
+    sfx: f.kind === 'duck' ? 'duck.quack' : 'chicken.cluck', at: f.at + 0.6 + hash(k + 700) * 1.2, variant: k % 4,
+    pan: f.dir > 0 ? -0.5 + k * 0.03 : 0.5 - k * 0.03, vol: 0.45 + 0.25 * hash(k + 710),
+}));
+window.SOUND = [
+    // the fight: the boss's track, slowed into the strike, cut dead on the freeze
+    { music: 'boss', from: 0, to: FREEZE, intensity: [[0, 0.8], [F3.to, 1], [STRIKE, 1], [FIRE, 0.45]], fadeIn: 0.05, fadeOut: 0.04 },
+    // the dawn's track from the shock wave to the end
+    { music: 'dawn', from: DAWN + 0.4, to: DURATION, intensity: [[DAWN, 0.2], [CHEER, 0.7], [FLOCK, 1]], fadeIn: 2.5, fadeOut: 2 },
+    // FrankenPHP's lines
+    ...[F1, F2, F3].map((b) => ({ speak: 'franken', text: b.lines.join(' '), at: b.from, pan: 0.05, vol: 1.3, pitch: b.glad ? 1.5 : 0 })),
+    { speak: 'franken', text: F4.lines.join(' '), at: F4.from, vol: 0.55, pitch: -2.5 },
+    { speak: 'franken', text: F5.lines.join(' '), at: F5.from, vol: 0.8, pitch: -4 },
+    // the zombies groan; all of them catch his fire, the wisps heal him, new ones claw out of the ground
+    { sfx: 'zombie.groan', at: 1.2, pan: -0.6, vol: 0.4 },
+    { sfx: 'zombie.groan', at: F2.from + 1.5, pan: 0.7, vol: 0.35, variant: 1 },
+    ...OLD.map((z, k) => ({ sfx: 'zombie.burn', at: z.burn, variant: k % 3, pan: clamp((z.x - 160) / 160) * 0.8, vol: 0.6 })),
+    ...OLD.map((z, k) => ({ sfx: 'zombie.heal', at: healAt(z), variant: k % 2, pan: clamp((z.x - 160) / 160) * 0.3, vol: 0.55 })),
+    ...NEW.map((z, k) => ({ sfx: 'worm.squelch', at: z.rise, variant: k % 4, pan: clamp((z.x - 160) / 160) * 0.8, vol: 0.55, pitch: -4 })),
+    ...NEW.filter((z, k) => k % 2 === 0).map((z, k) => ({ sfx: 'zombie.groan', at: z.rise + RISE_S + 0.1, variant: k % 3, pan: clamp((z.x - 160) / 160) * 0.8, vol: 0.35 })),
+    // the ring: footsteps
+    ...HEROES.flatMap((h, i) => [0, 1, 2, 3].map((n) => ({ sfx: 'walk.step', at: h.walk[0] + 0.1 + n * 0.3, variant: (i + n) % 5, pan: clamp((h.home[0] - 160) / 160) * 0.7, vol: 0.4 }))),
+    // Ivan raises the rapier
+    { sfx: 'owl.rapier', at: IVAN + 1.0, vol: 0.9, pitch: -2 },
+    // the strike in slow motion: the bolts pitched low, the hits dull, the bar cracks
+    ...HEROES.map((h, i) => ({ sfx: 'shot.rapira', at: FIRE + i * 0.05, variant: i % 4, pitch: -6, vol: 0.55, pan: clamp((h.ring[0]) / 80) * 0.8 })),
+    { sfx: 'ability.zap', at: FIRE + 0.05, pitch: -5, vol: 0.8 },
+    ...[0.35, 0.95, 1.6, 2.2].map((d, k) => ({ sfx: 'franken.hit', at: FIRE + d, variant: k, pitch: -7, vol: 1.2 })),
+    ...[0.6, 1.4].map((d, k) => ({ sfx: 'shot.rapira', at: FIRE + d, variant: (k + 2) % 4, pitch: -8, vol: 0.45 })),
+    { sfx: 'mug.shatter', at: CRACK, pitch: -2, vol: 0.9 },
+    // the freeze: silence, the glasses slide in clicks
+    ...[1, 2, 3, 4].map((n) => ({ sfx: 'ui.click', at: SLIDE[0] + ((SLIDE[1] - SLIDE[0]) * (n - 0.5)) / 5, vol: 0.5, pitch: -6 })),
+    // the crumble
+    { sfx: 'pumpkin.charged', at: CRUMBLE + 0.15, pitch: -5, vol: 0.6 },
+    { sfx: 'franken.die', at: FALL[0] },
+    { sfx: 'zombie.burn', at: FALL[0], pitch: -7, vol: 0.9 },
+    { sfx: 'clink.glass', at: BOLTS + 0.32, pitch: -4, vol: 0.9, pan: -0.15 },
+    { sfx: 'dice.land', at: BOLTS + 0.32, variant: 0, vol: 0.6 },
+    { sfx: 'clink.glass', at: BOLTS + 0.62, pitch: -2, vol: 0.85, pan: 0.15, variant: 1 },
+    { sfx: 'dice.land', at: BOLTS + 0.62, variant: 1, vol: 0.5 },
+    { sfx: 'dice.land', at: GLASSES_LAND, variant: 2, vol: 0.4, pitch: 3 },
+    // the owl
+    ...OWL_LINES.map((b, k) => ({ sfx: 'owl.hoot', at: b.from - 0.95, pan: k ? -0.7 : 0.4, vol: 0.8 })),
+    { speak: 'owl', text: textOf(O1), at: O1.from, pan: 0.4 },
+    { speak: 'owl', text: textOf(O3), at: O3.from, pan: -0.7 },
+    // the dawn
+    { sfx: 'circle.done', at: DAWN, vol: 0.7 },
+    { sfx: 'dawn.rise', at: DAWN + 0.6 },
+    // the cheer: clinks of the blades, cheers
+    ...CLINKS.flatMap((c, k) => c.at.map((a) => ({ sfx: 'clink.glass', at: a + 0.35, variant: k % 4, pitch: 4, vol: 0.7, pan: clamp((HEROES[c.pair[0]].ring[0]) / 80) * 0.6 }))),
+    { sfx: 'clink.cheer', at: CHEER + 0.3, vol: 0.9 },
+    { sfx: 'clink.cheer', at: CHEER + 3.6, vol: 0.7, variant: 1 },
+    // the flock
+    ...flockCues,
+];
+window.DURATION = DURATION;
+window.T = { F1, F2, ZB, HEAL, F3, RING, IVAN, STRIKE, FIRE, DRAIN, CRACK, FREEZE, SLIDE, F4, CRUMBLE, F5, FALL, BUB_FALL, BOLTS, GLASSES_LAND, OWL_CUT, O1: [O1.from, O1.to], DAWN, CHEER, FLOCK, O3: [O3.from, O3.to], AIM, BURN0, RISE0, DURATION };
+window.draw = (t) => { draw(t); return true; };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 0));
+document.title = 'ready';
+</script>
+</body>
+</html>
