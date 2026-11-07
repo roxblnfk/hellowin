@@ -11,10 +11,10 @@
 // The epilogue: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
 // Morning in the bar: RoadRunner behind the counter with a mug, the heroes with rapiers on their backs, game on the
 // counter, toasts and «Мип-мип!». The owl looks round, sums the evening up, finally remembers the necromancer's name at
-// his empty place by the counter's end, and doubts it is over. A dissolve to the ash pile on the empty field at dawn:
+// the counter's empty end where he sat, and doubts it is over. A dissolve to the ash pile on the empty field at dawn:
 // the wind blows it away, leaving two bolts and the black glasses; zombie workers' hands come out of the ground, take
-// the bolts and pull them under. The thud, a dark that looks like the end — and back: a duck lands, puts the glasses
-// on, «Кря.», flies off in them.
+// the bolts and pull them under. The thud, a slow dark that looks like the end — and back: a duck lands, puts the
+// glasses on, quacks, flies off in them.
 import { DEFAULT_BAR_LAYOUT as layout, BAR_FLICKER_MS, BAR_MUG, barLights, barOwlSpot, barProps, bakeBar, paintBar } from '/js/pixel/bar.js';
 import { OWL, OWL_BAR, pourFrame } from '/js/pixel/owl.js';
 import { characterFrame } from '/js/pixel/characters.js';
@@ -51,7 +51,7 @@ const OWL_LINES = [
     ['Похоже, слух о его смерти', 'пустил некромант.', 'Как его… Дун… Дуг…'],
     ['Дунглас! Вспомнила!'],
     ['Кстати, его с тех пор', 'никто не видел.'],
-    ['Не нравится мне это…', 'Неспроста всё это.'],
+    ['Не к добру всё…', 'Чую, неспроста.'],
     ['Кто знает…', 'может, это ещё не конец…'],
 ];
 const BUBBLES = [
@@ -90,13 +90,13 @@ for (const h of HANDS) {
 }
 const CLOSE = [HANDS[1].gone + 0.1, HANDS[1].gone + 0.8];
 const THUD = CLOSE[1] + 0.35;
-const DARK = [THUD + 0.5, THUD + 2.0, THUD + 2.8, THUD + 3.9];  // down, black, up
+const DARK = [THUD + 0.4, THUD + 4.0, THUD + 5.0, THUD + 6.4];  // down slowly, hold, up
+const DARK_DEPTH = 0.88;          // not to black: the glasses on the ash still just show
 const DUCK_IN = [DARK[3] + 0.3, DARK[3] + 2.0];
 const PICK = DUCK_IN[1] + 0.6;            // dips to the glasses
 const WEAR = PICK + 0.55;                 // they are on
 const QUACK = WEAR + 1.0;
-BUBBLES.push({ from: QUACK, to: QUACK + 3.0, lines: ['Кря.'], who: 'duck', plan: null });
-const TAKEOFF = QUACK + 3.3;
+const TAKEOFF = QUACK + 1.8;
 const ACCENT = TAKEOFF + 1.5;
 const FINAL = [TAKEOFF + 1.9, TAKEOFF + 2.9];
 const DURATION = FINAL[1] + 0.6;
@@ -166,7 +166,6 @@ const [base, bx] = canvas(aw, ah);
         const e = x === POST.x - 3 || x === POST.x + 3;
         P(x, y, e ? 'outline' : x === POST.x - 2 ? 'timberLight' : x === POST.x + 2 ? 'timberDeep' : (y * 3 + x) % 17 === 0 ? 'timberDark' : 'timber');
     }
-    for (const [dx, dy, k] of [[4, -30, 'outline'], [4, -29, 'ironLight'], [5, -29, 'iron'], [6, -29, 'outline'], [6, -30, 'iron'], [6, -31, 'outline'], [4, -28, 'outline'], [5, -28, 'outline']]) P(POST.x + dx, top + dy, k);
     for (let y = top + 3; y < ah; y++) for (let x = 0; x < aw; x++) {
         const plank = x % 7;
         let k = plank === 0 ? 'timberDeep' : plank === 6 ? 'timberDark' : (x * 3 + y * 7) % 23 === 0 ? 'timberDark' : 'timber';
@@ -200,39 +199,6 @@ function rrBake(def) {
     return c;
 }
 const mugC = bakeBar(BAR_MUG, lit);
-
-// The necromancer's mug, left half drunk: no foam, the beer down to two rows, a ring of dried foam on the glass.
-const HALF_MUG = { ...BAR_MUG, rows: ['.OOOOO...', 'Og...gO..', 'Oc.c.cOO.', 'O.....OgO', 'OyYYYgO.O', 'OyYYYgOgO', 'OgggggOO.', '.OOOOO...'] };
-// His hood on the hook: the cowl hangs empty, its opening black, the robe's shoulders slumped under it.
-const HOOD = (() => {
-    const w = 17, h = 26;
-    const g = Array.from({ length: h }, () => Array(w).fill('.'));
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const cx = 8;
-        const cowl = ((x - cx) / 6.5) ** 2 + ((y - 7.5) / 7.5) ** 2 <= 1;
-        const k = (y - 9) / (h - 9);
-        const drape = y >= 9 && Math.abs(x + 0.5 - cx - 0.5) <= 4.5 + k * 4 - (y === h - 1 && x % 3 === 1 ? 1 : 0);
-        if (cowl || drape) g[y][x] = 'k';
-    }
-    for (let y = 0; y < h; y++) {
-        const xs = g[y].flatMap((ch, x) => (ch !== '.' ? [x] : []));
-        if (!xs.length) continue;
-        const l = xs[0], r = xs[xs.length - 1];
-        for (const x of xs) {
-            const f = (x - l) / Math.max(1, r - l);
-            g[y][x] = f > 0.8 ? 'h' : f < 0.3 ? 'K' : 'k';
-            if (y > 11 && (x === 6 || x === 10) && (y + x) % 4 !== 0) g[y][x] = 'v';
-        }
-    }
-    // the opening: a black oval, nobody in it
-    for (let y = 3; y < 13; y++) for (let x = 4; x < 13; x++) if (((x - 8.5) / 3.3) ** 2 + ((y - 8) / 4.6) ** 2 <= 1) g[y][x] = 'X';
-    const out = g.map((r) => r.slice());
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        if (g[y][x] !== '.') continue;
-        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
-    }
-    return { w, h, rows: out.map((r) => r.join('')), legend: { '.': null, O: 'outline', K: 'crowDark', k: 'crow', h: 'crowLight', v: 'violetDark', X: 'eyeBlack' }, anchor: { x: 8, y: 0 } };
-})();
 
 // Game on the counter: a duck and two hens belly up, between RoadRunner and the necromancer's end.
 const GAME = [
@@ -290,9 +256,6 @@ function drawMid(t) {
     x.clearRect(0, 0, aw, ah);
     x.drawImage(litBase, 0, 0);
     const P = (px, py, col) => { x.fillStyle = hex(col); x.fillRect(Math.round(px), Math.round(py), 1, 1); };
-    // the hood on its hook, swaying a hair
-    const sway = Math.round(Math.sin(t * 0.8) * 0.4);
-    x.drawImage(barBake(HOOD), POST.x + 5 - HOOD.anchor.x + sway, top - 29);
     // RoadRunner and the owl behind the counter
     const rf = rrFrame(t);
     x.drawImage(rrBake(rf), rrA.x - rf.anchor.x, rrA.y - rf.anchor.y - rrHop(t));
@@ -300,9 +263,8 @@ function drawMid(t) {
     x.drawImage(barBake(f), owlA.x - f.anchor.x, owlA.y - f.anchor.y);
     // the counter over their lower halves
     x.drawImage(litBase, 0, top, aw, ah - top, 0, top, aw, ah - top);
-    // mugs: the owl's freshly poured one, the necromancer's half-drunk one
+    // the owl's freshly poured mug
     if (t > POUR[1] + 0.1) x.drawImage(mugC, setMug.x - BAR_MUG.anchor.x, setMug.y - BAR_MUG.anchor.y);
-    x.drawImage(barBake(HALF_MUG), SPOT.x + 3 - BAR_MUG.anchor.x, top + 2 - BAR_MUG.anchor.y);
     // the game
     for (const g of GAME) {
         const cv = barBake(g.def);
@@ -1095,12 +1057,6 @@ function drawField(t) {
     const v = o.createRadialGradient(W / 2, H * 0.48, H * 0.34, W / 2, H * 0.5, H * 1.08);
     v.addColorStop(0, 'rgba(10,6,16,0)'); v.addColorStop(1, 'rgba(10,6,16,0.62)');
     o.fillStyle = v; o.fillRect(0, 0, W, H);
-    // the duck's «Кря.»
-    const d = duckAt(t);
-    if (d) {
-        const head = toS({ x: d.x + 8, y: d.y - 14 });
-        bubble(BUBBLES.at(-1), t, head, (bw, bh) => ({ bx: head.x - bw - 40, by: head.y - bh - 170 }));
-    }
 }
 
 // ===============================================================================================================
@@ -1114,7 +1070,7 @@ function draw(t) {
         o.save(); o.globalAlpha = 1 - smooth(DISSOLVE[0], DISSOLVE[1], t); o.drawImage(MIX, 0, 0); o.restore();
     }
     const black = 1 - smooth(0, 0.7, t)
-        + smooth(DARK[0], DARK[1], t) * (1 - smooth(DARK[2], DARK[3], t))
+        + DARK_DEPTH * smooth(DARK[0], DARK[1], t) * (1 - smooth(DARK[2], DARK[3], t))
         + smooth(FINAL[0], FINAL[1], t);
     if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
 }
