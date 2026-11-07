@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script type="module">
+// The prologue: window.draw(t) paints the frame at t seconds; window.DURATION is the length.
+// Evening, the bar still empty and dim: the owl slowly wipes a mug behind the counter, the hooded necromancer sits in
+// the gloom at the counter's left end. The owl thinks (thought clouds, never aloud) that RoadRunner is said to be dead,
+// glances at his dusty mug, sighs. The door creaks: the heroes come in one after another, the bar fills, warms and
+// gets loud, and the necromancer's place is empty. The owl perks up, decides to raise RoadRunner, pours, the mugs
+// slide down the counter, everyone drinks; a sly squint, «…маны. Ух-ху.», and the frame settles on bar-intro's opening.
+import { DEFAULT_BAR_LAYOUT as layout, BAR_FLICKER_MS, BAR_MUG, DOOR_OPEN, barDoor, barLights, barOwlSpot, barProps, bakeBar, paintBar } from '/js/pixel/bar.js';
+import { OWL, OWL_BAR, pourFrame } from '/js/pixel/owl.js';
+import { characterFrame } from '/js/pixel/characters.js';
+import { halo, relightCanvas } from '/js/pixel/night.js';
+import { bake } from '/js/pixel/sprites.js';
+import { PALETTE } from '/js/pixel/palette.js';
+import { FLYERS } from '/js/pixel/flyers.js';
+
+const W = 1920, H = 1080, lit = 'firelight';
+const OUT = document.getElementById('out').getContext('2d');
+let o = OUT;
+o.imageSmoothingEnabled = false;
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const backOut = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const frameAt = (ms, n, per) => Math.floor(ms / per) % n;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Timeline, seconds. Thoughts type slower than spoken lines, wait on every «…», and stay up 2.6 s after the last
+// letter.
+const PRE = 2, POST = 2;
+const CPS = 13, ELL = 0.55, HOLD = 2.6;
+function typing(lines, ell) {
+    const text = lines.join(' ');
+    const at = [];
+    let s = 0;
+    for (const ch of text) { at.push(s); s += 1 / CPS + (ch === '…' ? ell : 0); }
+    return { text, at, dur: s };
+}
+const THOUGHTS = [];
+let cursor = PRE + 4.0;
+function think(lines, gap, ell = ELL) {
+    const b = { lines, from: cursor, ...typing(lines, ell) };
+    b.to = b.from + b.dur + HOLD;
+    THOUGHTS.push(b);
+    cursor = b.to + gap;
+    return b;
+}
+const T0 = think(['Ходит молва…', 'будто RoadRunner мёртв.'], 1.4);
+const T1 = think(['Может, и правда мёртв…', 'Давно его не было в баре…'], 0.5);
+const T2 = think(['Печально, конечно…'], 0);
+const WIPE_END = T0.to + 0.2;                 // the owl stops wiping and lowers its eyes
+const DOOR = T2.to + 0.3;                     // the creak
+const HALL = DOOR + 0.6;                      // → the hall: the door, the heroes coming in
+const OPEN = HALL + 0.05;
+const ENTER = Array.from({ length: 6 }, (_, i) => OPEN + 0.3 + i * 0.8);
+const SPOT = ENTER[5] + 1.7;                  // → the necromancer's place, empty
+const PERK = SPOT + 2.4;                      // the owl perks up
+cursor = PERK + 0.7;
+const T3 = think(['Но сегодня Хэллоуин,', 'и в баре полно авантюристов…'], 0.4);
+const T4 = think(['Так почему бы не попробовать', 'его воскресить?'], 0);
+const POUR = [T4.to - 0.5, T4.to + 1.7];
+const SLIDE0 = POUR[1] + 0.36, SLIDE_GAP = 0.3;
+const SQUINT_GAP = 0.2;
+// filled below, once the mug slots are known
+let TOAST, CLINK, DRINK, SQUINT, T5, HOOT, PULL, DURATION;
+
+// ---------------------------------------------------------------------------------------------------------------
+// The counter plane (bar-intro.html): art scale M, margins MG for the camera.
+const M = 14, MG = 12;
+const aw = Math.ceil(W / M) + 2 * MG, ah = Math.ceil(H / M) + 2 * MG;
+const top = MG + Math.round((H / M) * 0.6);
+const ax = (f) => MG + Math.round((W / M) * f);
+const owlA = { x: ax(0.6), y: top + 3 };
+const tap = { x: owlA.x + OWL_BAR.tap.x, y: owlA.y + OWL_BAR.tap.y };
+const owlMug = { x: owlA.x + OWL_BAR.mug.x, y: owlA.y + OWL_BAR.mug.y };
+const setMug = { x: owlA.x - 6, y: top + 2 };
+const toWorld = (p) => ({ x: (p.x - MG) * M, y: (p.y - MG) * M });
+
+// bar-intro's counter mugs; slot 1 is RoadRunner's dusty mug, the others slide out farthest first.
+const SLOTS = [];
+for (let x = owlA.x - 14, i = 0; x > MG - 6; x -= 10, i++) SLOTS.push({ i, x, y: top + 2 + (i % 2), fx: x + (hash(i) < 0.5 ? -4 : 4), spill: i % 3 !== 2 });
+const RR_MUG = SLOTS[1];
+const SLIDERS = SLOTS.filter((s) => s !== RR_MUG).sort((a, b) => a.x - b.x).map((s, k) => {
+    const at = SLIDE0 + k * SLIDE_GAP;
+    const dur = 0.3 + (setMug.x - s.x) / 110;
+    return { ...s, at, dur, arrive: at + dur };
+});
+TOAST = SLIDERS.at(-1).arrive + 0.25;
+CLINK = TOAST + 0.55;
+DRINK = [CLINK + 0.35, CLINK + 1.6];
+SQUINT = DRINK[1] + SQUINT_GAP;
+cursor = SQUINT + 0.5;
+T5 = think(['Подожду, пока все', 'наберутся… маны.', 'Ух-ху.'], 0, 1.0);
+HOOT = T5.from + T5.at[T5.text.indexOf('Ух')];
+PULL = [T5.to - 0.6, T5.to + 1.4];
+DURATION = PULL[1] + POST;
+
+// The counter, the keg and its tap (bar-intro.html).
+const [base, bx] = canvas(aw, ah);
+{
+    const P = (x, y, k) => { bx.fillStyle = hex(PALETTE[k]); bx.fillRect(x, y, 1, 1); };
+    for (let y = top + 3; y < ah; y++) for (let x = 0; x < aw; x++) {
+        const plank = x % 7;
+        let k = plank === 0 ? 'timberDeep' : plank === 6 ? 'timberDark' : (x * 3 + y * 7) % 23 === 0 ? 'timberDark' : 'timber';
+        if (y === top + 3) k = 'outline';
+        if (y === top + 4) k = 'timberDark';
+        if (y === top + 9) k = 'ironLight';
+        if (y === top + 10) k = 'iron';
+        P(x, y, k);
+    }
+    for (let x = 0; x < aw; x++) { P(x, top, 'outline'); P(x, top + 1, x % 9 === 4 ? 'timberShine' : 'timberLight'); P(x, top + 2, 'timberLight'); }
+    const keg = { x1: tap.x + 3, x2: tap.x + 15, y2: top, y1: top - 13 };
+    for (let y = keg.y1; y < keg.y2; y++) for (let x = keg.x1; x <= keg.x2; x++) {
+        const edge = x === keg.x1 || x === keg.x2 || y === keg.y1;
+        const band = y === keg.y1 + 2 || y === keg.y2 - 3;
+        const b = (x - keg.x1) / (keg.x2 - keg.x1);
+        P(x, y, edge ? 'outline' : band ? (x % 3 ? 'iron' : 'ironLight') : b < 0.3 ? 'plankLight' : b > 0.8 ? 'plankDark' : 'plank');
+    }
+    for (let x = tap.x; x < keg.x1; x++) { P(x, tap.y - 1, 'outline'); P(x, tap.y, 'ironLight'); P(x, tap.y + 1, 'outline'); }
+    P(tap.x + 1, tap.y - 2, 'ironLight'); P(tap.x + 1, tap.y - 3, 'ironLight'); P(tap.x + 1, tap.y - 4, 'outline');
+}
+const litBase = relightCanvas(base, lit);
+const [counterEdge, cex] = canvas(aw, 3);
+cex.drawImage(litBase, 0, top, aw, 3, 0, 0, aw, 3);
+const barBakes = new Map();
+const barBake = (def) => barBakes.get(def) ?? barBakes.set(def, bakeBar(def, lit)).get(def);
+const mugC = bakeBar(BAR_MUG, lit);
+
+// ---------------------------------------------------------------------------------------------------------------
+// The owl behind the counter. OWL_BAR has no wiping, no lowered eyes and no squint: these frames are built here the way
+// owl.js builds OWL_BAR (the perched drawing four rows down, the mug in the right wing).
+const EYE_ROWS = {
+    sad: { 5: 'OFDDDFMFDDDFO', 6: 'OFEEEFbFEEEFO', 7: 'OFEKEFbFEKEFO' },     // lids half down, looking at the counter
+    squint: { 5: 'OFDDDFMFDDDFO', 6: 'OFKEEFbFKEEFO', 7: 'OFDDDFbFDDDFO' },  // a slit, a sideways glance
+};
+function withEyes(owl, rows) {
+    return { ...owl, rows: owl.rows.map((r, y) => (rows[y - 1] ? r.slice(0, 3) + rows[y - 1] + r.slice(16) : r)) };
+}
+const BAR_W = 30, BAR_H = 22, BAR_TOP = BAR_H - OWL.idle[0].h, MUG_X = 19, MUG_Y = 12;
+const EMPTY_MUG = ['.....', 'g...g', 'g...g', 'g...g', 'g...g', 'ggggg'];
+const HOLD_WING = [
+    [16, 14, 'O'], [17, 14, 'O'], [18, 14, 'O'],
+    [15, 15, 'D'], [16, 15, 'L'], [17, 15, 'L'], [18, 15, 'L'],
+    [15, 16, 'D'], [16, 16, 'M'], [17, 16, 'M'], [18, 16, 'D'],
+    [16, 17, 'O'], [17, 17, 'O'], [18, 17, 'O'],
+];
+// The rag going round the glass: [dx, dy] of its top left over the mug, three steps of a slow circle.
+const RAG = [[-1, 1], [1, 0], [3, 1], [2, 3], [0, 3]];
+function owlWith(owl, { mug = true, rag = null } = {}) {
+    const grid = Array.from({ length: BAR_H }, () => Array(BAR_W).fill('.'));
+    owl.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.') grid[y + BAR_TOP][x] = ch; }));
+    if (mug) {
+        const own = new Set();
+        EMPTY_MUG.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.') { grid[MUG_Y + y][MUG_X + x] = ch; own.add(`${MUG_X + x},${MUG_Y + y}`); } }));
+        for (let y = MUG_Y - 1; y <= MUG_Y + EMPTY_MUG.length; y++) for (let x = MUG_X - 1; x <= MUG_X + 5; x++) {
+            if (own.has(`${x},${y}`) || grid[y][x] !== '.') continue;
+            if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => own.has(`${x + a},${y + b}`))) grid[y][x] = 'O';
+            else if (x > MUG_X - 1 && x < MUG_X + 5 && y >= MUG_Y + 1 && y < MUG_Y + EMPTY_MUG.length) grid[y][x] = 'O';
+        }
+        for (const [x, y, ch] of HOLD_WING) grid[y][x] = ch;
+        if (rag) {
+            const [dx, dy] = rag;
+            ['Owwc', 'wwcc', 'Ocaa'].forEach((r, y) => [...r].forEach((ch, x) => { grid[MUG_Y + dy + y - 1][MUG_X + dx + x] = ch; }));
+        }
+    }
+    return { w: BAR_W, h: BAR_H, rows: grid.map((r) => r.join('')), legend: OWL_BAR.idle[0].legend, anchor: OWL_BAR.anchor };
+}
+const memo = new Map();
+const owlOf = (key, make) => memo.get(key) ?? memo.set(key, make()).get(key);
+const OWLS = {
+    idleMug: (k) => owlOf(`im${k}`, () => owlWith(OWL.idle[k])),
+    blinkMug: () => owlOf('bm', () => owlWith(OWL.blink)),
+    wipe: (k, r) => owlOf(`w${k}${r}`, () => owlWith(OWL.idle[k], { rag: RAG[r] })),
+    sadMug: (k) => owlOf(`s${k}`, () => owlWith(withEyes(OWL.idle[k], EYE_ROWS.sad))),
+    turnMug: (k) => owlOf(`t${k}`, () => owlWith(OWL.turnLeft[k])),
+    hootMug: () => owlOf('h', () => owlWith(OWL.hoot)),
+    wideMug: () => owlOf('wd', () => owlWith(OWL.beak[2])),
+    squint: (k) => owlOf(`q${k}`, () => owlWith(withEyes(OWL.idle[k], EYE_ROWS.squint), { mug: false })),
+    hoot: () => owlOf('ho', () => owlWith(OWL.hoot, { mug: false })),
+};
+const blinkAt = (t, per = 3.3) => (t % per) < 0.13;
+function owlFrame(t) {
+    const k = Math.floor(t / 0.7) % 2;
+    if (t < WIPE_END) {
+        if (blinkAt(t)) return OWLS.blinkMug();
+        return OWLS.wipe(k, Math.floor(t / 0.42) % RAG.length);
+    }
+    if (t < DOOR + 0.15) return blinkAt(t, 4.1) ? OWLS.blinkMug() : OWLS.sadMug(k);
+    if (t < SPOT) return t < DOOR + 0.3 ? OWLS.turnMug(0) : OWLS.turnMug(1);
+    if (t < PERK) return blinkAt(t) ? OWLS.blinkMug() : OWLS.sadMug(k);
+    if (t < PERK + 0.45) return OWLS.hootMug();
+    if (t < POUR[0]) return blinkAt(t) ? OWLS.blinkMug() : t < PERK + 1.6 ? OWLS.wideMug() : OWLS.idleMug(k);
+    if (t < POUR[1]) return pourFrame((t - POUR[0]) / (POUR[1] - POUR[0]));
+    // the first mug set down, then a push of the wing for each next one
+    if (t < POUR[1] + 0.18) return OWL_BAR.set[0];
+    if (t < SLIDE0) return OWL_BAR.set[1];
+    for (const s of SLIDERS.slice(1)) if (t >= s.at - 0.2 && t < s.at + 0.06) return OWL_BAR.talk[2];
+    if (t < SLIDERS.at(-1).at + 0.3) return OWL_BAR.idle[k];
+    if (t >= CLINK - 0.2 && t < CLINK + 0.8) return OWL_BAR.talk[2];
+    if (t >= SQUINT && t < PULL[1] - 0.3) {
+        if (t >= HOOT - 0.05 && t < HOOT + 0.5) return OWLS.hoot();
+        return OWLS.squint(k);
+    }
+    return blinkAt(t) ? OWL_BAR.blink : OWL_BAR.idle[k];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The necromancer (nightfall.html's drawing): a hooded figure on a stool at the counter's left end, turned to the
+// owl, nothing in the hood but two green eyes; a bony hand round his mug. Gone once the bar fills.
+const NECRO_LEGEND = { O: 'outline', K: 'crowDark', k: 'crow', h: 'crowLight', L: 'paleShade', v: 'violetDark', X: 'eyeBlack', G: 'eyeGreen', g: 'eerieMid' };
+const NECRO = (() => {
+    const w = 34, h = 62;
+    const g = Array.from({ length: h }, () => Array(w).fill('.'));
+    const hood = { cx: 15, cy: 13, rx: 10, ry: 11 };
+    const inHood = (x, y) => (((x - hood.cx) / hood.rx) ** 2 + ((y - hood.cy) / hood.ry) ** 2 <= 1)
+        || (y >= 0 && y < 9 && x >= 4 + y * 0.2 && x <= 13 - (8 - y) * 0.15 && (x - 4) > (8 - y) * 0.9);
+    const robe = (x, y) => {
+        if (y < 18) return false;
+        const k = (y - 18) / (h - 18);
+        return x >= lerp(6, 0, Math.min(1, k * 1.6)) && x <= lerp(27, 33, Math.min(1, k * 1.4));
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inHood(x, y) || robe(x, y)) g[y][x] = 'k';
+    for (let y = 0; y < h; y++) {
+        const xs = g[y].flatMap((ch, x) => (ch !== '.' ? [x] : []));
+        if (!xs.length) continue;
+        const l = xs[0], r = xs[xs.length - 1];
+        for (const x of xs) {
+            const f = (x - l) / Math.max(1, r - l);
+            g[y][x] = x === r ? 'L' : f > 0.8 ? 'h' : f < 0.3 ? 'K' : 'k';
+            if (y > 22 && (x === 11 || x === 18 || x === 24) && (y + x) % 5 !== 0 && f <= 0.8) g[y][x] = f < 0.5 ? 'v' : 'K';
+        }
+    }
+    const op = { cx: 21, cy: 15, rx: 4.6, ry: 6.5 };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (((x - op.cx) / op.rx) ** 2 + ((y - op.cy) / op.ry) ** 2 <= 1 && g[y][x] !== '.') g[y][x] = 'X';
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== 'X') continue;
+        if (g[y - 1]?.[x] !== 'X' && g[y - 1]?.[x] !== undefined && g[y - 1][x] !== '.') g[y - 1][x] = 'h';
+    }
+    const out = g.map((r) => r.slice());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (g[y][x] !== '.') continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => (g[y + b]?.[x + a] ?? '.') !== '.')) out[y][x] = 'O';
+    }
+    return { w, h, rows: out.map((r) => r.join('')), legend: { '.': null, ...NECRO_LEGEND }, anchor: { x: 16, y: h - 1 }, eyes: [[21.5, 14], [24, 14]] };
+})();
+const NECRO_AT = { x: ax(0.13), y: ah + 4 };
+const HAND = { w: 9, h: 5, rows: ['OOO..OOO.', 'KkhOPPPPO', 'KkhOpPpPO', 'OOOOPpPpO', '...OOOOO.'], legend: { '.': null, O: 'outline', P: 'pale', p: 'paleShade', K: 'crowDark', k: 'crow', h: 'crowLight' }, anchor: { x: 8, y: 4 } };
+const NECRO_MUG = { x: NECRO_AT.x - NECRO.anchor.x + 34, y: top + 2 };
+const necroHere = (t) => t < HALL;
+
+// RoadRunner's mug, where he used to stand: empty, grey with dust, a cobweb from its handle to the counter; a blue
+// feather of his beside it.
+const DUSTY = { ...BAR_MUG, rows: ['.OOOOO...', 'OaagaaO..', 'OgaaaaOO.', 'OaaaaaOgO', 'OaagaaO.O', 'OaaaaaOgO', 'OgggggOO.', '.OOOOO...'], legend: { '.': null, O: 'outline', a: 'gray', g: 'grayLight' } };
+const FEATHER = { w: 6, h: 3, rows: ['...OO.', '.OdDDO', 'ODDDO.'], legend: { '.': null, O: 'outline', D: 'denim', d: 'denimDark' }, anchor: { x: 0, y: 2 } };
+
+// Out of the bar's warm light, so they keep their grey and blue.
+const dustyC = bake(DUSTY), featherC = bake(FEATHER);
+// Two lanterns hung from the beams: one over the keg, one (failing) over RoadRunner's mug.
+const LANTERN = (core) => ({
+    w: 9, h: 11,
+    rows: ['...OOO...', '..OiIiO..', '.OOOOOOO.', '.OiyyyiO.', `.Oy${core}yO.`, `.OyYwYyO.`, '.OyYYYyO.', '.OiyyyiO.', '.OOOOOOO.', '..OiIiO..', '...OOO...'],
+    legend: { '.': null, O: 'outline', i: 'iron', I: 'ironLight', y: 'pumpkinShine', Y: 'pumpkinLight', w: 'flameCore', W: 'white' },
+    anchor: { x: 4, y: 10 },
+});
+const LANTERNS = [bake(LANTERN('YwY')), bake(LANTERN('wWw')), bake(LANTERN('YYY'))];
+const LAMPS = [
+    { x: owlA.x + 15, y: top - 24, ph: 0, bad: 0 },
+    { x: RR_MUG.x + 2, y: top - 26, ph: 1.7, bad: 1 },
+];
+// How bright a lamp burns at t: a steady flicker, the failing one dipping now and then.
+function lampLevel(l, t) {
+    let k = 0.86 + 0.08 * Math.sin(t * 9 + l.ph) * Math.sin(t * 4.3 + 1 + l.ph);
+    const q = Math.floor(t * 14 + l.ph * 10);
+    if (l.bad && hash(q) < 0.07) k *= 0.45;
+    if (l.bad && hash(q + 0.5) < 0.04) k *= 0.7;
+    return k;
+}
+// How full and lit the bar is: 0 empty and dim, 1 full.
+const fullness = (t) => smooth(HALL, PERK + 1.0, t);
+
+const FLY = FLYERS.fly[1];
+const flyBakes = new Map();
+const flyC = (sp) => flyBakes.get(sp) ?? flyBakes.set(sp, bakeBar(sp, lit)).get(sp);
+function hover(i, t) {
+    const l = LAMPS[0];
+    const a = t * (1.5 + i * 0.5) + i * 2.4;
+    return { x: l.x + Math.sin(a) * (7 + i * 3) + Math.sin(t * 3.1 + i) * 1.5, y: l.y + 3 + Math.sin(t * (2.3 + i * 0.4) + i) * 3 - i * 4, left: Math.cos(a) < 0 };
+}
+
+const BEER = [PALETTE.pumpkinShine, PALETTE.pumpkinLight], FOAM = [PALETTE.white, PALETTE.cream];
+const easeOut = (x) => 1 - (1 - clamp(x)) ** 3;
+function sliderAt(s, t) {
+    if (t < s.at) return null;
+    const k = easeOut((t - s.at) / s.dur);
+    return { x: Math.round(lerp(setMug.x, s.x, k)), y: k < 0.5 ? setMug.y : s.y, moving: k < 1 };
+}
+
+const mid = canvas(aw, ah);
+function drawMid(t) {
+    const [c, x] = mid;
+    x.clearRect(0, 0, aw, ah);
+    x.drawImage(litBase, 0, 0);
+    const P = (px, py, col) => { x.fillStyle = hex(col); x.fillRect(Math.round(px), Math.round(py), 1, 1); };
+    // the lanterns on their chains
+    for (const l of LAMPS) {
+        for (let y = 0; y < l.y - 10; y++) P(l.x, y, y % 3 === 0 ? PALETTE.outline : y % 3 === 1 ? PALETTE.iron : PALETTE.ironLight);
+        const lv = lampLevel(l, t);
+        x.drawImage(LANTERNS[lv < 0.5 ? 2 : Math.floor(t * 7 + l.ph * 3) % 2], l.x - 4, l.y - 10);
+    }
+    const f = owlFrame(t);
+    x.drawImage(barBake(f), owlA.x - f.anchor.x, owlA.y - f.anchor.y);
+    x.drawImage(counterEdge, 0, top);
+    // RoadRunner's dusty mug, the cobweb, the feather
+    x.drawImage(dustyC, RR_MUG.x - DUSTY.anchor.x, RR_MUG.y - DUSTY.anchor.y);
+    x.globalAlpha = 0.7;
+    for (let k = 0; k < 5; k++) P(RR_MUG.x + 5 + Math.floor(k * 0.8), RR_MUG.y - 6 + k * 1.6, PALETTE.grayLight);
+    for (let k = 0; k < 4; k++) P(RR_MUG.x - 4 - k, RR_MUG.y - 5 + k * 1.5, PALETTE.grayLight);
+    x.globalAlpha = 1;
+    x.drawImage(featherC, RR_MUG.x + 8, RR_MUG.y - FEATHER.anchor.y);
+    // the necromancer: his mug, the hand round it, the hooded figure
+    if (necroHere(t)) {
+        x.drawImage(mugC, NECRO_MUG.x - BAR_MUG.anchor.x, NECRO_MUG.y - BAR_MUG.anchor.y);
+        for (let k = -1; k <= 3; k++) P(NECRO_MUG.x + k, NECRO_MUG.y - 8, FOAM[(k + 5) % 2]);
+        x.drawImage(barBake(HAND), NECRO_MUG.x - 4 - HAND.anchor.x, top + 1 - HAND.anchor.y);
+        x.drawImage(barBake(NECRO), NECRO_AT.x - NECRO.anchor.x, NECRO_AT.y - NECRO.anchor.y);
+    }
+    // the mugs sliding down the counter, then standing as in bar-intro: foam crowns, bubbles, the spill
+    const flow = Math.floor(t * 24);
+    for (const s of SLIDERS) {
+        const m = sliderAt(s, t);
+        if (!m) continue;
+        x.drawImage(mugC, m.x - BAR_MUG.anchor.x, m.y - BAR_MUG.anchor.y);
+        const lift = Math.floor(t * 2 + s.i) % 2;
+        for (let k = -2; k <= 4; k++) {
+            P(m.x + k, m.y - 7, FOAM[(k + 9) % 2]);
+            if (k > -2 && k < 4) P(m.x + k, m.y - 8, PALETTE.white);
+            if (k > -1 && k < 3) P(m.x + k, m.y - 9 - (lift && k === 1 ? 1 : 0), PALETTE.cream);
+        }
+        for (let b = 0; b < 2; b++) {
+            const ph = (t * 1.6 + hash(s.i * 7 + b)) % 1;
+            P(m.x - 1 + ((s.i + b * 2) % 3), m.y - 2 - Math.floor(ph * 3), PALETTE.white);
+        }
+        // foam flicked off the glass while it slides
+        if (m.moving) for (let k = 0; k < 3; k++) {
+            const a = ((t * 5 + k * 0.33 + hash(s.i + k)) % 1);
+            P(m.x + 3 + a * 6, m.y - 9 - Math.sin(a * Math.PI) * 3, FOAM[k % 2]);
+        }
+        if (!s.spill || m.moving) continue;
+        const run = (t - s.arrive) * 45;
+        for (let y = m.y - 6; y < m.y; y++) if (y - (m.y - 6) < run) P(s.fx, y, BEER[(y + flow) % 2]);
+        for (let y = top + 1; y < Math.min(ah, top + 1 + run - 6); y++) for (let k = 0; k < 2; k++) {
+            const wob = y > top + 4 ? Math.round(Math.sin((y - flow * 0.5) * 0.7 + m.x) * 0.7) : 0;
+            const v = (y - flow + k + m.x) % 6;
+            P(s.fx + k + wob - (s.fx < m.x ? 1 : 0), y, v === 0 ? PALETTE.cream : BEER[(k + ((y - flow) >> 1)) & 1]);
+        }
+        if (run > 6) for (let k = -3; k <= 3; k++) P(s.fx + k, top + 1, FOAM[(k + 10 + flow) % 2]);
+    }
+    // the pour: the stream and the foam rising in the owl's mug
+    if (t >= POUR[0] && t < POUR[1] + 0.2) {
+        for (let y = tap.y + 1; y < owlMug.y - 5; y++) P(tap.x + 1, y, BEER[(y + flow) % 2]);
+        const rise = smooth(POUR[0], POUR[1], t);
+        if (rise > 0.6) for (let k = -2; k <= 2; k++) P(owlMug.x + k, owlMug.y - 7 - (rise > 0.85 && Math.abs(k) < 1 ? 1 : 0), FOAM[(k + flow + 9) % 2]);
+    }
+    // flies round the owl's lantern
+    const put = (sp, px, py, flip = false) => {
+        const cv = flyC(sp);
+        if (!flip) { x.drawImage(cv, Math.round(px - sp.anchor.x), Math.round(py - sp.anchor.y)); return; }
+        x.save(); x.translate(Math.round(px), 0); x.scale(-1, 1); x.drawImage(cv, -sp.anchor.x, Math.round(py - sp.anchor.y)); x.restore();
+    };
+    for (let i = 0; i < (t < HALL ? 1 : 2); i++) {
+        const h = hover(i, t);
+        put(FLY.fly[Math.floor(t * 25 + i) % 4], h.x, h.y, h.left);
+    }
+    return c;
+}
+
+// The hall behind the counter: the game's bar, softened and dimmed once, wider than the screen (bar-intro.html).
+const back = (() => {
+    const hw = 320, hh = 180;
+    const [hall, hx] = canvas(hw, hh);
+    paintBar(hx, hw, hh, layout, { lighting: lit });
+    for (const l of barLights(layout, hw, hh)) {
+        if (l.halo) { hx.save(); hx.globalCompositeOperation = 'lighter'; hx.globalAlpha = 0.35; hx.drawImage(bake(halo(l.halo.rx, l.halo.ry, 'warm')), l.halo.x - l.halo.rx, l.halo.y - l.halo.ry); hx.restore(); }
+        hx.drawImage(l.frames[Math.floor(900 / BAR_FLICKER_MS + l.phase) % l.frames.length], l.x - l.anchor.x, l.y - l.anchor.y);
+    }
+    for (const p of barProps(layout, hw, hh, { lighting: lit })) if (p.y < hh * 0.42) hx.drawImage(p.canvas, p.x - p.anchor.x, p.y - p.anchor.y);
+    const spot = barOwlSpot(layout, hw, hh);
+    const Zb = M * 0.75, cw = (W * 1.3) / Zb, ch = (H * 1.3) / Zb;
+    const sx = Math.max(0, Math.min(hw - cw, spot.x - cw * 0.55)), sy = Math.max(0, spot.y - ch * 0.95);
+    const [c, x] = canvas(Math.round(W * 1.3), Math.round(H * 1.3));
+    x.filter = 'blur(4px) brightness(0.6) saturate(0.9)';
+    x.drawImage(hall, sx, sy, cw, ch, 0, 0, c.width, c.height);
+    return c;
+})();
+
+// ---------------------------------------------------------------------------------------------------------------
+// The crowd in the foreground (bar-intro.html): rim-lit silhouettes walking in from the sides, then raising beer.
+const LOOKS = {
+    witch: { body: 'witch', cloak: 'cape', face: 'grin', eyes: 'green', hat: 'witch' },
+    cat: { body: 'cat', cloak: 'none', face: 'smile', eyes: 'amber', hat: 'none' },
+    skel: { body: 'skeleton', cloak: 'none', face: 'smile', eyes: 'amber', hat: 'pumpkin' },
+    mummy: { body: 'mummy', cloak: 'none', face: 'scared', eyes: 'blue', hat: 'top-hat' },
+    scare: { body: 'scarecrow', cloak: 'poncho', face: 'stitches', eyes: 'violet', hat: 'horns' },
+    vamp: { body: 'vampire', cloak: 'cape', face: 'fangs', eyes: 'red', hat: 'none' },
+};
+const silCache = new Map();
+function silhouette(look, dir, pose, frame, item, lightLeft) {
+    const key = JSON.stringify([look, dir, pose, frame, item, lightLeft]);
+    if (silCache.has(key)) return silCache.get(key);
+    const f = characterFrame(look, { dir, pose, frame, item });
+    const w = f.canvas.width, h = f.canvas.height;
+    const src = f.canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const beer = f.beer?.getContext ? f.beer.getContext('2d').getImageData(0, 0, w, h).data : null;
+    const [c, cc] = canvas(w, h);
+    const img = cc.createImageData(w, h);
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && src[(y * w + x) * 4 + 3] > 0;
+    const lx = lightLeft ? -1 : 1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (!src[i + 3]) continue;
+        let col;
+        if (beer && beer[i + 3]) col = [beer[i], beer[i + 1], beer[i + 2]];
+        else if (!on(x, y - 1) || !on(x + lx, y)) col = [0xf0, 0x96, 0x44];
+        else if (!on(x + lx * 2, y)) col = [0xa8, 0x4c, 0x26];
+        else if (!on(x, y - 2) || !on(x + lx * 3, y)) col = [0x4a, 0x20, 0x20];
+        else col = [0x17, 0x0b, 0x13];
+        img.data.set([...col, 255], i);
+    }
+    cc.putImageData(img, 0, 0);
+    const out = { canvas: c, anchor: f.anchor, muzzle: f.muzzle };
+    silCache.set(key, out);
+    return out;
+}
+const CROWD = [
+    { look: LOOKS.skel, x: 690, s: 11, cut: 5, dir: 'back', depth: 1.25 },
+    { look: LOOKS.vamp, x: 1250, s: 11, cut: 5, flip: true, dir: 'side', depth: 1.25 },
+    { look: LOOKS.cat, x: 430, s: 13, cut: 7, dir: 'side', depth: 1.4 },
+    { look: LOOKS.mummy, x: 1540, s: 13, cut: 7, flip: true, dir: 'back', depth: 1.4 },
+    { look: LOOKS.witch, x: 160, s: 15, cut: 8, dir: 'side', depth: 1.6 },
+    { look: LOOKS.scare, x: 1800, s: 15, cut: 8, flip: true, dir: 'side', depth: 1.6 },
+];
+// Who comes into the foreground when: the right side first (the camera starts on the left), the witch last.
+const ARRIVE = [0.9, 0.2, 1.5, 0.55, 2.1, 1.2].map((d) => SPOT + 1.2 + d);
+const WALK_IN = 1.5;
+
+// ---------------------------------------------------------------------------------------------------------------
+// The counter camera: the world point at the centre of the screen (screen px of the counter plane at zoom 1) and the
+// zoom, eased between stops.
+const owlW = toWorld({ x: owlA.x, y: owlA.y - 14 });
+const KEYS = {
+    wide: { x: 840, y: 560, z: 1.06 },
+    owl: { x: owlW.x - 279, y: owlW.y + 50, z: 1.4 },
+    rr: { x: toWorld(RR_MUG).x + 40, y: 575, z: 1.75 },
+    necro: { x: 700, y: 585, z: 1.15 },
+    owlMid: { x: owlW.x - 283, y: owlW.y + 92, z: 1.2 },
+    owlClose: { x: owlW.x - 200, y: owlW.y + 35, z: 1.7 },
+    pour: { x: owlW.x - 214, y: owlW.y + 80, z: 1.12 },
+    end: { x: W / 2, y: H / 2 + 10, z: 1 },
+};
+const PATH = [
+    [0, 'wide'], [PRE + 0.4, 'wide'], [T0.from - 0.3, 'owl'], [T1.from + 1.7, 'owl'], [T1.from + 3.0, 'rr'], [T1.from + 5.1, 'rr'],
+    [T1.to - 0.4, 'owl'], [HALL, 'owl'], [SPOT - 0.001, 'necro'], [SPOT + 1.5, 'necro'], [PERK + 0.4, 'owlMid'],
+    [T4.from + 0.3, 'owlMid'], [T4.from + 2.4, 'owlClose'], [T4.to - 0.6, 'owlClose'], [POUR[0] + 1.0, 'pour'], [DRINK[1], 'pour'],
+    [T5.from + 0.6, 'owlClose'], [PULL[0], 'owlClose'], [PULL[1], 'end'],
+];
+function camera(t) {
+    let i = 0;
+    while (i < PATH.length - 1 && t >= PATH[i + 1][0]) i++;
+    const [t0, k0] = PATH[i], [t1, k1] = PATH[Math.min(i + 1, PATH.length - 1)];
+    const k = t1 > t0 ? smooth(t0, t1, t) : 1;
+    const a = KEYS[k0], b = KEYS[k1];
+    let x = lerp(a.x, b.x, k), y = lerp(a.y, b.y, k), z = lerp(a.z, b.z, k);
+    const calm = 1 - smooth(PULL[0], PULL[1], t);
+    x += Math.sin(t * 0.35) * 14 * calm; y += Math.cos(t * 0.27) * 6 * calm;
+    // a small punch-in as the owl perks up, a jolt on the clink
+    z += 0.05 * smooth(PERK - 0.05, PERK + 0.1, t) * (1 - smooth(PERK + 0.4, PERK + 1.6, t));
+    z += 0.03 * smooth(CLINK - 0.08, CLINK + 0.05, t) * (1 - smooth(CLINK + 0.2, CLINK + 1.0, t));
+    const q = Math.floor(t * 30), amp = t > CLINK && t < CLINK + 0.25 ? 3 : 0;
+    return { x: x - W / 2 + (hash(q) - 0.5) * amp, y: y - H / 2 + (hash(q + 3) - 0.5) * amp, zoom: z };
+}
+function withLayer(cam, f, fn) {
+    const z = 1 + (cam.zoom - 1) * f;
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-W / 2 - cam.x * f, -H / 2 - cam.y * f); fn(); o.restore();
+}
+const toScreen = (cam, f, p) => { const z = 1 + (cam.zoom - 1) * f; return { x: (p.x - W / 2 - cam.x * f) * z + W / 2, y: (p.y - H / 2 - cam.y * f) * z + H / 2 }; };
+
+// ---------------------------------------------------------------------------------------------------------------
+// Light: a light map at 1/8 size, multiplied over the frame — the ambient of the room (dim while it is empty) plus the
+// lanterns' pools; stretched back smoothed, so it costs nothing in the software renderer.
+const LK = 8;
+const [LMAP, lmX] = canvas(W / LK, H / LK);
+function lightUp(amb, lights) {
+    lmX.globalCompositeOperation = 'source-over';
+    lmX.fillStyle = `rgb(${Math.round(amb * 255)},${Math.round(amb * 236)},${Math.round(amb * 236)})`;
+    lmX.fillRect(0, 0, LMAP.width, LMAP.height);
+    lmX.globalCompositeOperation = 'lighter';
+    for (const l of lights) {
+        const g = lmX.createRadialGradient(l.x / LK, l.y / LK, 0, l.x / LK, l.y / LK, l.r / LK);
+        g.addColorStop(0, `rgba(255,214,160,${l.a})`); g.addColorStop(0.5, `rgba(255,190,130,${l.a * 0.45})`); g.addColorStop(1, 'rgba(255,170,110,0)');
+        lmX.fillStyle = g; lmX.fillRect(0, 0, LMAP.width, LMAP.height);
+    }
+    o.save(); o.globalCompositeOperation = 'multiply'; o.imageSmoothingEnabled = true;
+    o.drawImage(LMAP, 0, 0, W, H);
+    o.restore();
+}
+// Out of focus without canvas filters (slow in the software renderer): paint into a buffer 1/k the size and stretch
+// it back smoothed.
+const softBufs = new Map();
+function soft(k, paint) {
+    if (!softBufs.has(k)) softBufs.set(k, canvas(Math.ceil(W / k), Math.ceil(H / k)));
+    const [c, x] = softBufs.get(k);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height); x.setTransform(1 / k, 0, 0, 1 / k, 0, 0);
+    const keep = o;
+    o = x; paint(); o = keep;
+    o.save(); o.imageSmoothingEnabled = true; o.drawImage(c, 0, 0, c.width * k, c.height * k); o.restore();
+}
+function vignette(k, tint = '12,4,14') {
+    const g = o.createRadialGradient(W / 2, H * 0.45, H * 0.32, W / 2, H * 0.5, H * 1.1);
+    g.addColorStop(0, `rgba(${tint},0)`); g.addColorStop(1, `rgba(${tint},${k})`);
+    o.fillStyle = g; o.fillRect(0, 0, W, H);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Thought clouds: a scalloped cloud on a coarse grid (pixel edges), three puffs trailing down to the owl's head, the
+// text typed slowly inside.
+const u = 8, OUTL = hex(PALETTE.outline), CREAM = hex(PALETTE.cream);
+const FONT = 'italic 700 52px Consolas, "Cascadia Mono", monospace', LH = 66;
+const [CL, clX] = canvas(W / u, H / u);
+function cloudPath(ctx, r, puffs, grow) {
+    const x0 = r.x / u, y0 = r.y / u, w = r.w / u, h = r.h / u, R = 3.4;
+    ctx.beginPath();
+    ctx.rect(x0 + 1 - grow, y0 + 1 - grow, w - 2 + 2 * grow, h - 2 + 2 * grow);
+    const nx = Math.max(2, Math.round(w / 6)), ny = Math.max(1, Math.round(h / 6));
+    for (let i = 0; i <= nx; i++) {
+        const x = x0 + 1 + ((w - 2) * i) / nx;
+        for (const y of [y0 + 1.6, y0 + h - 1.6]) { ctx.moveTo(x + R + grow, y); ctx.arc(x, y, R + grow + (i % 2) * 0.6, 0, Math.PI * 2); }
+    }
+    for (let j = 0; j <= ny; j++) {
+        const y = y0 + 1 + ((h - 2) * j) / ny;
+        for (const x of [x0 + 1.6, x0 + w - 1.6]) { ctx.moveTo(x + R + grow, y); ctx.arc(x, y, R + grow, 0, Math.PI * 2); }
+    }
+    for (const p of puffs) { ctx.moveTo(p.x / u + p.r + grow, p.y / u); ctx.arc(p.x / u, p.y / u, p.r + grow, 0, Math.PI * 2); }
+    ctx.fill();
+}
+function crisp(ctx) {
+    const img = ctx.getImageData(0, 0, CL.width, CL.height), d = img.data;
+    for (let i = 3; i < d.length; i += 4) d[i] = d[i] >= 110 ? 255 : 0;
+    ctx.putImageData(img, 0, 0);
+}
+function thought(b, t, head) {
+    const age = t - b.from;
+    if (age < 0 || t > b.to + 0.35) return;
+    const out = t > b.to ? 1 - (t - b.to) / 0.35 : 1;
+    const pop = backOut(age / 0.3);
+    o.font = FONT;
+    const bw = Math.max(...b.lines.map((s) => o.measureText(s).width)) + 130, bh = b.lines.length * LH + 96;
+    const hx = clamp(head.x, 300, W - 60), hy = clamp(head.y, 200, H - 60);
+    const bx = Math.round(clamp(hx - 170 - bw, 50, W - bw - 50)), by = Math.round(clamp(hy - 120 - bh, 40, H - bh - 40));
+    // the puffs: from the cloud's lower right corner toward the head, smaller and smaller, popping in one by one
+    const from = { x: Math.min(bx + bw - 60, hx - 60), y: by + bh - 10 };
+    const puffs = [[0.38, 2.6], [0.66, 1.8], [0.88, 1.15]].map(([q, r], k) => ({ x: lerp(from.x, hx - 40, q), y: lerp(from.y, hy - 40, q), r: r * clamp((age - 0.1 * k) / 0.2) }));
+    // the cloud grows out of the puff nearest the head
+    const s = 0.25 + 0.75 * pop;
+    const cx = hx - 40, cy = hy - 40;
+    const rect = { x: cx + (bx - cx) * s, y: cy + (by - cy) * s, w: bw * s, h: bh * s };
+    o.save();
+    o.globalAlpha = clamp(out * 1.4);
+    o.imageSmoothingEnabled = false;
+    for (const [grow, col, dx, dy] of [[1, 'rgba(0,0,0,0.38)', 2, 3], [1, OUTL, 0, 0], [0, CREAM, 0, 0]]) {
+        clX.clearRect(0, 0, CL.width, CL.height);
+        clX.fillStyle = col.startsWith('rgba') ? '#000' : col;
+        cloudPath(clX, rect, puffs, grow);
+        crisp(clX);
+        if (col.startsWith('rgba')) { o.save(); o.globalAlpha *= 0.38; o.drawImage(CL, dx * u, dy * u, W, H); o.restore(); }
+        else o.drawImage(CL, 0, 0, W, H);
+    }
+    // the text, once the cloud has opened
+    if (pop > 0.9) {
+        let left = 0;
+        while (left < b.at.length && b.at[left] <= age - 0.25) left++;
+        o.fillStyle = '#3a2434';
+        const ty = by + (bh - b.lines.length * LH) / 2 + 48;
+        b.lines.forEach((line, i) => {
+            const shown = line.slice(0, Math.max(0, left));
+            o.fillText(shown, bx + 65, ty + i * LH);
+            if (left >= 0 && left < line.length && Math.floor(t * 3) % 2 === 0) o.fillRect(bx + 65 + o.measureText(shown).width + 4, ty + i * LH - 38, 22, 44);
+            left -= line.length + 1;
+        });
+    }
+    o.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The counter shots.
+const motes = Array.from({ length: 90 }, (_, i) => ({ x: hash(i) * W * 1.2 - W * 0.1, y: hash(i + 99) * H, s: hash(i + 7) < 0.25 ? 1 : 0.5, v: 8 + hash(i + 3) * 18, ph: hash(i + 5) * 6, f: 0.6 + hash(i + 11) * 1.2 }));
+const beamMotes = Array.from({ length: 60 }, (_, i) => ({ u: hash(i + 300), v: hash(i + 400), sp: 0.02 + hash(i + 500) * 0.04, ph: hash(i + 600) * 6, big: hash(i + 700) < 0.3 }));
+function counterShot(t) {
+    const cam = camera(t);
+    const full = fullness(t);
+    o.fillStyle = '#100810'; o.fillRect(0, 0, W, H);
+    withLayer(cam, 0.35, () => o.drawImage(back, -W * 0.15, -H * 0.15));
+    withLayer(cam, 1, () => o.drawImage(drawMid(t), -MG * M, -MG * M, aw * M, ah * M));
+    const z = cam.zoom;
+    // lantern beams down onto the counter, dust turning in them
+    const lamps = LAMPS.map((l) => ({ l, p: toScreen(cam, 1, toWorld({ x: l.x + 0.5, y: l.y - 2 })), k: lampLevel(l, t) }));
+    const counterY = toScreen(cam, 1, toWorld({ x: 0, y: top })).y;
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (const { p, k } of lamps) {
+        const hgt = counterY - p.y, w0 = 30 * z, w1 = 300 * z;
+        const g = o.createLinearGradient(0, p.y, 0, counterY);
+        g.addColorStop(0, `rgba(255,200,120,${0.13 * k * (1 - 0.6 * full)})`); g.addColorStop(1, `rgba(255,180,100,${0.03 * k})`);
+        o.fillStyle = g;
+        o.beginPath(); o.moveTo(p.x - w0, p.y); o.lineTo(p.x + w0, p.y); o.lineTo(p.x + w1, counterY); o.lineTo(p.x - w1, counterY); o.closePath(); o.fill();
+        for (const m of beamMotes) {
+            const yy = (m.v + t * m.sp) % 1, xx = (m.u - 0.5) * 2 * lerp(w0, w1, yy) * 0.9 + Math.sin(t * 0.6 + m.ph) * 14 * z;
+            const a = (0.25 + 0.35 * Math.sin(t * 1.7 + m.ph) ** 2) * k;
+            const sz = (m.big ? 7 : 4) * z;
+            o.fillStyle = `rgba(255,236,190,${a})`;
+            o.fillRect(Math.round((p.x + xx) / sz) * sz, Math.round((p.y + yy * hgt) / sz) * sz, sz, sz);
+        }
+    }
+    o.restore();
+    // drifting dust, two depths
+    for (const m of motes) {
+        withLayer(cam, m.f, () => {
+            const x = m.x + Math.sin(t * 0.5 + m.ph) * 30, y = ((m.y - t * m.v) % H + H) % H;
+            const s = M * m.s * (m.f > 1.2 ? 1.4 : 1);
+            o.fillStyle = `rgba(255,232,170,${(0.12 + 0.25 * hash(m.ph)) * (0.6 + 0.4 * Math.sin(t * 2 + m.ph)) * (0.5 + 0.5 * full)})`;
+            o.fillRect(Math.round(x / s) * s, Math.round(y / s) * s, s, s);
+        });
+    }
+    // the crowd
+    const sprays = [];
+    CROWD.forEach((m, i) => {
+        const at = ARRIVE[i];
+        if (t < at) return;
+        withLayer(cam, m.depth, () => {
+            const walk = clamp((t - at) / WALK_IN);
+            const lightLeft = m.x > W * 0.6;
+            const side = m.x < W / 2 ? -1 : 1;
+            let pose = 'idle', frame = frameAt(t * 1000 + i * 170, 2, 600), item = null, dir = m.dir;
+            if (walk < 1) { pose = 'walk'; frame = frameAt(t * 1000 + i * 90, 4, 150); dir = 'side'; }
+            else if (t >= TOAST) { pose = 'toast'; item = 'beer'; frame = Math.floor(t / (t > CLINK - 0.3 && t < CLINK + 1.0 ? 0.22 : 0.45) + i * 0.37) % 2; }
+            if (t >= DRINK[0] + i * 0.08 && t < DRINK[1]) { pose = 'drink'; item = 'beer'; frame = Math.min(2, Math.floor(((t - DRINK[0] - i * 0.08) / (DRINK[1] - DRINK[0] - 0.4)) * 3)); }
+            const flip = walk < 1 ? side > 0 : m.flip;
+            const sil = silhouette(m.look, dir, pose, frame, item, flip ? !lightLeft : lightLeft);
+            const ex = 1 - easeOut(walk);
+            const bob = Math.sin(t * 2.2 + i * 1.3) * m.s * 0.35 + (walk < 1 ? Math.abs(Math.sin(t * 10 + i)) * m.s * 0.8 : 0);
+            const raise = t >= TOAST ? smooth(TOAST, TOAST + 0.3, t) * m.s * 1.2 * (1 - smooth(DRINK[1], DRINK[1] + 0.5, t)) : 0;
+            const feet = H + m.cut * m.s - bob - raise;
+            const x0 = m.x + side * ex * 700;
+            o.save(); o.translate(x0, feet); if (flip) o.scale(-1, 1);
+            o.drawImage(sil.canvas, -sil.anchor.x * m.s, -sil.anchor.y * m.s, sil.canvas.width * m.s, sil.canvas.height * m.s);
+            o.restore();
+            if (sil.muzzle && pose === 'toast') sprays.push({ depth: m.depth, x: x0 + (flip ? -1 : 1) * (sil.muzzle[0] - sil.anchor.x) * m.s, y: feet + (sil.muzzle[1] - sil.anchor.y) * m.s, s: m.s, i, toward: m.x < W * 0.6 ? 1 : -1 });
+        });
+    });
+    // beer leaping out of the raised mugs, a burst on the clink; sparks of glass where they meet
+    const burst = smooth(CLINK - 0.1, CLINK + 0.05, t) * (1 - smooth(CLINK + 0.5, CLINK + 1.4, t));
+    for (const sp of sprays) withLayer(cam, sp.depth, () => {
+        const n = 3 + Math.round(burst * 14);
+        for (let k = 0; k < n; k++) {
+            const period = 1.1 + hash(sp.i * 31 + k) * 0.8;
+            const born = Math.floor((t + hash(k * 13 + sp.i) * period) / period);
+            const age = (t + hash(k * 13 + sp.i) * period) % period;
+            const seed = sp.i * 1000 + k * 17 + born;
+            const vx = sp.toward * (0.5 + hash(seed) * 2.4) * (0.4 + burst);
+            const vy = -(2 + hash(seed + 1) * 3) * (0.5 + burst * 0.8);
+            const px = sp.x + vx * age * 5 * sp.s, py = sp.y + (vy * age * 5 + 7 * age * age * 5) * sp.s;
+            const q = Math.max(5, Math.round(sp.s * (hash(seed + 2) < 0.35 ? 1 : 0.55)));
+            const c = hash(seed + 3);
+            o.fillStyle = hex(c < 0.3 ? PALETTE.white : c < 0.6 ? PALETTE.cream : PALETTE.pumpkinShine);
+            o.fillRect(Math.round(px / q) * q, Math.round(py / q) * q, q, q);
+        }
+        if (t >= CLINK && t < CLINK + 0.5) {
+            const a = (t - CLINK) / 0.5;
+            for (let k = 0; k < 8; k++) {
+                const ang = hash(sp.i * 50 + k) * Math.PI * 2, d = a * (60 + hash(k + sp.i) * 80);
+                o.fillStyle = `rgba(255,246,200,${1 - a})`;
+                o.fillRect(Math.round((sp.x + Math.cos(ang) * d) / 6) * 6, Math.round((sp.y + Math.sin(ang) * d) / 6) * 6, 8, 8);
+            }
+        }
+    });
+    // the light of the room over it all
+    const lights = lamps.map(({ p, k }) => ({ x: p.x, y: p.y + 120 * z, r: 620 * z, a: 0.75 * k }));
+    const owlP = toScreen(cam, 1, owlW);
+    lights.push({ x: owlP.x, y: owlP.y, r: 480 * z, a: 0.25 });
+    lightUp(lerp(0.3, 0.96, full), lights);
+    // the lantern flames keep burning through it, haloed
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (const { p, k } of lamps) {
+        const g = o.createRadialGradient(p.x, p.y, 4, p.x, p.y, 150 * z);
+        g.addColorStop(0, `rgba(255,200,110,${0.45 * k})`); g.addColorStop(1, 'rgba(255,160,80,0)');
+        o.fillStyle = g; o.fillRect(p.x - 160 * z, p.y - 160 * z, 320 * z, 320 * z);
+    }
+    o.restore();
+    // the necromancer's eyes: the one thing in the gloom that does not dim
+    if (necroHere(t) && (t % 5.3) > 0.14) {
+        for (const [ex, ey] of NECRO.eyes) {
+            const p = toScreen(cam, 1, toWorld({ x: NECRO_AT.x - NECRO.anchor.x + ex, y: NECRO_AT.y - NECRO.anchor.y + ey }));
+            const g = o.createRadialGradient(p.x, p.y, 2, p.x, p.y, 55 * z);
+            g.addColorStop(0, 'rgba(124,240,100,0.32)'); g.addColorStop(1, 'rgba(124,240,100,0)');
+            o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(p.x - 60 * z, p.y - 60 * z, 120 * z, 120 * z); o.globalCompositeOperation = 'source-over';
+            o.fillStyle = hex(PALETTE.eyeGreen);
+            o.fillRect(Math.round(p.x - M * z * 0.5), Math.round(p.y - M * z * 0.5), Math.round(M * z * (ex > 22 ? 0.9 : 1.6)), Math.round(M * z));
+        }
+    }
+    vignette(lerp(0.9, 0.8, full));
+    const f = owlFrame(t);
+    return toScreen(cam, 1, toWorld({ x: owlA.x - f.anchor.x + 9, y: owlA.y - f.anchor.y + 5 }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The hall shot: the game's bar as the players see it (384 × 216 art, 5 screen px each at zoom 1), the door on the
+// back wall swinging open, the heroes stepping in and walking over toward the counter.
+const AW = 384, AH = 216, S = W / AW;
+const toArt = (p) => ({ x: (p.x / 100) * AW, y: (p.y / 100) * AH });
+const [HALLBG, hbX] = canvas(AW, AH);
+paintBar(hbX, AW, AH, layout, { lighting: lit });
+const HALL_LIGHTS = barLights(layout, AW, AH);
+const HALL_PROPS = barProps(layout, AW, AH, { lighting: lit });
+const DOOR_ART = barDoor(layout, AW, AH, { lighting: lit });
+const OWL_SPOT = barOwlSpot(layout, AW, AH);
+const COUNTER_Y = HALL_PROPS.find((p) => p.kind === 'counter')?.y ?? OWL_SPOT.y + 4;
+const [STAGE, stX] = canvas(AW, AH);
+const THRESHOLD = toArt(layout.door);
+const INSIDE = toArt({ x: layout.door.x, y: layout.door.y + layout.door_in });
+const ORDER = ['witch', 'skel', 'cat', 'mummy', 'vamp', 'scare'];
+const GOALS = [[64, 70], [52, 80], [72, 76], [44, 68], [80, 86], [58, 90]].map(([x, y]) => toArt({ x, y }));
+const SPEED = 50;
+const WALKERS = ORDER.map((name, i) => {
+    const start = ENTER[i];
+    const leg1 = Math.hypot(INSIDE.x - THRESHOLD.x, INSIDE.y - THRESHOLD.y) / SPEED;
+    const leg2 = Math.hypot(GOALS[i].x - INSIDE.x, GOALS[i].y - INSIDE.y) / SPEED;
+    return { i, look: LOOKS[name], start, in: start + leg1, end: start + leg1 + leg2, goal: GOALS[i] };
+});
+const CLOSE = WALKERS.at(-1).in + 0.6;
+function doorFrame(t) {
+    if (t < OPEN) return 0;
+    if (t < CLOSE) return Math.min(DOOR_OPEN, Math.floor((t - OPEN) / 0.12));
+    return Math.max(0, DOOR_OPEN - Math.floor((t - CLOSE) / 0.12));
+}
+function walkerAt(w, t) {
+    if (t < w.start) return null;
+    let x, y, dir = 'side', pose = 'walk', left = false;
+    if (t < w.in) { const k = (t - w.start) / (w.in - w.start); x = lerp(THRESHOLD.x, INSIDE.x, k); y = lerp(THRESHOLD.y, INSIDE.y, k); dir = 'front'; }
+    else if (t < w.end) { const k = (t - w.in) / (w.end - w.in); x = lerp(INSIDE.x, w.goal.x, k); y = lerp(INSIDE.y, w.goal.y, k); left = w.goal.x < INSIDE.x; }
+    else { x = w.goal.x; y = w.goal.y; pose = 'idle'; dir = 'back'; }
+    const f = characterFrame(w.look, { dir, pose, frame: pose === 'walk' ? frameAt(t * 1000 + w.i * 60, 4, 150) : frameAt(t * 1000, 2, 600) });
+    return { x, y, f, left };
+}
+const relit = new Map();
+const relitOf = (c) => relit.get(c) ?? relit.set(c, relightCanvas(c, lit)).get(c);
+function hallCamera(t) {
+    const k = smooth(HALL, SPOT, t);
+    return { cx: lerp(124, 176, k) + Math.sin(t * 0.4) * 1.2, cy: lerp(116, 128, k), z: lerp(1.62, 1.45, k) };
+}
+const owlHall = (t) => owlFrame(t);
+function hallShot(t) {
+    const x = stX;
+    x.drawImage(HALLBG, 0, 0);
+    const fl = Math.floor((t * 1000) / BAR_FLICKER_MS);
+    for (const l of HALL_LIGHTS) {
+        if (l.halo) { x.save(); x.globalCompositeOperation = 'lighter'; x.globalAlpha = 0.35; x.drawImage(bake(halo(l.halo.rx, l.halo.ry, 'warm')), l.halo.x - l.halo.rx, l.halo.y - l.halo.ry); x.restore(); }
+        x.drawImage(l.frames[Math.floor(fl + l.phase) % l.frames.length], l.x - l.anchor.x, l.y - l.anchor.y);
+    }
+    if (DOOR_ART) x.drawImage(DOOR_ART.frames[doorFrame(t)], DOOR_ART.x, DOOR_ART.y);
+    const items = HALL_PROPS.map((p) => ({ y: p.y, draw: () => x.drawImage(p.canvas, p.x - p.anchor.x, p.y - p.anchor.y) }));
+    const of = owlHall(t);
+    items.push({ y: COUNTER_Y - 0.5, draw: () => x.drawImage(barBake(of), OWL_SPOT.x - of.anchor.x, OWL_SPOT.y - of.anchor.y) });
+    for (const w of WALKERS) {
+        const c = walkerAt(w, t);
+        if (!c) continue;
+        items.push({ y: c.y, draw: () => {
+            x.fillStyle = 'rgba(20,10,20,0.4)'; x.fillRect(Math.round(c.x) - 5, Math.round(c.y), 10, 1);
+            const img = relitOf(c.f.canvas);
+            if (c.left) { x.save(); x.translate(Math.round(c.x), 0); x.scale(-1, 1); x.drawImage(img, -c.f.anchor.x, Math.round(c.y - c.f.anchor.y)); x.restore(); }
+            else x.drawImage(img, Math.round(c.x - c.f.anchor.x), Math.round(c.y - c.f.anchor.y));
+        } });
+    }
+    items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
+    const cam = hallCamera(t);
+    const z = S * cam.z;
+    o.fillStyle = '#100810'; o.fillRect(0, 0, W, H);
+    o.save(); o.translate(W / 2, H / 2); o.scale(z, z); o.translate(-cam.cx, -cam.cy); o.drawImage(STAGE, 0, 0); o.restore();
+    const sp = (p) => ({ x: (p.x - cam.cx) * z + W / 2, y: (p.y - cam.cy) * z + H / 2 });
+    // moonlight in through the open door, dust in it
+    const open = doorFrame(t) / DOOR_OPEN;
+    const d = sp(INSIDE);
+    if (open > 0) {
+        o.save(); o.globalCompositeOperation = 'lighter';
+        const g = o.createRadialGradient(d.x, d.y - 40, 10, d.x, d.y - 40, 420);
+        g.addColorStop(0, `rgba(120,150,255,${0.16 * open})`); g.addColorStop(1, 'rgba(80,100,220,0)');
+        o.fillStyle = g; o.fillRect(0, 0, W, H);
+        o.restore();
+    }
+    // sparks off the torches
+    o.save(); o.globalCompositeOperation = 'lighter';
+    for (const l of HALL_LIGHTS) {
+        if (l.kind === 'candle') continue;
+        for (let i = 0; i < 5; i++) {
+            const life = 0.9 + hash(i + l.x) * 0.7, age = (t + hash(i * 3 + l.x) * life) % life, k = age / life;
+            const p = sp({ x: l.x + (hash(i + l.y) - 0.5) * 4 + Math.sin(t * 3 + i) * 1.5, y: l.y - l.anchor.y - k * 14 });
+            o.fillStyle = `rgba(255,${hash(i + 9) < 0.4 ? 230 : 150},70,${0.9 * (1 - k)})`;
+            o.fillRect(Math.round(p.x / 6) * 6, Math.round(p.y / 6) * 6, 6, 6);
+        }
+    }
+    o.restore();
+    // the room, still dim, warming as it fills
+    const full = fullness(t);
+    const lights = HALL_LIGHTS.filter((l) => l.kind !== 'candle').map((l) => ({ ...sp({ x: l.x, y: l.y }), r: 700, a: 0.55 }));
+    lightUp(lerp(0.42, 0.8, full), lights);
+    // out of focus in front: a post of the hall and the end of a bench, moving faster than the room
+    soft(24, () => {
+        const px = 1700 - (cam.cx - 150) * z * 1.8;
+        o.fillStyle = '#0e060c'; o.fillRect(px, -50, 200, H + 100);
+        o.fillStyle = '#4a2418'; o.fillRect(px, -50, 40, H + 100);
+    });
+    vignette(0.75);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+function draw(t) {
+    if (t >= HALL && t < SPOT) hallShot(t);
+    else {
+        const head = counterShot(t);
+        for (const b of THOUGHTS) thought(b, t, head);
+    }
+    const black = 1 - smooth(0, 1.2, t) + smooth(DURATION - 0.9, DURATION, t);
+    if (black > 0) { o.fillStyle = `rgba(0,0,0,${clamp(black)})`; o.fillRect(0, 0, W, H); }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sound cues (sound.mjs). The empty bar: the hearth's crackle, a fly, the owl's thoughts as a murmur under its breath,
+// word by word as they type. The bar's track comes in with the first guest and grows to bar-intro's opening level.
+const owlPan = 0.25;
+const murmur = (b) => [...b.text.matchAll(/[\p{L}-]+/gu)].filter((m) => m[0] !== 'Ух-ху').map((m) => ({ speak: 'owl', text: m[0], at: b.from + 0.25 + b.at[m.index], pan: owlPan, vol: 0.22, pitch: -2 }));
+const crackle = [];
+for (let at = 0.3, i = 0; at < DURATION - 1; at += 0.6 + hash(i) * 0.9, i++) crackle.push({ sfx: 'bonfire.click', at, pan: -0.5 + (hash(i + 7) - 0.5) * 0.3, vol: 0.16 * (at < HALL ? 1 : 0.6), pitch: -3 + hash(i + 3) * 2 });
+const steps = WALKERS.flatMap((w) => {
+    const out = [];
+    for (let at = w.start + 0.1, k = 0; at < Math.min(w.end, SPOT + 0.5); at += 0.3, k++) out.push({ sfx: 'walk.step', at, pan: clamp((lerp(THRESHOLD.x, w.goal.x, clamp((at - w.start) / (w.end - w.start))) - 180) / 160, -1, 1), vol: 0.35, variant: k });
+    return out;
+});
+window.SOUND = [
+    { music: 'bar', from: HALL - 0.3, to: DURATION, intensity: [[HALL, 0], [SPOT, 0.15], [PERK, 0.3], [T4.from, 0.42], [POUR[0], 0.5], [CLINK, 0.85], [SQUINT + 1, 0.55], [DURATION, 0.45]], fadeIn: 4.0, fadeOut: 0.9 },
+    ...crackle,
+    ...Array.from({ length: Math.ceil((HALL - 0.6) / 1.9) }, (_, i) => ({ sfx: 'fly.buzz', at: 0.6 + i * 1.9, pan: 0.2 + Math.sin(i * 2.1) * 0.25, vol: 0.3 })),
+    ...THOUGHTS.flatMap(murmur),
+    { sfx: 'bar.door', at: DOOR, pan: -0.6 },
+    ...steps,
+    { sfx: 'bar.door', at: CLOSE, pan: -0.5, vol: 0.45, pitch: -2 },
+    { sfx: 'bar.pour', at: POUR[0], pan: owlPan + 0.1 },
+    ...SLIDERS.flatMap((s, k) => [
+        { sfx: 'bar.mug', at: s.at - 0.02, pan: owlPan, vol: 0.8, variant: k },
+        { sfx: 'bar.mug', at: s.arrive - 0.1, pan: clamp((s.x - 80) / 70, -1, 1), vol: 0.45, pitch: 2, variant: k + 1 },
+    ]),
+    { sfx: 'clink.cheer', at: CLINK, vol: 1.1 },
+    { sfx: 'clink.glass', at: CLINK + 0.02, pan: -0.4 },
+    { sfx: 'clink.glass', at: CLINK + 0.18, pan: 0.45, variant: 1 },
+    { sfx: 'clink.glass', at: CLINK + 0.33, pan: 0.05, variant: 2 },
+    { sfx: 'bar.gulp', at: DRINK[0] + 0.3, pan: -0.3, vol: 0.6 },
+    { sfx: 'bar.gulp', at: DRINK[0] + 0.55, pan: 0.35, vol: 0.5, variant: 1 },
+    { sfx: 'owl.hoot', at: HOOT, pan: owlPan, vol: 0.35, pitch: -1 },
+];
+window.DURATION = DURATION;
+window.draw = (t) => { draw(t); return true; };
+draw(Number(new URLSearchParams(location.search).get('t') ?? 3));
+document.title = 'ready';
+</script>
+</body>
+</html>
