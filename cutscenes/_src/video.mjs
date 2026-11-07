@@ -1,4 +1,4 @@
-// node video.mjs <scene> [--fps 60] [--stills 1,2.5,...] [--audio]
+// node video.mjs <scene> [--fps 60] [--stills 1,2.5,...] [--audio] [--suffix -v2]
 //   default   — frames → ../_silent/<scene>.mp4, sound (window.SOUND) → ../_audio/<scene>.wav, both → ../<NN>-<scene>.mp4 (NN: the scene's NUMBER)
 //   --audio   — only the sound, muxed onto the existing silent video
 //   --stills  — single frames → ../_stills/<scene>-<t>.png
@@ -31,8 +31,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '..');
 const args = process.argv.slice(2);
 const scene = args[0];
-const final = `${NUMBER[scene] ?? '99'}-${scene}.mp4`;
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
+// --suffix -v2: a new take beside the one already in the edit instead of over it.
+const final = `${NUMBER[scene] ?? '99'}-${scene}${opt('--suffix', '')}.mp4`;
 const fps = Number(opt('--fps', 60));
 const stills = opt('--stills', null);
 const audioOnly = args.includes('--audio');

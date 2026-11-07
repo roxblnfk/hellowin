@@ -74,7 +74,7 @@ F5.to = BUB_FALL[0] + 2.6;
 const BOLTS = FALL[1] + 0.3;            // the two bolts drop last
 const GLASSES_LAND = BOLTS + 1.35;      // the glasses settle on top of the heap
 const OWL_CUT = GLASSES_LAND + 0.9;
-const O1 = { from: OWL_CUT + 0.9, lines: ['Ivan нанёс последний удар!'] };
+const O1 = { from: OWL_CUT + 0.9, lines: ['Ivan нанёс решающий удар!'] };
 const DAWN = O1.from + 5.3;             // cut back wide: the shock wave of light
 const DAWN_FADE = [DAWN + 0.3, DAWN + 5.5];
 const SUN = [DAWN + 1.0, DAWN + 8];
@@ -1249,7 +1249,7 @@ function shotFreeze(t) {
     o.fillStyle = '#000'; o.fillRect(0, 0, W, 70); o.fillRect(0, H - 70, W, 70);
 }
 
-// The owl up close on its branch, rapier raised: «Ivan нанёс последний удар!»; the heap smoking behind, out of focus.
+// The owl up close on its branch, rapier raised: «Ivan нанёс решающий удар!»; the heap smoking behind, out of focus.
 const OWL_S = 32;
 function shotOwl(t) {
     o.fillStyle = '#05060c'; o.fillRect(0, 0, W, H);

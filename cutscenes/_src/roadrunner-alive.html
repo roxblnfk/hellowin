@@ -44,8 +44,8 @@ const DURATION = CUT3 + 12.6;
 const BUBBLES = [
     { from: 1.6, to: CUT1 - 0.25, lines: ['Походу…', 'ошибочка вышла.'] },
     { from: MEEP, to: CUT3 - 0.2, lines: ['Мип-мип!'], meep: true },
-    { from: CUT3 + 0.6, to: CUT3 + 4.9, lines: ['RoadRunner', 'никогда не умирал.'] },
-    { from: CUT3 + 5.3, to: DURATION - 0.9, lines: ['Кто, по-вашему,', 'весь вечер обрабатывал', 'ваши клики?'] },
+    { from: CUT3 + 0.6, to: CUT3 + 5.6, lines: ['Погодите!', 'Дак RoadRunner', 'никогда не умирал?!'] },
+    { from: CUT3 + 6.0, to: DURATION - 0.9, lines: ['Вот кто весь вечер', 'обрабатывал ваши клики!'] },
 ];
 const textOf = (b) => b.lines.join(' ');
 const PLANS = BUBBLES.map((b) => (b.meep ? null : speechPlan(textOf(b))));
