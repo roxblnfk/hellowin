@@ -61,9 +61,11 @@ const T1 = think(['Может, и правда мёртв…', 'Давно ег�
 const T2 = think(['Печально, конечно…'], 0);
 const WIPE_END = T0.to + 0.2;                 // the owl stops wiping and lowers its eyes
 const DOOR = T2.to + 0.3;                     // the creak
-const HALL = DOOR + 0.6;                      // → the hall: the door, the heroes coming in
-const OPEN = HALL + 0.05;
-const ENTER = Array.from({ length: 6 }, (_, i) => OPEN + 0.3 + i * 0.8);
+// The necromancer gets up and slips away to the right into the dark while the door creaks; his eyes go out last.
+const LEAVE = [DOOR + 0.25, DOOR + 2.0];
+const HALL = DOOR + 2.9;                      // → the hall: the door already open, the heroes coming in
+const OPEN = DOOR + 0.05;
+const ENTER = Array.from({ length: 6 }, (_, i) => HALL + 0.3 + i * 0.8);
 const SPOT = ENTER[5] + 1.7;                  // → the necromancer's place, empty
 const PERK = SPOT + 2.4;                      // the owl perks up
 cursor = PERK + 0.7;
@@ -259,7 +261,11 @@ const NECRO = (() => {
 const NECRO_AT = { x: ax(0.13), y: ah + 4 };
 const HAND = { w: 9, h: 5, rows: ['OOO..OOO.', 'KkhOPPPPO', 'KkhOpPpPO', 'OOOOPpPpO', '...OOOOO.'], legend: { '.': null, O: 'outline', P: 'pale', p: 'paleShade', K: 'crowDark', k: 'crow', h: 'crowLight' }, anchor: { x: 8, y: 4 } };
 const NECRO_MUG = { x: NECRO_AT.x - NECRO.anchor.x + 34, y: top + 2 };
-const necroHere = (t) => t < HALL;
+const necroHere = (t) => t < LEAVE[1] + 0.8;
+// Where he is while he leaves: up off the stool, then gliding right, fading into the gloom (the eyes last).
+const necroOff = (t) => ({ x: Math.round(14 * smooth(LEAVE[0] + 0.35, LEAVE[1], t)), y: -Math.round(3 * smooth(LEAVE[0], LEAVE[0] + 0.45, t)) });
+const necroFade = (t) => 1 - smooth(LEAVE[0] + 0.5, LEAVE[1], t);
+const eyesFade = (t) => 1 - smooth(LEAVE[1] - 0.1, LEAVE[1] + 0.75, t);
 
 // RoadRunner's mug, where he used to stand: empty, grey with dust, a cobweb from its handle to the counter; a blue
 // feather of his beside it.
@@ -331,11 +337,15 @@ function drawMid(t) {
     x.globalAlpha = 1;
     x.drawImage(featherC, RR_MUG.x + 8, RR_MUG.y - FEATHER.anchor.y);
     // the necromancer: his mug, the hand round it, the hooded figure
-    if (necroHere(t)) {
-        x.drawImage(mugC, NECRO_MUG.x - BAR_MUG.anchor.x, NECRO_MUG.y - BAR_MUG.anchor.y);
-        for (let k = -1; k <= 3; k++) P(NECRO_MUG.x + k, NECRO_MUG.y - 8, FOAM[(k + 5) % 2]);
-        x.drawImage(barBake(HAND), NECRO_MUG.x - 4 - HAND.anchor.x, top + 1 - HAND.anchor.y);
-        x.drawImage(barBake(NECRO), NECRO_AT.x - NECRO.anchor.x, NECRO_AT.y - NECRO.anchor.y);
+    if (necroHere(t) && necroFade(t) > 0) {
+        // he takes his mug with him
+        const d = necroOff(t);
+        x.globalAlpha = necroFade(t);
+        x.drawImage(mugC, NECRO_MUG.x + d.x - BAR_MUG.anchor.x, NECRO_MUG.y - BAR_MUG.anchor.y + Math.min(0, d.y + 1));
+        for (let k = -1; k <= 3; k++) P(NECRO_MUG.x + d.x + k, NECRO_MUG.y - 8 + Math.min(0, d.y + 1), FOAM[(k + 5) % 2]);
+        x.drawImage(barBake(HAND), NECRO_MUG.x + d.x - 4 - HAND.anchor.x, top + 1 - HAND.anchor.y + Math.min(0, d.y + 1));
+        x.drawImage(barBake(NECRO), NECRO_AT.x + d.x - NECRO.anchor.x, NECRO_AT.y + d.y - NECRO.anchor.y);
+        x.globalAlpha = 1;
     }
     // the mugs sliding down the counter, then standing as in bar-intro: foam crowns, bubbles, the spill
     const flow = Math.floor(t * 24);
@@ -465,6 +475,7 @@ const KEYS = {
     owl: { x: owlW.x - 279, y: owlW.y + 50, z: 1.4 },
     rr: { x: toWorld(RR_MUG).x + 40, y: 575, z: 1.75 },
     necro: { x: 700, y: 585, z: 1.15 },
+    leave: { x: 700, y: 570, z: 1.12 },
     owlMid: { x: owlW.x - 283, y: owlW.y + 92, z: 1.2 },
     owlClose: { x: owlW.x - 200, y: owlW.y + 35, z: 1.7 },
     pour: { x: owlW.x - 214, y: owlW.y + 80, z: 1.12 },
@@ -472,7 +483,7 @@ const KEYS = {
 };
 const PATH = [
     [0, 'wide'], [PRE + 0.4, 'wide'], [T0.from - 0.3, 'owl'], [T1.from + 1.7, 'owl'], [T1.from + 3.0, 'rr'], [T1.from + 5.1, 'rr'],
-    [T1.to - 0.4, 'owl'], [HALL, 'owl'], [SPOT - 0.001, 'necro'], [SPOT + 1.5, 'necro'], [PERK + 0.4, 'owlMid'],
+    [T1.to - 0.4, 'owl'], [DOOR - 0.5, 'owl'], [DOOR + 0.6, 'leave'], [HALL, 'leave'], [SPOT - 0.001, 'necro'], [SPOT + 1.5, 'necro'], [PERK + 0.4, 'owlMid'],
     [T4.from + 0.3, 'owlMid'], [T4.from + 2.4, 'owlClose'], [T4.to - 0.6, 'owlClose'], [POUR[0] + 1.0, 'pour'], [DRINK[1], 'pour'],
     [T5.from + 0.6, 'owlClose'], [PULL[0], 'owlClose'], [PULL[1], 'end'],
 ];
@@ -708,15 +719,19 @@ function counterShot(t) {
     }
     o.restore();
     // the necromancer's eyes: the one thing in the gloom that does not dim
-    if (necroHere(t) && (t % 5.3) > 0.14) {
+    const ea = eyesFade(t);
+    if (necroHere(t) && ea > 0 && ((t % 5.3) > 0.14 || t > LEAVE[0])) {
+        const d = necroOff(t);
+        o.save(); o.globalAlpha = ea;
         for (const [ex, ey] of NECRO.eyes) {
-            const p = toScreen(cam, 1, toWorld({ x: NECRO_AT.x - NECRO.anchor.x + ex, y: NECRO_AT.y - NECRO.anchor.y + ey }));
+            const p = toScreen(cam, 1, toWorld({ x: NECRO_AT.x + d.x - NECRO.anchor.x + ex, y: NECRO_AT.y + d.y - NECRO.anchor.y + ey }));
             const g = o.createRadialGradient(p.x, p.y, 2, p.x, p.y, 55 * z);
-            g.addColorStop(0, 'rgba(124,240,100,0.32)'); g.addColorStop(1, 'rgba(124,240,100,0)');
+            g.addColorStop(0, `rgba(124,240,100,${t > LEAVE[1] - 0.3 ? 0.45 : 0.32})`); g.addColorStop(1, 'rgba(124,240,100,0)');
             o.globalCompositeOperation = 'lighter'; o.fillStyle = g; o.fillRect(p.x - 60 * z, p.y - 60 * z, 120 * z, 120 * z); o.globalCompositeOperation = 'source-over';
             o.fillStyle = hex(PALETTE.eyeGreen);
             o.fillRect(Math.round(p.x - M * z * 0.5), Math.round(p.y - M * z * 0.5), Math.round(M * z * (ex > 22 ? 0.9 : 1.6)), Math.round(M * z));
         }
+        o.restore();
     }
     vignette(lerp(0.9, 0.8, full));
     const f = owlFrame(t);
@@ -858,7 +873,8 @@ const steps = WALKERS.flatMap((w) => {
 window.SOUND = [
     { music: 'bar', from: HALL - 0.3, to: DURATION, intensity: [[HALL, 0], [SPOT, 0.15], [PERK, 0.3], [T4.from, 0.42], [POUR[0], 0.5], [CLINK, 0.85], [SQUINT + 1, 0.55], [DURATION, 0.45]], fadeIn: 4.0, fadeOut: 0.9 },
     ...crackle,
-    ...Array.from({ length: Math.ceil((HALL - 0.6) / 1.9) }, (_, i) => ({ sfx: 'fly.buzz', at: 0.6 + i * 1.9, pan: 0.2 + Math.sin(i * 2.1) * 0.25, vol: 0.3 })),
+    // one fly, now and then, drifting slowly from side to side
+    ...[0.8, 6.0, 11.3, 16.2, 21.6].map((at, i) => ({ sfx: 'fly.buzz', at, pan: Math.sin(at * 0.33 + 0.4) * 0.6, vol: 0.16, pitch: (hash(i + 21) - 0.5) * 1.5, variant: i })),
     ...THOUGHTS.flatMap(murmur),
     { sfx: 'bar.door', at: DOOR, pan: -0.6 },
     ...steps,
