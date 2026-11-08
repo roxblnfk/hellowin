@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1100 874" width="1100" height="874" role="img">
+<title>Click: the browser calls the RPC click through Centrifugo, RoadRunner hands it to RPCService and ClickHandler. ClickHandler writes a metric, under the lock pumpkin:{id} increments the pumpkin's clicks in KV and reads the round and the scene, releases the lock and broadcasts a click event to every client of the channel, including the one who clicked. Then LockstepPolicy decides whether the pumpkin is due for its next stage; if so, a TransitionPumpkin job goes to the jobs queue.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="1099" height="873" rx="10"/>
+<defs><marker id="c-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="c-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="544" y="272" width="12" height="210" rx="2"/>
+<path class="d-life" d="M60 60 V874"/>
+<path class="d-life" d="M180 60 V874"/>
+<path class="d-life" d="M298 60 V874"/>
+<path class="d-life" d="M416 60 V874"/>
+<path class="d-life" d="M550 60 V874"/>
+<path class="d-life" d="M680 60 V874"/>
+<path class="d-life" d="M796 60 V874"/>
+<path class="d-life" d="M914 60 V874"/>
+<path class="d-life" d="M1034 60 V874"/>
+<path class="d-e " d="M180 84 L204 84 L204 96 L182 96" marker-end="url(#c-ln)"/>
+<text class="d-l" x="210" y="93" text-anchor="start">click: draw nothing locally</text>
+<path class="d-e " d="M182 122 L296 122" marker-end="url(#c-ln)"/>
+<text class="d-l" x="239" y="116" text-anchor="middle">rpc('click', {element})</text>
+<path class="d-e d-e--acc" d="M300 152 L414 152" marker-end="url(#c-acc)"/>
+<text class="d-l" x="357" y="146" text-anchor="middle">RPC proxy (gRPC)</text>
+<path class="d-e " d="M418 182 L548 182" marker-end="url(#c-ln)"/>
+<text class="d-l" x="483" y="176" text-anchor="middle">pipes</text>
+<path class="d-e " d="M550 204 L574 204 L574 216 L552 216" marker-end="url(#c-ln)"/>
+<text class="d-l" x="580" y="213" text-anchor="start">ElementRegistry::find()</text>
+<path class="d-e " d="M552 242 L678 242" marker-end="url(#c-ln)"/>
+<text class="d-l" x="615" y="236" text-anchor="middle">clicks_total +1</text>
+<path class="d-e " d="M552 272 L794 272" marker-end="url(#c-ln)"/>
+<text class="d-l" x="673" y="266" text-anchor="middle">lock.Lock pumpkin:pumpkin-3</text>
+<path class="d-e d-e--ret" d="M794 302 L552 302" marker-end="url(#c-ln)"/>
+<text class="d-l" x="673" y="296" text-anchor="middle">lockId</text>
+<path class="d-e " d="M552 332 L912 332" marker-end="url(#c-ln)"/>
+<text class="d-l" x="732" y="326" text-anchor="middle">get hellowin:pumpkin:pumpkin-3</text>
+<path class="d-e d-e--ret" d="M912 362 L552 362" marker-end="url(#c-ln)"/>
+<text class="d-l" x="732" y="356" text-anchor="middle">{stage, clicks, accepted}</text>
+<path class="d-e " d="M552 392 L912 392" marker-end="url(#c-ln)"/>
+<text class="d-l" x="732" y="386" text-anchor="middle">set {stage, clicks + 1, accepted + 1}</text>
+<path class="d-e " d="M552 422 L912 422" marker-end="url(#c-ln)"/>
+<text class="d-l" x="732" y="416" text-anchor="middle">get hellowin:round, hellowin:scene</text>
+<path class="d-e d-e--ret" d="M912 452 L552 452" marker-end="url(#c-ln)"/>
+<text class="d-l" x="732" y="446" text-anchor="middle">round, scene</text>
+<path class="d-e " d="M552 482 L794 482" marker-end="url(#c-ln)"/>
+<text class="d-l" x="673" y="476" text-anchor="middle">lock.Release</text>
+<path class="d-e d-e--acc" d="M548 512 L418 512" marker-end="url(#c-acc)"/>
+<text class="d-l" x="483" y="506" text-anchor="middle">centrifuge.Broadcast</text>
+<path class="d-e d-e--acc" d="M414 542 L300 542" marker-end="url(#c-acc)"/>
+<text class="d-l" x="357" y="536" text-anchor="middle">gRPC API :10000</text>
+<path class="d-e d-e--acc" d="M296 572 L182 572" marker-end="url(#c-acc)"/>
+<text class="d-l" x="239" y="566" text-anchor="middle">publication type:'click'</text>
+<path class="d-e d-e--acc" d="M296 602 L62 602" marker-end="url(#c-acc)"/>
+<text class="d-l" x="179" y="596" text-anchor="middle">the same publication</text>
+<path class="d-e " d="M60 624 L84 624 L84 636 L62 636" marker-end="url(#c-ln)"/>
+<text class="d-l" x="90" y="633" text-anchor="start">click effect</text>
+<path class="d-e " d="M180 624 L204 624 L204 636 L182 636" marker-end="url(#c-ln)"/>
+<text class="d-l" x="210" y="633" text-anchor="start">click effect + progress</text>
+<path class="d-e " d="M550 654 L574 654 L574 666 L552 666" marker-end="url(#c-ln)"/>
+<text class="d-l" x="580" y="663" text-anchor="start">LockstepPolicy::pumpkinTransition(): clicks ≥ threshold and stage &lt; stageMax?</text>
+<path class="d-e " d="M552 692 L1032 692" marker-end="url(#c-ln)"/>
+<text class="d-l" x="792" y="686" text-anchor="middle">yes: jobs.Push TransitionPumpkin {key, round, pumpkin, toStage, player}</text>
+<path class="d-e " d="M552 722 L678 722" marker-end="url(#c-ln)"/>
+<text class="d-l" x="615" y="716" text-anchor="middle">jobs_pushed +1</text>
+<path class="d-e d-e--ret" d="M548 752 L418 752" marker-end="url(#c-ln)"/>
+<text class="d-l" x="483" y="746" text-anchor="middle">RPCResponse {ok: true}</text>
+<path class="d-e d-e--ret" d="M414 782 L300 782" marker-end="url(#c-ln)"/>
+<text class="d-l" x="357" y="776" text-anchor="middle">RPC response</text>
+<path class="d-e d-e--ret" d="M296 812 L182 812" marker-end="url(#c-ln)"/>
+<text class="d-l" x="239" y="806" text-anchor="middle">{ok: true}</text>
+<rect class="d-note " x="248" y="828" width="836" height="24" rx="4"/>
+<text class="d-n" x="666" y="845" text-anchor="middle">every further click above the threshold is one more TransitionPumpkin with the same key until the transition is done</text>
+<rect class="d-box g-edge" x="4" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="60" y="34" text-anchor="middle">Other tabs</text>
+<text class="d-s" x="60" y="49" text-anchor="middle">channel hellowin</text>
+<rect class="d-box g-edge" x="124" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="180" y="34" text-anchor="middle">Browser (click)</text>
+<text class="d-m" x="180" y="49" text-anchor="middle">centrifuge-js</text>
+<rect class="d-box g-cf" x="244" y="16" width="108" height="44" rx="6"/>
+<text class="d-t" x="298" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-m" x="298" y="49" text-anchor="middle">:8000</text>
+<rect class="d-box g-rr" x="360" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="416" y="34" text-anchor="middle">RR centrifuge</text>
+<text class="d-m" x="416" y="49" text-anchor="middle">:10001</text>
+<rect class="d-box g-php" x="482" y="16" width="136" height="44" rx="6"/>
+<text class="d-t" x="550" y="34" text-anchor="middle">RPCService</text>
+<text class="d-m" x="550" y="49" text-anchor="middle">→ ClickHandler</text>
+<rect class="d-box g-rr" x="628" y="16" width="104" height="44" rx="6"/>
+<text class="d-t" x="680" y="34" text-anchor="middle">RR metrics</text>
+<text class="d-m" x="680" y="49" text-anchor="middle">:2112</text>
+<rect class="d-box g-rr" x="740" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="796" y="34" text-anchor="middle">RR lock</text>
+<text class="d-m" x="796" y="49" text-anchor="middle">pumpkin:{id}</text>
+<rect class="d-box g-rr" x="860" y="16" width="108" height="44" rx="6"/>
+<text class="d-t" x="914" y="34" text-anchor="middle">RR kv</text>
+<text class="d-m" x="914" y="49" text-anchor="middle">Valkey</text>
+<rect class="d-box g-rr" x="976" y="16" width="116" height="44" rx="6"/>
+<text class="d-t" x="1034" y="34" text-anchor="middle">RR jobs</text>
+<text class="d-m" x="1034" y="49" text-anchor="middle">transitions</text>
+<text class="d-s" x="538" y="371" text-anchor="end">under the pumpkin lock:</text>
+<text class="d-m" x="538" y="385" text-anchor="end">read-modify-write</text>
+</svg>

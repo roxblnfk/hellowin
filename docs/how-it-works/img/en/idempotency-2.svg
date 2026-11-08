@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1100 1000" width="1100" height="1000" role="img">
+<title>Scene transition. Phase 1: two jobs workers finish off the last pumpkins at once, and both see the scene is ready; markReady under the scene lock marks readiness for the first and refuses the second; the first publishes the ready event and the owl's lines. Phase 2: the moderator calls RPC scene.next twice; Centrifugo adds the connection meta, StoryService checks the role and readiness and queues TransitionScene with key 1:scene:2 both times. The first worker writes the marker to Valkey and switches the scene under the scene lock, the second is refused and acknowledges the job. The moderator and all clients get one scene event.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-phase { fill: #e06c00; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-box.g-kv { stroke: #d6334a; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+.d-note--ok { stroke: #2f9a2c; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-phase { fill: #ff8a1f; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-box.g-kv { stroke: #ff7a8a; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+  .d-note--ok { stroke: #6bd968; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="1099" height="999" rx="10"/>
+<defs><marker id="i-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="i-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="590" y="178" width="10" height="30" rx="2"/>
+<rect class="d-crit" x="710" y="238" width="10" height="30" rx="2"/>
+<rect class="d-crit" x="590" y="820" width="10" height="60" rx="2"/>
+<path class="d-life" d="M60 60 V1000"/>
+<path class="d-life" d="M215 60 V1000"/>
+<path class="d-life" d="M345 60 V1000"/>
+<path class="d-life" d="M470 60 V1000"/>
+<path class="d-life" d="M595 60 V1000"/>
+<path class="d-life" d="M715 60 V1000"/>
+<path class="d-life" d="M840 60 V1000"/>
+<path class="d-life" d="M975 60 V1000"/>
+<text class="d-h d-phase" x="14" y="92" text-anchor="start">1. Readiness: the last two pumpkins finished at once</text>
+<path class="d-e " d="M595 106 L619 106 L619 118 L597 118" marker-end="url(#i-ln)"/>
+<text class="d-l" x="625" y="115" text-anchor="start">last pumpkin → stageMax, sceneReady(): yes</text>
+<path class="d-e " d="M715 132 L739 132 L739 144 L717 144" marker-end="url(#i-ln)"/>
+<text class="d-l" x="745" y="141" text-anchor="start">this one too: sceneReady(): yes</text>
+<path class="d-e " d="M597 178 L973 178" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="172" text-anchor="middle">markReady(round, 1): lock scene</text>
+<path class="d-e d-e--ret" d="M973 208 L597 208" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="202" text-anchor="middle">not marked → story.ready = 1 → true</text>
+<path class="d-e " d="M717 238 L973 238" marker-end="url(#i-ln)"/>
+<text class="d-l" x="845" y="232" text-anchor="middle">markReady(round, 1)</text>
+<path class="d-e d-e--ret" d="M973 268 L717 268" marker-end="url(#i-ln)"/>
+<text class="d-l" x="845" y="262" text-anchor="middle">already marked → false</text>
+<path class="d-e d-e--acc" d="M593 298 L217 298" marker-end="url(#i-acc)"/>
+<text class="d-l" x="405" y="292" text-anchor="middle">publish ready · owl last-pumpkin · owl scene-ready</text>
+<path class="d-e d-e--acc" d="M213 328 L62 328" marker-end="url(#i-acc)"/>
+<text class="d-l" x="137" y="322" text-anchor="middle">ready</text>
+<path class="d-e " d="M60 350 L84 350 L84 362 L62 362" marker-end="url(#i-ln)"/>
+<text class="d-l" x="90" y="359" text-anchor="start">the “Next scene” button waits for a press</text>
+<text class="d-h d-phase" x="14" y="392" text-anchor="start">2. Transition: the moderator pressed twice</text>
+<path class="d-e " d="M62 420 L213 420" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="414" text-anchor="middle">scene.next {scene: 1}</text>
+<path class="d-e " d="M62 450 L213 450" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="444" text-anchor="middle">same again</text>
+<path class="d-e d-e--acc" d="M217 480 L343 480" marker-end="url(#i-acc)"/>
+<text class="d-l" x="280" y="474" text-anchor="middle">RPC proxy ×2</text>
+<text class="d-s" x="280" y="496" text-anchor="middle">+ connection meta</text>
+<path class="d-e " d="M345 512 L369 512 L369 524 L347 524" marker-end="url(#i-ln)"/>
+<text class="d-l" x="375" y="521" text-anchor="start">role from meta · scene 1 ready → TransitionScene, both times</text>
+<path class="d-e " d="M347 550 L468 550" marker-end="url(#i-ln)"/>
+<text class="d-l" x="407" y="544" text-anchor="middle">key 1:scene:2 ×2</text>
+<path class="d-e d-e--ret" d="M343 580 L217 580" marker-end="url(#i-ln)"/>
+<text class="d-l" x="280" y="574" text-anchor="middle">{ok, scene: 2}</text>
+<path class="d-e d-e--ret" d="M213 610 L62 610" marker-end="url(#i-ln)"/>
+<text class="d-l" x="137" y="604" text-anchor="middle">{ok, scene: 2} ×2</text>
+<path class="d-e " d="M472 640 L593 640" marker-end="url(#i-ln)"/>
+<text class="d-l" x="532" y="634" text-anchor="middle">job 1</text>
+<path class="d-e " d="M472 670 L713 670" marker-end="url(#i-ln)"/>
+<text class="d-l" x="478" y="664" text-anchor="start">job 2 (in parallel)</text>
+<path class="d-e " d="M597 700 L838 700" marker-end="url(#i-ln)"/>
+<text class="d-l" x="655" y="694" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M838 730 L597 730" marker-end="url(#i-ln)"/>
+<text class="d-l" x="655" y="724" text-anchor="middle">OK</text>
+<path class="d-e " d="M717 760 L838 760" marker-end="url(#i-ln)"/>
+<text class="d-l" x="777" y="754" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M838 790 L717 790" marker-end="url(#i-ln)"/>
+<text class="d-l" x="777" y="784" text-anchor="middle">nil → duplicate, ACK</text>
+<path class="d-e " d="M597 820 L973 820" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="814" text-anchor="middle">lock scene · round current and scene == 1?</text>
+<path class="d-e " d="M597 850 L973 850" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="844" text-anchor="middle">scene = 2, ready cleared</text>
+<path class="d-e " d="M597 880 L973 880" marker-end="url(#i-ln)"/>
+<text class="d-l" x="785" y="874" text-anchor="middle">lock.Release</text>
+<path class="d-e d-e--acc" d="M593 910 L217 910" marker-end="url(#i-acc)"/>
+<text class="d-l" x="405" y="904" text-anchor="middle">publish scene {stageMax, item} · owl scene-2</text>
+<path class="d-e d-e--acc" d="M213 940 L62 940" marker-end="url(#i-acc)"/>
+<text class="d-l" x="137" y="934" text-anchor="middle">scene: 2</text>
+<rect class="d-note d-note--ok" x="30" y="958" width="1040" height="24" rx="4"/>
+<text class="d-n" x="550" y="975" text-anchor="middle">two pumpkins and two presses — one ready mark and one transition: lock scene and key {round}:scene:{toScene}</text>
+<rect class="d-box g-edge" x="4" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="60" y="34" text-anchor="middle">Moderator</text>
+<text class="d-s" x="60" y="49" text-anchor="middle">control panel</text>
+<rect class="d-box g-cf" x="159" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="215" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="215" y="49" text-anchor="middle">channel hellowin</text>
+<rect class="d-box g-php" x="280" y="16" width="130" height="44" rx="6"/>
+<text class="d-t" x="345" y="34" text-anchor="middle">RPCService</text>
+<text class="d-m" x="345" y="49" text-anchor="middle">→ StoryService</text>
+<rect class="d-box g-rr" x="415" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="470" y="34" text-anchor="middle">RR jobs</text>
+<text class="d-m" x="470" y="49" text-anchor="middle">transitions</text>
+<rect class="d-box g-php" x="540" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="595" y="34" text-anchor="middle">jobs worker A</text>
+<text class="d-m" x="595" y="49" text-anchor="middle">#[Idempotent]</text>
+<rect class="d-box g-php" x="660" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="715" y="34" text-anchor="middle">jobs worker B</text>
+<text class="d-m" x="715" y="49" text-anchor="middle">#[Idempotent]</text>
+<rect class="d-box g-kv" x="785" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="840" y="34" text-anchor="middle">Valkey</text>
+<text class="d-m" x="840" y="49" text-anchor="middle">hellowin:amo:*</text>
+<rect class="d-box g-rr" x="900" y="16" width="150" height="44" rx="6"/>
+<text class="d-t" x="975" y="34" text-anchor="middle">RR lock + kv</text>
+<text class="d-m" x="975" y="49" text-anchor="middle">scene, hellowin:story</text>
+</svg>

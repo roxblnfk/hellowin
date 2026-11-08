@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 310" width="1000" height="310" role="img">
+<title>Шкала времени одного игрока: вкладка 1 открыта, перезагружается и закрывается; вкладка 2 открыта позже и закрывается последней. Presence канала есть, пока открыта хоть одна вкладка, с коротким провалом на перезагрузке. Тикер раз в секунду сверяет presence: фигурка выходит на поле на первом тике, переживает перезагрузку и уходит через HELLOWIN_WALK_LEAVE_AFTER после закрытия последней вкладки.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-axis { fill: none; stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; }
+.d-cap { fill: none; stroke: #e06c00; stroke-width: 2.5; }
+.d-pk { fill: #e06c00; fill-opacity: 0.75; }
+.d-pk--done { fill-opacity: 1; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-axis { stroke: rgba(246, 231, 208, 0.66); }
+  .d-cap { stroke: #ff8a1f; }
+  .d-pk { fill: #ff8a1f; }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="309" rx="10"/>
+<defs><marker id="k-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="d-s" x="20" y="62" text-anchor="start">вкладка 1</text>
+<text class="d-s" x="20" y="98" text-anchor="start">вкладка 2</text>
+<text class="d-s" x="20" y="134" text-anchor="start">presence канала</text>
+<text class="d-s" x="20" y="170" text-anchor="start">фигурка на поле</text>
+<text class="d-s" x="20" y="204" text-anchor="start">тикер, раз в секунду</text>
+<rect class="d-box g-edge" x="190" y="50" width="140" height="16" rx="3"/>
+<rect class="d-box g-edge" x="382" y="50" width="148" height="16" rx="3"/>
+<rect class="d-box g-edge" x="450" y="86" width="184" height="16" rx="3"/>
+<rect class="d-box g-cf" x="190" y="122" width="140" height="16" rx="3"/>
+<rect class="d-box g-cf" x="382" y="122" width="252" height="16" rx="3"/>
+<text class="d-s" x="356" y="153" text-anchor="middle">перезагрузка</text>
+<path class="d-cap" d="M210 166 H810"/>
+<circle class="d-pk d-pk--done" cx="210" cy="166" r="5"/>
+<circle class="d-pk d-pk--done" cx="810" cy="166" r="5"/>
+<text class="d-m" x="210" y="186" text-anchor="middle">walker</text>
+<text class="d-m" x="810" y="186" text-anchor="middle">leave</text>
+<path class="d-axis" d="M170 200 H970"/>
+<path class="d-axis" d="M170 195 V205 M210 195 V205 M250 195 V205 M290 195 V205 M330 195 V205 M370 195 V205 M410 195 V205 M450 195 V205 M490 195 V205 M530 195 V205 M570 195 V205 M610 195 V205 M650 195 V205 M690 195 V205 M730 195 V205 M770 195 V205 M810 195 V205 M850 195 V205 M890 195 V205 M930 195 V205 M970 195 V205"/>
+<path class="d-e" d="M636 230 L808 230" marker-start="url(#k-ln)" marker-end="url(#k-ln)"/>
+<text class="d-m" x="722" y="248" text-anchor="middle">HELLOWIN_WALK_LEAVE_AFTER</text>
+<text class="d-s" x="722" y="262" text-anchor="middle">без единого подключения</text>
+<text class="d-s" x="356" y="230" text-anchor="middle">провал короче задержки —</text>
+<text class="d-s" x="356" y="244" text-anchor="middle">фигурка стоит на месте</text>
+<rect class="d-note " x="30" y="276" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="293" text-anchor="middle">две вкладки — две записи presence одного user, а фигурка одна; уходит, когда закрыта последняя</text>
+</svg>

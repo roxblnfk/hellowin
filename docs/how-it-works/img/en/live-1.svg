@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 650" width="1000" height="650" role="img">
+<title>The moderator role. The moderator's browser connects with the moderator secret in data; ConnectService checks it against HELLOWIN_MODERATOR_SECRET and replies with meta moderator true; Centrifugo keeps the meta. On a pause RPC from the moderator, Centrifugo adds the meta and RPCService executes the call. The same RPC from a regular player arrives with empty meta and gets forbidden.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-phase { fill: #e06c00; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+.d-note--ok { stroke: #2f9a2c; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-phase { fill: #ff8a1f; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+  .d-note--ok { stroke: #6bd968; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="649" rx="10"/>
+<defs><marker id="j-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="j-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<path class="d-life" d="M70 60 V650"/>
+<path class="d-life" d="M200 60 V650"/>
+<path class="d-life" d="M400 60 V650"/>
+<path class="d-life" d="M720 60 V650"/>
+<text class="d-h d-phase" x="14" y="88" text-anchor="start">1. Connect: secret in data, role in meta</text>
+<path class="d-e " d="M72 116 L398 116" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="110" text-anchor="middle">connect {data: {playerSecret, moderatorSecret}}</text>
+<path class="d-e d-e--acc" d="M402 146 L718 146" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="140" text-anchor="middle">connect proxy: data</text>
+<path class="d-e " d="M720 168 L744 168 L744 180 L722 180" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="177" text-anchor="end">hash_equals(HELLOWIN_MODERATOR_SECRET, …)</text>
+<path class="d-e d-e--ret" d="M718 206 L402 206" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="200" text-anchor="middle">user, channels, meta {moderator: true}</text>
+<path class="d-e " d="M400 228 L424 228 L424 240 L402 240" marker-end="url(#j-ln)"/>
+<text class="d-l" x="430" y="237" text-anchor="start">meta stays here, never sent to the client</text>
+<path class="d-e d-e--ret" d="M398 266 L72 266" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="260" text-anchor="middle">connected (no meta)</text>
+<text class="d-h d-phase" x="14" y="296" text-anchor="start">2. Control panel RPC: Centrifugo adds meta, not the client</text>
+<path class="d-e " d="M72 324 L398 324" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="318" text-anchor="middle">rpc('pause', {on: true})</text>
+<path class="d-e d-e--acc" d="M402 354 L718 354" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="348" text-anchor="middle">RPC proxy + meta {moderator: true}</text>
+<path class="d-e " d="M720 376 L744 376 L744 388 L722 388" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="385" text-anchor="end">panel method, role set → StoryService</text>
+<path class="d-e d-e--ret" d="M718 414 L402 414" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="408" text-anchor="middle">{ok: true, on: true}</text>
+<path class="d-e d-e--ret" d="M398 444 L72 444" marker-end="url(#j-ln)"/>
+<text class="d-l" x="235" y="438" text-anchor="middle">{ok: true, on: true}</text>
+<path class="d-e " d="M202 474 L398 474" marker-end="url(#j-ln)"/>
+<text class="d-l" x="300" y="468" text-anchor="middle">rpc('pause', …)</text>
+<path class="d-e d-e--acc" d="M402 504 L718 504" marker-end="url(#j-acc)"/>
+<text class="d-l" x="560" y="498" text-anchor="middle">RPC proxy + meta {}</text>
+<path class="d-e " d="M720 526 L744 526 L744 538 L722 538" marker-end="url(#j-ln)"/>
+<text class="d-l" x="714" y="535" text-anchor="end">no role → forbidden, data not parsed</text>
+<path class="d-e d-e--ret" d="M718 564 L402 564" marker-end="url(#j-ln)"/>
+<text class="d-l" x="560" y="558" text-anchor="middle">{ok: false, error: 'forbidden'}</text>
+<path class="d-e d-e--ret" d="M398 594 L202 594" marker-end="url(#j-ln)"/>
+<text class="d-l" x="300" y="588" text-anchor="middle">forbidden</text>
+<rect class="d-note d-note--ok" x="30" y="610" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="627" text-anchor="middle">the client can't grant itself a role: it sends only data in an RPC, meta comes from Centrifugo</text>
+<rect class="d-box g-edge" x="5" y="16" width="130" height="44" rx="6"/>
+<text class="d-t" x="70" y="34" text-anchor="middle">Moderator</text>
+<text class="d-s" x="70" y="49" text-anchor="middle">browser + secret</text>
+<rect class="d-box g-edge" x="145" y="16" width="110" height="44" rx="6"/>
+<text class="d-t" x="200" y="34" text-anchor="middle">Player</text>
+<text class="d-s" x="200" y="49" text-anchor="middle">no secret</text>
+<rect class="d-box g-cf" x="320" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="400" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-m" x="400" y="49" text-anchor="middle">include_connection_meta</text>
+<rect class="d-box g-php" x="625" y="16" width="190" height="44" rx="6"/>
+<text class="d-t" x="720" y="34" text-anchor="middle">RR centrifuge</text>
+<text class="d-m" x="720" y="49" text-anchor="middle">ConnectService · RPCService</text>
+</svg>

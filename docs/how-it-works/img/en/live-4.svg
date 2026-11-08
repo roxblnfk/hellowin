@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 440" width="1000" height="440" role="img">
+<title>Two players shoot at the same flyer. The first player's worker takes the flyer:{id} lock, sees the flyer's key, deletes it, releases the lock and publishes shot. The second player's worker waits for the lock, then finds no key and replies with a miss.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-wait { fill: rgba(43, 29, 14, 0.06); stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; stroke-dasharray: 3 3; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+.d-note--ok { stroke: #2f9a2c; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-wait { fill: rgba(246, 231, 208, 0.08); stroke: rgba(246, 231, 208, 0.66); }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+  .d-note--ok { stroke: #6bd968; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="439" rx="10"/>
+<defs><marker id="m-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="m-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="95" y="96" width="10" height="120" rx="2"/>
+<rect class="d-wait" x="755" y="126" width="10" height="150" rx="2"/>
+<rect class="d-crit" x="755" y="276" width="10" height="90" rx="2"/>
+<path class="d-life" d="M100 60 V440"/>
+<path class="d-life" d="M330 60 V440"/>
+<path class="d-life" d="M530 60 V440"/>
+<path class="d-life" d="M760 60 V440"/>
+<path class="d-life" d="M920 60 V440"/>
+<path class="d-e " d="M102 96 L328 96" marker-end="url(#m-ln)"/>
+<text class="d-l" x="215" y="90" text-anchor="middle">lock flyer:{id}</text>
+<path class="d-e " d="M758 126 L332 126" marker-end="url(#m-ln)"/>
+<text class="d-l" x="430" y="120" text-anchor="middle">lock flyer:{id}: waits</text>
+<path class="d-e " d="M102 156 L528 156" marker-end="url(#m-ln)"/>
+<text class="d-l" x="315" y="150" text-anchor="middle">get: key exists, still flying</text>
+<path class="d-e " d="M102 186 L528 186" marker-end="url(#m-ln)"/>
+<text class="d-l" x="315" y="180" text-anchor="middle">delete: a hit</text>
+<path class="d-e " d="M102 216 L328 216" marker-end="url(#m-ln)"/>
+<text class="d-l" x="215" y="210" text-anchor="middle">release</text>
+<path class="d-e d-e--acc" d="M102 246 L918 246" marker-end="url(#m-acc)"/>
+<text class="d-l" x="510" y="240" text-anchor="middle">publish shot {points, player} · points to player · flyers_shot +1</text>
+<path class="d-e " d="M760 276 L736 276 L736 288 L758 288" marker-end="url(#m-ln)"/>
+<text class="d-l" x="730" y="285" text-anchor="end">lock acquired</text>
+<path class="d-e " d="M758 316 L532 316" marker-end="url(#m-ln)"/>
+<text class="d-l" x="645" y="310" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M532 346 L758 346" marker-end="url(#m-ln)"/>
+<text class="d-l" x="645" y="340" text-anchor="middle">no key</text>
+<path class="d-e " d="M760 366 L736 366 L736 378 L758 378" marker-end="url(#m-ln)"/>
+<text class="d-l" x="730" y="375" text-anchor="end">miss: {ok: true, hit: false}</text>
+<rect class="d-note d-note--ok" x="30" y="398" width="940" height="24" rx="4"/>
+<text class="d-n" x="500" y="415" text-anchor="middle">a flyer is shot exactly once: the first under the lock deletes the key; the ticker counts escapes the same way</text>
+<rect class="d-box g-php" x="20" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="100" y="34" text-anchor="middle">RPC shoot</text>
+<text class="d-s" x="100" y="49" text-anchor="middle">player 1, first</text>
+<rect class="d-box g-rr" x="260" y="16" width="140" height="44" rx="6"/>
+<text class="d-t" x="330" y="34" text-anchor="middle">RR lock</text>
+<text class="d-m" x="330" y="49" text-anchor="middle">flyer:{id}</text>
+<rect class="d-box g-rr" x="455" y="16" width="150" height="44" rx="6"/>
+<text class="d-t" x="530" y="34" text-anchor="middle">RR kv</text>
+<text class="d-m" x="530" y="49" text-anchor="middle">hellowin:flyer:{id}</text>
+<rect class="d-box g-php" x="680" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="760" y="34" text-anchor="middle">RPC shoot</text>
+<text class="d-s" x="760" y="49" text-anchor="middle">player 2, next</text>
+<rect class="d-box g-cf" x="860" y="16" width="120" height="44" rx="6"/>
+<text class="d-t" x="920" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="920" y="49" text-anchor="middle">channel hellowin</text>
+</svg>

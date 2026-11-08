@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1100 838" width="1100" height="838" role="img">
+<title>Idempotent transition: clicks over the threshold push several TransitionPumpkin jobs with one key into the transitions queue. The jobs workers take them in parallel; each one's IdempotencyInterceptor does SET NX EX in Valkey. The first gets OK and performs the transition: under the pumpkin lock it checks the round and the stage, writes stage + 1 and clicks = 0, publishes the pumpkin event and checks whether the scene is ready. The rest are refused: the handler isn't called, the job is acknowledged.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-phase { fill: #e06c00; }
+.diagram__svg .d-bad { fill: #d03b3b; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-box.g-kv { stroke: #d6334a; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-wait { fill: rgba(43, 29, 14, 0.06); stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; stroke-dasharray: 3 3; }
+.d-risk { stroke: #d03b3b; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-phase { fill: #ff8a1f; }
+  .diagram__svg .d-bad { fill: #e65c5c; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-box.g-kv { stroke: #ff7a8a; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-wait { fill: rgba(246, 231, 208, 0.08); stroke: rgba(246, 231, 208, 0.66); }
+  .d-risk { stroke: #e65c5c; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="1099" height="837" rx="10"/>
+<defs><marker id="g-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="g-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-wait d-risk" x="441" y="380" width="10" height="278" rx="2"/>
+<path class="d-life" d="M56 60 V838"/>
+<path class="d-life" d="M172 60 V838"/>
+<path class="d-life" d="M296 60 V838"/>
+<path class="d-life" d="M446 60 V838"/>
+<path class="d-life" d="M626 60 V838"/>
+<path class="d-life" d="M776 60 V838"/>
+<path class="d-life" d="M906 60 V838"/>
+<path class="d-life" d="M1036 60 V838"/>
+<text class="d-h d-phase" x="14" y="96" text-anchor="start">1. Duplicates on purpose: one key for k + n jobs</text>
+<path class="d-e " d="M58 124 L170 124" marker-end="url(#g-ln)"/>
+<text class="d-l" x="114" y="118" text-anchor="middle">click</text>
+<path class="d-e " d="M174 154 L294 154" marker-end="url(#g-ln)"/>
+<text class="d-l" x="234" y="148" text-anchor="middle">push key=1:pumpkin-3:2</text>
+<path class="d-e " d="M58 184 L170 184" marker-end="url(#g-ln)"/>
+<text class="d-l" x="114" y="178" text-anchor="middle">click</text>
+<path class="d-e " d="M174 214 L294 214" marker-end="url(#g-ln)"/>
+<text class="d-l" x="234" y="208" text-anchor="middle">push key=1:pumpkin-3:2</text>
+<path class="d-e " d="M58 244 L170 244" marker-end="url(#g-ln)"/>
+<text class="d-l" x="114" y="238" text-anchor="middle">… ×n</text>
+<path class="d-e " d="M174 274 L294 274" marker-end="url(#g-ln)"/>
+<text class="d-l" x="234" y="268" text-anchor="middle">same key ×n</text>
+<text class="d-h d-phase" x="14" y="300" text-anchor="start">2. The first delivery runs, the rest are cut off</text>
+<path class="d-e " d="M298 328 L444 328" marker-end="url(#g-ln)"/>
+<text class="d-l" x="371" y="322" text-anchor="middle">job 1</text>
+<path class="d-e " d="M298 358 L624 358" marker-end="url(#g-ln)"/>
+<text class="d-l" x="304" y="352" text-anchor="start">job 2 (in parallel)</text>
+<path class="d-e " d="M448 388 L774 388" marker-end="url(#g-ln)"/>
+<text class="d-l" x="611" y="382" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M774 418 L448 418" marker-end="url(#g-ln)"/>
+<text class="d-l" x="611" y="412" text-anchor="middle">OK: marker written</text>
+<path class="d-e " d="M628 448 L774 448" marker-end="url(#g-ln)"/>
+<text class="d-l" x="701" y="442" text-anchor="middle">SET … NX EX 300</text>
+<path class="d-e d-e--ret" d="M774 478 L628 478" marker-end="url(#g-ln)"/>
+<text class="d-l" x="701" y="472" text-anchor="middle">nil: key taken</text>
+<path class="d-e " d="M626 500 L650 500 L650 512 L628 512" marker-end="url(#g-ln)"/>
+<text class="d-l" x="656" y="509" text-anchor="start">duplicate: handler not called</text>
+<path class="d-e d-e--ret" d="M624 538 L298 538" marker-end="url(#g-ln)"/>
+<text class="d-l" x="618" y="532" text-anchor="end">null → ACK</text>
+<path class="d-e " d="M446 560 L470 560 L470 572 L448 572" marker-end="url(#g-ln)"/>
+<text class="d-l" x="476" y="569" text-anchor="start">TransitionPumpkin → TransitionHandler::pumpkin()</text>
+<path class="d-e " d="M448 598 L904 598" marker-end="url(#g-ln)"/>
+<text class="d-l" x="676" y="592" text-anchor="middle">lock.Lock pumpkin:pumpkin-3</text>
+<path class="d-e " d="M448 628 L904 628" marker-end="url(#g-ln)"/>
+<text class="d-l" x="676" y="622" text-anchor="middle">round current and stage == toStage − 1?</text>
+<path class="d-e " d="M448 658 L904 658" marker-end="url(#g-ln)"/>
+<text class="d-l" x="676" y="652" text-anchor="middle">set stage = toStage, clicks = 0</text>
+<path class="d-e " d="M448 688 L904 688" marker-end="url(#g-ln)"/>
+<text class="d-l" x="676" y="682" text-anchor="middle">lock.Release</text>
+<path class="d-e d-e--acc" d="M448 718 L1034 718" marker-end="url(#g-acc)"/>
+<text class="d-l" x="741" y="712" text-anchor="middle">publish type:'pumpkin' — exactly once</text>
+<path class="d-e " d="M446 740 L470 740 L470 752 L448 752" marker-end="url(#g-ln)"/>
+<text class="d-l" x="476" y="749" text-anchor="start">transitions_total +1 · all at stageMax? → markReady() under lock scene</text>
+<path class="d-e d-e--ret" d="M444 778 L298 778" marker-end="url(#g-ln)"/>
+<text class="d-l" x="371" y="772" text-anchor="middle">ACK</text>
+<path class="d-e " d="M298 808 L624 808" marker-end="url(#g-ln)"/>
+<text class="d-l" x="304" y="802" text-anchor="start">jobs 3…n: SET NX → nil → ACK while the marker lives</text>
+<rect class="d-box g-edge" x="6" y="16" width="100" height="44" rx="6"/>
+<text class="d-t" x="56" y="34" text-anchor="middle">Clicks</text>
+<text class="d-s" x="56" y="49" text-anchor="middle">over threshold</text>
+<rect class="d-box g-php" x="116" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="172" y="34" text-anchor="middle">ClickHandler</text>
+<text class="d-m" x="172" y="49" text-anchor="middle">TransitionQueue</text>
+<rect class="d-box g-rr" x="238" y="16" width="116" height="44" rx="6"/>
+<text class="d-t" x="296" y="34" text-anchor="middle">RR jobs</text>
+<text class="d-m" x="296" y="49" text-anchor="middle">transitions</text>
+<rect class="d-box g-php" x="366" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="446" y="34" text-anchor="middle">jobs worker A</text>
+<text class="d-m" x="446" y="49" text-anchor="middle">IdempotencyInterceptor</text>
+<rect class="d-box g-php" x="546" y="16" width="160" height="44" rx="6"/>
+<text class="d-t" x="626" y="34" text-anchor="middle">jobs worker B</text>
+<text class="d-m" x="626" y="49" text-anchor="middle">IdempotencyInterceptor</text>
+<rect class="d-box g-kv" x="716" y="16" width="120" height="44" rx="6"/>
+<text class="d-t" x="776" y="34" text-anchor="middle">Valkey</text>
+<text class="d-m" x="776" y="49" text-anchor="middle">hellowin:amo:*</text>
+<rect class="d-box g-rr" x="846" y="16" width="120" height="44" rx="6"/>
+<text class="d-t" x="906" y="34" text-anchor="middle">RR lock + kv</text>
+<text class="d-m" x="906" y="49" text-anchor="middle">pumpkin:{id}</text>
+<rect class="d-box g-cf" x="980" y="16" width="112" height="44" rx="6"/>
+<text class="d-t" x="1036" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="1036" y="49" text-anchor="middle">channel hellowin</text>
+<text class="d-s d-bad" x="434" y="574" text-anchor="end">risk window:</text>
+<text class="d-s" x="434" y="588" text-anchor="end">a crash here —</text>
+<text class="d-s" x="434" y="602" text-anchor="end">transition lost</text>
+<text class="d-s" x="434" y="616" text-anchor="end">until TTL expires</text>
+</svg>

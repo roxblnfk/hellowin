@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 330" width="1000" height="330" role="img">
+<title>Сцены и стадии: по горизонтали сцены от 0 до финальной N, по вертикали стадия тыквы. В каждой сцене тыквы поднимаются по стадиям до stageMax этой сцены и ждут там; когда все дошли, сцена готова, и по кнопке модератора она меняется, а потолок поднимается до stageMax следующей сцены. В финальной сцене переходов нет.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-axis { fill: none; stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; }
+.d-cap { fill: none; stroke: #e06c00; stroke-width: 2.5; }
+.d-pk { fill: #e06c00; fill-opacity: 0.75; }
+.d-pk--done { fill-opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s { fill: rgba(246, 231, 208, 0.66); }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-axis { stroke: rgba(246, 231, 208, 0.66); }
+  .d-cap { stroke: #ff8a1f; }
+  .d-pk { fill: #ff8a1f; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="329" rx="10"/>
+<defs><marker id="d-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="d-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<path class="d-axis" d="M170 50 V260 H980"/>
+<path class="d-cap" d="M170 190 H380 V140 H590 V80 H980"/>
+<text class="d-m" x="160" y="264" text-anchor="end">0</text>
+<text class="d-m" x="160" y="194" text-anchor="end">stageMax(0)</text>
+<text class="d-m" x="160" y="144" text-anchor="end">stageMax(1)</text>
+<text class="d-m" x="160" y="84" text-anchor="end">stageMax(N−1)</text>
+<text class="d-s" x="20" y="30" text-anchor="start">стадия тыквы</text>
+<text class="d-h" x="275" y="30" text-anchor="middle">сцена 0</text>
+<text class="d-h" x="485" y="30" text-anchor="middle">сцена 1</text>
+<text class="d-h" x="690" y="30" text-anchor="middle">…</text>
+<text class="d-h" x="885" y="30" text-anchor="middle">сцена N — финал</text>
+<path class="d-life" d="M380 44 V260"/>
+<path class="d-life" d="M590 44 V260"/>
+<path class="d-life" d="M790 44 V260"/>
+<circle class="d-pk" cx="200" cy="253" r="7"/>
+<circle class="d-pk" cx="232" cy="218" r="7"/>
+<circle class="d-pk" cx="264" cy="183" r="7"/>
+<circle class="d-pk" cx="296" cy="183" r="7"/>
+<circle class="d-pk" cx="328" cy="218" r="7"/>
+<circle class="d-pk" cx="356" cy="183" r="7"/>
+<path class="d-e" d="M232 222 L232 202" marker-end="url(#d-ln)"/>
+<circle class="d-pk" cx="410" cy="183" r="7"/>
+<circle class="d-pk" cx="442" cy="158" r="7"/>
+<circle class="d-pk" cx="474" cy="133" r="7"/>
+<circle class="d-pk" cx="506" cy="183" r="7"/>
+<circle class="d-pk" cx="538" cy="158" r="7"/>
+<circle class="d-pk" cx="566" cy="133" r="7"/>
+<circle class="d-pk d-pk--done" cx="820" cy="73" r="7"/>
+<circle class="d-pk d-pk--done" cx="852" cy="73" r="7"/>
+<circle class="d-pk d-pk--done" cx="884" cy="73" r="7"/>
+<circle class="d-pk d-pk--done" cx="916" cy="73" r="7"/>
+<circle class="d-pk d-pk--done" cx="948" cy="73" r="7"/>
+<text class="d-s" x="885" y="120" text-anchor="middle">переходов нет,</text>
+<text class="d-s" x="885" y="135" text-anchor="middle">клики только рассылаются</text>
+<text class="d-s" x="690" y="175" text-anchor="middle">тыквы идут к stageMax(s)</text>
+<text class="d-s" x="690" y="190" text-anchor="middle">и ждут остальных</text>
+<text class="d-s" x="275" y="282" text-anchor="middle">стадия +1 = порог кликов (лимит pumpkin)</text>
+<text class="d-m" x="275" y="297" text-anchor="middle">→ TransitionPumpkin</text>
+<text class="d-s" x="485" y="282" text-anchor="middle">все на stageMax(0) → ready, ждём</text>
+<text class="d-m" x="485" y="297" text-anchor="middle">scene.next → TransitionScene</text>
+<text class="d-s" x="790" y="282" text-anchor="middle">ready в сцене N−1</text>
+<text class="d-m" x="790" y="297" text-anchor="middle">scene.next → финал</text>
+<text class="d-s" x="575" y="318" text-anchor="middle">N = длина списка HELLOWIN_SCENE_STAGE_MAX, stageMax(s) — его элемент номер s; потолок финала = stageMax(N−1)</text>
+</svg>

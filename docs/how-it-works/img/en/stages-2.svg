@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 442" width="1000" height="442" role="img">
+<title>Left, without a lock: two workers read clicks = 2 and both write 3, one click is lost. Right, with the pumpkin:{id} lock: the second worker waits, reads 3 already and writes 4.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-bad { fill: #d03b3b; }
+.diagram__svg .d-ok { fill: #2f9a2c; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life, .d-sep { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-sep { stroke-dasharray: none; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-wait { fill: rgba(43, 29, 14, 0.06); stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; stroke-dasharray: 3 3; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+.d-note--bad { stroke: #d03b3b; }
+.d-note--ok { stroke: #2f9a2c; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-bad { fill: #e65c5c; }
+  .diagram__svg .d-ok { fill: #6bd968; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life, .d-sep { stroke: rgba(246, 231, 208, 0.22); }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-wait { fill: rgba(246, 231, 208, 0.08); stroke: rgba(246, 231, 208, 0.66); }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+  .d-note--bad { stroke: #e65c5c; }
+  .d-note--ok { stroke: #6bd968; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="441" rx="10"/>
+<defs><marker id="e-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="e-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="595" y="96" width="10" height="148" rx="2"/>
+<rect class="d-wait" x="935" y="124" width="10" height="140" rx="2"/>
+<rect class="d-crit" x="935" y="264" width="10" height="120" rx="2"/>
+<path class="d-life" d="M600 72 V302"/>
+<path class="d-life" d="M770 72 V302"/>
+<path class="d-life" d="M940 72 V302"/>
+<path class="d-life" d="M80 72 V302"/>
+<path class="d-life" d="M250 72 V302"/>
+<path class="d-life" d="M420 72 V302"/>
+<text class="d-h d-bad" x="20" y="18" text-anchor="start">No lock: a race</text>
+<text class="d-h d-ok" x="540" y="18" text-anchor="start">With lock pumpkin:{id} (RitualStore::click)</text>
+<path class="d-e " d="M82 104 L248 104" marker-end="url(#e-ln)"/>
+<text class="d-l" x="165" y="98" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M248 132 L82 132" marker-end="url(#e-ln)"/>
+<text class="d-l" x="165" y="126" text-anchor="middle">2</text>
+<path class="d-e " d="M418 160 L252 160" marker-end="url(#e-ln)"/>
+<text class="d-l" x="335" y="154" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M252 188 L418 188" marker-end="url(#e-ln)"/>
+<text class="d-l" x="335" y="182" text-anchor="middle">2</text>
+<path class="d-e " d="M82 216 L248 216" marker-end="url(#e-ln)"/>
+<text class="d-l" x="165" y="210" text-anchor="middle">set 3</text>
+<path class="d-e " d="M418 244 L252 244" marker-end="url(#e-ln)"/>
+<text class="d-l" x="335" y="238" text-anchor="middle">set 3</text>
+<rect class="d-note d-note--bad" x="40" y="258" width="420" height="24" rx="4"/>
+<text class="d-n" x="250" y="275" text-anchor="middle">result 3, not 4: a click is lost</text>
+<rect class="d-box g-php" x="23" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="80" y="46" text-anchor="middle">Worker 1</text>
+<text class="d-s" x="80" y="61" text-anchor="middle">pumpkin-3</text>
+<rect class="d-box g-rr" x="193" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="250" y="46" text-anchor="middle">RR kv</text>
+<text class="d-m" x="250" y="61" text-anchor="middle">clicks</text>
+<rect class="d-box g-php" x="363" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="420" y="46" text-anchor="middle">Worker 2</text>
+<text class="d-s" x="420" y="61" text-anchor="middle">pumpkin-3</text>
+<path class="d-e " d="M600 96 L624 96 L624 108 L602 108" marker-end="url(#e-ln)"/>
+<text class="d-l" x="630" y="105" text-anchor="start">lock.Lock → lockId</text>
+<path class="d-e " d="M940 124 L916 124 L916 136 L938 136" marker-end="url(#e-ln)"/>
+<text class="d-l" x="910" y="133" text-anchor="end">lock.Lock: waits</text>
+<path class="d-e " d="M602 160 L768 160" marker-end="url(#e-ln)"/>
+<text class="d-l" x="685" y="154" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M768 188 L602 188" marker-end="url(#e-ln)"/>
+<text class="d-l" x="685" y="182" text-anchor="middle">2</text>
+<path class="d-e " d="M602 216 L768 216" marker-end="url(#e-ln)"/>
+<text class="d-l" x="685" y="210" text-anchor="middle">set 3</text>
+<path class="d-e " d="M600 236 L624 236 L624 248 L602 248" marker-end="url(#e-ln)"/>
+<text class="d-l" x="630" y="245" text-anchor="start">lock.Release</text>
+<path class="d-e " d="M940 264 L916 264 L916 276 L938 276" marker-end="url(#e-ln)"/>
+<text class="d-l" x="910" y="273" text-anchor="end">lock acquired</text>
+<path class="d-e " d="M938 300 L772 300" marker-end="url(#e-ln)"/>
+<text class="d-l" x="855" y="294" text-anchor="middle">get</text>
+<path class="d-e d-e--ret" d="M772 328 L938 328" marker-end="url(#e-ln)"/>
+<text class="d-l" x="855" y="322" text-anchor="middle">3</text>
+<path class="d-e " d="M938 356 L772 356" marker-end="url(#e-ln)"/>
+<text class="d-l" x="855" y="350" text-anchor="middle">set 4</text>
+<path class="d-e " d="M940 376 L916 376 L916 388 L938 388" marker-end="url(#e-ln)"/>
+<text class="d-l" x="910" y="385" text-anchor="end">lock.Release</text>
+<rect class="d-note d-note--ok" x="560" y="398" width="420" height="24" rx="4"/>
+<text class="d-n" x="770" y="415" text-anchor="middle">result 4: both clicks counted</text>
+<rect class="d-box g-php" x="543" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="600" y="46" text-anchor="middle">Worker 1</text>
+<text class="d-s" x="600" y="61" text-anchor="middle">pumpkin-3</text>
+<rect class="d-box g-rr" x="713" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="770" y="46" text-anchor="middle">RR kv</text>
+<text class="d-m" x="770" y="61" text-anchor="middle">clicks</text>
+<rect class="d-box g-php" x="883" y="28" width="114" height="44" rx="6"/>
+<text class="d-t" x="940" y="46" text-anchor="middle">Worker 2</text>
+<text class="d-s" x="940" y="61" text-anchor="middle">pumpkin-3</text>
+<path class="d-sep" d="M500 8 V442"/>
+</svg>

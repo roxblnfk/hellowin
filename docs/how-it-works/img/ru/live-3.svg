@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 370" width="1000" height="370" role="img">
+<title>Путь фигурки: прямоугольник лужайки и эллипс грядки в центре. Прямой отрезок от фигурки к цели прошёл бы через грядку, поэтому сервер ведёт путь по касательной к чуть увеличенному эллипсу, по его нижней дуге ломаной и по касательной к цели — с той стороны, где короче. Клик внутри грядки переносится на её край по лучу из центра.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-s { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-bad { fill: #d03b3b; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-cap { fill: none; stroke: #e06c00; stroke-width: 2.5; }
+.d-pk { fill: #e06c00; fill-opacity: 0.75; }
+.d-pk--done { fill-opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-bad { fill: #e65c5c; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-cap { stroke: #ff8a1f; }
+  .d-pk { fill: #ff8a1f; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="369" rx="10"/>
+<defs><marker id="l-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-life" x="60" y="30" width="880" height="290"/>
+<text class="d-s" x="72" y="50" text-anchor="start">walk.area — лужайка</text>
+<ellipse class="d-box g-rr" cx="500" cy="200" rx="170" ry="90"/>
+<ellipse class="d-life" cx="500" cy="200" rx="175" ry="92.7"/>
+<text class="d-t" x="500" y="186" text-anchor="middle">грядка walk.patch</text>
+<text class="d-s" x="500" y="202" text-anchor="middle">сюда фигурки не заходят</text>
+<path class="d-e d-e--ret" d="M230 240 L780 232"/>
+<text class="d-s d-bad" x="500" y="226" text-anchor="middle">напрямую — через грядку</text>
+<path class="d-cap" d="M230 240 L412.5 280.3 L469.6 291.3 L530.4 291.3 L587.5 280.3 L780 232"/>
+<circle class="d-pk d-pk--done" cx="230" cy="240" r="6"/>
+<circle class="d-pk d-pk--done" cx="780" cy="232" r="6"/>
+<text class="d-s" x="220" y="236" text-anchor="end">откуда: где фигурка сейчас</text>
+<text class="d-s" x="220" y="251" text-anchor="end">по Walk и серверным часам</text>
+<text class="d-s" x="792" y="228" text-anchor="start">цель move {x, y}</text>
+<text class="d-s" x="500" y="312" text-anchor="middle">обход по дуге: сторона короче, шаг дуги ≤ 15°</text>
+<text class="d-s" x="683" y="128" text-anchor="start">пунктир — эллипс + 3 %:</text>
+<text class="d-s" x="683" y="142" text-anchor="start">хорды дуги не задевают грядку</text>
+<circle class="d-pk" cx="430" cy="150" r="5"/>
+<path class="d-e" d="M426 147 L402 130" marker-end="url(#l-ln)"/>
+<text class="d-s" x="394" y="118" text-anchor="end">клик в грядку → на край по лучу из центра</text>
+<text class="d-m" x="500" y="352" text-anchor="middle">Walk {path: [откуда, …, цель], startedAt, arrivesAt} · время = длина / HELLOWIN_WALK_SPEED</text>
+</svg>

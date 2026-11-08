@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 490" width="1000" height="490" role="img">
+<title>A dice roll: the browser calls the RPC roll with attempt number n. The dice store of the spiral/idempotency package looks up a response by the key {round}:roll:{player}:{n}. If a response is stored, the retry gets the same response with no roll, event or count. If not, DiceService under the dice lock reads the player's last attempt, last, from hellowin:dice. If n = last + 1, it is a new roll: random_int three times, an attempt record with the faces, a roll event to everyone, the roll count, and the response is stored for HELLOWIN_DICE_IDEMPOTENCY_TTL; no more often than HELLOWIN_DICE_COOLDOWN_MS. If n = last, the response was lost and the faces come from the record, with no roll or event. Otherwise it is a bad attempt error carrying last, and the client takes last + 1. The first 6-6-6 records the winner under the same lock.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-bad { fill: #d03b3b; }
+.diagram__svg .d-ok { fill: #2f9a2c; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-box.g-kv { stroke: #d6334a; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--ok { stroke: #2f9a2c; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+.d-note--bad { stroke: #d03b3b; }
+.d-note--ok { stroke: #2f9a2c; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .diagram__svg .d-bad { fill: #e65c5c; }
+  .diagram__svg .d-ok { fill: #6bd968; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-box.g-kv { stroke: #ff7a8a; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--ok { stroke: #6bd968; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+  .d-note--bad { stroke: #e65c5c; }
+  .d-note--ok { stroke: #6bd968; }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="489" rx="10"/>
+<defs><marker id="n-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="n-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-box g-cf" x="20" y="60" width="170" height="70" rx="6"/>
+<text class="d-t" x="105" y="88" text-anchor="middle">Browser</text>
+<text class="d-m" x="105" y="107" text-anchor="middle">roll {attempt: n}</text>
+<path class="d-e" d="M190 95 L270 95" marker-end="url(#n-ln)"/>
+<text class="d-l" x="230" y="87" text-anchor="middle">RPC</text>
+<rect class="d-box g-kv" x="270" y="40" width="260" height="110" rx="6"/>
+<text class="d-t" x="400" y="66" text-anchor="middle">dice store</text>
+<text class="d-m" x="400" y="87" text-anchor="middle">{round}:roll:{player}:{n}</text>
+<text class="d-s" x="400" y="107" text-anchor="middle">spiral/idempotency, AtLeastOnce</text>
+<text class="d-s" x="400" y="125" text-anchor="middle">TTL HELLOWIN_DICE_IDEMPOTENCY_TTL</text>
+<path class="d-e d-e--ret" d="M530 95 L620 95" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="87" text-anchor="middle">stored</text>
+<path class="d-e" d="M400 150 L400 175" marker-end="url(#n-ln)"/>
+<text class="d-l" x="410" y="167" text-anchor="start">none</text>
+<rect class="d-box g-php" x="270" y="175" width="260" height="260" rx="6"/>
+<text class="d-t" x="400" y="202" text-anchor="middle">DiceService::roll</text>
+<text class="d-m" x="400" y="222" text-anchor="middle">lock dice</text>
+<text class="d-m" x="400" y="240" text-anchor="middle">hellowin:dice → last</text>
+<text class="d-s" x="400" y="260" text-anchor="middle">last attempt and its faces</text>
+<rect class="d-crit" x="285" y="372" width="230" height="48" rx="4"/>
+<text class="d-n" x="400" y="391" text-anchor="middle">first 6-6-6 → winner under the</text>
+<text class="d-n" x="400" y="408" text-anchor="middle">same lock; the next gets not now</text>
+<path class="d-e d-e--ok" d="M530 210 L620 210" marker-end="url(#n-ok)"/>
+<text class="d-l" x="575" y="202" text-anchor="middle">n = last + 1</text>
+<path class="d-e d-e--ret" d="M530 305 L620 305" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="297" text-anchor="middle">n = last</text>
+<path class="d-e" d="M530 395 L620 395" marker-end="url(#n-ln)"/>
+<text class="d-l" x="575" y="387" text-anchor="middle">else</text>
+<rect class="d-note" x="620" y="40" width="360" height="110" rx="4"/>
+<text class="d-h" x="636" y="64" text-anchor="start">Retry: response already stored</text>
+<text class="d-m" x="636" y="86" text-anchor="start">same {attempt, dice}, no roll</text>
+<text class="d-s" x="636" y="106" text-anchor="start">double click, reconnect, lost reply;</text>
+<text class="d-s" x="636" y="124" text-anchor="start">no lock, no event, no count: no reroll</text>
+<rect class="d-note d-note--ok" x="620" y="165" width="360" height="90" rx="4"/>
+<text class="d-h d-ok" x="636" y="189" text-anchor="start">New roll</text>
+<text class="d-m" x="636" y="211" text-anchor="start">random_int × 3 → dice, response stored</text>
+<text class="d-s" x="636" y="231" text-anchor="start">record {attempt, at, dice}, roll event to all,</text>
+<text class="d-s" x="636" y="247" text-anchor="start">rolls + 1; gap ≥ HELLOWIN_DICE_COOLDOWN_MS</text>
+<rect class="d-note" x="620" y="265" width="360" height="80" rx="4"/>
+<text class="d-h" x="636" y="289" text-anchor="start">Reply lost, attempt in record</text>
+<text class="d-s" x="636" y="311" text-anchor="start">worker died before storing, or it expired:</text>
+<text class="d-s" x="636" y="329" text-anchor="start">faces from hellowin:dice, no roll or event</text>
+<rect class="d-note d-note--bad" x="620" y="355" width="360" height="80" rx="4"/>
+<text class="d-h d-bad" x="636" y="379" text-anchor="start">bad attempt {last}</text>
+<text class="d-s" x="636" y="401" text-anchor="start">attempts can't be skipped: client takes last + 1</text>
+<text class="d-s" x="636" y="419" text-anchor="start">and rolls again</text>
+<text class="d-s" x="20" y="470" text-anchor="start">attempt response: dice store (hellowin:lease:*) for HELLOWIN_DICE_IDEMPOTENCY_TTL s; last attempt's faces: also hellowin:dice</text>
+</svg>

@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 974" width="1000" height="974" role="img">
+<title>Page load: GET / passes the RoadRunner HTTP plugin middleware into the worker pool and HomeController; SnapshotFactory reads the round, scene, story, pumpkins and characters from KV without a lock and hands the snapshot to the template. Then the browser opens a WebSocket straight to Centrifugo on :8000 with the player secret in data, Centrifugo asks ConnectService through the connect proxy, gets user, meta and the channel and subscribes the client to the hellowin channel on the server side. On a reconnect or an event with a different round the client calls the RPC state and gets the same snapshot.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-h { font-size: 13px; font-weight: 600; }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.diagram__svg .d-phase { fill: #e06c00; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-phase { fill: #ff8a1f; }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="973" rx="10"/>
+<defs><marker id="b-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="b-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<path class="d-life" d="M62 60 V974"/>
+<path class="d-life" d="M180 60 V974"/>
+<path class="d-life" d="M298 60 V974"/>
+<path class="d-life" d="M422 60 V974"/>
+<path class="d-life" d="M546 60 V974"/>
+<path class="d-life" d="M670 60 V974"/>
+<path class="d-life" d="M790 60 V974"/>
+<path class="d-life" d="M925 60 V974"/>
+<text class="d-h d-phase" x="14" y="88" text-anchor="start">1. HTML with a snapshot</text>
+<path class="d-e " d="M64 116 L178 116" marker-end="url(#b-ln)"/>
+<text class="d-l" x="121" y="110" text-anchor="middle">GET /</text>
+<path class="d-e " d="M182 146 L296 146" marker-end="url(#b-ln)"/>
+<text class="d-l" x="239" y="140" text-anchor="middle">past static</text>
+<path class="d-e " d="M300 176 L420 176" marker-end="url(#b-ln)"/>
+<text class="d-l" x="360" y="170" text-anchor="middle">pipes</text>
+<path class="d-e " d="M424 206 L544 206" marker-end="url(#b-ln)"/>
+<text class="d-l" x="484" y="200" text-anchor="middle">kv.MGet, no lock</text>
+<path class="d-e d-e--ret" d="M544 236 L424 236" marker-end="url(#b-ln)"/>
+<text class="d-l" x="484" y="230" text-anchor="middle">game state</text>
+<path class="d-e " d="M422 258 L446 258 L446 270 L424 270" marker-end="url(#b-ln)"/>
+<text class="d-l" x="452" y="267" text-anchor="start">Snapshot: ritual, story, characters, layout, now</text>
+<path class="d-e " d="M422 288 L446 288 L446 300 L424 300" marker-end="url(#b-ln)"/>
+<text class="d-l" x="452" y="297" text-anchor="start">render('home', snapshot + centrifugoUrl from the host)</text>
+<path class="d-e d-e--ret" d="M420 326 L64 326" marker-end="url(#b-ln)"/>
+<text class="d-l" x="242" y="320" text-anchor="middle">200 text/html (back through gzip and headers)</text>
+<path class="d-e " d="M62 348 L86 348 L86 360 L64 360" marker-end="url(#b-ln)"/>
+<text class="d-l" x="92" y="357" text-anchor="start">scene from the snapshot · new Centrifuge(url, {data: {playerSecret}})</text>
+<text class="d-h d-phase" x="14" y="382" text-anchor="start">2. WebSocket</text>
+<path class="d-e " d="M64 440 L668 440" marker-end="url(#b-ln)"/>
+<text class="d-l" x="366" y="434" text-anchor="middle">ws://&lt;host&gt;:8000/connection/websocket</text>
+<path class="d-e d-e--acc" d="M672 470 L788 470" marker-end="url(#b-acc)"/>
+<text class="d-l" x="730" y="464" text-anchor="middle">connect proxy (gRPC)</text>
+<path class="d-e " d="M792 500 L923 500" marker-end="url(#b-ln)"/>
+<text class="d-l" x="857.5" y="494" text-anchor="middle">pipes</text>
+<path class="d-e d-e--ret" d="M923 530 L792 530" marker-end="url(#b-ln)"/>
+<text class="d-l" x="857.5" y="524" text-anchor="middle">user, channels, meta</text>
+<path class="d-e d-e--ret" d="M788 560 L672 560" marker-end="url(#b-ln)"/>
+<text class="d-l" x="730" y="554" text-anchor="middle">response</text>
+<path class="d-e " d="M670 582 L694 582 L694 594 L672 594" marker-end="url(#b-ln)"/>
+<text class="d-l" x="700" y="591" text-anchor="start">subscribe to hellowin (server-side)</text>
+<path class="d-e d-e--ret d-e--acc" d="M668 620 L64 620" marker-end="url(#b-acc)"/>
+<text class="d-l" x="366" y="614" text-anchor="middle">connected + subs: hellowin</text>
+<text class="d-h d-phase" x="14" y="646" text-anchor="start">3. Resync: RPC state</text>
+<path class="d-e " d="M62 666 L86 666 L86 678 L64 678" marker-end="url(#b-ln)"/>
+<text class="d-l" x="92" y="675" text-anchor="start">reconnected, or an event came with another round</text>
+<path class="d-e " d="M64 704 L668 704" marker-end="url(#b-ln)"/>
+<text class="d-l" x="366" y="698" text-anchor="middle">rpc('state', {}) over the same WebSocket</text>
+<path class="d-e d-e--acc" d="M672 734 L788 734" marker-end="url(#b-acc)"/>
+<text class="d-l" x="730" y="728" text-anchor="middle">RPC proxy (gRPC)</text>
+<path class="d-e " d="M792 764 L923 764" marker-end="url(#b-ln)"/>
+<text class="d-l" x="857.5" y="758" text-anchor="middle">pipes</text>
+<path class="d-e " d="M923 794 L548 794" marker-end="url(#b-ln)"/>
+<text class="d-l" x="735.5" y="788" text-anchor="middle">SnapshotFactory::create() → kv.MGet</text>
+<path class="d-e d-e--ret" d="M548 824 L923 824" marker-end="url(#b-ln)"/>
+<text class="d-l" x="735.5" y="818" text-anchor="middle">ritual, story, characters</text>
+<path class="d-e d-e--ret" d="M923 854 L792 854" marker-end="url(#b-ln)"/>
+<text class="d-l" x="857.5" y="848" text-anchor="middle">{ok: true, state}</text>
+<path class="d-e d-e--ret" d="M788 884 L672 884" marker-end="url(#b-ln)"/>
+<text class="d-l" x="730" y="878" text-anchor="middle">RPC response</text>
+<path class="d-e d-e--ret" d="M668 914 L64 914" marker-end="url(#b-ln)"/>
+<text class="d-l" x="366" y="908" text-anchor="middle">{ok: true, state: Snapshot}</text>
+<path class="d-e " d="M62 936 L86 936 L86 948 L64 948" marker-end="url(#b-ln)"/>
+<text class="d-l" x="92" y="945" text-anchor="start">rebuild the scene from the snapshot</text>
+<rect class="d-box g-edge" x="5" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="62" y="34" text-anchor="middle">Browser</text>
+<text class="d-m" x="62" y="49" text-anchor="middle">centrifuge-js</text>
+<rect class="d-box g-edge" x="123" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="180" y="34" text-anchor="middle">RR middleware</text>
+<text class="d-m" x="180" y="49" text-anchor="middle">:8080</text>
+<rect class="d-box g-rr" x="241" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="298" y="34" text-anchor="middle">RR http</text>
+<text class="d-m" x="298" y="49" text-anchor="middle">worker pool</text>
+<rect class="d-box g-php" x="359" y="16" width="126" height="44" rx="6"/>
+<text class="d-t" x="422" y="34" text-anchor="middle">HomeController</text>
+<text class="d-m" x="422" y="49" text-anchor="middle">→ SnapshotFactory</text>
+<rect class="d-box g-rr" x="489" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="546" y="34" text-anchor="middle">RR kv → Valkey</text>
+<text class="d-m" x="546" y="49" text-anchor="middle">hellowin</text>
+<rect class="d-box g-cf" x="613" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="670" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-m" x="670" y="49" text-anchor="middle">:8000</text>
+<rect class="d-box g-rr" x="733" y="16" width="114" height="44" rx="6"/>
+<text class="d-t" x="790" y="34" text-anchor="middle">RR centrifuge</text>
+<text class="d-m" x="790" y="49" text-anchor="middle">:10001</text>
+<rect class="d-box g-php" x="857" y="16" width="136" height="44" rx="6"/>
+<text class="d-t" x="925" y="34" text-anchor="middle">ConnectService</text>
+<text class="d-m" x="925" y="49" text-anchor="middle">RPCService</text>
+</svg>

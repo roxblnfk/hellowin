@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="diagram__svg" viewBox="0 0 1000 484" width="1000" height="484" role="img">
+<title>Reset: two calls to ResetService::reset(1) almost at once. The first takes the scene lock and all pumpkin:{id} locks, sees round = 1, resets the scene and the pumpkins, writes round = 2, releases the locks and publishes reset. The second waits for the locks, sees round = 2, which is not 1, and does nothing.</title>
+<style>
+.d-bg { fill: #fffaf2; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; }
+.diagram__svg { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.diagram__svg text { fill: #2b1d0e; stroke: none; font-size: 11px; }
+.diagram__svg .d-t { font-size: 12px; font-weight: 600; }
+.diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(43, 29, 14, 0.68); }
+.diagram__svg .d-m, .diagram__svg .d-l { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+.d-box { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.6); stroke-width: 1.2; }
+.d-box.g-rr { stroke: #e06c00; }
+.d-box.g-cf { stroke: #8247e5; }
+.d-box.g-php { stroke: #1f7fc8; }
+.d-e { fill: none; stroke: rgba(43, 29, 14, 0.72); stroke-width: 1.4; }
+.d-e--ret { stroke-dasharray: 5 4; }
+.d-e--acc { stroke: #8247e5; }
+.d-mk path { fill: rgba(43, 29, 14, 0.72); }
+.d-mk--acc path { fill: #8247e5; }
+.d-mk--ok path { fill: #2f9a2c; }
+.d-mk--kv path { fill: #d6334a; }
+.d-life { fill: none; stroke: rgba(43, 29, 14, 0.22); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-crit { fill: rgba(255, 138, 31, 0.3); stroke: #e06c00; stroke-width: 1; }
+.d-wait { fill: rgba(43, 29, 14, 0.06); stroke: rgba(43, 29, 14, 0.68); stroke-width: 1; stroke-dasharray: 3 3; }
+.d-note { fill: rgba(43, 29, 14, 0.035); stroke: rgba(43, 29, 14, 0.22); }
+@media (prefers-color-scheme: dark) {
+  .d-bg { fill: #130b27; stroke: rgba(246, 231, 208, 0.22); }
+  .diagram__svg text { fill: #f6e7d0; }
+  .diagram__svg .d-s, .diagram__svg .d-n { fill: rgba(246, 231, 208, 0.66); }
+  .d-box { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.6); }
+  .d-box.g-rr { stroke: #ff8a1f; }
+  .d-box.g-cf { stroke: #b98cff; }
+  .d-box.g-php { stroke: #7cc4ff; }
+  .d-e { stroke: rgba(246, 231, 208, 0.72); }
+  .d-e--acc { stroke: #b98cff; }
+  .d-mk path { fill: rgba(246, 231, 208, 0.72); }
+  .d-mk--acc path { fill: #b98cff; }
+  .d-mk--ok path { fill: #6bd968; }
+  .d-mk--kv path { fill: #ff7a8a; }
+  .d-life { stroke: rgba(246, 231, 208, 0.22); }
+  .d-crit { fill: rgba(255, 138, 31, 0.35); stroke: #ff8a1f; }
+  .d-wait { fill: rgba(246, 231, 208, 0.08); stroke: rgba(246, 231, 208, 0.66); }
+  .d-note { fill: rgba(255, 255, 255, 0.035); stroke: rgba(246, 231, 208, 0.22); }
+}
+</style>
+<rect class="d-bg" x="0.5" y="0.5" width="999" height="483" rx="10"/>
+<defs><marker id="f-ln" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-lns" class="d-mk d-mk--ln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-acc" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-accs" class="d-mk d-mk--acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-ok" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-oks" class="d-mk d-mk--ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-kv" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="f-kvs" class="d-mk d-mk--kv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="d-crit" x="95" y="84" width="10" height="158" rx="2"/>
+<rect class="d-wait" x="905" y="114" width="10" height="180" rx="2"/>
+<rect class="d-crit" x="905" y="294" width="10" height="128" rx="2"/>
+<path class="d-life" d="M100 60 V484"/>
+<path class="d-life" d="M330 60 V484"/>
+<path class="d-life" d="M560 60 V484"/>
+<path class="d-life" d="M740 60 V484"/>
+<path class="d-life" d="M910 60 V484"/>
+<path class="d-e " d="M102 92 L328 92" marker-end="url(#f-ln)"/>
+<text class="d-l" x="215" y="86" text-anchor="middle">lock scene, pumpkin:pumpkin-1…</text>
+<path class="d-e " d="M908 122 L332 122" marker-end="url(#f-ln)"/>
+<text class="d-l" x="620" y="116" text-anchor="middle">lock scene: waits</text>
+<path class="d-e " d="M102 152 L558 152" marker-end="url(#f-ln)"/>
+<text class="d-l" x="330" y="146" text-anchor="middle">get hellowin:round</text>
+<path class="d-e d-e--ret" d="M558 182 L102 182" marker-end="url(#f-ln)"/>
+<text class="d-l" x="330" y="176" text-anchor="middle">1 = fromRound</text>
+<path class="d-e " d="M102 212 L558 212" marker-end="url(#f-ln)"/>
+<text class="d-l" x="330" y="206" text-anchor="middle">pumpkins {0, 0}, scene 0, round 2</text>
+<path class="d-e " d="M102 242 L328 242" marker-end="url(#f-ln)"/>
+<text class="d-l" x="215" y="236" text-anchor="middle">release all locks</text>
+<path class="d-e d-e--acc" d="M102 272 L738 272" marker-end="url(#f-acc)"/>
+<text class="d-l" x="420" y="266" text-anchor="middle">publish type:'reset', round:2</text>
+<path class="d-e " d="M910 294 L886 294 L886 306 L908 306" marker-end="url(#f-ln)"/>
+<text class="d-l" x="880" y="303" text-anchor="end">locks acquired</text>
+<path class="d-e " d="M908 332 L562 332" marker-end="url(#f-ln)"/>
+<text class="d-l" x="735" y="326" text-anchor="middle">get hellowin:round</text>
+<path class="d-e d-e--ret" d="M562 362 L908 362" marker-end="url(#f-ln)"/>
+<text class="d-l" x="735" y="356" text-anchor="middle">2 ≠ fromRound</text>
+<path class="d-e " d="M910 384 L886 384 L886 396 L908 396" marker-end="url(#f-ln)"/>
+<text class="d-l" x="880" y="393" text-anchor="end">null: round already reset</text>
+<path class="d-e " d="M908 422 L332 422" marker-end="url(#f-ln)"/>
+<text class="d-l" x="620" y="416" text-anchor="middle">release</text>
+<rect class="d-note " x="30" y="438" width="950" height="24" rx="4"/>
+<text class="d-n" x="505" y="455" text-anchor="middle">reset:{round} without the idempotency package: round is compared under the same locks that guard the state</text>
+<rect class="d-box g-php" x="10" y="16" width="180" height="44" rx="6"/>
+<text class="d-t" x="100" y="34" text-anchor="middle">Call A</text>
+<text class="d-m" x="100" y="49" text-anchor="middle">hellowin:reset --round=1</text>
+<rect class="d-box g-rr" x="255" y="16" width="150" height="44" rx="6"/>
+<text class="d-t" x="330" y="34" text-anchor="middle">RR lock</text>
+<text class="d-m" x="330" y="49" text-anchor="middle">scene, pumpkin:*</text>
+<rect class="d-box g-rr" x="495" y="16" width="130" height="44" rx="6"/>
+<text class="d-t" x="560" y="34" text-anchor="middle">RR kv</text>
+<text class="d-m" x="560" y="49" text-anchor="middle">Valkey</text>
+<rect class="d-box g-cf" x="680" y="16" width="120" height="44" rx="6"/>
+<text class="d-t" x="740" y="34" text-anchor="middle">Centrifugo</text>
+<text class="d-s" x="740" y="49" text-anchor="middle">channel hellowin</text>
+<rect class="d-box g-php" x="840" y="16" width="140" height="44" rx="6"/>
+<text class="d-t" x="910" y="34" text-anchor="middle">Call B</text>
+<text class="d-m" x="910" y="49" text-anchor="middle">reset(fromRound: 1)</text>
+</svg>
