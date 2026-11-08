@@ -56,6 +56,6 @@ frontend — `app/views`, `public`; infra — `docker*`, `Dockerfile`. Изме�
   один раз, затем коммить без подписи (`git -c commit.gpgsign=false commit …`) и назови в отчёте неподписанные
   коммиты — пользователь переподпишет их сам. Опубликованную историю не переписывай.
 - **Тесты** пишутся на Testo (скиллы `spiral-testing`, `testo-write-tests`); новое поведение приходит с тестом.
-- **Зависимости в dev-версиях** — осознанные: `spiral/roadrunner-bridge 4.x-dev`, `spiral/testing ^4.0@dev`; пакеты
+- **Зависимости в dev-версиях** — осознанные: `spiral/roadrunner-bridge ^5.0` (5.x-dev по minimum-stability), `spiral/testing ^4.0@dev`; пакеты
   RoadRunner — новые имена `roadrunner/*`. Не «чини» их на стабильные без задачи.
 - **Числа игры** (пороги, количество стадий) задаются только env; в доках и текстах формулируй через имя переменной.
