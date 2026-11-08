@@ -27,6 +27,8 @@ ritual.
 
 All of it ran on one small box with 2 vCPUs and 2 GB of RAM.
 
+▶️ [The recording of the live event](https://www.youtube.com/watch?v=nXmEKQdV-70) (YouTube).
+
 ## How it works
 
 A walkthrough with diagrams and code. It used to be a page of the site:
